@@ -12,6 +12,7 @@ const {
     validateReport,
     validateInlineTargets,
     renderFinding,
+    renderGeneralSections,
     safeText
 } = require("./review-format");
 const { enforceHumanState, humanBlockReasons } = require("./policy");
@@ -279,9 +280,11 @@ class Publisher {
                         "\n\n" +
                         actionMarker(this.request, "finding", finding.id)
                 }));
-            const general = rendered
-                .filter((finding) => finding.path === null)
-                .map((finding) => finding.body);
+            const general = renderGeneralSections(
+                rendered,
+                validateReport(result, this.request),
+                state.mappings
+            );
             // safeText strips HTML comment syntax: these responses are
             // model-authored and land in a bot comment that also carries the
             // round state and action markers read back by state.js.
@@ -291,7 +294,7 @@ class Publisher {
                     (entry) => `${entry.sourceId}: ${safeText(entry.response)}`
                 );
             const body = [
-                ...general,
+                general,
                 ...responses,
                 "Human review still required.",
                 batchMarker

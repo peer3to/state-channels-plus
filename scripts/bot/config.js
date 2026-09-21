@@ -1,7 +1,7 @@
 const path = require("node:path");
 const { exact, check, digest } = require("./data");
 const MODEL = "gpt-6-astra";
-const MAX_MODEL_MS = 30 * 60 * 1000;
+const MAX_MODEL_MS = 60 * 60 * 1000;
 // Initial operational defaults, not user-selected policy or measured capacity claims.
 const DEFAULTS = Object.freeze({
     modelMs: MAX_MODEL_MS,
@@ -57,7 +57,7 @@ function configuration(input) {
         codexPath: input.codexPath || "codex",
         codexVersion: input.codexVersion || "0.154.0",
         model: MODEL,
-        effort: "low",
+        effort: "high",
         limits
     };
 }

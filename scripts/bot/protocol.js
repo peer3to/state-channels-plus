@@ -1,5 +1,6 @@
 const { check, exact, digest } = require("./data");
 const { MESSAGES } = require("./errors");
+const { MAX_MODEL_MS } = require("./config");
 const VERSION = 1;
 const SHA = /^[a-f0-9]{40}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -472,7 +473,7 @@ function result(value, expected) {
     check(
         Number.isFinite(value.evidence.durations.modelMs) &&
             value.evidence.durations.modelMs >= 0 &&
-            value.evidence.durations.modelMs <= 1800000,
+            value.evidence.durations.modelMs <= MAX_MODEL_MS,
         "INVALID_RESULT"
     );
     check(

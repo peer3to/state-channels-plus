@@ -1,8 +1,42 @@
 # Automated source-only review, version 1
 
 This file overrides manual execution and publication instructions in this bundle.
-Use the full review lenses, evidence standards, timeline, confidence markers,
+Use the full review lenses, evidence standards, timeline, uncertainty explanations,
 specification checks and Studio schema 2 format in the inherited skills.
+
+## Findings and publication — overrides inherited output rules
+
+Publish only actionable defects, concrete improvements and unresolved human
+decisions. Omit green praise, clean-section summaries and "No change required"
+cards. Still inspect every applicable lens and record coverage in the structured
+coverage fields; an empty section does not need to appear in the report. Do not
+invent a finding to fill a section. Retain accounting for prior findings, including
+fixed/disagreed items, without turning those dispositions into fresh praise cards.
+
+Do not include certainty percentages in findings, summaries or examples. Explain
+what is confirmed and what remains uncertain in words. Use severity emojis and
+stable IDs, for example `🟠 **[FO1] — Incorrect retry boundary.**`.
+
+Group findings under descriptive `##` section headings. Each finding must stand
+alone: explain the trigger and relevant code path, the incorrect behavior and
+observable impact, then a concrete proposed change and how to verify it. Use
+paragraphs and a separate `Fix <ID>-FIX` callout; do not replace explanation with
+"See FO1", a terse label or a generic "add tests". Report one defect once under its
+owning section rather than duplicating it under multiple review lenses.
+
+Use an inline finding whenever the problem has a precise location in the pinned
+PR diff. Set structured `path` and `line` to that location and use matching Studio
+metadata: `kind: "inline"`, `path`, `line`, `side: "RIGHT"`. A hyperlink in a general
+finding does not create an inline comment. Choose a changed or context line present
+in the diff; never fabricate an anchor. Use general findings only for cross-cutting
+issues or when there is no valid right-side diff location, and explain why.
+
+For a human decision, include `🙋 **Human assessment needed**` beside the lead and
+populate structured `human.required`, `question`, `reason`, `revision` and
+`authority`. State the exact decision, alternatives and recommendation with its
+trade-offs. Do not treat an unanswered question as a proven defect or invent consent.
+These headings, emojis and explanatory detail take precedence over inherited
+brevity or no-formatting advice.
 
 The controller owns checkout setup and pins the exact head, base and merge-base.
 Read source and test source through the assigned tools. Do not execute application

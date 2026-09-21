@@ -33,8 +33,9 @@ describe("review model execution budget", () => {
         assert.equal(stopped, true);
         assert.equal(budget.remaining(), 0);
     });
-    it("rejects a model budget above thirty minutes", () => {
-        assert.throws(() => new ModelBudget(1800001));
+    it("accepts one hour and rejects a model budget above it", () => {
+        assert.equal(new ModelBudget(3600000).remaining(), 3600000);
+        assert.throws(() => new ModelBudget(3600001));
     });
     it("preserves the timeout while quarantining failed termination", async function () {
         const budget = new ModelBudget(10);

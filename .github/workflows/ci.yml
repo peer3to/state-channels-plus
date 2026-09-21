@@ -74,7 +74,7 @@ jobs:
         needs: [head-check, review-bot-tests] # Temporary feature-only dependency.
         if: needs.head-check.outputs.current == 'true' && needs.head-check.outputs.eligible == 'true'
         runs-on: ubuntu-latest
-        timeout-minutes: 80
+        timeout-minutes: 110
         permissions:
             contents: read
             pull-requests: read
@@ -124,7 +124,7 @@ jobs:
         needs: [head-check, review-model]
         if: ${{ !cancelled() && needs.head-check.result == 'success' && needs.head-check.outputs.current == 'true' && needs.head-check.outputs.eligible == 'true' && needs.review-model.outputs.artifact != '' && (needs.review-model.result == 'success' || needs.review-model.result == 'failure') }}
         runs-on: ubuntu-latest
-        timeout-minutes: 55
+        timeout-minutes: 110
         permissions:
             contents: read
             pull-requests: write

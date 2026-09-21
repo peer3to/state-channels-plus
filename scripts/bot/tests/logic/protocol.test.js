@@ -3,6 +3,23 @@ const p = require("../../protocol");
 const records = require("../fixtures/records");
 const { digest } = require("../../data");
 describe("review protocol", () => {
+    it("accepts one hour of model evidence and rejects durations above the limit", function () {
+        const output = records.result();
+        Object.assign(output.evidence.durations, {
+            modelMs: 3600000,
+            assessmentMs: 3600000,
+            turns: [3600000]
+        });
+        assert.equal(p.result(output, records.request()), output);
+        output.evidence.durations.modelMs = 3600001;
+        assert.throws(() => p.result(output, records.request()));
+        const schema = require("../../schema/review-v1.json");
+        assert.equal(
+            schema.$defs.evidence.properties.durations.properties.modelMs
+                .maximum,
+            3600000
+        );
+    });
     it("excludes target tip and caller from effective identity", () => {
         const a = records.request(),
             b = records.request({

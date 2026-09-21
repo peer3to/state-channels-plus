@@ -24,6 +24,42 @@ function fixture(records) {
     };
 }
 describe("review CI mutation ownership", function () {
+    it("posts located findings as inline comments and keeps section headings in the review body", async function () {
+        const { writer, wire } = fixture([
+            {
+                path: `/repos/${input.repository.name}/pulls/6/reviews`,
+                method: "POST",
+                inspect: (body) => {
+                    assert.equal(body.commit_id, input.head);
+                    assert.equal(
+                        body.body,
+                        "## Security\n\nCross-cutting issue."
+                    );
+                    assert.deepEqual(body.comments, [
+                        {
+                            path: "src/file.js",
+                            line: 12,
+                            side: "RIGHT",
+                            body: "Trigger, impact and fix."
+                        }
+                    ]);
+                },
+                response: { id: 42 }
+            }
+        ]);
+        await writer.batch(
+            [
+                {
+                    path: "src/file.js",
+                    line: 12,
+                    body: "Trigger, impact and fix."
+                },
+                { path: null, line: null, body: "Cross-cutting issue." }
+            ],
+            "## Security\n\nCross-cutting issue."
+        );
+        wire.done();
+    });
     it("replies only to the root of an existing bot-owned thread", async function () {
         const { writer, wire } = fixture([
             {

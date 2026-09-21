@@ -10,7 +10,7 @@ Keep your existing worker flags and environment. The worker uses the same identi
 
 ## Worker prerequisites and storage
 
-Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `low`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
+Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `high`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
 
 Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution still receives only the approved source/public-read tools and report output tool; application execution, tests and direct publication remain disabled.
 
@@ -35,6 +35,18 @@ Tool-local invalid arguments, denied operations, unavailable public evidence and
 `server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. A single fixed correction prompt may name invalid schema identifiers or missing discussion-accounting IDs. Initial and corrective turns share the model budget.
 
 ## CI setup
+
+Reviews use `high` reasoning and a one-hour cumulative model budget, shared with
+correction turns. Review-model and review-publish jobs each allow 110 minutes for
+their surrounding setup, transport and validation work. The model receives time
+guidance; the controller enforces the limit independently.
+
+Only actionable findings and unresolved human decisions are published. Findings
+explain the triggering path, impact, proposed fix and verification, without certainty
+percentages or green no-change cards. General findings retain their report section
+headings. Findings with valid pinned-diff locations publish inline; a source hyperlink
+alone does not create an inline comment. Human decisions carry
+`🙋 **Human assessment needed**` and an explicit question.
 
 CI uses the existing `SCP_TEST_POOL_SECRET` and `SCP_TEST_ORCHESTRATOR_SEED`. Local clients use the normal `temp/distributed-orchestrator` identity when no seed environment value is supplied. Review does not derive or provision a different key.
 
@@ -62,7 +74,7 @@ While temporary acceptance is enabled, the observer blocks ordinary CI if review
 
 The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval says `Human review still required`; it requires complete evidence and resolved findings/decisions, not merely green CI. A comment alone starts no run.
 
-Defaults are thirty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Public context is bounded to forty requests/pages, eight MiB and five minutes per execution. Progress and reconnect do not reset budgets. Missing evidence prevents approval.
+Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Public context is bounded to forty requests/pages, eight MiB and five minutes per execution. Progress and reconnect do not reset budgets. Missing evidence prevents approval.
 
 A valid future GitHub throttle reset is respected. Missing, invalid or expired reset information uses the configured context window; the affected origin becomes usable again after expiry. `review-public-throttle` records count, origin, status, reason and `blockedUntil` without credentials.
 

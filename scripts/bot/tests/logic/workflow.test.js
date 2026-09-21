@@ -51,7 +51,22 @@ describe("review CI workflow", function () {
             assert.ok(dependencies(workflow.jobs[name]).includes("head-check"));
         }
         assert.equal(workflow.jobs["review-restore"], undefined);
-        assert.ok(workflow.jobs["review-model"]["timeout-minutes"] > 30);
+        const { DEFAULTS } = require("../../config");
+        const requestMs =
+            DEFAULTS.queueMs +
+            DEFAULTS.setupMs +
+            DEFAULTS.modelMs +
+            DEFAULTS.validationMs +
+            2 * DEFAULTS.transferMs +
+            DEFAULTS.terminationMs +
+            DEFAULTS.cleanupMs;
+        assert.ok(
+            workflow.jobs["review-model"]["timeout-minutes"] * 60000 > requestMs
+        );
+        assert.ok(
+            workflow.jobs["review-publish"]["timeout-minutes"] * 60000 >
+                requestMs
+        );
     });
     it("stops dependent pipeline work when temporary acceptance fails", function () {
         for (const name of ["spec", "test", "browser", "review-model"]) {

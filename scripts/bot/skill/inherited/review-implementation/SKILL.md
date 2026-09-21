@@ -22,21 +22,13 @@ Keep certainty separate from severity. Use a confirmed conclusion when code, tes
 other authoritative evidence clearly establishes it; routine verified facts do not require absolute certainty.
 Do not present a plausible failure, an unstated design preference, or a missing oracle as a proved defect.
 
-**Confidence percentage on every finding.** Immediately after the ID, write how certain you are that the
-finding is real and correctly characterised: an integer percent in steps of 5, then an em-dash, then the
-lead — `🟠 **[FO1] 90% — Finding.**`. Calibrate it against what you actually did in this review: 90–100 only
-when you verified it directly (read the exact code path, ran the command, reproduced the behaviour, or
-quoted the conflicting text); 70–85 when inferred from the diff and its callers without executing or
-reproducing; 50–65 when plausible but unverified, and then say what would confirm it. Never omit the number
-and never move it to justify a severity: severity says how much it matters, the percentage says how sure
-you are. Green summaries carry a percentage too.
+Do not assign certainty percentages. Explain evidence and uncertainty in words.
 
 **Mark every finding that needs an explicit human decision.** When the resolution depends on intent,
 policy, or a trade-off only the engineer can settle, or when evidence cannot settle the claim, write the
 exact marker `**Human assessment needed**` right after the closing `**` of the bold lead (never inside the
 bold, which nests markup), and then one sentence starting
-`Decision:` that states the question the human must answer. On such a finding the percentage measures
-confidence in the evidence, not in the recommended answer. A confirmed finding that needs no decision must
+`Decision:` that states the question the human must answer. A confirmed finding that needs no decision must
 not carry the marker, so the marker alone is the list of things a human has to decide.
 
 When evidence cannot settle a substantive claim with high confidence, or an engineer must choose intent,
@@ -48,7 +40,7 @@ that would settle it. Make any proposed fix conditional on that decision. Mark v
 merit/no-merit verdicts to ordinary findings.
 
 After the Bottom line, add a compact **Human assessment needed** priority list, one line per item in the
-form `[ID] NN% — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The
+form `[ID] — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The
 Bottom line states how many findings carry the marker. Omit it when no such items exist.
 Within each lens section, put human-needed items first, then preserve severity order and stable order for ties.
 Keep the full finding in its normal section; the priority list is an index, not a duplicate assessment. Include
@@ -70,7 +62,7 @@ diverge from the plan. So:
   that are missing, failed, unverified, or stale. Still read the test bodies and production paths yourself.
 - **Diff against the plan.** The biggest findings are usually where the code silently did something the plan
   decided against (a swapped data structure, a dropped API, a widened scope). Read the plan, compare.
-- **Be blunt and informal. No fluff; state uncertainty precisely.** If it's fine, 🟢 and move on.
+- **Be blunt and informal. No fluff; state uncertainty precisely.** Omit things that need no change.
 - **Simple language — Luka must never have to decode a finding.** Write each finding the way you'd explain it
   out loud: lead with the concrete change in plain words, then walk cause → effect in order ("today X; the
   code makes it Y; that breaks Z"). No invented shorthand or metaphor labels that compress the idea — if a
@@ -155,8 +147,7 @@ implementation reports, verification reports, and actual source code and tests.
    link each side, state the runtime or review impact, and say which artifact or code must change. Cross-reference
    another finding ID when the same defect is explained elsewhere; do not hide the contradiction only in that
    other section.
-5. If none exist, include one green summary that explicitly says the specification, implementation reports,
-   verification reports, and source code agree for the reviewed scope.
+5. If none exist, omit the section; retain the inspected scope in coverage.
 
 Keep this private working matrix:
 
@@ -226,8 +217,7 @@ Audit both newly added code and old code made obsolete by the change:
 4. Separate proven dead or unnecessary code from deliberate public API, generated output, platform variants,
    and required compatibility paths. Do not call code dead from a name-only search.
 5. Report each confirmed item in **🧼 Dead Code/Cleanup**, with deletion or simplification boundaries and the
-   verification that proves cleanup is safe. If none exists, include one green summary saying the audit found
-   no unused or unjustified machinery.
+   verification that proves cleanup is safe. If none exists, omit the section.
 
 Keep this private working matrix:
 
@@ -337,8 +327,7 @@ Always hunt for **what the implementation quietly changed or didn't account for*
 
 ## Output shape (see `example-review.md`)
 
-Sections, in this order. Keep every section; when it has no red/orange/yellow finding, use one compact green
-summary for the whole section:
+Sections, in this order. Omit sections without actionable findings or unresolved human decisions:
 
 1. **Title** — `# Review: implementation of plan N — <what it changes>`; meta line
    `repo · branch · reviews [N-implementation.md](./N-implementation.md)`.
@@ -355,14 +344,14 @@ summary for the whole section:
   `M` Miscellaneous, or `O` Open questions;
   severity is `R` red, `O` orange, `Y` yellow, or `G` green; ordinal is the bullet's
   1-based position within that section. Examples: the first red Fundamental bullet is `FR1`; the second
-  yellow Security bullet is `SY2`. Put the ID immediately after the severity dot, then the confidence percentage and an em-dash:
-  `- 🔴 **[FR1] 90% — ...**` (see Evidence and human assessment).
+  yellow Security bullet is `SY2`. Put the ID immediately after the severity dot, then an em-dash:
+  `- 🔴 **[FR1] — ...**` (see Evidence and human assessment).
 - **Put the proposed remedy in a separate callout directly below every bullet.** Label it with the finding
   ID plus `-FIX`, so it can be referenced independently. Do not use `[!TIP]` or another callout prefix. Use
   this exact shape:
 
     ```markdown
-    - 🔴 **[FR1] 90% — Finding.** Evidence and impact.
+    - 🔴 **[FR1] — Finding.** Evidence and impact.
 
         > **Fix FR1-FIX**
         >
@@ -370,15 +359,13 @@ summary for the whole section:
     ```
 
     A fix must be actionable, not advice such as “investigate”, “consider”, or “handle this.” Name the mechanism
-    to change, the preferred approach when the evidence supports one, and the acceptance test. For a section's
-    single green summary, write `No change required.` For an open question, state the recommended decision and
+    to change, the preferred approach when the evidence supports one, and the acceptance test.
+    For an open question, state the recommended decision and
     what changes after that decision. The box is intentionally not part of the feedback bullet.
 
-- **Severity dot on every finding:** 🔴 blocks landing · 🟠 worth a look · 🟡 nit · 🟢 good / fine. Lead with
+- **Severity dot on every finding:** 🔴 blocks landing · 🟠 worth a look · 🟡 nit. Lead with
   the dot so the review skims by scanning for red.
-- **Do not mix green praise into a section that has findings.** If a section contains any 🔴, 🟠, or 🟡,
-  omit all 🟢 bullets from that section. If it contains none, write exactly one 🟢 summary bullet for the
-  section. Verification results belong in the Bottom line even when the Tests section has findings.
+- **Omit green praise and no-change cards from every section.** Verification results belong in the Bottom line.
 - **One finding = one bullet:** keep the bold lead clause and evidence concise, but completeness wins over
   section length. Do not combine independent findings, omit lower-severity findings, or cap a section at
   three or four bullets. A section may contain as many concise bullets as the evidence requires.
@@ -388,8 +375,8 @@ summary for the whole section:
 - **Put real command results in the Bottom line.** Say whether each result was reused from the current
   implementation record or run during this review. Repeat a result in Tests only when it failed or qualifies
   a coverage finding.
-- **Sort within every section:** Human assessment needed first, then severity 🔴, 🟠, 🟡 within each certainty group. A clean section's single 🟢 summary is last by
-  definition. Keep each bullet tight; do not shorten the section by dropping valid findings.
+- **Sort within every section:** Human assessment needed first, then severity 🔴, 🟠, 🟡.
+  Explain each finding fully; do not shorten the section by dropping valid findings.
 
 ## Location & naming
 

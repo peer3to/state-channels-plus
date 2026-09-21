@@ -8,7 +8,7 @@ const MESSAGES = Object.freeze({
     QUEUE_TIMEOUT: "The review queue wait limit was reached.",
     SETUP_TIMEOUT: "Review setup timed out.",
     REVIEW_TIMEOUT:
-        "The model execution limit was reached (at most thirty minutes).",
+        "The model execution limit was reached (at most sixty minutes).",
     CONTEXT_BUDGET_EXCEEDED: "The public context budget was exhausted.",
     CONTEXT_RATE_LIMITED: "Public context retrieval was rate limited.",
     CONTEXT_UNAVAILABLE: "Required public context is unavailable.",

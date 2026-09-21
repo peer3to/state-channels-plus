@@ -34,9 +34,9 @@ metadata, Human block, PR introduction, Specification changes section, comment t
 footer are the PR-specific format additions. Step 4 governs test execution and CI reuse, including when
 inherited review instructions call for tests.
 
-This includes the mandatory **📐 Plan Adherence** section when the PR claims an implementation plan, the
-mandatory **⚖️ Contradictions** section, and the mandatory **🧼 Dead Code/Cleanup** section on every PR. If no
-implementation plan applies, omit Plan Adherence; never omit Contradictions or Dead Code/Cleanup. For
+This includes inspecting **📐 Plan Adherence** when the PR claims an implementation plan,
+**⚖️ Contradictions**, and **🧼 Dead Code/Cleanup** on every PR. Publish those sections only
+when they contain actionable findings or unresolved human decisions. For
 Contradictions, cross-check the specification, implementation reports, verification reports, and actual
 source/tests exactly as `/review-implementation` requires. Trace live callers before labeling code unused or
 over-engineered.
@@ -44,10 +44,9 @@ over-engineered.
 ## Evidence and human assessment
 
 For selectable Studio reviews, put `**Human assessment needed**` inside the existing AI marker block,
-next to the finding lead, and put the confidence percentage and the `Decision:` sentence inside that same AI
-block (`🟠 **[FO1] 90% — Lead.** **Human assessment needed** Decision: …`). Never alter the card heading
+next to the finding lead, with the `Decision:` sentence inside that same AI block. Never alter the card heading
 `- [ ] **[ID] Inline comment**` / `General PR comment`: the Studio parser matches it literally and reads the
-severity, percentage, and marker from the AI block. Keep the wrapper, JSON metadata, Human block, IDs, and
+severity and marker from the AI block. Keep the wrapper, JSON metadata, Human block, IDs, and
 publishing schema unchanged.
 The marker must remain in the published wording so an open question never becomes an asserted defect.
 On a new finding leave selection unchecked; preserve the user's existing selection on later reviews.
@@ -58,21 +57,13 @@ Keep certainty separate from severity. Use a confirmed conclusion when code, tes
 other authoritative evidence clearly establishes it; routine verified facts do not require absolute certainty.
 Do not present a plausible failure, an unstated design preference, or a missing oracle as a proved defect.
 
-**Confidence percentage on every finding.** Immediately after the ID, write how certain you are that the
-finding is real and correctly characterised: an integer percent in steps of 5, then an em-dash, then the
-lead — `🟠 **[FO1] 90% — Finding.**`. Calibrate it against what you actually did in this review: 90–100 only
-when you verified it directly (read the exact code path, ran the command, reproduced the behaviour, or
-quoted the conflicting text); 70–85 when inferred from the diff and its callers without executing or
-reproducing; 50–65 when plausible but unverified, and then say what would confirm it. Never omit the number
-and never move it to justify a severity: severity says how much it matters, the percentage says how sure
-you are. Green summaries carry a percentage too.
+Do not assign certainty percentages. Explain evidence and uncertainty in words.
 
 **Mark every finding that needs an explicit human decision.** When the resolution depends on intent,
 policy, or a trade-off only the engineer can settle, or when evidence cannot settle the claim, write the
 exact marker `**Human assessment needed**` right after the closing `**` of the bold lead (never inside the
 bold, which nests markup), and then one sentence starting
-`Decision:` that states the question the human must answer. On such a finding the percentage measures
-confidence in the evidence, not in the recommended answer. A confirmed finding that needs no decision must
+`Decision:` that states the question the human must answer. A confirmed finding that needs no decision must
 not carry the marker, so the marker alone is the list of things a human has to decide.
 
 When evidence cannot settle a substantive claim with high confidence, or an engineer must choose intent,
@@ -84,7 +75,7 @@ that would settle it. Make any proposed fix conditional on that decision. Mark v
 merit/no-merit verdicts to ordinary findings.
 
 After the Bottom line, add a compact **Human assessment needed** priority list, one line per item in the
-form `[ID] NN% — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The
+form `[ID] — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The
 Bottom line states how many findings carry the marker. Omit it when no such items exist.
 Within each lens section, put human-needed items first, then preserve severity order and stable order for ties.
 Keep the full finding in its normal section; the priority list is an index, not a duplicate assessment. Include
@@ -532,8 +523,7 @@ Only for `/review-pr`, and only when the PR has comments. One table, one row per
   lens section, credited to the commenter and cross-referenced by the timeline row number. The table is the
   index; the lens section carries the argument and the `Fix ID-FIX`.
 - SELF-ECHO rows stay in the table (they explain the cutoff) but never produce a finding.
-- The 🧹 Miscellaneous green summary may only claim there was nothing to re-verify when this table's counts
-  back that up, and never when a fetch failed.
+- Omit no-action summaries. A failed fetch is missing evidence, not proof that there was nothing to review.
 
 ### Links must be GitHub permalinks, not machine-relative paths
 

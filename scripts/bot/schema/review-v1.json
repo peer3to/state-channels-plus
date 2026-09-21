@@ -435,7 +435,7 @@
                         "modelMs": {
                             "type": "number",
                             "minimum": 0,
-                            "maximum": 1800000
+                            "maximum": 3600000
                         },
                         "validationMs": {
                             "type": "number",

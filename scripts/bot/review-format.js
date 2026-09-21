@@ -188,6 +188,12 @@ function parseReview(markdown, filePath = "review.md") {
 
         return {
             ...metadata,
+            section:
+                lines
+                    .slice(0, start.index)
+                    .reverse()
+                    .find((line) => /^##\s/.test(line))
+                    ?.replace(/^##\s+/, "") || "Findings",
             selected: start.selected,
             aiBody,
             human: human.text,
@@ -312,10 +318,28 @@ function humanControl(finding, author) {
     if (!finding.human?.required) return "";
     check(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(author));
     const human = finding.human;
-    return `**Human assessment needed**\n\n${safeText(human.question)}\n\n${safeText(human.reason)}\n\n@${author}\n\nImplementing agents must point out this question to their human and wait for a decision. Do not invent consent. Discuss the decision in ordinary PR comments; no special reply format is required. This is guidance, not identity or permission verification.`;
+    return `🙋 **Human assessment needed**\n\n**Decision:** ${safeText(human.question)}\n\n${safeText(human.reason)}\n\n@${author}\n\nImplementing agents must point out this question to their human and wait for a decision. Do not invent consent. Discuss the decision in ordinary PR comments; no special reply format is required. This is guidance, not identity or permission verification.`;
+}
+function renderGeneralSections(findings, parsed, mappings = {}) {
+    // Report section headings map to the rendered general finding bodies.
+    const sections = new Map();
+    for (const finding of findings.filter((entry) => entry.path === null)) {
+        const source = parsed.findings.find(
+            (entry) => (mappings[entry.id] || entry.id) === finding.id
+        );
+        const section = source?.section || "Findings";
+        if (!sections.has(section)) sections.set(section, []);
+        sections.get(section).push(finding.body);
+    }
+    return [...sections]
+        .map(
+            ([section, bodies]) =>
+                `## ${safeText(section)}\n\n${bodies.join("\n\n---\n\n")}`
+        )
+        .join("\n\n");
 }
 function renderFinding(finding, author) {
-    return [safeText(finding.body), humanControl(finding, author)]
+    return [humanControl(finding, author), safeText(finding.body)]
         .filter(Boolean)
         .join("\n\n");
 }
@@ -356,5 +380,6 @@ module.exports = {
     safeText,
     humanControl,
     renderFinding,
+    renderGeneralSections,
     validateReport
 };
