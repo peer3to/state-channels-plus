@@ -79,6 +79,40 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("loads the full review audits before source-only automation overrides", async function () {
+        const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-skill-"));
+        const service = new ReviewService({ stateRoot: root });
+        try {
+            await service.start();
+            const skillRoot = path.join(__dirname, "../../skill");
+            const full = await fs.readFile(
+                path.join(
+                    skillRoot,
+                    "inherited/review-implementation/SKILL.md"
+                ),
+                "utf8"
+            );
+            const override = await fs.readFile(
+                path.join(skillRoot, "references/automation.md"),
+                "utf8"
+            );
+            assert.ok(service.instructions.includes(full));
+            assert.ok(
+                service.instructions.includes(
+                    await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8")
+                )
+            );
+            assert.ok(
+                service.instructions.indexOf(override) >
+                    service.instructions.indexOf(full)
+            );
+            assert.ok(override.includes("HUMAN DECISION REQUIRED"));
+            assert.ok(override.includes("wait for their explicit comment"));
+        } finally {
+            await service.close();
+            await fs.rm(root, { recursive: true });
+        }
+    });
     it("refreshes policy on the same session for resumed and accounting-correction turns", async function () {
         await fixture(
             [result(), result(), result()],

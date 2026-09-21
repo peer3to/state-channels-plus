@@ -77,8 +77,10 @@ While temporary acceptance is enabled, the observer blocks ordinary CI if review
 Reasoning defaults to `low`. The model writes one Studio Markdown report; the
 deterministic converter derives finding bodies and combines them with compact
 bookkeeping metadata. It does not ask the model to duplicate prose as JSON.
-The automated prompt loads only source-review guidance and the output contract,
-not the manual checkout/test/publication workflow or example reports.
+The automated prompt loads the full PR skill, inherited implementation-review
+skill and example, followed by source-only execution overrides and the output
+contract. All substantive audit sections apply; inherited manual commands do not.
+The model must not run tests, builds, checkout operations or publication commands.
 
 The worker resumes the existing PR chat. A confirmed complete publication receipt
 records the reviewed head and merge-base. On the next round, that baseline is used
@@ -155,7 +157,18 @@ new developer instructions. Repository content cannot replace this bundle.
 
 Source-review completion is separate from runtime verification. Missing live
 acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
-publishable, the review body lists verification limitations, and approval is blocked.
+publishable and approval is blocked. Passive limitations stay in metadata, not
+public status comments. Concrete coverage defects use ordinary stable finding IDs.
+Publication state is hidden metadata on actual finding comments or review bodies,
+not separate intent/record/complete comments. Clean rounds do not create placeholder
+comments; failures use a deduplicated error notice. Legacy state remains readable.
+Human-decision findings display `🧑 HUMAN DECISION REQUIRED` and a STOP warning:
+this applies to unresolved design choices, not purely technical fixes or choices
+already settled by the specification or an explicit human decision. Cite the
+settling authority and proceed without requesting the same decision again. For
+unresolved choices,
+implementing agents must ask their human and wait for an explicit comment before
+implementing or resolving them. Code changes and thread resolution are not consent.
 Unread source/discussion still goes in `coverage.missing` and fails the round.
 The controller never reclassifies old incomplete reports by guessing from prose.
 

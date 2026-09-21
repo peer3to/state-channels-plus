@@ -15,11 +15,11 @@ const {
     renderGeneralSections,
     safeText
 } = require("./review-format");
-const { enforceHumanState, humanBlockReasons } = require("./policy");
+const { enforceHumanState } = require("./policy");
 const { canApprove } = require("./approval");
 const { findingSource, wrapFinding } = require("./finding-source");
 const {
-    encodeState,
+    attachState,
     readStates,
     allocate,
     actionMarker,
@@ -48,6 +48,7 @@ class Publisher {
     github;
     policy;
     pendingState = null;
+    stateCarrier = null;
     constructor(request, github, policy) {
         protocol.request(request);
         this.request = request;
@@ -63,11 +64,7 @@ class Publisher {
                 this.policy.eligible === true,
             "UNAUTHORIZED"
         );
-        const latest = readStates(
-            observations.comments,
-            this.request,
-            this.github.botId
-        )
+        const latest = readStates(observations, this.request, this.github.botId)
             .filter((state) => state.status !== "intent")
             .at(-1);
         observations.findings = latest?.findings || [];
@@ -123,7 +120,7 @@ class Publisher {
         }
         const observations = await this.observe();
         const sameHead = readStates(
-            observations.comments,
+            observations,
             this.request,
             this.github.botId
         )
@@ -160,6 +157,7 @@ class Publisher {
     }
     async publish(result) {
         this.pendingState = null;
+        this.stateCarrier = null;
         try {
             return await this.apply(result);
         } catch (error) {
@@ -175,6 +173,21 @@ class Publisher {
                 };
             throw error;
         }
+    }
+    async saveState(state) {
+        if (!this.stateCarrier) return;
+        const observed = await this.observe();
+        const entries =
+            this.stateCarrier.kind === "review"
+                ? observed.reviews
+                : observed.comments;
+        const item = entries.find((entry) => entry.id === this.stateCarrier.id);
+        check(item, "CONTEXT_UNAVAILABLE");
+        state.sequence = (state.sequence || 0) + 1;
+        await this.github.editGeneral(
+            { kind: this.stateCarrier.kind, item },
+            attachState(item.body, state)
+        );
     }
     async apply(result) {
         const inspected = await this.inspect(result);
@@ -202,6 +215,40 @@ class Publisher {
         }
         const blocked = enforceHumanState(current.findings, result, current);
         const state = allocate(this.request, current, this.github.botId);
+        const prior = readStates(current, this.request, this.github.botId).at(
+            -1
+        );
+        if (prior) {
+            const sources = prior.findings
+                .map((finding) =>
+                    findingSource(
+                        this.request,
+                        current,
+                        this.github.botId,
+                        finding
+                    )
+                )
+                .filter(Boolean);
+            const source = sources.find((entry) => entry.kind !== "inline");
+            if (source)
+                this.stateCarrier = { kind: source.kind, id: source.item.id };
+            else if (prior.commentKind === "review")
+                this.stateCarrier = { kind: "review", id: prior.commentId };
+            else {
+                const review = current.reviews.find(
+                    (entry) =>
+                        entry.user?.id === this.github.botId &&
+                        entry.user.type === "Bot" &&
+                        sources.some(
+                            (item) =>
+                                item.kind === "inline" &&
+                                item.item.pull_request_review_id === entry.id
+                        )
+                );
+                if (review)
+                    this.stateCarrier = { kind: "review", id: review.id };
+            }
+        }
         if (state.status === "complete")
             return {
                 status: "complete",
@@ -243,19 +290,8 @@ class Publisher {
             current,
             blocked
         );
-        const intentMarker = actionMarker(this.request, "intent", state.round);
-        const intent =
-            findAction(current, intentMarker, this.github.botId) ||
-            (await this.github.comment(
-                `Automated review intent for ${this.request.head}.\n\n${encodeState(state)}\n${intentMarker}`
-            ));
-        if (!state.actions.some((action) => action.id === intent.id))
-            state.actions.push({
-                kind: "review-comment",
-                id: intent.id,
-                url: intent.html_url
-            });
         this.pendingState = state;
+        await this.saveState(state);
         const batchMarker = actionMarker(this.request, "findings", state.round);
         const beforeBatch = await this.observe();
         beforeBatch.findings = current.findings;
@@ -292,15 +328,20 @@ class Publisher {
                     "finding",
                     finding.id
                 );
-                if (!findAction(beforeBatch, marker, this.github.botId)) {
+                let action = findAction(beforeBatch, marker, this.github.botId);
+                if (!action) {
                     const body = renderGeneralSections(
                         [finding],
                         validateReport(result, this.request),
                         state.mappings
                     );
-                    const action = await this.github.comment(
-                        wrapFinding(finding.id, body)
+                    action = await this.github.comment(
+                        attachState(wrapFinding(finding.id, body), state)
                     );
+                }
+                if (!this.stateCarrier)
+                    this.stateCarrier = { kind: "comment", id: action.id };
+                if (!state.actions.some((entry) => entry.id === action.id)) {
                     state.actions.push({
                         kind: "review-comment",
                         id: action.id,
@@ -308,30 +349,17 @@ class Publisher {
                     });
                 }
             }
-            // safeText strips HTML comment syntax: these responses are
-            // model-authored and land in a bot comment that also carries the
-            // round state and action markers read back by state.js.
-            const responses = result.accounting
-                .filter((entry) => entry.disposition === "response")
-                .map(
-                    (entry) => `${entry.sourceId}: ${safeText(entry.response)}`
+            // Accounting responses remain in the report; public findings own IDs.
+            // An inline review needs a body, but no standalone status prose.
+            if (rendered.some((finding) => finding.path !== null)) {
+                batch = await this.github.batch(
+                    rendered,
+                    attachState(batchMarker, state)
                 );
-            const body = [
-                ...responses,
-                ...(result.coverage.verificationMissing?.length
-                    ? [
-                          "## Verification limitations\n\n" +
-                              result.coverage.verificationMissing
-                                  .map((item) => `- ${safeText(item)}`)
-                                  .join("\n")
-                      ]
-                    : []),
-                "Human review still required.",
-                batchMarker
-            ].join("\n\n");
-            batch = await this.github.batch(rendered, body);
+                this.stateCarrier = { kind: "review", id: batch.id };
+            }
         }
-        if (!state.actions.some((action) => action.id === batch.id))
+        if (batch && !state.actions.some((action) => action.id === batch.id))
             state.actions.push({
                 kind: "review-comment",
                 id: batch.id,
@@ -461,47 +489,8 @@ class Publisher {
                 });
             }
         }
-        if (blocked.length) {
-            const marker = actionMarker(this.request, "human-blocked", {
-                round: state.round,
-                findings: state.findings
-                    .filter((entry) => blocked.includes(entry.id))
-                    .map((entry) => ({
-                        id: entry.id,
-                        revision: entry.human.revision
-                    }))
-            });
-            const observed = await this.observe();
-            observed.findings = current.findings;
-            if (
-                !missingAccounting(
-                    accountingSet(observed, this.github.botId),
-                    result
-                ).length &&
-                !findAction(observed, marker, this.github.botId)
-            ) {
-                const summary =
-                    "Human questions still need attention.\n\n" +
-                    humanBlockReasons(current.findings, result, current)
-                        .map(
-                            (entry) =>
-                                `${entry.id}, decision revision ${entry.revision}: ${entry.reasons.join(", ")}.`
-                        )
-                        .join("\n");
-                const action = await this.github.comment(
-                    summary + "\n\n" + marker
-                );
-                state.actions.push({
-                    kind: "review-comment",
-                    id: action.id,
-                    url: action.html_url
-                });
-            }
-        }
         state.status = "partial";
-        await this.github.comment(
-            `Automated review publication record.\n\n${encodeState(state)}`
-        );
+        await this.saveState(state);
         const beforeApproval = await this.observe();
         for (const finding of state.findings.filter(
             (entry) => entry.path !== null && !entry.threadId
@@ -601,9 +590,8 @@ class Publisher {
             );
             const approval =
                 findAction(beforeApproval, approveMarker, this.github.botId) ||
-                (await this.github.approve(
-                    `Human review still required.\n\n${approveMarker}`
-                ));
+                (await this.github.approve(attachState(approveMarker, state)));
+            this.stateCarrier = { kind: "review", id: approval.id };
             state.actions.push({
                 kind: "approve",
                 id: approval.id,
@@ -611,9 +599,7 @@ class Publisher {
             });
         }
         state.status = "complete";
-        await this.github.comment(
-            `Automated review publication complete.\n\n${encodeState(state)}`
-        );
+        await this.saveState(state);
         return {
             status: "complete",
             receipt: reviewReceipt(this.request, state, true)

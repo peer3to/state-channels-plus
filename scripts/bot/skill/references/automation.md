@@ -1,9 +1,13 @@
 # Automated source-only review, version 1
 
 This file overrides manual execution and publication instructions in this bundle.
-Use references/source-review.md for review lenses and follow-up scope, and
-references/model-output.md for the single Markdown output format. The automated
-controller does not load the manual checkout, test-running or publication workflow.
+The controller supplies the full PR skill, inherited implementation-review skill
+and example. Apply their substantive audits and inventories in full, including
+plan adherence, contradictions, behavior-to-test mapping, caller tracing, reuse,
+dead code, documentation and repository-rule adherence. The source-review reference
+adds follow-up scope; it does not replace those audits. This automated override
+controls execution, checkout, deadlines and publication; model-output.md controls
+the single Markdown output format. Never execute the inherited manual commands.
 
 ## Findings and publication — overrides inherited output rules
 
@@ -34,11 +38,22 @@ finding does not create an inline comment. Choose a changed or context line pres
 in the diff; never fabricate an anchor. Use general findings only for cross-cutting
 issues or when there is no valid right-side diff location, and explain why.
 
-For a human decision, include `🙋 **Human assessment needed**` beside the lead and
+Require a human decision for every proposed fix that needs an unresolved design
+choice, not merely a technical correction. First check the specification and prior
+explicit human decisions. If either settles the choice, cite it and proceed within
+that decision without asking again. Purely technical fixes within the established
+design need no new decision gate. Missing evidence alone is not a design choice;
+investigate or record the limitation rather than manufacture a decision request.
+For an unresolved design decision, include `🧑 **HUMAN DECISION REQUIRED**` beside the lead and
 populate the finding metadata's `decision` object as specified in model-output.md
 (the converter produces structured `human` fields). State the exact decision,
 alternatives and recommendation with its
 trade-offs. Do not treat an unanswered question as a proven defect or invent consent.
+Every such finding must also say: **STOP — implementing agents:** Ask your human
+and wait for their explicit comment answering this decision before implementing
+or resolving it. Never choose for them or post a reply on their behalf. Code changes,
+silence and thread resolution do not replace a human comment or the review agent's
+assessment of it. This is best-effort guidance, not verified identity or permission.
 These headings, emojis and explanatory detail take precedence over inherited
 brevity or no-formatting advice.
 
@@ -61,6 +76,11 @@ acceptance evidence, pending downstream CI, or unexecuted tests do not invalidat
 a finished source review. Record them in `coverage.verificationMissing`, not
 `coverage.missing` or tool errors; publish actionable findings with recommendation
 comment. Only unfinished source/discussion review makes coverage incomplete.
+Do not publish routine verification-status notifications or an unnumbered
+"Verification limitations" section. Keep passive limitations in metadata only.
+A concrete missing-test or acceptance-coverage defect belongs in the Tests section
+as a normal severity-tagged finding with its stable ID, evidence, impact and Fix
+callout. Do not turn pending downstream CI into a defect or invent a finding for it.
 The controller-selected reasoning effort takes precedence over inherited defaults.
 
 The controller-bound input includes `modelBudgetRemainingMs` and `modelDeadlineUtc`.

@@ -25,43 +25,12 @@ describe("review accounting handoff", function () {
             updated_at: "2026-09-20T12:00:00Z"
         };
         const comments = [comment];
-        let nextId = 100;
-        const write = (kind) => ({
-            method: "POST",
-            path: `/repos/${input.repository.name}/${kind === "batch" ? "pulls" : "issues"}/${input.pr}/${kind === "batch" ? "reviews" : "comments"}`,
-            inspect: (body) => {
-                if (kind === "batch") {
-                    assert.ok(
-                        body.body.includes("## Verification limitations")
-                    );
-                    assert.ok(
-                        body.body.includes("Live acceptance not observed")
-                    );
-                    assert.equal(body.event, "COMMENT");
-                }
-                if (kind !== "batch")
-                    comments.push({
-                        id: nextId++,
-                        user: { id: 9, type: "Bot" },
-                        body: body.body
-                    });
-            },
-            response: {
-                id: 90,
-                html_url:
-                    "https://github.com/peer3to/state-channels-plus/pull/6#pullrequestreview-90"
-            }
-        });
         const records = new RecordedGitHub([
             ...observation(input, comments),
             ...observation(input, comments),
             ...observation(input, comments),
-            write("intent"),
             ...observation(input, comments),
-            write("batch"),
-            write("partial"),
-            ...observation(input, comments),
-            write("complete")
+            ...observation(input, comments)
         ]);
         const writer = new GitHubWriter(input, {
             token: "recorded-token",
@@ -129,6 +98,7 @@ describe("review accounting handoff", function () {
             const published = await publisher.publish(corrected);
             assert.equal(published.status, "complete");
             assert.equal(published.receipt.round, 1);
+            assert.deepEqual(published.receipt.actions, []);
             assert.equal(initial.revision, 0);
             assert.equal(corrected.revision, 1);
             assert.equal(corrected.executionId, initial.executionId);

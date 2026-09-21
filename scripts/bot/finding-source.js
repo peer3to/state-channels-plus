@@ -15,7 +15,7 @@ function wrapFinding(id, body) {
 // Locate only bot-owned, controller-marked findings. IDs in arbitrary prose are
 // not sufficient authority to edit a GitHub comment.
 function findingSource(request, observations, botId, finding) {
-    const states = readStates(observations.comments, request, botId);
+    const states = readStates(observations, request, botId);
     const candidates = [
         ...observations.comments.map((item) => ({ item, kind: "comment" })),
         ...observations.reviews.map((item) => ({ item, kind: "review" })),

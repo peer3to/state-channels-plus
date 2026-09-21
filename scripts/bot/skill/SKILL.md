@@ -43,7 +43,7 @@ over-engineered.
 
 ## Evidence and human assessment
 
-For selectable Studio reviews, put `**Human assessment needed**` inside the existing AI marker block,
+For selectable Studio reviews, put `🧑 **HUMAN DECISION REQUIRED**` inside the existing AI marker block,
 next to the finding lead, with the `Decision:` sentence inside that same AI block. Never alter the card heading
 `- [ ] **[ID] Inline comment**` / `General PR comment`: the Studio parser matches it literally and reads the
 severity and marker from the AI block. Keep the wrapper, JSON metadata, Human block, IDs, and
@@ -60,21 +60,31 @@ Do not present a plausible failure, an unstated design preference, or a missing 
 Do not assign certainty percentages. Explain evidence and uncertainty in words.
 
 **Mark every finding that needs an explicit human decision.** When the resolution depends on intent,
-policy, or a trade-off only the engineer can settle, or when evidence cannot settle the claim, write the
-exact marker `**Human assessment needed**` right after the closing `**` of the bold lead (never inside the
+policy, or a design trade-off not already settled by the specification or an explicit human decision, write the
+exact marker `🧑 **HUMAN DECISION REQUIRED**` right after the closing `**` of the bold lead (never inside the
 bold, which nests markup), and then one sentence starting
 `Decision:` that states the question the human must answer. A confirmed finding that needs no decision must
 not carry the marker, so the marker alone is the list of things a human has to decide.
 
-When evidence cannot settle a substantive claim with high confidence, or an engineer must choose intent,
-write the exact marker `**Human assessment needed**` in that finding's body immediately after its lead.
+Before requesting a decision, check the applicable specification and prior human decisions.
+If they settle the choice, cite that authority and propose the corresponding fix without a new decision gate.
+Purely technical corrections within the established design also need no new human decision.
+Mark every proposed fix that introduces an unresolved design choice, even if its implementation is small.
+Missing evidence or low confidence alone is not a design decision: investigate or report the limitation honestly.
 Keep its existing finding ID, severity, section, links, and `Fix <ID>-FIX` callout. State the evidence and its
 limits, the precise uncertainty or decision, a recommended direction with reasons, and the check or decision
 that would settle it. Make any proposed fix conditional on that decision. Mark verified conclusions
 `**Confirmed**` when needed to distinguish them from open claims in the same discussion. Do not apply
 merit/no-merit verdicts to ordinary findings.
 
-After the Bottom line, add a compact **Human assessment needed** priority list, one line per item in the
+Every decision finding must include: **STOP — implementing agents:** Ask your human
+and wait for their explicit comment answering this decision before implementing
+or resolving this finding. Never choose for them or post a reply on their behalf.
+Code changes, silence and thread resolution are not consent. The review agent
+must assess the human's actual reply. This is best-effort guidance, not identity
+or permission verification. Keep proposed fixes conditional on that decision.
+
+After the Bottom line, add a compact **🧑 HUMAN DECISION REQUIRED** priority list, one line per item in the
 form `[ID] — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The
 Bottom line states how many findings carry the marker. Omit it when no such items exist.
 Within each lens section, put human-needed items first, then preserve severity order and stable order for ties.

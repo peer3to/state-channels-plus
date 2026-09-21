@@ -26,12 +26,18 @@ Group findings by descriptive `##` sections. Each card has this shape:
 Inline cards use `kind:"inline", "path":"relative/file.js", "line":42,
 "side":"RIGHT"` and `Inline comment` in the heading. Only real PR diff locations
 are valid. Human blocks are empty: never invent a human assessment.
+Findings requiring a human decision must visibly include
+`🧑 **HUMAN DECISION REQUIRED**` and the STOP warning from automation.md telling
+implementing agents to wait for the human's explicit comment. Populate `decision`
+as well; prose alone does not activate the decision gate.
 
 Use existing published IDs verbatim on follow-up (for example R1FO1). Status is
 new, continued, fixed, recurred or disagreement. Include fixed/disagreement
 dispositions only for existing findings and provide inspected evidence. Those are
-lifecycle updates, not new praise cards. `decision` is null unless a human must
-decide; then it is {"required":true,"question":"...","reason":"...",
+lifecycle updates, not new praise cards. For new findings, `decision` is null for
+technical fixes and choices already settled by the specification or an explicit
+human decision; cite the settling evidence. An unresolved design choice requires
+{"required":true,"question":"...","reason":"...",
 "revision":1,"authority":"author"} (authority may also be maintainer).
 
 End with one single-line control marker. This is bookkeeping, not a second report:
@@ -55,7 +61,7 @@ Put absent, pending or unverified CI/live acceptance evidence in the optional
 `coverage.verificationMissing` string array. This does not make source coverage
 incomplete or count as a tool error: return the actionable review with complete
 true when its source scope is finished, and recommendation comment. The publisher
-shows these limitations and blocks approval. Report a concrete test-coverage
+keeps these limitations as metadata and blocks approval. Report a concrete test-coverage
 defect as a finding when warranted; do not invent a defect simply because live
 evidence is unavailable. Never run or wait for tests to fill this field.
 

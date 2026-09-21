@@ -3,6 +3,7 @@ const {
     allocate,
     readStates,
     encodeState,
+    attachState,
     actionMarker,
     findAction
 } = require("../../state");
@@ -12,6 +13,49 @@ function comment(state, user = { id: 9, type: "Bot" }) {
     return { id: state.round, user, body: encodeState(state) };
 }
 describe("review publication state", function () {
+    it("reads review-body state and orders updates before later stale comment copies", function () {
+        const state = allocate(input, { comments: [] }, 9);
+        const review = {
+            id: 2,
+            user: { id: 9, type: "Bot" },
+            body: attachState("Finding body", {
+                ...state,
+                sequence: 2,
+                status: "complete"
+            })
+        };
+        const stale = { ...comment(state), id: 100 };
+        const latest = readStates(
+            { comments: [stale], reviews: [review] },
+            input,
+            9
+        ).at(-1);
+        assert.equal(latest.status, "complete");
+        assert.equal(latest.commentKind, "review");
+        assert.equal(latest.commentId, 2);
+    });
+    it("replaces only the current head metadata while preserving finding prose and older rounds", function () {
+        const old = {
+            ...allocate(input, { comments: [] }, 9),
+            head: "f".repeat(40)
+        };
+        const current = { ...old, head: input.head, round: 2 };
+        const body = attachState(attachState("Actual finding", old), current);
+        const updated = attachState(body, {
+            ...current,
+            status: "complete",
+            sequence: 1
+        });
+        assert.ok(updated.startsWith("Actual finding"));
+        const states = readStates(
+            [{ id: 1, user: { id: 9, type: "Bot" }, body: updated }],
+            input,
+            9
+        );
+        assert.equal(states.length, 2);
+        assert.equal(states[0].head, old.head);
+        assert.equal(states[1].status, "complete");
+    });
     it("allocates numeric rounds after the highest confirmed or uncertain intent", function () {
         const old = {
             ...allocate(input, { comments: [] }, 9),

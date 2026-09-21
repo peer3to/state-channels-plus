@@ -203,19 +203,11 @@ describe("review publisher accounting", function () {
         );
         wire.done();
     });
-    it("preserves the confirmed intent receipt when the next GitHub read fails", async function () {
+    it("does not create an intent comment when the prepublication read fails", async function () {
         const input = request();
         const records = [
             ...observation(input),
             ...observation(input),
-            {
-                path: `/repos/${input.repository.name}/issues/${input.pr}/comments`,
-                method: "POST",
-                response: {
-                    id: 90,
-                    html_url: `https://github.com/${input.repository.name}/pull/${input.pr}#issuecomment-90`
-                }
-            },
             {
                 path: `/repos/${input.repository.name}/pulls/${input.pr}`,
                 status: 503,
@@ -224,10 +216,7 @@ describe("review publisher accounting", function () {
         ];
         const { owner, wire } = publisher(input, records);
         await assert.rejects(owner.publish(result(input)), (error) => {
-            assert.equal(error.publication.status, "partial");
-            assert.equal(error.publication.receipt.complete, false);
-            assert.equal(error.publication.receipt.actions[0].id, 90);
-            assert.equal(error.publication.receipt.round, 1);
+            assert.equal(error.publication, undefined);
             return true;
         });
         wire.done();

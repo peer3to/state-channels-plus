@@ -63,6 +63,9 @@ class ReviewService {
                 path.resolve(__dirname, "../..")
             );
             const files = [
+                "SKILL.md",
+                "inherited/review-implementation/SKILL.md",
+                "inherited/review-implementation/example-review.md",
                 "references/automation.md",
                 "references/source-review.md",
                 "references/model-output.md"

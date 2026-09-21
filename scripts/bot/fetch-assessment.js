@@ -9,7 +9,7 @@ const { safeText } = require("./review-format");
 
 const DOCUMENT = "<!-- peer3-assessment:v1 -->";
 function assessmentFindings(request, observations, botId) {
-    const state = readStates(observations.comments, request, botId)
+    const state = readStates(observations, request, botId)
         .filter((item) => item.status !== "intent")
         .at(-1);
     check(state, "CONTEXT_UNAVAILABLE");

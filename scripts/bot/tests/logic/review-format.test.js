@@ -117,15 +117,16 @@ describe("review format", function () {
             },
             "author"
         );
-        assert.equal(output.split("**Human assessment needed**").length, 2);
-        assert.ok(output.includes("🙋 **Human assessment needed**"));
+        assert.equal(output.split("**HUMAN DECISION REQUIRED**").length, 2);
+        assert.ok(output.includes("🧑 **HUMAN DECISION REQUIRED**"));
+        assert.ok(output.includes("STOP — implementing agents"));
+        assert.ok(output.includes("wait for their explicit comment"));
+        assert.ok(output.includes("not human consent"));
         assert.ok(output.includes("**Decision:** Should retries stop?"));
         assert.ok(output.includes("Should retries stop?"));
         assert.ok(output.includes("@author"));
         assert.ok(!output.includes("Human reply\nFinding:"));
-        assert.ok(
-            output.includes("must point out this question to their human")
-        );
+        assert.ok(output.includes("Ask your human"));
         assert.ok(output.includes("no special reply format is required"));
     });
 });

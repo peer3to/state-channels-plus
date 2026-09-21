@@ -9,9 +9,37 @@ const MARKER = /<!-- peer3-review-state:v1 ([A-Za-z0-9+/=]+) -->/g;
 function encodeState(state) {
     return `<!-- peer3-review-state:v1 ${Buffer.from(JSON.stringify(state)).toString("base64")} -->`;
 }
+function attachState(body, state) {
+    // Keep other heads' history for round allocation and finding reconciliation.
+    const retained = body
+        .replace(MARKER, (marker, encoded) => {
+            const previous = JSON.parse(
+                Buffer.from(encoded, "base64").toString("utf8")
+            );
+            return previous.repositoryId === state.repositoryId &&
+                previous.pr === state.pr &&
+                previous.head === state.head
+                ? ""
+                : marker;
+        })
+        .trim();
+    return `${retained}\n\n${encodeState(state)}`;
+}
 function readStates(comments, request, botId) {
+    const containers = Array.isArray(comments)
+        ? comments.map((item) => ({ item, kind: "comment" }))
+        : [
+              ...(comments.comments || []).map((item) => ({
+                  item,
+                  kind: "comment"
+              })),
+              ...(comments.reviews || []).map((item) => ({
+                  item,
+                  kind: "review"
+              }))
+          ];
     const states = [];
-    for (const comment of comments) {
+    for (const { item: comment, kind } of containers) {
         if (comment.user?.id !== botId || comment.user.type !== "Bot") continue;
         for (const match of (comment.body || "").matchAll(MARKER)) {
             check(match[1].length <= 1024 * 1024, "INVALID_RESULT");
@@ -33,6 +61,9 @@ function readStates(comments, request, botId) {
             check(
                 Number.isSafeInteger(state.round) &&
                     state.round > 0 &&
+                    (state.sequence === undefined ||
+                        (Number.isSafeInteger(state.sequence) &&
+                            state.sequence >= 0)) &&
                     ["intent", "partial", "complete"].includes(state.status),
                 "INVALID_RESULT"
             );
@@ -40,15 +71,18 @@ function readStates(comments, request, botId) {
                 Array.isArray(state.findings) && Array.isArray(state.actions),
                 "INVALID_RESULT"
             );
-            states.push({ ...state, commentId: comment.id });
+            states.push({ ...state, commentId: comment.id, commentKind: kind });
         }
     }
     return states.sort(
-        (a, b) => a.round - b.round || a.commentId - b.commentId
+        (a, b) =>
+            a.round - b.round ||
+            (a.sequence || 0) - (b.sequence || 0) ||
+            a.commentId - b.commentId
     );
 }
 function allocate(request, observations, botId) {
-    const states = readStates(observations.comments, request, botId);
+    const states = readStates(observations, request, botId);
     const sameHead = states
         .filter((state) => state.head === request.head)
         .at(-1);
@@ -84,6 +118,7 @@ function findAction(observations, marker, botId) {
     );
 }
 module.exports = {
+    attachState,
     encodeState,
     readStates,
     allocate,
