@@ -292,11 +292,14 @@ class ReviewService {
             const previous = this.sessions.previous.get(
                 this.sessions.key(input)
             );
+            const baseline = await this.sessions.baseline(input);
+            // Recover older workers' cleared registry IDs from confirmed history.
+            execution.sessionId =
+                previous?.sessionId || baseline?.sessionId || null;
             execution.sessionId = await adapter.session(
-                previous?.sessionId || null,
+                execution.sessionId,
                 this.instructions
             );
-            const baseline = await this.sessions.baseline(input);
             const incremental =
                 baseline?.sessionId === execution.sessionId
                     ? tools.setBaseline(baseline)

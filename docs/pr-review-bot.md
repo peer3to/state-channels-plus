@@ -32,6 +32,13 @@ Tool-local invalid arguments, denied operations, unavailable public evidence and
 
 `adapters/codex.js` starts `codex app-server` with execution and unrelated tools disabled, then communicates through stdin/stdout. It initializes the app server, checks the account and model, and starts or resumes the PR's native thread.
 
+Native history responses are not subject to a report-size cap: a resumed thread
+can contain many rounds of source reads and reports. The adapter decodes UTF-8
+across pipe chunks and assembles each JSON frame once. Setup failures preserve
+the existing conversation ID; older cleared registry IDs can be recovered from
+the last confirmed publication baseline. This does not bypass report validation
+or change the CI result-transfer limit.
+
 `server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. A single fixed correction prompt may name invalid schema identifiers or missing discussion-accounting IDs. Initial and corrective turns share the model budget.
 
 ## CI setup

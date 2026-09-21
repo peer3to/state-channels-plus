@@ -67,7 +67,7 @@ function toolFailureResult(error) {
 class NativeProcess extends EventEmitter {
     child;
     exited;
-    buffer = "";
+    fragments = [];
     nextId = 1;
     pending = new Map();
     failure = null;
@@ -90,22 +90,25 @@ class NativeProcess extends EventEmitter {
         });
         // Provider diagnostics can contain credentials; only typed failures leave this owner.
         this.child.stderr.resume();
+        // Decode across pipe chunks: a UTF-8 character can straddle two reads.
+        this.child.stdout.setEncoding("utf8");
         this.child.stdout.on("data", (chunk) => {
-            this.buffer += chunk.toString("utf8");
-            if (Buffer.byteLength(this.buffer) > 8 * 1024 * 1024) {
-                this.fail(new ReviewError("INVALID_RESULT"));
-                return;
-            }
-            let newline;
-            while ((newline = this.buffer.indexOf("\n")) >= 0) {
-                const line = this.buffer.slice(0, newline);
-                this.buffer = this.buffer.slice(newline + 1);
+            // Resumed threads include accumulated history, not just one report.
+            // Assemble each frame once without imposing a review-size cutoff.
+            let start = 0,
+                newline;
+            while ((newline = chunk.indexOf("\n", start)) >= 0) {
+                this.fragments.push(chunk.slice(start, newline));
+                const line = this.fragments.join("");
+                this.fragments = [];
+                start = newline + 1;
                 try {
                     this.receive(JSON.parse(line));
                 } catch {
                     this.fail(new ReviewError("INVALID_RESULT"));
                 }
             }
+            if (start < chunk.length) this.fragments.push(chunk.slice(start));
         });
     }
     fail(error) {

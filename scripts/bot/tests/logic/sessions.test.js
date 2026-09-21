@@ -52,6 +52,34 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("preserves the native conversation across setup failure and worker restart", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            sessions.previous.set(key, { sessionId: "existing-chat" });
+            await assert.rejects(
+                sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => {
+                        throw new Error("setup failed before resume");
+                    },
+                    async () => true
+                )
+            );
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            try {
+                await reopened.initialize();
+                assert.equal(
+                    reopened.previous.get(key).sessionId,
+                    "existing-chat"
+                );
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
     it("does not reuse an incomplete review that an older worker marked published", async function () {
         await fixture(async (sessions) => {
             const input = request();

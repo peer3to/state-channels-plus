@@ -210,7 +210,8 @@ class Sessions {
             correctionUsed: false,
             revision: 0,
             result: null,
-            sessionId: null,
+            // Setup failures must not discard the PR's existing conversation.
+            sessionId: this.previous.get(key)?.sessionId || null,
             closed: false,
             timer: null,
             validationStarted: null,

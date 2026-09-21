@@ -13,6 +13,59 @@ function config(extra = {}) {
     };
 }
 describe("review native adapter controls", function () {
+    it("accepts resumed native history larger than eight megabytes without corrupting split UTF-8", async function () {
+        const child = new NativeProcess(
+            process.execPath,
+            [
+                "-e",
+                `
+            process.stdin.once("data", data => {
+                const request = JSON.parse(data);
+                const frame = Buffer.from(JSON.stringify({id: request.id, result: {
+                    thread: {id: "same-chat", history: "x".repeat(12 * 1024 * 1024) + "🧑"}
+                }}) + "\\n");
+                const split = frame.indexOf(Buffer.from("🧑")) + 2;
+                process.stdout.write(frame.subarray(0, split), () => {
+                    setTimeout(() => process.stdout.write(frame.subarray(split)), 10);
+                });
+            });
+        `
+            ],
+            { env: {} }
+        );
+        try {
+            const response = await child.request("thread/resume", {
+                threadId: "same-chat"
+            });
+            assert.equal(response.thread.id, "same-chat");
+            assert.equal(
+                response.thread.history,
+                "x".repeat(12 * 1024 * 1024) + "🧑"
+            );
+            assert.equal(child.failure, null);
+        } finally {
+            await child.stop(1000);
+        }
+    });
+    it("still rejects malformed native JSON frames", async function () {
+        const child = new NativeProcess(
+            process.execPath,
+            [
+                "-e",
+                `
+            process.stdin.once("data", () => process.stdout.write("not-json\\n"));
+        `
+            ],
+            { env: {} }
+        );
+        try {
+            await assert.rejects(child.request("thread/read", {}), {
+                code: "INVALID_RESULT"
+            });
+        } finally {
+            await child.stop(1000);
+        }
+    });
     it("uses codex from PATH and a runtime under the worker review directory", function () {
         const value = configuration(config());
         assert.equal(value.codexPath, "codex");
