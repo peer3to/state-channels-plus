@@ -20,6 +20,15 @@ function state(overrides = {}) {
     };
 }
 describe("review advisory approval", function () {
+    it("blocks approval for a complete source review with runtime verification gaps", function () {
+        const input = state();
+        input.result.coverage.verificationMissing = [
+            "Live acceptance not observed"
+        ];
+        assert.equal(canApprove(input), false);
+        input.result.coverage.verificationMissing = [];
+        assert.equal(canApprove(input), true);
+    });
     it("permits a complete agent approval with current code and no open findings", function () {
         assert.equal(canApprove(state()), true);
     });

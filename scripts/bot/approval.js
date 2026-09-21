@@ -11,6 +11,7 @@ function canApprove({
         result.recommendation === "approve" &&
         result.coverage.complete &&
         !result.coverage.missing.length &&
+        !result.coverage.verificationMissing?.length &&
         result.evidence.errors.length === 0 &&
         result.findings.every((finding) =>
             ["fixed", "disagreement"].includes(finding.status)

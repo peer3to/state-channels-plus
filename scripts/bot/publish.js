@@ -318,6 +318,14 @@ class Publisher {
                 );
             const body = [
                 ...responses,
+                ...(result.coverage.verificationMissing?.length
+                    ? [
+                          "## Verification limitations\n\n" +
+                              result.coverage.verificationMissing
+                                  .map((item) => `- ${safeText(item)}`)
+                                  .join("\n")
+                      ]
+                    : []),
                 "Human review still required.",
                 batchMarker
             ].join("\n\n");

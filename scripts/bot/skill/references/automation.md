@@ -56,6 +56,11 @@ Mode is only for composing the permitted source/public-read and report tools.
 Do not wait or poll for pending CI checks to complete, including checks downstream
 of this review. Record the observed status and missing evidence and return the
 source review. Missing test evidence is not permission to run tests or claim a pass.
+Source-review completeness and runtime verification are separate. Missing live
+acceptance evidence, pending downstream CI, or unexecuted tests do not invalidate
+a finished source review. Record them in `coverage.verificationMissing`, not
+`coverage.missing` or tool errors; publish actionable findings with recommendation
+comment. Only unfinished source/discussion review makes coverage incomplete.
 The controller-selected reasoning effort takes precedence over inherited defaults.
 
 The controller-bound input includes `modelBudgetRemainingMs` and `modelDeadlineUtc`.

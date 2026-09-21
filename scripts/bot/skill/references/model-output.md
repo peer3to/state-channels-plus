@@ -46,7 +46,18 @@ or null; humanAssessment is accepted, insufficient, conflict or null. Do not cop
 whole findings into accounting. Preserve unchanged accounting only when the exact
 source revision still matches. Coverage lists inspected surfaces, never guessed
 ones. Recommendation is comment, or approve only when the existing approval rules
-are satisfied. Missing evidence belongs in missing/errors and complete must be false.
+are satisfied. `coverage.complete` means the source and discussion review is
+complete, not that runtime acceptance has passed. Use `coverage.missing` only for
+unread source, required discussion, or unfinished review surfaces; those make
+complete false. Tool failures belong in errors.
+
+Put absent, pending or unverified CI/live acceptance evidence in the optional
+`coverage.verificationMissing` string array. This does not make source coverage
+incomplete or count as a tool error: return the actionable review with complete
+true when its source scope is finished, and recommendation comment. The publisher
+shows these limitations and blocks approval. Report a concrete test-coverage
+defect as a finding when warranted; do not invent a defect simply because live
+evidence is unavailable. Never run or wait for tests to fill this field.
 
 No publishing dashboard, manual CLI instructions or certainty percentages are
 needed in this automated report. The controller publishes, not the model.

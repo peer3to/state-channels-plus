@@ -77,6 +77,30 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("accepts completed source review Markdown with unverified live acceptance without retry", async function () {
+        const output = result(undefined, { recommendation: "comment" });
+        output.coverage.verificationMissing = ["Live acceptance not observed"];
+        const markdown =
+            output.report +
+            `\n<!-- review-result ${JSON.stringify({ coverage: output.coverage, accounting: [], recommendation: "comment", errors: [] })} -->\n`;
+        await fixture(
+            [markdown],
+            async ({ service, input, execution, model, root }) => {
+                const generated = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.deepEqual(
+                    generated.coverage.verificationMissing,
+                    output.coverage.verificationMissing
+                );
+                assert.equal(generated.coverage.complete, true);
+                assert.equal(model.prompts.length, 1);
+            }
+        );
+    });
     it("fails an explicitly incomplete model review without a paid format retry", async function () {
         const output = result(undefined, { recommendation: "comment" });
         output.coverage.complete = false;

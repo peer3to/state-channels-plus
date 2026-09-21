@@ -148,6 +148,12 @@ A valid future GitHub throttle reset is respected. Missing, invalid or expired r
 
 ## Cleanup and failures
 
+Source-review completion is separate from runtime verification. Missing live
+acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
+publishable, the review body lists verification limitations, and approval is blocked.
+Unread source/discussion still goes in `coverage.missing` and fails the round.
+The controller never reclassifies old incomplete reports by guessing from prose.
+
 Review context reads have no separate elapsed-time deadline. The overall model
 budget remains one hour, with a 30-second timeout per public HTTP request.
 Request/page/byte limits and GitHub rate-limit backoff remain enforced. Cleanup

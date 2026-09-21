@@ -571,6 +571,11 @@
                         "complete": {
                             "type": "boolean"
                         },
+                        "verificationMissing": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "maxItems": 10000
+                        },
                         "missing": {
                             "type": "array",
                             "items": {

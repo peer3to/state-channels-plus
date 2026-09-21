@@ -195,12 +195,21 @@ function result(value, expected) {
     );
     exact(
         value.coverage,
-        ["complete", "missing", "files", "lenses", "behaviors"],
+        [
+            "complete",
+            "missing",
+            "verificationMissing",
+            "files",
+            "lenses",
+            "behaviors"
+        ],
         "INVALID_RESULT"
     );
     check(
         typeof value.coverage.complete === "boolean" &&
             Array.isArray(value.coverage.missing) &&
+            (value.coverage.verificationMissing === undefined ||
+                Array.isArray(value.coverage.verificationMissing)) &&
             Array.isArray(value.coverage.files) &&
             Array.isArray(value.coverage.lenses) &&
             Array.isArray(value.coverage.behaviors),
@@ -208,7 +217,9 @@ function result(value, expected) {
     );
     check(
         value.recommendation !== "approve" ||
-            (value.coverage.complete && value.coverage.missing.length === 0),
+            (value.coverage.complete &&
+                value.coverage.missing.length === 0 &&
+                !value.coverage.verificationMissing?.length),
         "INVALID_RESULT"
     );
     check(
@@ -416,6 +427,7 @@ function result(value, expected) {
     }
     for (const list of [
         value.coverage.missing,
+        value.coverage.verificationMissing || [],
         value.coverage.files,
         value.coverage.lenses,
         value.coverage.behaviors,

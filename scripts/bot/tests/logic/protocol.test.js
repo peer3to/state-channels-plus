@@ -3,6 +3,25 @@ const p = require("../../protocol");
 const records = require("../fixtures/records");
 const { digest } = require("../../data");
 describe("review protocol", () => {
+    it("accepts verification limitations for comment reviews but rejects approval and malformed gaps", function () {
+        const output = records.result(undefined, { recommendation: "comment" });
+        output.coverage.verificationMissing = ["Live acceptance not observed"];
+        assert.equal(p.result(output, records.request()), output);
+        p.requireCompleteReview(output);
+        output.recommendation = "approve";
+        assert.throws(() => p.result(output, records.request()), {
+            code: "INVALID_RESULT"
+        });
+        output.recommendation = "comment";
+        output.coverage.verificationMissing = "not an array";
+        assert.throws(() => p.result(output, records.request()), {
+            code: "INVALID_RESULT"
+        });
+        output.coverage.verificationMissing = [42];
+        assert.throws(() => p.result(output, records.request()), {
+            code: "INVALID_RESULT"
+        });
+    });
     it("accepts one hour of model evidence and rejects durations above the limit", function () {
         const output = records.result();
         Object.assign(output.evidence.durations, {

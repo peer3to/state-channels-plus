@@ -30,6 +30,15 @@ describe("review accounting handoff", function () {
             method: "POST",
             path: `/repos/${input.repository.name}/${kind === "batch" ? "pulls" : "issues"}/${input.pr}/${kind === "batch" ? "reviews" : "comments"}`,
             inspect: (body) => {
+                if (kind === "batch") {
+                    assert.ok(
+                        body.body.includes("## Verification limitations")
+                    );
+                    assert.ok(
+                        body.body.includes("Live acceptance not observed")
+                    );
+                    assert.equal(body.event, "COMMENT");
+                }
                 if (kind !== "batch")
                     comments.push({
                         id: nextId++,
@@ -113,6 +122,10 @@ describe("review accounting handoff", function () {
                     );
                 }
             );
+            corrected.recommendation = "comment";
+            corrected.coverage.verificationMissing = [
+                "Live acceptance not observed"
+            ];
             const published = await publisher.publish(corrected);
             assert.equal(published.status, "complete");
             assert.equal(published.receipt.round, 1);
