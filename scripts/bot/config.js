@@ -18,7 +18,8 @@ const DEFAULTS = Object.freeze({
     contextRequests: 40,
     contextPages: 40,
     contextBytes: 8 * 1024 * 1024,
-    contextMs: 5 * 60 * 1000
+    // Backoff only after GitHub throttles without advertising a retry time.
+    throttleFallbackMs: 5 * 60 * 1000
 });
 function configuration(input) {
     exact(input, [

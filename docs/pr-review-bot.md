@@ -148,6 +148,12 @@ A valid future GitHub throttle reset is respected. Missing, invalid or expired r
 
 ## Cleanup and failures
 
+Review context reads have no separate elapsed-time deadline. The overall model
+budget remains one hour, with a 30-second timeout per public HTTP request.
+Request/page/byte limits and GitHub rate-limit backoff remain enforced. Cleanup
+retains its separate maintenance deadline. Legacy `elapsedMs` evidence is accepted
+when reading old results but is no longer emitted as a review context limit.
+
 Worker shutdown stops native review processes, closes sessions and releases review resources before closing its pool. Review-enabled graceful shutdown awaits that cleanup; a second interrupt can still force exit. An interrupted registry is quarantined until process termination is established. Do not delete locks as a substitute for stopping an active process.
 
 The native adapter explicitly enables `code_mode_host`: the model uses that gateway to call the constrained source tools. Shell execution, unified exec, browsers, apps and other unrestricted tools remain disabled. Disabling the gateway prevents even permitted source reads. Native shutdown waits within the termination budget for the entire process group to disappear, not just its leader. Cleanup failure keeps the PR quarantined but does not replace the original review error delivered to CI.

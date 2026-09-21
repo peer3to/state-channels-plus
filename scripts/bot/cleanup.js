@@ -58,14 +58,9 @@ class LifecycleCleanup {
             ).values()
         ];
         const budget = new ContextBudget(
-            {
-                ...this.limits,
-                contextMs: Math.min(
-                    this.limits.cleanupMs,
-                    this.limits.contextMs
-                )
-            },
-            this.accounting
+            this.limits,
+            this.accounting,
+            this.limits.cleanupMs
         );
         const summary = {
             registered: records.length,

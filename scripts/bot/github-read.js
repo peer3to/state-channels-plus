@@ -12,7 +12,7 @@ class PublicAccounting {
     // Public origins map to advertised or fallback retry timestamps in milliseconds.
     blockedUntil = new Map();
     constructor(limits = DEFAULTS) {
-        this.fallbackBlockMs = limits.contextMs;
+        this.fallbackBlockMs = limits.throttleFallbackMs;
     }
     beforeRequest(url) {
         const origin = new URL(url).origin;
@@ -70,14 +70,17 @@ class ContextBudget {
     sources = [];
     cacheHits = 0;
     shared;
-    constructor(limits, shared = null) {
+    // Only bounded maintenance passes supply a deadline; review owns its timeout.
+    deadlineMs;
+    constructor(limits, shared = null, deadlineMs = Infinity) {
         this.limits = limits;
         this.shared = shared;
+        this.deadlineMs = deadlineMs;
     }
     remaining() {
         return Math.max(
             0,
-            this.limits.contextMs - (performance.now() - this.started)
+            this.deadlineMs - (performance.now() - this.started)
         );
     }
     beforeRequest(url) {

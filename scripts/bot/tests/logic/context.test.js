@@ -272,9 +272,9 @@ describe("review public context", function () {
         assert.equal(owner.gathered(), false);
         records.done();
     });
-    it("rejects elapsed public context budget without dispatching another request", async function () {
+    it("preserves an explicit cleanup deadline without dispatching another request", async function () {
         const records = new RecordedGitHub([]);
-        const budget = new ContextBudget({ ...DEFAULTS, contextMs: 1 });
+        const budget = new ContextBudget(DEFAULTS, null, 1);
         const owner = new PublicGitHub(
             repository,
             6,
@@ -287,6 +287,23 @@ describe("review public context", function () {
             { code: "CONTEXT_BUDGET_EXCEEDED" }
         );
         assert.equal(budget.requests, 0);
+        records.done();
+    });
+    it("allows review context reads after five minutes of agent reasoning", async function () {
+        const records = new RecordedGitHub([
+            { path: `${prefix}/pulls/6/reviews`, response: [] }
+        ]);
+        const budget = new ContextBudget(DEFAULTS);
+        budget.started -= 10 * 60 * 1000;
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            budget,
+            records.exchange.bind(records)
+        );
+        assert.equal(budget.remaining(), Infinity);
+        await owner.read(`https://api.github.com${prefix}/pulls/6/reviews`);
+        assert.equal(budget.requests, 1);
         records.done();
     });
     it("does not credit an unread final discussion page as gathered context", async function () {
@@ -342,7 +359,10 @@ describe("review public context", function () {
         records.done();
     });
     it("resumes public reads after a throttle without reset information expires", async function () {
-        const shared = new PublicAccounting({ ...DEFAULTS, contextMs: 100 });
+        const shared = new PublicAccounting({
+            ...DEFAULTS,
+            throttleFallbackMs: 100
+        });
         const records = new RecordedGitHub([
             { path: `${prefix}/pulls/6/reviews`, status: 429, response: {} },
             { path: `${prefix}/pulls/6/reviews`, response: [] }
@@ -378,7 +398,10 @@ describe("review public context", function () {
         records.done();
     });
     it("uses a finite context window for a malformed throttle reset", function () {
-        const shared = new PublicAccounting({ ...DEFAULTS, contextMs: 100 });
+        const shared = new PublicAccounting({
+            ...DEFAULTS,
+            throttleFallbackMs: 100
+        });
         shared.observe(
             "https://github.com/peer3to/state-channels-plus/pull/6",
             new Response(null, {
@@ -401,7 +424,10 @@ describe("review public context", function () {
         assert.equal(shared.requests, 1);
     });
     it("preserves a future advertised reset when a later throttle has no reset", function () {
-        const shared = new PublicAccounting({ ...DEFAULTS, contextMs: 100 });
+        const shared = new PublicAccounting({
+            ...DEFAULTS,
+            throttleFallbackMs: 100
+        });
         const url = `https://api.github.com${prefix}/pulls/6`;
         const reset = Math.ceil(Date.now() / 1000) + 60;
         shared.observe(

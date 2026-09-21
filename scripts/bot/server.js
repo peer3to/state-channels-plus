@@ -327,8 +327,7 @@ class ReviewService {
                 limits: {
                     requests: budget.limits.contextRequests,
                     pages: budget.limits.contextPages,
-                    bytes: budget.limits.contextBytes,
-                    elapsedMs: budget.limits.contextMs
+                    bytes: budget.limits.contextBytes
                 },
                 sources: budget.sources.map((source) => source.url)
             };
@@ -416,8 +415,7 @@ class ReviewService {
             limits: {
                 requests: budget.limits.contextRequests,
                 pages: budget.limits.contextPages,
-                bytes: budget.limits.contextBytes,
-                elapsedMs: budget.limits.contextMs
+                bytes: budget.limits.contextBytes
             },
             cacheHits: budget.cacheHits,
             durations: {

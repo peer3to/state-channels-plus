@@ -499,7 +499,7 @@
                             "minimum": 1
                         }
                     },
-                    "required": ["requests", "pages", "bytes", "elapsedMs"]
+                    "required": ["requests", "pages", "bytes"]
                 },
                 "cacheHits": {
                     "type": "integer",
@@ -745,12 +745,7 @@
                                     "minimum": 1
                                 }
                             },
-                            "required": [
-                                "requests",
-                                "pages",
-                                "bytes",
-                                "elapsedMs"
-                            ]
+                            "required": ["requests", "pages", "bytes"]
                         },
                         "sources": {
                             "type": "array",
