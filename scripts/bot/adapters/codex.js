@@ -436,7 +436,7 @@ class CodexAdapter {
                     const started = await this.process.request("turn/start", {
                         threadId: this.threadId,
                         model: MODEL,
-                        effort: "xhigh",
+                        effort: this.config.effort,
                         approvalPolicy: "never",
                         environments: [],
                         input: [{ type: "text", text: prompt }]
