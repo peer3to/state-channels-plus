@@ -336,7 +336,7 @@ class ReviewService {
     }
     async generate(input, execution, source, outputRoot) {
         const generated = await execution.adapter.turn(
-            this.prompt +
+            this.currentPolicyPrompt(this.prompt) +
                 "\nController-bound input:\n" +
                 JSON.stringify({
                     ...source,
@@ -368,8 +368,9 @@ class ReviewService {
                 ids: ["schema:result"]
             };
             const corrected = await execution.adapter.turn(
-                protocol.correctionPrompt(correction, input) +
-                    this.remainingPrompt(execution),
+                this.currentPolicyPrompt(
+                    protocol.correctionPrompt(correction, input)
+                ) + this.remainingPrompt(execution),
                 execution.budget
             );
             return this.complete(input, execution, corrected, outputRoot);
@@ -457,7 +458,7 @@ class ReviewService {
     }
     async correct(input, execution, prompt) {
         const generated = await execution.adapter.turn(
-            prompt + this.remainingPrompt(execution),
+            this.currentPolicyPrompt(prompt) + this.remainingPrompt(execution),
             execution.budget
         );
         return this.complete(
@@ -466,6 +467,21 @@ class ReviewService {
             generated,
             execution.outputRoot,
             execution.revision + 1
+        );
+    }
+    currentPolicyPrompt(task) {
+        // Resume may retain the original developer instructions. Deliver current
+        // controller policy explicitly on every turn, without discarding history.
+        check(
+            typeof this.instructions === "string" &&
+                this.instructions.length > 0,
+            "INVALID_REQUEST"
+        );
+        return (
+            "Current controller review policy (supersedes earlier review-policy versions in this conversation):\n\n" +
+            this.instructions +
+            "\n\nCurrent task:\n" +
+            task
         );
     }
     remainingPrompt(execution) {

@@ -19,6 +19,8 @@ async function fixture(outputs, body) {
     const input = request();
     const model = new RecordedModelOutput(outputs);
     service.prompt = "Fixed source-only prompt.";
+    service.instructions =
+        "Current source-review policy: verificationMissing records runtime limitations separately.";
     const observations = new RecordedGitHub([
         {
             path: `/repos/${input.repository.name}/pulls/${input.pr}`,
@@ -77,6 +79,58 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("refreshes policy on the same session for resumed and accounting-correction turns", async function () {
+        await fixture(
+            [result(), result(), result()],
+            async ({ service, input, execution, model, root }) => {
+                await service.generate(input, execution, input, root);
+                const files = [
+                    "automation.md",
+                    "source-review.md",
+                    "model-output.md"
+                ];
+                service.instructions = (
+                    await Promise.all(
+                        files.map((file) =>
+                            fs.readFile(
+                                path.join(
+                                    __dirname,
+                                    "../../skill/references",
+                                    file
+                                ),
+                                "utf8"
+                            )
+                        )
+                    )
+                ).join("\n\n");
+                service.prompt = await fs.readFile(
+                    path.join(
+                        __dirname,
+                        "../../skill/references/review-prompt.md"
+                    ),
+                    "utf8"
+                );
+                const resumed = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                const corrected = await service.correct(
+                    input,
+                    execution,
+                    "Account for comment:12."
+                );
+                assert.equal(resumed.sessionId, "owned-session");
+                assert.equal(corrected.sessionId, resumed.sessionId);
+                assert.equal(model.prompts.length, 3);
+                assert.ok(model.prompts[1].includes(service.instructions));
+                assert.ok(model.prompts[2].includes(service.instructions));
+                assert.ok(model.prompts[1].includes(service.prompt));
+                assert.ok(!model.prompts[0].includes(service.instructions));
+            }
+        );
+    });
     it("accepts completed source review Markdown with unverified live acceptance without retry", async function () {
         const output = result(undefined, { recommendation: "comment" });
         output.coverage.verificationMissing = ["Live acceptance not observed"];
@@ -216,8 +270,15 @@ describe("review recorded native output boundary", function () {
                 assert.equal(output.revision, 1);
                 assert.equal(output.sessionId, "owned-session");
                 assert.equal(model.prompts.length, 2);
+                assert.ok(
+                    model.prompts.every((prompt) =>
+                        prompt.includes(service.instructions)
+                    )
+                );
                 assert.equal(
-                    model.prompts[1].split("\nController timing: ")[0],
+                    model.prompts[1]
+                        .split("\nController timing: ")[0]
+                        .split("\n\nCurrent task:\n")[1],
                     "Structured output failed these schema identifiers: schema:result. Read the original context through the permitted tools and return the complete corrected Markdown report with bookkeeping markers; do not duplicate prose as JSON findings."
                 );
                 const timing = JSON.parse(

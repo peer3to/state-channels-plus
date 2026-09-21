@@ -148,6 +148,11 @@ A valid future GitHub throttle reset is respected. Missing, invalid or expired r
 
 ## Cleanup and failures
 
+Every initial, resumed, format-correction and accounting-correction model turn
+includes the current controller-owned policy bundle in its input. Session history
+is preserved, but policy refresh does not rely only on `thread/resume` applying
+new developer instructions. Repository content cannot replace this bundle.
+
 Source-review completion is separate from runtime verification. Missing live
 acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
 publishable, the review body lists verification limitations, and approval is blocked.
