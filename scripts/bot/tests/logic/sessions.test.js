@@ -52,6 +52,79 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("migrates a confirmed legacy receipt before the next attempt overwrites the registry", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            await fs.writeFile(
+                path.join(sessions.root, `${key}.json`),
+                JSON.stringify({
+                    request: input,
+                    result: result(input),
+                    sessionId: "owned-session",
+                    status: "released"
+                })
+            );
+            await fs.writeFile(
+                path.join(
+                    sessions.root,
+                    `${key}-receipt-${input.attempt}.json`
+                ),
+                JSON.stringify({
+                    version: 1,
+                    binding: binding(input),
+                    kind: "review",
+                    complete: true,
+                    round: 1,
+                    actions: []
+                })
+            );
+            await sessions.initialize();
+            const recorded = JSON.parse(
+                await fs.readFile(
+                    path.join(sessions.root, `${key}-baseline.json`),
+                    "utf8"
+                )
+            );
+            assert.equal(recorded.head, input.head);
+            assert.equal(recorded.sessionId, "owned-session");
+        });
+    });
+    it("records an incremental baseline only after confirmed publication and removes it at cleanup", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async (execution) => {
+                    execution.sessionId = "same-chat";
+                    return result(input);
+                },
+                async () => true
+            );
+            const file = path.join(
+                sessions.root,
+                `${sessions.key(input)}-baseline.json`
+            );
+            await assert.rejects(fs.access(file), { code: "ENOENT" });
+            await sessions.acknowledge(input, output.executionId, {
+                version: 1,
+                binding: binding(input),
+                kind: "review",
+                complete: true,
+                round: 1,
+                actions: []
+            });
+            assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), {
+                head: input.head,
+                mergeBase: input.mergeBase,
+                sessionId: "same-chat",
+                round: 1
+            });
+            await sessions.removeRecords(sessions.key(input));
+            await assert.rejects(fs.access(file), { code: "ENOENT" });
+        });
+    });
     it("does not coalesce differing permitted operations", async function () {
         await separate({ operations: ["review"] });
     });

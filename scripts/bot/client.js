@@ -88,7 +88,12 @@ async function callService({
                         progress.attemptId === request.attempt
                     ) {
                         lastProgress = Date.now();
-                        onProgress("Review still running");
+                        const activity = progress.activity;
+                        onProgress(
+                            activity
+                                ? `Worker connected; ${activity.phase}; ${activity.completedItems} completed items, ${activity.toolCalls} tool calls; last model event ${activity.lastEventAt ? `${Math.max(0, Math.floor((Date.now() - activity.lastEventAt) / 1000))}s ago` : "not observed"}.`
+                                : "Worker connected; model progress unavailable."
+                        );
                     }
                 });
                 connection.on("payload", (message) => {
@@ -146,7 +151,7 @@ async function callService({
                 ) {
                     lastProgress = 0;
                     onProgress(
-                        "Review service activity is no longer verified."
+                        "Worker contact is no longer verified; model progress is unknown."
                     );
                 }
             }, limits.progressMs);

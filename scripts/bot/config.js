@@ -57,7 +57,7 @@ function configuration(input) {
         codexPath: input.codexPath || "codex",
         codexVersion: input.codexVersion || "0.154.0",
         model: MODEL,
-        effort: "high",
+        effort: "low",
         limits
     };
 }

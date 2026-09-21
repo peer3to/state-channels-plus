@@ -81,7 +81,13 @@ const HEADER_FIELDS = {
         "byteCount",
         "sha256"
     ],
-    REVIEW_PROGRESS: ["reviewVersion", "requestId", "attemptId", "executionId"],
+    REVIEW_PROGRESS: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "executionId",
+        "activity"
+    ],
     AUTH_HELLO: ["nonce", "publicKey"],
     AUTH_CHALLENGE: ["nonce", "publicKey", "proof"],
     AUTH_PROOF: ["proof"],

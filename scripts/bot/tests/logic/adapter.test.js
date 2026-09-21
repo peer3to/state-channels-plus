@@ -106,6 +106,6 @@ describe("review native adapter controls", function () {
             configuration(config({ model: "different-model" }))
         );
         assert.equal(configuration(config()).model, "gpt-6-astra");
-        assert.equal(configuration(config()).effort, "high");
+        assert.equal(configuration(config()).effort, "low");
     });
 });

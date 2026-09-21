@@ -77,6 +77,28 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("accepts a Markdown-only native turn without asking for duplicated JSON prose", async function () {
+        const original = result();
+        const markdown =
+            original.report +
+            `\n<!-- review-result ${JSON.stringify({ coverage: original.coverage, accounting: [], recommendation: "approve" })} -->\n`;
+        await fixture(
+            [markdown],
+            async ({ service, input, execution, model, root }) => {
+                const output = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.equal(model.prompts.length, 1);
+                assert.deepEqual(output.findings, []);
+                assert.equal(output.coverage.complete, true);
+                assert.equal(output.sessionId, "owned-session");
+                assert.equal(output.report.trim(), original.report.trim());
+            }
+        );
+    });
     it("provides the model its remaining budget and deadline", async function () {
         await fixture(
             [result()],
@@ -154,8 +176,15 @@ describe("review recorded native output boundary", function () {
                 assert.equal(output.sessionId, "owned-session");
                 assert.equal(model.prompts.length, 2);
                 assert.equal(
-                    model.prompts[1],
-                    "Structured output failed these schema identifiers: schema:result. Read the original context through the permitted tools and return a complete corrected structured result."
+                    model.prompts[1].split("\nController timing: ")[0],
+                    "Structured output failed these schema identifiers: schema:result. Read the original context through the permitted tools and return the complete corrected Markdown report with bookkeeping markers; do not duplicate prose as JSON findings."
+                );
+                const timing = JSON.parse(
+                    model.prompts[1].split("\nController timing: ")[1]
+                );
+                assert.ok(
+                    timing.modelBudgetRemainingMs > 0 &&
+                        timing.modelBudgetRemainingMs <= 1000
                 );
                 assert.equal(execution.budget.durations.length, 2);
                 assert.equal(execution.correctionUsed, true);

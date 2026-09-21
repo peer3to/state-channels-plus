@@ -149,7 +149,7 @@ function correctionPrompt(value, expected) {
     return (
         prefix +
         [...value.ids].sort().join(", ") +
-        ". Read the original context through the permitted tools and return a complete corrected structured result."
+        ". Read the original context through the permitted tools and return the complete corrected Markdown report with bookkeeping markers; do not duplicate prose as JSON findings."
     );
 }
 function result(value, expected) {

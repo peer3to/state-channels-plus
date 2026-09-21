@@ -1,6 +1,7 @@
 const { check } = require("./data");
 const { ReviewError } = require("./errors");
-// CI owns this module. The service, local client and model tools must never import it.
+// CI owns mutations. The service, review request client and model tools must never
+// import this module. The assessment fetch CLI uses a GET/query-only transport.
 // Preflight pagination and batched review publication are ported from the manual
 // publisher identified in skill/provenance.json; this port has independent upkeep.
 async function boundedJson(response) {
@@ -64,6 +65,7 @@ class GitHubWriter {
             /^\/(?:pulls|issues)\/[1-9][0-9]*(?:\/(?:comments|reviews)(?:\/[1-9][0-9]*(?:\/(?:dismissals|replies))?)?)?(?:\?per_page=100&page=[1-9][0-9]*)?$/.test(
                 suffix
             ) ||
+                /^\/issues\/comments\/[1-9][0-9]*$/.test(suffix) ||
                 /^\/collaborators\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/permission$/.test(
                     suffix
                 ) ||
@@ -72,7 +74,7 @@ class GitHubWriter {
                     suffix
                 )
         );
-        check(["GET", "POST", "PUT"].includes(method));
+        check(["GET", "POST", "PUT", "PATCH"].includes(method));
         check(++this.calls <= this.maxCalls, "CONTEXT_BUDGET_EXCEEDED");
         const response = await this.exchange(
             `https://api.github.com/repos/${this.request.repository.name}${suffix}`,
@@ -254,6 +256,43 @@ class GitHubWriter {
         );
         return this.api(`/issues/${this.request.pr}/comments`, {
             method: "POST",
+            body: { body }
+        });
+    }
+    async editGeneral(source, body) {
+        check(
+            source && ["comment", "review"].includes(source.kind),
+            "INVALID_RESULT"
+        );
+        check(
+            source.item.user?.id === this.botId &&
+                source.item.user.type === "Bot",
+            "UNAUTHORIZED"
+        );
+        check(
+            typeof body === "string" && body.length <= 65536,
+            "INVALID_RESULT"
+        );
+        const route =
+            source.kind === "comment"
+                ? `/issues/comments/${source.item.id}`
+                : `/pulls/${this.request.pr}/reviews/${source.item.id}`;
+        const fresh = await this.api(route);
+        check(
+            fresh.id === source.item.id &&
+                fresh.user?.id === this.botId &&
+                fresh.user.type === "Bot",
+            "UNAUTHORIZED"
+        );
+        check(fresh.body === source.item.body, "CONTEXT_UNAVAILABLE");
+        if (source.kind === "comment")
+            check(
+                fresh.issue_url ===
+                    `https://api.github.com/repos/${this.request.repository.name}/issues/${this.request.pr}`,
+                "UNAUTHORIZED"
+            );
+        return this.api(route, {
+            method: source.kind === "comment" ? "PATCH" : "PUT",
             body: { body }
         });
     }

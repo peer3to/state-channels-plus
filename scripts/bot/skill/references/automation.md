@@ -1,8 +1,9 @@
 # Automated source-only review, version 1
 
 This file overrides manual execution and publication instructions in this bundle.
-Use the full review lenses, evidence standards, timeline, uncertainty explanations,
-specification checks and Studio schema 2 format in the inherited skills.
+Use references/source-review.md for review lenses and follow-up scope, and
+references/model-output.md for the single Markdown output format. The automated
+controller does not load the manual checkout, test-running or publication workflow.
 
 ## Findings and publication — overrides inherited output rules
 
@@ -10,8 +11,10 @@ Publish only actionable defects, concrete improvements and unresolved human
 decisions. Omit green praise, clean-section summaries and "No change required"
 cards. Still inspect every applicable lens and record coverage in the structured
 coverage fields; an empty section does not need to appear in the report. Do not
-invent a finding to fill a section. Retain accounting for prior findings, including
-fixed/disagreed items, without turning those dispositions into fresh praise cards.
+invent a finding to fill a section. Account for findings being fixed/disagreed in
+this round without turning those dispositions into fresh praise cards. Already
+closed findings need no new card or finding accounting unless they recur or still
+require a Human decision.
 
 Do not include certainty percentages in findings, summaries or examples. Explain
 what is confirmed and what remains uncertain in words. Use severity emojis and
@@ -32,8 +35,9 @@ in the diff; never fabricate an anchor. Use general findings only for cross-cutt
 issues or when there is no valid right-side diff location, and explain why.
 
 For a human decision, include `🙋 **Human assessment needed**` beside the lead and
-populate structured `human.required`, `question`, `reason`, `revision` and
-`authority`. State the exact decision, alternatives and recommendation with its
+populate the finding metadata's `decision` object as specified in model-output.md
+(the converter produces structured `human` fields). State the exact decision,
+alternatives and recommendation with its
 trade-offs. Do not treat an unanswered question as a proven defect or invent consent.
 These headings, emojis and explanatory detail take precedence over inherited
 brevity or no-formatting advice.
@@ -55,7 +59,7 @@ source review. Missing test evidence is not permission to run tests or claim a p
 The controller-selected reasoning effort takes precedence over inherited defaults.
 
 The controller-bound input includes `modelBudgetRemainingMs` and `modelDeadlineUtc`.
-Finish and return the structured report before that deadline, leaving time for a
+Finish and return the Markdown report before that deadline, leaving time for a
 possible format correction within the same budget. The deadline is enforced even
 while thinking or using tools; reasoning effort does not extend it. If coverage
 cannot be completed in time, return an honest incomplete report listing the missing
@@ -83,7 +87,7 @@ explicit disposition and response or no-action reason. Bot-generated containers,
 receipts and response copies are not new obligations. Semantic assessment is yours;
 the publisher verifies structural accounting and permitted actions independently.
 
-Use structured Human fields for any question requiring a human decision. Do not
+Use the structured `decision` metadata for any question requiring a human decision. Do not
 write control blocks, reply templates or live mentions into free-form prose. Never
 invent or post consent. Assess ordinary discussion and whether the current code follows the stated decision.
 No special reply template, maintainer list or account-permission check is required.
@@ -93,6 +97,7 @@ The structured authority label describes the intended audience only. Explain
 your assessment and keep unanswered or conflicting decisions visible. Recommend approval only with complete evidence,
 all items accounted for and no unresolved actionable finding or Human decision.
 
-Return exactly the versioned structured result and matching Markdown report. A
+Return exactly one Markdown report with its bookkeeping markers. The controller
+converts it into the versioned structured result without another model call. A
 fixed corrective message may contain schema or source identifiers only. Re-read
 original sources with permitted tools; it grants no new capability or time budget.

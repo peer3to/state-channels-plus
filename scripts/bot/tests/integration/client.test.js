@@ -112,7 +112,9 @@ describe("review client visible activity", function () {
                 onProgress: (line) => lines.push(line)
             });
             assert.deepEqual(output.binding, result(input).binding);
-            assert.ok(lines.includes("Review still running"));
+            assert.ok(
+                lines.includes("Worker connected; model progress unavailable.")
+            );
             assert.ok(
                 lines.every(
                     (line) =>
@@ -136,6 +138,41 @@ describe("review client visible activity", function () {
             await assert.rejects(callService(options), {
                 code: "INVALID_RESULT"
             });
+        });
+    });
+    it("shows native activity counters without treating the heartbeat as model work", async function () {
+        await fixture(async ({ options, serve, input }) => {
+            const lines = [];
+            serve(async (connection, message) => {
+                await connection.progress(
+                    message.requestId,
+                    message.attemptId,
+                    "execution-1",
+                    {
+                        phase: "model-event",
+                        lastEventAt: Date.now() - 120000,
+                        completedItems: 3,
+                        toolCalls: 2
+                    }
+                );
+                await connection.send(
+                    "result",
+                    message.requestId,
+                    message.attemptId,
+                    result(input)
+                );
+            });
+            await callService({
+                ...options,
+                onProgress: (line) => lines.push(line)
+            });
+            assert.ok(
+                lines.some((line) =>
+                    /3 completed items, 2 tool calls; last model event 12[0-9]s ago/.test(
+                        line
+                    )
+                )
+            );
         });
     });
 });

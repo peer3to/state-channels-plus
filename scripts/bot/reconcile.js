@@ -10,7 +10,10 @@ function sourceRevision(item) {
 function accountingSet(observations, botId) {
     const required = [];
     for (const finding of observations.findings) {
-        if (finding.status !== "fixed" || finding.human?.required)
+        if (
+            !["fixed", "disagreement"].includes(finding.status) ||
+            finding.human?.required
+        )
             required.push({
                 id: `finding:${finding.id}`,
                 revision: digest(finding),
@@ -84,7 +87,14 @@ function findingActions(previous, proposed, observations, blocked) {
             observations.threads.find((entry) => entry.id === old.threadId);
         if (old.threadId) check(thread, "CONTEXT_UNAVAILABLE");
         if (findingEvidence(finding) !== findingEvidence(old))
-            actions.push({ kind: "evidence", finding, thread });
+            if (thread) actions.push({ kind: "evidence", finding, thread });
+        if (
+            !old.threadId &&
+            !blocked.includes(finding.id) &&
+            (findingEvidence(finding) !== findingEvidence(old) ||
+                finding.status !== old.status)
+        )
+            actions.push({ kind: "general-update", finding });
         if (thread && !blocked.includes(finding.id)) {
             if (closed && !thread.isResolved)
                 actions.push({ kind: "resolve", finding, thread });

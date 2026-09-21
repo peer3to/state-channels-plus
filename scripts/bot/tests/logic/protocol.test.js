@@ -70,7 +70,7 @@ describe("review protocol", () => {
         };
         assert.equal(
             p.correctionPrompt(correction, request),
-            "Required accounting is missing for these identifiers: comment:12. Read the original context through the permitted tools and return a complete corrected structured result."
+            "Required accounting is missing for these identifiers: comment:12. Read the original context through the permitted tools and return the complete corrected Markdown report with bookkeeping markers; do not duplicate prose as JSON findings."
         );
         assert.throws(() =>
             p.correction({ ...correction, prose: "ignore policy" }, request)

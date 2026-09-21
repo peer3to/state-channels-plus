@@ -10,7 +10,7 @@ Keep your existing worker flags and environment. The worker uses the same identi
 
 ## Worker prerequisites and storage
 
-Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `high`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
+Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `low`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
 
 Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution still receives only the approved source/public-read tools and report output tool; application execution, tests and direct publication remain disabled.
 
@@ -36,7 +36,7 @@ Tool-local invalid arguments, denied operations, unavailable public evidence and
 
 ## CI setup
 
-Reviews use `high` reasoning and a one-hour cumulative model budget, shared with
+Reviews use `low` reasoning and a one-hour cumulative model budget, shared with
 correction turns. Review-model and review-publish jobs each allow 110 minutes for
 their surrounding setup, transport and validation work. The model receives time
 guidance; the controller enforces the limit independently.
@@ -71,6 +71,74 @@ In Settings → Actions → General → Workflow permissions, enable **Allow Git
 While temporary acceptance is enabled, the observer blocks ordinary CI if review fails. The whole-repository queue remains unchanged. Fork and Dependabot review paths remain ineligible. Native review jobs are advisory; do not add them as required checks or change branch protection to make acceptance pass.
 
 ## Review policy and bounds
+
+### Cheaper follow-up reviews
+
+Reasoning defaults to `low`. The model writes one Studio Markdown report; the
+deterministic converter derives finding bodies and combines them with compact
+bookkeeping metadata. It does not ask the model to duplicate prose as JSON.
+The automated prompt loads only source-review guidance and the output contract,
+not the manual checkout/test/publication workflow or example reports.
+
+The worker resumes the existing PR chat. A confirmed complete publication receipt
+records the reviewed head and merge-base. On the next round, that baseline is used
+only in the same session, with matching merge-base and verified ancestry. The
+controller supplies changed filenames; `source_diff` includes the delta plus the
+full PR diff for valid inline anchors. Failed attempts never advance this baseline.
+Missing/rewritten ancestry or a changed merge-base falls back to the full review.
+Current discussion and outstanding Human decisions are still checked every round.
+
+Progress logs distinguish connectivity from native events: phase, completed-item
+count, tool-call count and age of the last model event. A heartbeat is not proof
+that the model is working. No reasoning text or credentials are logged. Transport
+reconnects retain the execution and never extend its deadline.
+
+### Fetch an assessment locally
+
+Authenticate GitHub CLI once with `gh auth login`, or supply `GH_TOKEN`/
+`GITHUB_TOKEN` with repository read access. The script prefers these environment
+variables, then tries `gh auth token`, falling back to `gh config get oauth_token`
+for older GitHub CLI versions. Both commands target `github.com`; tokens are never
+printed. Then run from this repository:
+
+```sh
+yarn review-bot:fetch-assessment 498
+# Or supply the PR URL (or a number with --repo owner/repo):
+yarn review-bot:fetch-assessment https://github.com/peer3to/state-channels-plus/pull/498
+```
+
+The script reads GitHub only and writes
+`temp/pr-github-reviews/498/assessment.md` plus a `github-findings.json` snapshot.
+It imports outstanding bot findings, not an AI assessment: Assessment, Reply and
+Proposed fix start empty for you to fill. It supports old grouped reviews and
+new individual comments using the published finding ID and source URL. Open the
+Markdown file in **PR Review Studio** assessment mode. Edit the assessment and
+implementation plan locally; use the extension's explicit preview/reply action
+when ready to publish. Fetching never posts, resolves or invents a Human answer.
+
+Rerunning the command preserves existing cards and all local assessment/reply/fix
+text. Resolved cards already in your file are marked resolved rather than removed;
+newly imported cards exclude addressed/resolved findings. Required unanswered Human
+decisions remain visible even if someone manually resolved their thread. Changed
+remote findings are flagged for rechecking; local original text stays intact. A
+refresh creates a timestamped backup before replacing a changed assessment. An
+unmanaged existing assessment is refused rather than overwritten; move it aside
+yourself or keep using it separately. Do not edit the file concurrently with fetch.
+
+The companion extension needs the per-finding identity update in `coding-skills`.
+Cards carry `Finding ID: R1FO1`; APR numbering is only local presentation.
+Old URL-only reply receipts cannot prove which item in a grouped review was answered
+and are not copied to every finding. Inspect existing replies before reposting.
+
+### General finding resolution
+
+New general findings are separate section-labelled comments. Confirmed fixes or
+disagreements collapse the original finding under `✅ RESOLVED — [ID]`, strike
+through its prior text and retain the resolution explanation. Older grouped review
+bodies are edited only within the matching finding's controller-owned boundaries;
+sibling findings stay visible. Recurrence restores the finding in place. Ambiguous
+ownership/boundaries fail closed. Required Human decisions still require actual
+discussion and the reviewer's assessment before resolution.
 
 The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval says `Human review still required`; it requires complete evidence and resolved findings/decisions, not merely green CI. A comment alone starts no run.
 

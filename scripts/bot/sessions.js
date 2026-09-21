@@ -85,6 +85,8 @@ class Sessions {
             );
             const key = name.slice(0, -5);
             this.previous.set(key, saved);
+            if (saved.request && saved.result && saved.sessionId)
+                await this.baseline(saved.request);
             if (saved.status !== "released")
                 this.slots.set(key, {
                     active: {
@@ -302,6 +304,43 @@ class Sessions {
             result: execution.result
         });
     }
+    async baseline(request) {
+        const key = this.key(request);
+        const read = async (name) => {
+            try {
+                return JSON.parse(
+                    await fs.readFile(
+                        await ownedPath(this.root, name, true),
+                        "utf8"
+                    )
+                );
+            } catch (error) {
+                if (error.code === "ENOENT") return null;
+                throw error;
+            }
+        };
+        const recorded = await read(`${key}-baseline.json`);
+        if (recorded) return recorded;
+        // Upgrade existing workers without discarding their last confirmed round.
+        const previous = await read(`${key}.json`);
+        if (!previous?.result || !previous.request || !previous.sessionId)
+            return null;
+        const receipt = await read(
+            `${key}-receipt-${previous.request.attempt}.json`
+        );
+        if (!receipt?.complete || receipt.kind !== "review") return null;
+        protocol.request(previous.request);
+        protocol.result(previous.result, previous.request);
+        protocol.receipt(receipt, previous.request);
+        const baseline = {
+            head: previous.request.head,
+            mergeBase: previous.request.mergeBase,
+            sessionId: previous.sessionId,
+            round: receipt.round
+        };
+        await writeJson(this.root, `${key}-baseline.json`, baseline);
+        return baseline;
+    }
     async correct(request, input, execute) {
         protocol.correction(input, request);
         const completed = this.corrections.get(digest(input));
@@ -417,6 +456,18 @@ class Sessions {
                 `${key}-receipt-${request.attempt}.json`,
                 receipt
             );
+        if (
+            receipt?.complete &&
+            receipt.kind === "review" &&
+            execution.result
+        ) {
+            await writeJson(this.root, `${key}-baseline.json`, {
+                head: request.head,
+                mergeBase: request.mergeBase,
+                sessionId: execution.sessionId,
+                round: receipt.round
+            });
+        }
         await this.finish(key, executionId);
     }
     async finish(key, id) {
@@ -495,6 +546,7 @@ class Sessions {
         for (const name of await fs.readdir(this.root)) {
             if (
                 name === `${key}.json` ||
+                name === `${key}-baseline.json` ||
                 (name.startsWith(`${key}-receipt-`) && name.endsWith(".json"))
             )
                 await fs.rm(await ownedPath(this.root, name), { force: true });

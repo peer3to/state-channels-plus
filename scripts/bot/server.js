@@ -16,6 +16,7 @@ const { CodexAdapter } = require("./adapters/codex");
 const { ReviewConnection } = require("./transport");
 const { bundleDigest } = require("./request");
 const { validateReport } = require("./review-format");
+const { decodeModelResult } = require("./markdown-result");
 const { acquireOsFileLock } = require("../e2e-parallel/distributed/hostLock");
 class ReviewService {
     config;
@@ -63,12 +64,8 @@ class ReviewService {
             );
             const files = [
                 "references/automation.md",
-                "SKILL.md",
-                "inherited/review-implementation/SKILL.md",
-                "inherited/review-implementation/example-review.md",
-                "inherited/no-ai-slop/SKILL.md",
-                "inherited/no-ai-slop/eval.md",
-                "references/publishing.md"
+                "references/source-review.md",
+                "references/model-output.md"
             ];
             this.instructions = (
                 await Promise.all(
@@ -169,7 +166,12 @@ class ReviewService {
                         )
                     )
                         connection
-                            .progress(requestId, attemptId, active.id)
+                            .progress(
+                                requestId,
+                                attemptId,
+                                active.id,
+                                active.adapter?.activity
+                            )
                             .catch(() => connection.close());
                 }, this.config.limits.progressMs);
                 let preparation;
@@ -291,6 +293,11 @@ class ReviewService {
                 previous?.sessionId || null,
                 this.instructions
             );
+            const baseline = await this.sessions.baseline(input);
+            const incremental =
+                baseline?.sessionId === execution.sessionId
+                    ? tools.setBaseline(baseline)
+                    : null;
             execution.nativeProcessPid = adapter.process.child.pid;
             execution.request = input;
             await this.sessions.persist(this.sessions.key(input), execution);
@@ -303,7 +310,7 @@ class ReviewService {
             return await this.generate(
                 input,
                 execution,
-                { ...input, base: tree.base },
+                { ...input, base: tree.base, incremental },
                 outputRoot
             );
         } catch (error) {
@@ -362,7 +369,8 @@ class ReviewService {
                 ids: ["schema:result"]
             };
             const corrected = await execution.adapter.turn(
-                protocol.correctionPrompt(correction, input),
+                protocol.correctionPrompt(correction, input) +
+                    this.remainingPrompt(execution),
                 execution.budget
             );
             return this.complete(input, execution, corrected, outputRoot);
@@ -375,13 +383,7 @@ class ReviewService {
         outputRoot,
         revision = execution.revision
     ) {
-        if (typeof generated === "string") {
-            try {
-                generated = JSON.parse(generated);
-            } catch {
-                check(false, "INVALID_RESULT");
-            }
-        }
+        generated = decodeModelResult(generated);
         check(
             generated &&
                 typeof generated === "object" &&
@@ -456,7 +458,7 @@ class ReviewService {
     }
     async correct(input, execution, prompt) {
         const generated = await execution.adapter.turn(
-            prompt,
+            prompt + this.remainingPrompt(execution),
             execution.budget
         );
         return this.complete(
@@ -465,6 +467,19 @@ class ReviewService {
             generated,
             execution.outputRoot,
             execution.revision + 1
+        );
+    }
+    remainingPrompt(execution) {
+        return (
+            "\nController timing: " +
+            JSON.stringify({
+                modelBudgetRemainingMs: Math.floor(
+                    execution.budget.remaining()
+                ),
+                modelDeadlineUtc: new Date(
+                    Date.now() + execution.budget.remaining()
+                ).toISOString()
+            })
         );
     }
     async maintain() {

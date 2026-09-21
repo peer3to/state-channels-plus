@@ -17,6 +17,7 @@ const {
 } = require("./review-format");
 const { enforceHumanState, humanBlockReasons } = require("./policy");
 const { canApprove } = require("./approval");
+const { findingSource, wrapFinding } = require("./finding-source");
 const {
     encodeState,
     readStates,
@@ -280,11 +281,32 @@ class Publisher {
                         "\n\n" +
                         actionMarker(this.request, "finding", finding.id)
                 }));
-            const general = renderGeneralSections(
-                rendered,
-                validateReport(result, this.request),
-                state.mappings
-            );
+            // Each general finding owns one comment. The same locator also reads
+            // older grouped review bodies when reconciling their stable IDs.
+            for (const finding of rendered.filter(
+                (item) => item.path === null
+            )) {
+                const marker = actionMarker(
+                    this.request,
+                    "finding",
+                    finding.id
+                );
+                if (!findAction(beforeBatch, marker, this.github.botId)) {
+                    const body = renderGeneralSections(
+                        [finding],
+                        validateReport(result, this.request),
+                        state.mappings
+                    );
+                    const action = await this.github.comment(
+                        wrapFinding(finding.id, body)
+                    );
+                    state.actions.push({
+                        kind: "review-comment",
+                        id: action.id,
+                        url: action.html_url
+                    });
+                }
+            }
             // safeText strips HTML comment syntax: these responses are
             // model-authored and land in a bot comment that also carries the
             // round state and action markers read back by state.js.
@@ -294,7 +316,6 @@ class Publisher {
                     (entry) => `${entry.sourceId}: ${safeText(entry.response)}`
                 );
             const body = [
-                general,
                 ...responses,
                 "Human review still required.",
                 batchMarker
@@ -327,7 +348,58 @@ class Publisher {
                 id: operation.finding.id,
                 evidence: findingEvidence(operation.finding)
             });
-            if (operation.kind === "evidence") {
+            if (operation.kind === "general-update") {
+                if (
+                    enforceHumanState(
+                        current.findings,
+                        result,
+                        observed
+                    ).includes(operation.finding.id)
+                ) {
+                    deferred = true;
+                    continue;
+                }
+                const source = findingSource(
+                    this.request,
+                    observed,
+                    this.github.botId,
+                    operation.finding
+                );
+                check(
+                    source && source.kind !== "inline",
+                    "CONTEXT_UNAVAILABLE"
+                );
+                const closed = ["fixed", "disagreement"].includes(
+                    operation.finding.status
+                );
+                const old = current.findings.find(
+                    (item) => item.id === operation.finding.id
+                );
+                const escape = (text) =>
+                    text
+                        .replaceAll("&", "&amp;")
+                        .replaceAll("<", "&lt;")
+                        .replaceAll(">", "&gt;");
+                const content = closed
+                    ? `<details>\n<summary>✅ RESOLVED — [${operation.finding.id}]</summary>\n\n<del>${escape(old.body).replaceAll("\n", "<br>\n")}</del>\n\n**Resolution:** ${safeText(operation.finding.body)}\n\n</details>`
+                    : renderFinding(operation.finding, current.pull.user.login);
+                const replacement = wrapFinding(
+                    operation.finding.id,
+                    `${content}\n\n${source.marker}\n${marker}`
+                );
+                const body =
+                    source.item.body.slice(0, source.start) +
+                    replacement +
+                    source.item.body.slice(source.end);
+                const action =
+                    findAction(observed, marker, this.github.botId) ||
+                    (await this.github.editGeneral(source, body));
+                state.actions.push({
+                    kind: "review-comment",
+                    id: action.id,
+                    url: action.html_url
+                });
+            } else if (operation.kind === "evidence") {
                 let action = findAction(observed, marker, this.github.botId);
                 if (!action) {
                     const body =

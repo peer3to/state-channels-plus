@@ -109,7 +109,17 @@ describe("review finding reconciliation", function () {
     it("excludes bot control containers while retaining external replies", function () {
         const required = accountingSet(
             {
-                findings: [previous],
+                findings: [
+                    previous,
+                    { ...previous, id: "R1CLOSED", status: "fixed" },
+                    { ...previous, id: "R1DISAGREED", status: "disagreement" },
+                    {
+                        ...previous,
+                        id: "R1HUMAN",
+                        status: "disagreement",
+                        human: { required: true }
+                    }
+                ],
                 comments: [
                     { id: 2, user: { id: 9 }, body: "control" },
                     { id: 3, user: { id: 7 }, body: "Please explain." }
@@ -121,7 +131,7 @@ describe("review finding reconciliation", function () {
         );
         assert.deepEqual(
             required.map((entry) => entry.id),
-            ["comment:3", "finding:R1TO1"]
+            ["comment:3", "finding:R1HUMAN", "finding:R1TO1"]
         );
     });
 });

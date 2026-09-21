@@ -252,6 +252,12 @@ class CodexAdapter {
     stopping = null;
     tools;
     setupDeadline = null;
+    activity = {
+        phase: "starting",
+        lastEventAt: null,
+        completedItems: 0,
+        toolCalls: 0
+    };
     constructor(config, tools) {
         this.config = config;
         this.tools = tools;
@@ -358,6 +364,7 @@ class CodexAdapter {
     }
     async turn(prompt, budget) {
         check(this.threadId, "INVALID_REQUEST");
+        this.activity.phase = "waiting-for-model";
         return budget.run(
             async () => {
                 let finish, fail;
@@ -385,6 +392,30 @@ class CodexAdapter {
                             notificationTurn !== startedId
                         )
                             return;
+                        if (
+                            message.params?.threadId === this.threadId &&
+                            [
+                                "item/started",
+                                "item/completed",
+                                "item/tool/call",
+                                "item/agentMessage/delta",
+                                "item/reasoning/summaryTextDelta",
+                                "item/reasoning/textDelta",
+                                "turn/completed"
+                            ].includes(message.method)
+                        ) {
+                            this.activity.lastEventAt = Date.now();
+                            if (message.method === "item/completed")
+                                this.activity.completedItems++;
+                            if (message.method === "item/tool/call")
+                                this.activity.toolCalls++;
+                            this.activity.phase =
+                                message.method === "turn/completed"
+                                    ? "completed"
+                                    : message.method === "item/tool/call"
+                                      ? "reading-source"
+                                      : "model-event";
+                        }
                         if (
                             message.method === "item/tool/call" &&
                             message.id !== undefined

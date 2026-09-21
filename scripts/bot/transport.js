@@ -161,10 +161,34 @@ class ReviewConnection extends EventEmitter {
         );
         if (kind === "REVIEW_PROGRESS") {
             check(body.length === 0 && ID.test(header.executionId || ""));
+            if (header.activity !== undefined) {
+                const activity = header.activity;
+                check(
+                    activity &&
+                        [
+                            "starting",
+                            "waiting-for-model",
+                            "reading-source",
+                            "model-event",
+                            "completed"
+                        ].includes(activity.phase)
+                );
+                check(
+                    activity.lastEventAt === null ||
+                        (Number.isSafeInteger(activity.lastEventAt) &&
+                            activity.lastEventAt > 0)
+                );
+                check(
+                    [activity.completedItems, activity.toolCalls].every(
+                        (value) => Number.isSafeInteger(value) && value >= 0
+                    )
+                );
+            }
             this.emit("progress", {
                 requestId: header.requestId,
                 attemptId: header.attemptId,
-                executionId: header.executionId
+                executionId: header.executionId,
+                ...(header.activity ? { activity: header.activity } : {})
             });
             return;
         }
@@ -260,12 +284,13 @@ class ReviewConnection extends EventEmitter {
         this.outgoing = send.catch(() => {});
         return send;
     }
-    progress(requestId, attemptId, executionId) {
+    progress(requestId, attemptId, executionId, activity) {
         return this.peer.send("REVIEW_PROGRESS", {
             reviewVersion: 1,
             requestId,
             attemptId,
-            executionId
+            executionId,
+            ...(activity ? { activity } : {})
         });
     }
     close() {

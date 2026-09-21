@@ -12,6 +12,7 @@ class SourceTools {
     closed = false;
     gatheringMs = 0;
     gatheringStarted = null;
+    baseline = null;
     constructor(checkout, request, publicGitHub, outputRoot) {
         this.checkout = checkout;
         this.request = request;
@@ -77,7 +78,54 @@ class SourceTools {
         }
         return matches;
     }
-    diff({ path }) {
+    setBaseline(baseline) {
+        this.baseline = null;
+        if (
+            !baseline ||
+            baseline.mergeBase !== this.request.mergeBase ||
+            !/^[a-f0-9]{40}$/.test(baseline.head)
+        )
+            return null;
+        try {
+            git(
+                [
+                    "merge-base",
+                    "--is-ancestor",
+                    baseline.head,
+                    this.request.head
+                ],
+                this.checkout
+            );
+        } catch {
+            return null;
+        }
+        this.baseline = baseline;
+        for (const path of git(
+            ["ls-tree", "-r", "--name-only", "-z", baseline.head],
+            this.checkout
+        )
+            .split("\0")
+            .filter(Boolean))
+            this.diffPaths.add(path);
+        return {
+            head: baseline.head,
+            round: baseline.round,
+            changedFiles: git(
+                [
+                    "diff",
+                    "--name-only",
+                    "-z",
+                    baseline.head,
+                    this.request.head,
+                    "--"
+                ],
+                this.checkout
+            )
+                .split("\0")
+                .filter(Boolean)
+        };
+    }
+    diff({ path }, delta = false) {
         check(
             this.request.readScope.includes("source") &&
                 this.diffPaths.has(path)
@@ -89,7 +137,9 @@ class SourceTools {
                 "--no-textconv",
                 "--no-color",
                 "--unified=3",
-                this.request.mergeBase,
+                delta && this.baseline
+                    ? this.baseline.head
+                    : this.request.mergeBase,
                 this.request.head,
                 "--",
                 path
@@ -129,7 +179,10 @@ class SourceTools {
         }
         if (name === "source_diff") {
             exact(input, ["path"]);
-            return this.diff(input);
+            const full = this.diff(input);
+            return this.baseline
+                ? `Changes since confirmed review ${this.baseline.head}:\n${this.diff(input, true)}\nFull PR diff (inline anchors):\n${full}`
+                : full;
         }
         if (name === "source_list") {
             exact(input, []);
