@@ -339,9 +339,24 @@ function renderGeneralSections(findings, parsed, mappings = {}) {
         .join("\n\n");
 }
 function renderFinding(finding, author) {
-    return [humanControl(finding, author), safeText(finding.body)]
-        .filter(Boolean)
-        .join("\n\n");
+    // Legacy cards without AI markers can include the Studio routing preamble.
+    // Strip only that leading wrapper; source links and examples in the finding stay.
+    let body = safeText(finding.body).trim();
+    body = body.replace(
+        /^\*\*\[[A-Z0-9]+\] (?:Inline comment|General PR comment)\*\*\s*\n(?:\s*(?:\*\*)?(?:Target|Destination):(?:\*\*)?[^\n]*\n)?\s*/,
+        ""
+    );
+    if (finding.human?.required) {
+        // The structured decision owns the published warning, including old drafts.
+        body = body
+            .replace(/🧑\s*\*\*HUMAN DECISION REQUIRED\*\*/g, "")
+            .replace(
+                /^\*\*STOP — implementing agents:\*\*[^\n]*(?:\n(?!\s*\n)[^\n]+)*/gm,
+                ""
+            )
+            .trim();
+    }
+    return [humanControl(finding, author), body].filter(Boolean).join("\n\n");
 }
 function validateReport(result, request) {
     const parsed = parseReview(result.report);

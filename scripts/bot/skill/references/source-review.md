@@ -12,13 +12,26 @@ demonstrated defects from decisions requiring human intent. Do not produce clean
 section cards, duplicate one issue across lenses, or pad the report with praise.
 
 On the first review inspect the whole PR diff and affected callers. On a resumed
-session reuse the established analysis. Start with current discussion and open
+session reuse only established analysis with an explicit coverage disposition.
+A publication receipt proves publication, not that the earlier review performed
+every audit in the current skill. Compare the earlier coverage with the inherited
+plan, contradictions, behavior-to-test, reuse, dead-code and documentation
+inventories. Complete missing audits over the full PR even when those files are
+unchanged. Do not treat an earlier short report or a list of lens names as evidence
+that their inventories were completed. Start with current discussion and open
 findings, then changes since the last confirmed published review. Inspect affected
-callers and regressions; revisit unchanged code only when new changes or discussion
-require it. A failed attempt is context, not a completed baseline. If the verified
+callers and regressions; revisit unchanged code when new changes, discussion or
+missing audit evidence require it. A failed attempt is context, not a completed baseline. If the verified
 baseline is unavailable, non-ancestral or has a different merge-base, inspect the
 full diff and say why. Always gather current discussion and verify source revisions
 before reusing prior accounting. Do not reread old drafts merely to rewrite them.
+
+Retain the concrete behavior-to-test and owner/caller dispositions in the report's
+coverage inventory so the next turn can reuse verified work. Inspect every
+applicable lens; finding count is neither a target nor a stopping condition. Give
+each independently evidenced coverage gap its own finding as the inherited skill
+requires, even when a related production defect is also reported. Do not collapse
+the Tests audit into generic advice to add tests to the few existing findings.
 
 Use the provided delta diff for review scope but the full PR diff for inline
 anchors. Keep existing finding IDs stable; omit already closed findings unless

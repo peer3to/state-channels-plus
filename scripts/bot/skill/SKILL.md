@@ -48,7 +48,7 @@ over-engineered.
 ## Evidence and human assessment
 
 For selectable Studio reviews, put `🧑 **HUMAN DECISION REQUIRED**` inside the existing AI marker block,
-next to the finding lead, with the `Decision:` sentence inside that same AI block. Never alter the card heading
+on its own first line before the finding lead, with the `Decision:` sentence inside that same AI block. Never alter the card heading
 `- [ ] **[ID] Inline comment**` / `General PR comment`: the Studio parser matches it literally and reads the
 severity and marker from the AI block. Keep the wrapper, JSON metadata, Human block, IDs, and
 publishing schema unchanged.
@@ -65,8 +65,8 @@ Do not assign certainty percentages. Explain evidence and uncertainty in words.
 
 **Mark every finding that needs an explicit human decision.** When the resolution depends on intent,
 policy, or a design trade-off not already settled by the specification or an explicit human decision, write the
-exact marker `🧑 **HUMAN DECISION REQUIRED**` right after the closing `**` of the bold lead (never inside the
-bold, which nests markup), and then one sentence starting
+exact marker `🧑 **HUMAN DECISION REQUIRED**` on its own first line before the finding lead,
+and then one sentence starting
 `Decision:` that states the question the human must answer. A confirmed finding that needs no decision must
 not carry the marker, so the marker alone is the list of things a human has to decide.
 

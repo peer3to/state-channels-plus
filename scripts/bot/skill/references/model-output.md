@@ -26,10 +26,17 @@ Group findings by descriptive `##` sections. Each card has this shape:
 Inline cards use `kind:"inline", "path":"relative/file.js", "line":42,
 "side":"RIGHT"` and `Inline comment` in the heading. Only real PR diff locations
 are valid. Human blocks are empty: never invent a human assessment.
-Findings requiring a human decision must visibly include
-`🧑 **HUMAN DECISION REQUIRED**` and the STOP warning from automation.md telling
+Keep the card heading, target and source preview outside the AI block. They are
+local routing/display metadata, not published prose. The AI block starts with the
+severity and finding ID, never `Inline comment`, `General PR comment` or `Target:`.
+Findings requiring a human decision instead start their AI block with
+`🧑 **HUMAN DECISION REQUIRED**` on its own first line, followed by the severity
+and finding ID. Include the STOP warning from automation.md telling
 implementing agents to wait for the human's explicit comment. Populate `decision`
 as well; prose alone does not activate the decision gate.
+The publisher normalizes this warning to one leading block from the structured
+decision. Keep the STOP warning in its own paragraph, separate from the evidence
+and proposed fix.
 
 Use existing published IDs verbatim on follow-up (for example R1FO1). Status is
 new, continued, fixed, recurred or disagreement. Include fixed/disagreement

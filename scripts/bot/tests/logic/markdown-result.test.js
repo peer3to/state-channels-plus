@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const { markdownResult, decodeModelResult } = require("../../markdown-result");
 const { result, request } = require("../fixtures/records");
-const { validateReport } = require("../../review-format");
+const { validateReport, renderFinding } = require("../../review-format");
 const control = {
     coverage: {
         complete: true,
@@ -20,6 +20,27 @@ function markdown(metadata = {}) {
     );
 }
 describe("Markdown review conversion", function () {
+    it("keeps Studio routing outside the published AI prose through conversion", function () {
+        const source = markdown({
+            kind: "inline",
+            path: "src/a.js",
+            line: 42,
+            side: "RIGHT"
+        })
+            .replace("General PR comment", "Inline comment")
+            .replace(
+                "  <!-- human:FO1:start -->",
+                "  **Target:** src/a.js:42\n\n  <!-- human:FO1:start -->"
+            );
+        const converted = markdownResult(source);
+        validateReport(result(request(), converted), request());
+        const body = renderFinding(converted.findings[0], "author");
+        assert.ok(!body.includes("Inline comment"));
+        assert.ok(!body.includes("Target:"));
+        assert.ok(body.includes("A problem with **one** owner."));
+        assert.equal(converted.findings[0].path, "src/a.js");
+        assert.equal(converted.findings[0].line, 42);
+    });
     it("derives one finding body from Markdown and validates the same report", function () {
         const converted = markdownResult(markdown());
         assert.equal(converted.findings.length, 1);

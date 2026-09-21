@@ -10,6 +10,56 @@ function report(input, finding) {
     return `<!-- pr-review-document ${JSON.stringify({ schema: 2, repo: input.repository.name, pr: input.pr, headSha: input.head, baseSha: input.base })} -->\n\n- [ ] **[TO1] General PR comment**\n\n  <!-- pr-review-finding {"id":"TO1","kind":"general"} -->\n\n  **Human**\n  <!-- human:TO1:start -->\n  <!-- human:TO1:end -->\n\n  <!-- ai:TO1:start -->\n  ${finding.body}\n  <!-- ai:TO1:end -->\n`;
 }
 describe("review format", function () {
+    it("omits legacy inline routing labels but preserves the finding and its source evidence", function () {
+        const prose =
+            "🟡 **[DY1] — Wrong approval wording.**\n\nSee [source](https://github.com/owner/repo/blob/sha/doc.md#L2).\n\n> **Fix DY1-FIX**\n> Describe the actual approval.";
+        const body = renderFinding(
+            {
+                body:
+                    "**[DY1] Inline comment**\nTarget: [doc.md:2](https://example.com) — `preview`\n" +
+                    prose
+            },
+            "author"
+        );
+        assert.equal(body, prose);
+    });
+    it("omits general routing labels without removing a substantive Target paragraph", function () {
+        const prose =
+            "🟠 **[FO1] — Cross-cutting defect.**\n\nTarget: the retry owner must preserve state.\n\n> **Fix FO1-FIX**\n> Repair it.";
+        assert.equal(
+            renderFinding(
+                {
+                    body:
+                        "**[FO1] General PR comment**\n\n**Destination:** General PR review comment.\n\n" +
+                        prose
+                },
+                "author"
+            ),
+            prose
+        );
+        assert.equal(renderFinding({ body: prose }, "author"), prose);
+    });
+    it("publishes one leading Human decision warning for a compliant model card", function () {
+        const output = renderFinding(
+            {
+                body: "🧑 **HUMAN DECISION REQUIRED**\n\n🟠 **[FO1] — Choose retry policy.**\n\nEvidence and alternatives.\n\n**STOP — implementing agents:** Ask your human\nand wait before implementing.\n\n> **Fix FO1-FIX**\n> Apply the chosen policy.",
+                human: {
+                    required: true,
+                    question: "Retry or stop?",
+                    reason: "The specification leaves this open."
+                }
+            },
+            "author"
+        );
+        assert.ok(output.startsWith("🧑 **HUMAN DECISION REQUIRED**\n"));
+        assert.equal(output.split("HUMAN DECISION REQUIRED").length, 2);
+        assert.equal(output.split("STOP — implementing agents").length, 2);
+        assert.ok(output.includes("🟠 **[FO1] — Choose retry policy.**"));
+        assert.ok(output.includes("Evidence and alternatives."));
+        assert.ok(
+            output.includes("> **Fix FO1-FIX**\n> Apply the chosen policy.")
+        );
+    });
     it("preserves report sections and keeps inline findings out of the general body", function () {
         const input = request();
         const finding = { body: "Problem, impact, and a concrete fix." };

@@ -44,7 +44,8 @@ explicit human decisions. If either settles the choice, cite it and proceed with
 that decision without asking again. Purely technical fixes within the established
 design need no new decision gate. Missing evidence alone is not a design choice;
 investigate or record the limitation rather than manufacture a decision request.
-For an unresolved design decision, include `🧑 **HUMAN DECISION REQUIRED**` beside the lead and
+For an unresolved design decision, start the AI block with
+`🧑 **HUMAN DECISION REQUIRED**` on its own first line, before the finding lead, and
 populate the finding metadata's `decision` object as specified in model-output.md
 (the converter produces structured `human` fields). State the exact decision,
 alternatives and recommendation with its

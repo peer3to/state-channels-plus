@@ -141,6 +141,17 @@ and are not copied to every finding. Inspect existing replies before reposting.
 
 ### General finding resolution
 
+The worker loads the full vendored `review-pr` and `review-implementation` skills
+from `coding-skills/luka/codex`, with the source-only automation overrides. Follow-up
+reviews reuse evidenced audit dispositions, not merely the prior publication:
+missing lens and behavior-to-test inventories must be completed across the PR.
+There is no finding-count cap. Clean sections and certainty percentages stay omitted.
+
+GitHub finding bodies omit Studio's `Inline comment`/`Target` routing labels.
+Unresolved design choices start with `🧑 **HUMAN DECISION REQUIRED**` and one
+controller-rendered STOP warning. Technical fixes and choices already settled by
+the specification or an explicit Human decision do not require another decision.
+
 New general findings are separate section-labelled comments. Confirmed fixes or
 disagreements collapse the original finding under `✅ RESOLVED — [ID]`, strike
 through its prior text and retain the resolution explanation. Older grouped review
