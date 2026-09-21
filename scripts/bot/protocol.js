@@ -672,6 +672,14 @@ function failureResult(value, expected) {
     }
     return value;
 }
+function requireCompleteReview(value) {
+    check(
+        value.coverage?.complete === true &&
+            value.coverage.missing.length === 0 &&
+            value.evidence?.errors?.length === 0,
+        "REVIEW_INCOMPLETE"
+    );
+}
 function failure(error, expected) {
     const value = {
         version: VERSION,
@@ -683,6 +691,7 @@ function failure(error, expected) {
     return failureResult(value, expected);
 }
 module.exports = {
+    requireCompleteReview,
     VERSION,
     request,
     result,

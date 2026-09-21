@@ -52,6 +52,33 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("does not reuse an incomplete review that an older worker marked published", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            const output = result(input, { recommendation: "comment" });
+            output.coverage.complete = false;
+            output.coverage.missing = ["Full source review"];
+            await fs.writeFile(
+                path.join(sessions.root, `${key}.json`),
+                JSON.stringify({
+                    request: input,
+                    result: output,
+                    sessionId: "old-chat"
+                })
+            );
+            await fs.writeFile(
+                path.join(sessions.root, `${key}-baseline.json`),
+                JSON.stringify({
+                    head: input.head,
+                    mergeBase: input.mergeBase,
+                    sessionId: "old-chat",
+                    round: 1
+                })
+            );
+            assert.equal(await sessions.baseline(input), null);
+        });
+    });
     it("migrates a confirmed legacy receipt before the next attempt overwrites the registry", async function () {
         await fixture(async (sessions) => {
             const input = request();

@@ -438,6 +438,7 @@ class ReviewService {
             errors: generated.evidence?.errors || []
         };
         protocol.result(generated, input);
+        protocol.requireCompleteReview(generated);
         check(
             validateReport(generated, input).document.baseSha ===
                 (execution.sourceBase || input.base),

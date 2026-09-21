@@ -160,6 +160,14 @@ CI artifact cleanup waits for its consumers and deletes only recorded run/attemp
 
 A failed model/review remains a failed native CI job. Inspect its sanitized error, worker logs and job summary. `LOGIN_EXPIRED` requires restoring the worker user's login; `SUBSCRIPTION_LIMIT` requires waiting for included usage; `MODEL_UNAVAILABLE` requires the supported CLI/model; context errors require inspecting the missing public evidence. Do not add credential or paid-route fallbacks to hide failures.
 
+An explicit incomplete review is `REVIEW_INCOMPLETE`, not a successful comment-only
+review. It receives no format retry and cannot enter publication bookkeeping or
+publish findings. The existing per-attempt failure notice is the only comment for
+that failed generation; retries of publication reuse it. Previously acknowledged
+incomplete reports do not qualify as incremental review baselines. PR browser-root
+URLs are read through the corresponding public REST PR endpoint, not GitHub's
+changing HTML shell; the discussion collections must still be read separately.
+
 ## Verification boundaries
 
 `yarn review-bot:test` exercises real local Git, filesystem, process, DHT and worker dispatch owners plus recorded GitHub boundaries. It does not prove a live model review or GitHub permissions. The temporary CI observer checks the actual implementation PR's producers and artifact deletion.

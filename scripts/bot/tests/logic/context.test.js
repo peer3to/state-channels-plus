@@ -11,6 +11,34 @@ const { RecordedGitHub } = require("../fixtures/github");
 const repository = "peer3to/state-channels-plus";
 const prefix = `/repos/${repository}`;
 describe("review public context", function () {
+    it("reads a PR browser URL through its structured public API resource", async function () {
+        const records = new RecordedGitHub([
+            {
+                path: `${prefix}/pulls/6`,
+                response: {
+                    number: 6,
+                    base: { repo: { full_name: repository } }
+                }
+            }
+        ]);
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            new ContextBudget(DEFAULTS),
+            records.exchange.bind(records)
+        );
+        const page = await owner.read(
+            `https://github.com/${repository}/pull/6`
+        );
+        assert.equal(page.data.number, 6);
+        assert.equal(
+            page.source.url,
+            `https://api.github.com${prefix}/pulls/6`
+        );
+        assert.equal(page.source.loaded, "data");
+        assert.equal(owner.gathered(), false);
+        records.done();
+    });
     it("counts public page and loaded discussion requests", async function () {
         const records = new RecordedGitHub([
             {
@@ -405,8 +433,8 @@ describe("review public context", function () {
         assert.equal(page.resolution, "unavailable");
     });
     it("keeps mixed complete API and HTML context incomplete", async function () {
-        const url = `https://github.com/${repository}/pull/6`;
-        const html = `<head><link rel="canonical" href="${url}"></head><div id="discussion_bucket">Review discussion</div>`;
+        const url = `https://github.com/${repository}/pull/6/conversation`;
+        const html = `<head><link rel="canonical" href="https://github.com/${repository}/pull/6"></head><div id="discussion_bucket">Review discussion</div>`;
         const records = new RecordedGitHub([
             {
                 path: `${prefix}/pulls/6`,
@@ -419,7 +447,7 @@ describe("review public context", function () {
             { path: `${prefix}/pulls/6/comments`, response: [] },
             { path: `${prefix}/pulls/6/reviews`, response: [] },
             {
-                path: `/${repository}/pull/6`,
+                path: `/${repository}/pull/6/conversation`,
                 rawBody: html,
                 headers: { "content-type": "text/html" }
             }

@@ -387,7 +387,11 @@ class PublicGitHub {
         return permittedUrl(url.href, this.repository, this.pr, this.head);
     }
     async read(input) {
-        const url = this.permitted(input).href;
+        let url = this.permitted(input).href;
+        // A PR browser link names the same resource as the structured API route.
+        // Do not depend on GitHub's changing HTML shell for this read.
+        if (url === `https://github.com/${this.repository}/pull/${this.pr}`)
+            url = `https://api.github.com/repos/${this.repository}/pulls/${this.pr}`;
         try {
             const page = await this.readWithinBudget(url);
             this.unavailable.delete(url);

@@ -77,6 +77,23 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("fails an explicitly incomplete model review without a paid format retry", async function () {
+        const output = result(undefined, { recommendation: "comment" });
+        output.coverage.complete = false;
+        output.coverage.missing = ["PR discussion and source diff"];
+        output.evidence.errors = ["Context retrieval failed"];
+        await fixture(
+            [output],
+            async ({ service, input, execution, model, root }) => {
+                await assert.rejects(
+                    service.generate(input, execution, input, root),
+                    { code: "REVIEW_INCOMPLETE" }
+                );
+                assert.equal(model.prompts.length, 1);
+                assert.equal(execution.correctionUsed, false);
+            }
+        );
+    });
     it("accepts a Markdown-only native turn without asking for duplicated JSON prose", async function () {
         const original = result();
         const markdown =
@@ -208,7 +225,7 @@ describe("review recorded native output boundary", function () {
             }
         );
     });
-    it("preserves valid incomplete coverage without converting it to approval", async function () {
+    it("fails incomplete coverage even when the model reports no tool errors", async function () {
         const generated = result();
         generated.recommendation = "comment";
         generated.coverage.complete = false;
@@ -216,14 +233,10 @@ describe("review recorded native output boundary", function () {
         await fixture(
             [generated],
             async ({ service, input, model, execution, root }) => {
-                const output = await service.generate(
-                    input,
-                    execution,
-                    input,
-                    root
+                await assert.rejects(
+                    service.generate(input, execution, input, root),
+                    { code: "REVIEW_INCOMPLETE" }
                 );
-                assert.equal(output.coverage.complete, false);
-                assert.equal(output.recommendation, "comment");
                 assert.equal(model.prompts.length, 1);
             }
         );

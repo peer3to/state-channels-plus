@@ -12,6 +12,8 @@ const MESSAGES = Object.freeze({
     CONTEXT_BUDGET_EXCEEDED: "The public context budget was exhausted.",
     CONTEXT_RATE_LIMITED: "Public context retrieval was rate limited.",
     CONTEXT_UNAVAILABLE: "Required public context is unavailable.",
+    REVIEW_INCOMPLETE:
+        "The agent did not complete the required review. No review findings were published.",
     ACCOUNTING_INCOMPLETE:
         "Required finding/comment accounting remains incomplete.",
     INVALID_REQUEST: "The review request is invalid.",

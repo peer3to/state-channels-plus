@@ -29,6 +29,58 @@ const comment = {
     updated_at: "2026-09-20T12:00:00Z"
 };
 describe("review publisher accounting", function () {
+    it("posts exactly one failure notice for an incomplete round even when publication retries", async function () {
+        const input = request();
+        const existing = {
+            id: 88,
+            user: { id: 9, type: "Bot" },
+            body: actionMarker(input, "unavailable", input.attempt)
+        };
+        const { owner, wire } = publisher(input, [
+            ...observation(input),
+            {
+                path: `/repos/${input.repository.name}/issues/${input.pr}/comments`,
+                method: "POST",
+                response: {
+                    id: 88,
+                    html_url:
+                        "https://github.com/peer3to/state-channels-plus/pull/6#issuecomment-88"
+                },
+                inspect: (body) =>
+                    assert.ok(body.body.includes(MESSAGES.REVIEW_INCOMPLETE))
+            },
+            ...observation(input, [existing])
+        ]);
+        const failure = {
+            version: 1,
+            binding: binding(input),
+            code: "REVIEW_INCOMPLETE",
+            message: MESSAGES.REVIEW_INCOMPLETE
+        };
+        assert.equal((await owner.notice(failure)).kind, "notice-only");
+        assert.equal((await owner.notice(failure)).actions[0].id, 88);
+        assert.equal(
+            wire.requests.filter(
+                (entry) =>
+                    entry.method === "POST" &&
+                    new URL(entry.url).pathname !== "/graphql"
+            ).length,
+            1
+        );
+        wire.done();
+    });
+    it("rejects incomplete reviews before any publication bookkeeping or findings", async function () {
+        const input = request();
+        const output = result(input, { recommendation: "comment" });
+        output.coverage.complete = false;
+        output.coverage.missing = ["Source review"];
+        const { owner, wire } = publisher(input, []);
+        await assert.rejects(owner.publish(output), {
+            code: "REVIEW_INCOMPLETE"
+        });
+        assert.equal(wire.requests.length, 0);
+        wire.done();
+    });
     it("holds every write when a current comment lacks explicit accounting", async function () {
         const input = request();
         const { owner, wire } = publisher(input, observation(input, [comment]));

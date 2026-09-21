@@ -320,9 +320,20 @@ class Sessions {
             }
         };
         const recorded = await read(`${key}-baseline.json`);
+        const previous = await read(`${key}.json`);
+        // Older workers could acknowledge incomplete reports as published reviews.
+        if (
+            previous?.result &&
+            (!recorded || recorded.head === previous.request?.head)
+        ) {
+            try {
+                protocol.requireCompleteReview(previous.result);
+            } catch {
+                return null;
+            }
+        }
         if (recorded) return recorded;
         // Upgrade existing workers without discarding their last confirmed round.
-        const previous = await read(`${key}.json`);
         if (!previous?.result || !previous.request || !previous.sessionId)
             return null;
         const receipt = await read(

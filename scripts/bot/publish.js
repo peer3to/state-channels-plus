@@ -105,6 +105,7 @@ class Publisher {
     }
     async inspect(result) {
         protocol.result(result, this.request);
+        protocol.requireCompleteReview(result);
         const parsed = validateReport(result, this.request);
         if (parsed.findings.some((finding) => finding.kind === "inline")) {
             check(this.policy.repoRoot, "INVALID_RESULT");
@@ -667,9 +668,19 @@ async function main() {
         if (error.publication) {
             output = error.publication;
             process.exitCode = 1;
-        } else if (error.code === "ACCOUNTING_INCOMPLETE" && mode === "inspect")
+        } else if (
+            ["ACCOUNTING_INCOMPLETE", "REVIEW_INCOMPLETE"].includes(
+                error.code
+            ) &&
+            mode === "inspect"
+        )
             output = { status: "accounting-failed" };
-        else if (error.code === "ACCOUNTING_INCOMPLETE" && mode === "publish") {
+        else if (
+            ["ACCOUNTING_INCOMPLETE", "REVIEW_INCOMPLETE"].includes(
+                error.code
+            ) &&
+            mode === "publish"
+        ) {
             output = {
                 status: "failed",
                 receipt: await owner.notice(protocol.failure(error, request))
