@@ -89,6 +89,9 @@ class NativeProcess extends EventEmitter {
             });
         });
         // Provider diagnostics can contain credentials; only typed failures leave this owner.
+        this.child.stdin.on("error", () =>
+            this.fail(new ReviewError("SERVICE_UNAVAILABLE"))
+        );
         this.child.stderr.resume();
         // Decode across pipe chunks: a UTF-8 character can straddle two reads.
         this.child.stdout.setEncoding("utf8");

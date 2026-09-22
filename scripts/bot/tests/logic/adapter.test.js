@@ -13,6 +13,29 @@ function config(extra = {}) {
     };
 }
 describe("review native adapter controls", function () {
+    it("rejects pending requests when the native child closes its input pipe", async function () {
+        const child = new NativeProcess(
+            process.execPath,
+            [
+                "-e",
+                "require('node:fs').closeSync(0); process.stdout.write(JSON.stringify({method:'ready'})+'\\n'); setInterval(()=>{},1000)"
+            ],
+            {}
+        );
+        try {
+            await new Promise((resolve, reject) => {
+                child.once("message", resolve);
+                child.once("failure", reject);
+            });
+            await assert.rejects(child.request("after-close", {}, 2000), {
+                code: "SERVICE_UNAVAILABLE"
+            });
+            assert.equal(child.pending.size, 0);
+            assert.equal(child.failure.code, "SERVICE_UNAVAILABLE");
+        } finally {
+            await child.stop(1000);
+        }
+    });
     it("accepts resumed native history larger than eight megabytes without corrupting split UTF-8", async function () {
         const child = new NativeProcess(
             process.execPath,

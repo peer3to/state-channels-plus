@@ -222,6 +222,7 @@ class Sessions {
         try {
             if (!(await candidate.isFresh(null)))
                 throw new ReviewError("STALE_HEAD");
+            await this.baseline(candidate.delivery.request);
             await this.persist(key, execution);
             execution.result = await candidate.execute(execution);
             await this.persist(key, execution);
@@ -330,6 +331,11 @@ class Sessions {
             try {
                 protocol.requireCompleteReview(previous.result);
             } catch {
+                if (recorded)
+                    await fs.rm(
+                        await ownedPath(this.root, `${key}-baseline.json`),
+                        { force: true }
+                    );
                 return null;
             }
         }
@@ -445,14 +451,17 @@ class Sessions {
         const key = this.key(request),
             execution = this.slots.get(key)?.active;
         if (!execution || execution.id !== executionId) {
-            check(receipt, "VALIDATION_EXPIRED");
-            protocol.receipt(receipt, request);
+            const delivery = this.attempts.get(this.attemptKey(request));
+            check(
+                delivery &&
+                    delivery.requestDigest === digest(request) &&
+                    !delivery.failure,
+                "UNAUTHORIZED"
+            );
+            const generated = await delivery.promise;
+            check(generated.executionId === executionId, "UNAUTHORIZED");
             return this.maintain(key, () =>
-                writeJson(
-                    this.root,
-                    `${key}-receipt-${request.attempt}.json`,
-                    receipt
-                )
+                this.recordReceipt(request, generated, receipt)
             );
         }
         check(
@@ -461,26 +470,39 @@ class Sessions {
             ),
             "UNAUTHORIZED"
         );
-        if (receipt) protocol.receipt(receipt, request);
-        if (receipt)
-            await writeJson(
-                this.root,
-                `${key}-receipt-${request.attempt}.json`,
-                receipt
-            );
-        if (
-            receipt?.complete &&
-            receipt.kind === "review" &&
-            execution.result
-        ) {
+        await this.recordReceipt(
+            request,
+            execution.result,
+            receipt,
+            execution.sessionId
+        );
+        await this.finish(key, executionId);
+    }
+    async recordReceipt(
+        request,
+        generated,
+        receipt,
+        sessionId = generated?.sessionId
+    ) {
+        if (!receipt) return;
+        const key = this.key(request);
+        protocol.receipt(receipt, request);
+        await writeJson(
+            this.root,
+            `${key}-receipt-${request.attempt}.json`,
+            receipt
+        );
+        if (receipt?.complete && receipt.kind === "review" && generated) {
+            protocol.requireCompleteReview(generated);
+            const previous = await this.baseline(request);
+            if (previous && previous.round >= receipt.round) return;
             await writeJson(this.root, `${key}-baseline.json`, {
                 head: request.head,
                 mergeBase: request.mergeBase,
-                sessionId: execution.sessionId,
+                sessionId,
                 round: receipt.round
             });
         }
-        await this.finish(key, executionId);
     }
     async finish(key, id) {
         const slot = this.slots.get(key),

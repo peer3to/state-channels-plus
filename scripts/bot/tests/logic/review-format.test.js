@@ -10,6 +10,53 @@ function report(input, finding) {
     return `<!-- pr-review-document ${JSON.stringify({ schema: 2, repo: input.repository.name, pr: input.pr, headSha: input.head, baseSha: input.base })} -->\n\n- [ ] **[TO1] General PR comment**\n\n  <!-- pr-review-finding {"id":"TO1","kind":"general"} -->\n\n  **Human**\n  <!-- human:TO1:start -->\n  <!-- human:TO1:end -->\n\n  <!-- ai:TO1:start -->\n  ${finding.body}\n  <!-- ai:TO1:end -->\n`;
 }
 describe("review format", function () {
+    it("counts added increment and removed decrement lines inside real hunks", async function () {
+        const { gitFixture } = require("../fixtures/git");
+        const fs = require("node:fs/promises");
+        const path = require("node:path");
+        const { lineAppearsInDiff } = require("../../review-format");
+        await gitFixture(async ({ source, input, command }) => {
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                "--counter;\nlast\n"
+            );
+            command(source, ["commit", "-am", "Before operators"]);
+            const baseSha = command(source, ["rev-parse", "HEAD"]);
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                "++counter;\nchanged\n"
+            );
+            command(source, ["commit", "-am", "After operators"]);
+            const document = {
+                baseSha,
+                headSha: command(source, ["rev-parse", "HEAD"])
+            };
+            assert.equal(
+                lineAppearsInDiff(
+                    document,
+                    { path: "README.md", line: 2, side: "RIGHT" },
+                    source
+                ),
+                true
+            );
+            assert.equal(
+                lineAppearsInDiff(
+                    document,
+                    { path: "README.md", line: 1, side: "LEFT" },
+                    source
+                ),
+                true
+            );
+            assert.equal(
+                lineAppearsInDiff(
+                    document,
+                    { path: "README.md", line: 99, side: "RIGHT" },
+                    source
+                ),
+                false
+            );
+        });
+    });
     it("omits legacy inline routing labels but preserves the finding and its source evidence", function () {
         const prose =
             "🟡 **[DY1] — Wrong approval wording.**\n\nSee [source](https://github.com/owner/repo/blob/sha/doc.md#L2).\n\n> **Fix DY1-FIX**\n> Describe the actual approval.";

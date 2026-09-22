@@ -70,7 +70,12 @@ function compactReview(
     for (const section of sections) {
         if (section === completion) continue;
         const parts = section.split(/(?=^### \[[A-Z0-9]+\] )/m);
-        blocks.push(parts.shift());
+        const prose = parts.shift();
+        check(
+            !/^### \[[^\]\n]+\]|^Status: |^Location: /m.test(prose),
+            "INVALID_RESULT"
+        );
+        blocks.push(prose);
         for (const part of parts) {
             const match = part.match(/^### \[([A-Z0-9]+)\] ([^\n]+)\n/);
             check(match, "INVALID_RESULT");

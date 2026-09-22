@@ -3,10 +3,13 @@
 class RecordedModelOutput {
     outputs;
     prompts = [];
-    constructor(outputs) {
+    beforeTurn;
+    constructor(outputs, beforeTurn = async () => {}) {
         this.outputs = [...outputs];
+        this.beforeTurn = beforeTurn;
     }
     async turn(prompt, budget) {
+        await this.beforeTurn();
         this.prompts.push(prompt);
         if (!this.outputs.length)
             throw new Error("Unexpected extra model turn");

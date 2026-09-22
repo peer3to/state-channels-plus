@@ -42,6 +42,11 @@ function reviewReceipt(request, state, complete, code) {
         ...(code ? { code } : {})
     };
 }
+function accountingFailure(ids, phase) {
+    const error = new ReviewError("ACCOUNTING_INCOMPLETE");
+    error.diagnostics = { phase, missingIds: ids };
+    return error;
+}
 class Publisher {
     request;
     github;
@@ -85,9 +90,11 @@ class Publisher {
             }
         }
         observations.publicationStates = this.journal.states;
-        const latest = readStates(observations, this.request, this.github.botId)
-            .filter((state) => state.status !== "intent")
-            .at(-1);
+        const latest = readStates(
+            observations,
+            this.request,
+            this.github.botId
+        ).at(-1);
         observations.findings = latest?.findings || [];
         return observations;
     }
@@ -153,14 +160,16 @@ class Publisher {
                 receipt: reviewReceipt(this.request, sameHead, true)
             };
         if (sameHead?.resultDigest === digest(result))
-            observations.findings = observations.findings.filter((finding) =>
-                sameHead.previousFindingIds.includes(finding.id)
-            );
+            observations.findings =
+                sameHead.previousFindings ||
+                observations.findings.filter((finding) =>
+                    sameHead.previousFindingIds.includes(finding.id)
+                );
         const required = accountingSet(observations, this.github.botId);
         const missing = missingAccounting(required, result);
         if (missing.length) {
             if (result.revision !== 0)
-                throw new ReviewError("ACCOUNTING_INCOMPLETE");
+                throw accountingFailure(missing, "inspection");
             return {
                 status: "correction-required",
                 correction: {
@@ -252,7 +261,8 @@ class Publisher {
                         ids: missing
                     }
                 };
-            if (missing.length) throw new ReviewError("ACCOUNTING_INCOMPLETE");
+            if (missing.length)
+                throw accountingFailure(missing, "before-publication");
         }
         const state = allocate(this.request, current, this.github.botId);
         if (state.status === "complete")
@@ -261,10 +271,31 @@ class Publisher {
                 receipt: reviewReceipt(this.request, state, true)
             };
         state.resultDigest = digest(result);
+        state.previousFindings = structuredClone(current.findings);
         state.previousFindingIds = current.findings.map(
             (finding) => finding.id
         );
-        const canonical = canonicalFindings(current.findings, result.findings);
+        // Recover accepted inline writes before choosing update/resolve operations.
+        // Keep the original observations unchanged for accounting revision checks.
+        const recovered = current.findings.map((finding) => {
+            if (finding.path === null || finding.threadId) return finding;
+            const source = findingSource(
+                this.request,
+                current,
+                this.github.botId,
+                finding
+            );
+            if (!source) return finding;
+            check(source.kind === "inline", "INVALID_RESULT");
+            const thread = current.threads.find((entry) =>
+                entry.comments.nodes.some(
+                    (node) => node.databaseId === source.item.id
+                )
+            );
+            check(thread, "CONTEXT_UNAVAILABLE");
+            return { ...finding, threadId: thread.id };
+        });
+        const canonical = canonicalFindings(recovered, result.findings);
         const used = new Set(current.findings.map((finding) => finding.id));
         state.mappings = state.mappings || {};
         state.findings = canonical.map((finding) => {
@@ -280,23 +311,18 @@ class Publisher {
         )) {
             state.findings.push(old);
         }
-        const operations = findingActions(
-            current.findings,
-            state.findings,
-            current
-        );
+        const operations = findingActions(recovered, state.findings, current);
         this.pendingState = state;
         await this.saveState(state);
         const batchMarker = actionMarker(this.request, "findings", state.round);
         const beforeBatch = await this.observe();
         beforeBatch.findings = current.findings;
-        if (
-            missingAccounting(
-                accountingSet(beforeBatch, this.github.botId),
-                result
-            ).length
-        )
-            throw new ReviewError("ACCOUNTING_INCOMPLETE");
+        const missingBeforeBatch = missingAccounting(
+            accountingSet(beforeBatch, this.github.botId),
+            result
+        );
+        if (missingBeforeBatch.length)
+            throw accountingFailure(missingBeforeBatch, "before-batch");
         let batch = findAction(beforeBatch, batchMarker, this.github.botId);
         if (!batch) {
             const rendered = operations
@@ -663,7 +689,10 @@ async function main() {
     } catch (error) {
         console.error(require("./errors").sanitized(error).message);
         if (error.diagnostics) console.error(JSON.stringify(error.diagnostics));
-        if (error.publication) {
+        if (error.code === "STALE_HEAD") {
+            // The generated report remains on the worker for the next review.
+            output = { status: "superseded" };
+        } else if (error.publication) {
             output = error.publication;
             process.exitCode = 1;
         } else if (

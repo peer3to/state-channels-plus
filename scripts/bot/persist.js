@@ -18,13 +18,14 @@ async function main() {
     const publication = JSON.parse(
         await fs.readFile(path.join(root, "publication.json"), "utf8")
     );
-    receipt(publication.receipt, input);
+    const superseded = publication.status === "superseded";
+    if (!superseded) receipt(publication.receipt, input);
     await callService({
         request: input,
-        operation: "receipt",
+        operation: superseded ? "acknowledgement" : "receipt",
         payload: {
             executionId: result.executionId,
-            receipt: publication.receipt
+            ...(superseded ? {} : { receipt: publication.receipt })
         },
         stateRoot: process.env.SCP_REVIEW_CLIENT_STATE,
         secret: process.env.SCP_TEST_POOL_SECRET,
@@ -38,7 +39,11 @@ async function main() {
         },
         onProgress: (message) => console.log(message)
     });
-    console.log("Confirmed receipt recorded by the review service.");
+    console.log(
+        superseded
+            ? "Superseded review retained; publication ownership released."
+            : "Confirmed receipt recorded by the review service."
+    );
 }
 if (require.main === module)
     main().catch((error) => {

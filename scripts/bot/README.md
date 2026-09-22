@@ -38,7 +38,7 @@ Native session state and the publication journal belong to the PR owner on the w
 
 Root dependencies are reused: Node 22.12.0, Mocha, `@hyperswarm/dht` and the existing YAML parser from the root lockfile. There is no nested package or contract-build prerequisite. The detached CommonJS DHT fixture uses the installed library directly. That library rejects positional port zero; the fixture supplies an ephemeral-range preference with library collision fallback and uses the actual bound port. It owns and awaits destruction of every peer/bootstrapper.
 
-Run `yarn review-bot:test --grep '<literal case>'` for a focused check, and `yarn review-bot:test` for all detached logic/integration cases. Explicit live acceptance uses `yarn review-bot:test:e2e`; no missing native/live input counts as a pass. Existing SDK/farm tests keep their own runner and preparation. Temporary CI feature gates stay enabled until explicit Human acceptance.
+Run `yarn review-bot:test --grep '<literal case>'` for a focused check, and `yarn review-bot:test` for all detached logic/integration cases. Explicit live acceptance uses `yarn review-bot:test:e2e`; no missing native/live input counts as a pass. Existing SDK/farm tests keep their own runner and preparation. Review runs independently in `review.yml`; normal CI retains bot regression tests without depending on native review or publication.
 
 ## Worker and CI integration
 
@@ -46,6 +46,6 @@ The normal worker owns the pool, peer identity, authentication, authorization st
 
 CI and local clients use the existing orchestrator identity. Discovery uses the review topic pair and capability negotiation; no review-specific seed, public key, server pin or policy JSON is configured. The fixed Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process. This is source-tool restriction, not separate OS-user isolation.
 
-Publication uses the publisher job's `GITHUB_TOKEN`, with pull requests write and issues write. Other jobs remain read-only except artifact cleanup. Enable the repository's Actions approval setting. See [first live run](../../docs/pr-review-bot.md#first-live-run).
+Publication uses the publisher job's `GITHUB_TOKEN`, with pull requests write and issues write. Credentials remain step-scoped. The model job remains read-only; result artifacts expire after one day without a cleanup job. Receipt delivery runs directly in the publish job. Enable the repository's Actions approval setting. See [first live run](../../docs/pr-review-bot.md#first-live-run).
 
 Human-decision markers are guidance for people and implementing agents. The reviewer assesses ordinary discussion; the publisher does not authenticate Human replies or query maintainer permissions. No review enablement variable or maintainer list is needed.

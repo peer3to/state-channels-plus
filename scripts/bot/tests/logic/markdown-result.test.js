@@ -20,6 +20,25 @@ function markdown(metadata = {}) {
     );
 }
 describe("Markdown review conversion", function () {
+    it("rejects malformed finding-shaped prose instead of declaring a clean review", function () {
+        const completion =
+            "## Review completion\nComplete: yes\nMissing: none\nVerification missing: none\nLenses: correctness\nBehaviors: review\n";
+        assert.equal(
+            decodeModelResult("# Review\n\n" + completion, {
+                request: request()
+            }).findings.length,
+            0
+        );
+        assert.throws(
+            () =>
+                decodeModelResult(
+                    "## Correctness\n### [FO-1] Defect\nStatus: new\nLocation: general\n\n🟠 Defect\n> Fix FO-1-FIX\n\n" +
+                        completion,
+                    { request: request() }
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
     it("converts plain prose without model-authored hidden metadata", function () {
         const input = request();
         const source = `# Review\n\n## Correctness\n\n### [FO1] Retry failure\nStatus: fixed\nLocation: src/a.js:42\n\n🟠 **[FO1] — Retry failure.**\n\nFixed at https://github.com/owner/repo/blob/${input.head}/src/a.js#L42\n\n> **Fix FO1-FIX**\n> Preserve the acknowledgement.\n\n## Discussion\n\n| comment:123 | response | Verified the change. | FO1 |\n\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness; tests\nBehaviors: retry recovery\n`;

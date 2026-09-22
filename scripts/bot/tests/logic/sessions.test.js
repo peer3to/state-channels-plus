@@ -52,6 +52,49 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("recovers late receipt delivery after restart without rerunning or rolling back the baseline", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            let executions = 0;
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async () => {
+                    executions++;
+                    return result(input);
+                },
+                async () => true
+            );
+            await sessions.finish(sessions.key(input), output.executionId);
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                const receipt = {
+                    version: 1,
+                    binding: binding(input),
+                    kind: "review",
+                    complete: true,
+                    round: 2,
+                    actions: []
+                };
+                await restarted.acknowledge(input, output.executionId, receipt);
+                assert.equal((await restarted.baseline(input)).round, 2);
+                await restarted.acknowledge(input, output.executionId, {
+                    ...receipt,
+                    round: 1
+                });
+                assert.equal((await restarted.baseline(input)).round, 2);
+                await assert.rejects(
+                    restarted.acknowledge(input, "foreign", receipt),
+                    { code: "UNAUTHORIZED" }
+                );
+                assert.equal(executions, 1);
+            } finally {
+                await restarted.close();
+            }
+        });
+    });
     it("preserves the native conversation across setup failure and worker restart", async function () {
         await fixture(async (sessions) => {
             const input = request();
@@ -105,6 +148,23 @@ describe("review sessions", function () {
                 })
             );
             assert.equal(await sessions.baseline(input), null);
+            await sessions.submit(
+                request({ attempt: "next" }),
+                digest("next"),
+                async () => {
+                    assert.equal(await sessions.baseline(input), null);
+                    return result(input);
+                },
+                async () => true
+            );
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                assert.equal(await restarted.baseline(input), null);
+            } finally {
+                await restarted.close();
+            }
         });
     });
     it("migrates a confirmed legacy receipt before the next attempt overwrites the registry", async function () {

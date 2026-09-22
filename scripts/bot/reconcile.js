@@ -76,6 +76,10 @@ function findingActions(previous, proposed, observations) {
             continue;
         }
         const closed = ["fixed", "disagreement"].includes(finding.status);
+        if (old.path !== null && !old.threadId) {
+            if (!closed) actions.push({ kind: "new", finding });
+            continue;
+        }
         // A disposition needs inspected evidence; SHA changes and manual resolution
         // do not establish that a finding is fixed.
         check(!closed || finding.evidence.length > 0, "INVALID_RESULT");

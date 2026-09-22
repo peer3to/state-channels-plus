@@ -178,6 +178,107 @@ function proposed(input, finding, previous) {
     });
 }
 describe("assessment GitHub lifecycle", function () {
+    it("accounts for the latest private intent instead of an older completed finding", async function () {
+        const wire = wireFixture();
+        const store = publicationStore();
+        const oldState = readStates(wire.comments, wire.input, 9).at(-1);
+        const updated = {
+            ...wire.finding,
+            body: "New unpublished analysis from the interrupted round."
+        };
+        const pending = {
+            ...oldState,
+            head: "e".repeat(40),
+            round: 2,
+            status: "intent",
+            findings: [updated]
+        };
+        await store.save(wire.input, digest({ states: [] }), [
+            oldState,
+            pending
+        ]);
+        const owner = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true, specApproved: false },
+            store
+        );
+        const output = proposed(wire.input, updated, updated);
+        output.revision = 1;
+        assert.equal((await owner.inspect(output)).status, "ready");
+        assert.equal((await owner.publish(output)).status, "complete");
+        assert.equal((await owner.publish(output)).status, "complete");
+        assert.equal(
+            wire.calls.filter(
+                (call) => call.method === "POST" && call.route !== "/graphql"
+            ).length,
+            0
+        );
+    });
+    it("recovers an accepted inline root from an older head before reconciling continued findings", async function () {
+        await gitFixture(async ({ input, source }) => {
+            const wire = wireFixture();
+            Object.assign(wire.input, {
+                head: input.head,
+                base: input.base,
+                mergeBase: input.mergeBase
+            });
+            wire.pull.head.sha = input.head;
+            const store = publicationStore();
+            const oldState = readStates(wire.comments, wire.input, 9).at(-1);
+            wire.reviews.splice(0);
+            const finding = { ...wire.finding, path: "README.md", line: 1 };
+            oldState.status = "intent";
+            oldState.findings = [finding];
+            wire.inline.push({
+                id: 25,
+                user: { id: 9, type: "Bot" },
+                body:
+                    finding.body +
+                    "\n" +
+                    actionMarker(
+                        { ...wire.input, head: oldState.head },
+                        "finding",
+                        finding.id
+                    ),
+                html_url: "https://github.com/owner/repo/pull/6#discussion_r25"
+            });
+            await store.save(wire.input, digest({ states: [] }), [oldState]);
+            const output = proposed(wire.input, finding, finding);
+            output.report = output.report.replace(
+                '"kind":"general"',
+                '"kind":"inline","path":"README.md","line":1,"side":"RIGHT"'
+            );
+            const owner = new Publisher(
+                wire.input,
+                new GitHubWriter(wire.input, {
+                    token: "recorded",
+                    botId: 9,
+                    exchange: wire.exchange
+                }),
+                { eligible: true, specApproved: false, repoRoot: source },
+                store
+            );
+            assert.equal((await owner.publish(output)).status, "complete");
+            assert.equal(
+                (await store.load(wire.input)).states.at(-1).findings[0]
+                    .threadId,
+                "thread-25"
+            );
+            assert.equal(wire.inline.length, 1);
+            assert.equal(
+                wire.calls.filter(
+                    (call) =>
+                        call.method === "POST" && call.route !== "/graphql"
+                ).length,
+                0
+            );
+        });
+    });
     it("publishes 53 plain-Markdown inline findings across recoverable batches after a lost reply", async function () {
         await gitFixture(async ({ input, source }) => {
             const wire = wireFixture();

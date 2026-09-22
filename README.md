@@ -327,10 +327,11 @@ The orchestrator normally stores its seed under
 dedicated `SCP_TEST_ORCHESTRATOR_SEED` secret containing 64 lowercase hex
 characters. The same seed produces the same transport identity on every run,
 so each worker reuses one CI environment for the same workspace. Do not reuse
-`SCP_TEST_POOL_SECRET` as this seed. CI runs that share this identity must be
-serialized across the repository. GitHub keeps only one pending run in a
-concurrency group, so a newer PR update can cancel an older queued run. Re-run
-that cancelled check from the Actions tab. Host-lock process coverage runs as
+`SCP_TEST_POOL_SECRET` as this seed. Distributed test jobs that share this identity
+are serialized across the repository with `queue: max`; unrelated spec/browser
+jobs and the independent review workflow do not wait for that queue. Reviews
+finish their active run and retain only the newest pending run per PR; superseded
+reviews stay on the server without publication. Host-lock process coverage runs as
 part of the canonical distributed suite; CI does not start a separate local
 host-lock job.
 

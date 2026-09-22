@@ -312,7 +312,7 @@ describe("review recorded native output boundary", function () {
             await fs.rm(root, { recursive: true });
         }
     });
-    it("refreshes policy on the same session for resumed and accounting-correction turns", async function () {
+    it("refreshes policy on resumed reviews and keeps accounting corrections focused", async function () {
         await fixture(
             [result(), result(), result()],
             async ({ service, input, execution, model, root }) => {
@@ -358,7 +358,9 @@ describe("review recorded native output boundary", function () {
                 assert.equal(corrected.sessionId, resumed.sessionId);
                 assert.equal(model.prompts.length, 3);
                 assert.ok(model.prompts[1].includes(service.instructions));
-                assert.ok(model.prompts[2].includes(service.instructions));
+                assert.ok(!model.prompts[2].includes(service.instructions));
+                assert.ok(model.prompts[2].includes("focused correction"));
+                assert.ok(model.prompts[2].includes("comment:12"));
                 assert.ok(model.prompts[1].includes(service.prompt));
                 assert.ok(!model.prompts[0].includes(service.instructions));
             }

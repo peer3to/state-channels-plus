@@ -148,6 +148,26 @@ class ReviewService {
         try {
             this.authorize(input, connection);
             check(input.attempt === attemptId);
+            if (["request", "correction"].includes(operation))
+                progress = setInterval(() => {
+                    const active = this.sessions.slots.get(
+                        this.sessions.key(input)
+                    )?.active;
+                    if (
+                        active?.deliveries.some(
+                            (delivery) =>
+                                delivery.request.attempt === input.attempt
+                        )
+                    )
+                        connection
+                            .progress(
+                                requestId,
+                                attemptId,
+                                active.id,
+                                active.adapter?.activity
+                            )
+                            .catch(() => connection.close());
+                }, this.config.limits.progressMs);
             if (operation === "request") {
                 const current = this.sessions.slots.get(
                     this.sessions.key(input)
@@ -164,26 +184,6 @@ class ReviewService {
                     current?.result?.evidence.identity ||
                     current?.evidenceIdentity ||
                     digest({ pending: input.attempt });
-                progress = setInterval(() => {
-                    const active = this.sessions.slots.get(
-                        this.sessions.key(input)
-                    )?.active;
-                    if (
-                        active?.budget.active !== null &&
-                        active?.deliveries.some(
-                            (delivery) =>
-                                delivery.request.attempt === input.attempt
-                        )
-                    )
-                        connection
-                            .progress(
-                                requestId,
-                                attemptId,
-                                active.id,
-                                active.adapter?.activity
-                            )
-                            .catch(() => connection.close());
-                }, this.config.limits.progressMs);
                 let preparation;
                 const result = await this.sessions.submit(
                     input,
@@ -308,12 +308,7 @@ class ReviewService {
             true
         );
         await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
-        const tools = new SourceTools(
-            tree.checkout,
-            input,
-            context,
-            outputRoot
-        );
+        const tools = new SourceTools(tree.checkout, input, context);
         const adapter = new CodexAdapter(this.config, tools);
         this.adapters.set(execution.id, adapter);
         execution.adapter = adapter;
@@ -362,6 +357,15 @@ class ReviewService {
                                 id: finding.id,
                                 status: finding.status,
                                 threadId: finding.threadId,
+                                ...(previous?.sessionId
+                                    ? {}
+                                    : {
+                                          body: finding.body,
+                                          path: finding.path,
+                                          line: finding.line,
+                                          evidence: finding.evidence,
+                                          human: finding.human
+                                      }),
                                 sourceId: `finding:${finding.id}`,
                                 sourceRevision: digest(finding)
                             })) || []
@@ -595,7 +599,9 @@ class ReviewService {
     }
     async correct(input, execution, prompt) {
         const generated = await execution.adapter.turn(
-            this.currentPolicyPrompt(prompt) + this.remainingPrompt(execution),
+            prompt +
+                "\nThis is a focused correction of the saved review in this conversation, not a new review. Preserve existing findings and analysis. Read only the missing or changed discussion needed for these IDs, update their dispositions, and return the corrected report. The existing review policy still applies." +
+                this.remainingPrompt(execution),
             execution.budget
         );
         return this.completeWithRepair(

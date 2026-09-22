@@ -107,18 +107,18 @@ describe("review source-only boundaries", function () {
             );
         });
     });
-    it("writes only the assigned report filename and rejects supplied paths", async function () {
+    it("rejects the retired report-write tool without writing a provisional report", async function () {
         await sourceFixture(async (owner, root) => {
-            await owner.call("report_write", {
-                result: { report: "Local provisional output" }
-            });
-            const saved = JSON.parse(
-                await fs.readFile(
-                    path.join(root, "reports/provisional-result.json"),
-                    "utf8"
-                )
+            await assert.rejects(
+                owner.call("report_write", {
+                    result: { report: "Local provisional output" }
+                }),
+                { code: "UNAUTHORIZED" }
             );
-            assert.equal(saved.report, "Local provisional output");
+            await assert.rejects(
+                fs.access(path.join(root, "reports/provisional-result.json")),
+                { code: "ENOENT" }
+            );
             await assert.rejects(
                 owner.call("report_write", {
                     result: {},

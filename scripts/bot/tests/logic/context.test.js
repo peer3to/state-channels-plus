@@ -409,6 +409,34 @@ describe("review public context", function () {
         assert.equal(owner.budget.cacheHits, 0);
         records.done();
     });
+    it("requires page one even when every collection has a terminal page", async function () {
+        const routes = [
+            `${prefix}/pulls/6`,
+            `${prefix}/issues/6/comments`,
+            `${prefix}/pulls/6/comments`,
+            `${prefix}/pulls/6/reviews`
+        ];
+        const records = new RecordedGitHub(
+            routes.map((route, i) => ({
+                path: route + (i ? "?page=2" : ""),
+                response: i
+                    ? []
+                    : { number: 6, base: { repo: { full_name: repository } } }
+            }))
+        );
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            new ContextBudget(DEFAULTS),
+            records.exchange.bind(records)
+        );
+        for (const [i, route] of routes.entries())
+            await owner.read(
+                `https://api.github.com${route}${i ? "?page=2" : ""}`
+            );
+        assert.equal(owner.gathered(), false);
+        records.done();
+    });
     it("follows numeric repository pagination only for the configured repository ID", async function () {
         const records = new RecordedGitHub([
             {

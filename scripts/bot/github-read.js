@@ -564,7 +564,16 @@ class PublicGitHub {
         ];
         return (
             this.unavailable.size === 0 &&
-            required.every((route) => paths.includes(route)) &&
+            required.every((route) =>
+                this.budget.sources.some((source) => {
+                    const url = new URL(source.url);
+                    return (
+                        url.pathname === route &&
+                        (!url.searchParams.has("page") ||
+                            url.searchParams.get("page") === "1")
+                    );
+                })
+            ) &&
             this.budget.sources.every(
                 (source) =>
                     source.loaded === "data" &&

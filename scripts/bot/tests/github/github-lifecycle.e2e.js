@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const { GitHubWriter, actionsBotId } = require("../../github-write");
 describe("implementation PR observation", function () {
-    it("observes completed review producers and deletion of their recorded artifacts", async function () {
+    it("observes the independent review and publication jobs including receipt delivery", async function () {
         assert.ok(
             process.env.GITHUB_EVENT_PATH && process.env.GITHUB_TOKEN,
             "Live acceptance requires the authorized implementation PR workflow."
@@ -33,12 +33,7 @@ describe("implementation PR observation", function () {
             jobs.push(...response.jobs);
             if (response.jobs.length < 100) break;
         }
-        for (const name of [
-            "review-model",
-            "review-publish",
-            "review-persist",
-            "review-cleanup"
-        ]) {
+        for (const name of ["review-model", "review-publish"]) {
             const job = jobs.find((item) => item.name === name);
             assert.ok(job, `Missing live producer ${name}`);
             assert.equal(job.conclusion, "success", `${name} did not succeed`);
@@ -46,25 +41,10 @@ describe("implementation PR observation", function () {
         // The successful publisher and receipt consumer validate this round.
         // General-only, continuation-only and silent clean rounds need no new
         // GitHub review container or public state/notification comment.
-        const resultId = Number(process.env.REVIEW_RESULT_ARTIFACT),
-            receiptId = Number(process.env.REVIEW_RECEIPT_ARTIFACT);
-        assert.ok(
-            Number.isSafeInteger(resultId) &&
-                resultId > 0 &&
-                Number.isSafeInteger(receiptId) &&
-                receiptId > 0
-        );
-        assert.equal(
-            await reader.api(`/actions/artifacts/${resultId}`, {
-                allowMissing: true
-            }),
-            null
-        );
-        assert.equal(
-            await reader.api(`/actions/artifacts/${receiptId}`, {
-                allowMissing: true
-            }),
-            null
-        );
+        const delivery = jobs
+            .find((item) => item.name === "review-publish")
+            .steps.find((step) => step.name === "Return confirmed receipt");
+        assert.ok(delivery, "Missing receipt delivery step");
+        assert.equal(delivery.conclusion, "success");
     });
 });

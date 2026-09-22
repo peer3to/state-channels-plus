@@ -30,7 +30,7 @@ describe("review concurrent source ownership", function () {
             { holdFetch: true }
         );
     });
-    it("reads two immutable PR revisions concurrently and writes separate reports", async function () {
+    it("reads two immutable PR revisions concurrently and returns separately bound results", async function () {
         await gitFixture(
             async ({ root, remote, owner, input, pull, command }) => {
                 command(remote, ["update-ref", "refs/pull/7/head", input.base]);
@@ -81,9 +81,6 @@ describe("review concurrent source ownership", function () {
                             ? "Reviewed source."
                             : "Original source."
                     );
-                    await source.call("report_write", {
-                        result: { pr: request.pr }
-                    });
                     return result(request);
                 };
                 try {

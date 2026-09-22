@@ -266,13 +266,13 @@ function lineAppearsInDiff(document, finding, repoRoot) {
             continue;
         }
         if (!inHunk || text.startsWith("\\ No newline")) continue;
-        if (text.startsWith("+") && !text.startsWith("+++")) {
+        if (text.startsWith("+")) {
             if (finding.side === "RIGHT" && newLine === finding.line)
                 return true;
             newLine += 1;
             continue;
         }
-        if (text.startsWith("-") && !text.startsWith("---")) {
+        if (text.startsWith("-")) {
             if (finding.side === "LEFT" && oldLine === finding.line)
                 return true;
             oldLine += 1;

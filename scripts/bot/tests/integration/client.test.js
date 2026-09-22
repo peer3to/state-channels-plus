@@ -97,6 +97,138 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
+    it("shows progress during a real service correction and persists its receipt on the same connection path", async function () {
+        await fixture(async ({ options, nextOptions, serve, input }) => {
+            const { ReviewService } = require("../../server");
+            const { RecordedModelOutput } = require("../fixtures/model");
+            const { digest } = require("../../data");
+            const { binding } = require("../../protocol");
+            const service = new ReviewService({
+                stateRoot: path.join(options.stateRoot, "worker")
+            });
+            service.skillDigest = input.skillDigest;
+            service.botRevision = input.botRevision;
+            service.policyDigest = input.policyDigest;
+            service.config.limits.progressMs = 10;
+            await service.sessions.initialize();
+            let release;
+            const held = new Promise((resolve) => {
+                release = resolve;
+            });
+            const model = new RecordedModelOutput([result(input)], () => held);
+            const {
+                PublicGitHub,
+                ContextBudget
+            } = require("../../github-read");
+            const { RecordedGitHub } = require("../fixtures/github");
+            const routes = [
+                `pulls/${input.pr}`,
+                `issues/${input.pr}/comments`,
+                `pulls/${input.pr}/comments`,
+                `pulls/${input.pr}/reviews`
+            ];
+            const records = new RecordedGitHub(
+                routes.map((route, i) => ({
+                    path: `/repos/${input.repository.name}/${route}`,
+                    response: i
+                        ? []
+                        : {
+                              number: input.pr,
+                              base: {
+                                  repo: { full_name: input.repository.name }
+                              }
+                          }
+                }))
+            );
+            const context = new PublicGitHub(
+                input.repository.name,
+                input.pr,
+                new ContextBudget(DEFAULTS),
+                records.exchange.bind(records)
+            );
+            for (const route of routes)
+                await context.read(
+                    `https://api.github.com/repos/${input.repository.name}/${route}`
+                );
+            try {
+                const first = await service.sessions.submit(
+                    input,
+                    digest("context"),
+                    async (active) => {
+                        active.adapter = model;
+                        active.context = context;
+                        active.outputRoot = options.stateRoot;
+                        active.sessionId = "session-1";
+                        return result(input);
+                    },
+                    async () => true
+                );
+                serve((connection, message) =>
+                    service.handle(
+                        connection,
+                        message.operation,
+                        message.value,
+                        message.requestId,
+                        message.attemptId
+                    )
+                );
+                const lines = [];
+                const corrected = await callService({
+                    ...options,
+                    operation: "correction",
+                    payload: {
+                        correction: {
+                            version: 1,
+                            kind: "missing-accounting",
+                            binding: binding(input),
+                            executionId: first.executionId,
+                            resultRevision: 0,
+                            effectiveIdentity: first.effectiveIdentity,
+                            ids: ["comment:12"]
+                        }
+                    },
+                    onProgress: (line) => {
+                        lines.push(line);
+                        release();
+                    }
+                });
+                assert.equal(corrected.revision, 1);
+                assert.ok(
+                    lines.some((line) => line.includes("Worker connected"))
+                );
+                assert.equal(model.prompts.length, 1);
+                await callService({
+                    ...nextOptions(),
+                    operation: "receipt",
+                    payload: {
+                        executionId: first.executionId,
+                        receipt: {
+                            version: 1,
+                            binding: binding(input),
+                            kind: "review",
+                            complete: true,
+                            round: 1,
+                            actions: [],
+                            mappings: {},
+                            state: "complete",
+                            dispositions: []
+                        }
+                    }
+                });
+                assert.equal(
+                    service.sessions.busy(service.sessions.key(input)),
+                    false
+                );
+                assert.equal(
+                    (await service.sessions.baseline(input)).head,
+                    input.head
+                );
+            } finally {
+                release();
+                await service.sessions.close();
+            }
+        });
+    });
     it("reconnects between publisher invocations with the same CI identity", async function () {
         await fixture(async ({ options, nextOptions, serve }) => {
             serve((connection, message) =>

@@ -65,7 +65,7 @@ explain the triggering path, impact, proposed fix and verification, without cert
 percentages or green no-change cards. General findings retain their report section
 headings. Findings with valid pinned-diff locations publish inline; a source hyperlink
 alone does not create an inline comment. Human decisions carry
-`🙋 **Human assessment needed**` and an explicit question.
+`🧑 **HUMAN DECISION REQUIRED**` at the beginning and an explicit question. This is advisory guidance, not a separate resolution gate; an existing specification or Human decision can settle it.
 
 CI uses the existing `SCP_TEST_POOL_SECRET` and `SCP_TEST_ORCHESTRATOR_SEED`. Local clients use the normal `temp/distributed-orchestrator` identity when no seed environment value is supplied. Review does not derive or provision a different key.
 
@@ -73,7 +73,7 @@ No review-specific CI variables or secrets are required. Eligible PR pushes requ
 
 Human-decision markers tell people what needs a decision and tell implementing agents to ask their humans. They do not verify identity or repository authority. People can use ordinary PR comments; there is no required reply template or maintainer-ID list. The reviewer assesses the discussion and explains whether the question is settled. The protocol's authority label describes who the question is aimed at; it is not an access check.
 
-The CI publisher uses its job-scoped `GITHUB_TOKEN` with pull requests write and issues write. It posts as `github-actions[bot]`, whose ID is resolved from GitHub. Other workflows share that account; existing custom-App history is not automatically adopted. Model and worker processes receive no publisher token. Cleanup alone has Actions write and deletes only recorded handoff artifacts from its own run/attempt.
+The CI publisher uses its job-scoped `GITHUB_TOKEN` with pull requests write and issues write, exposed only to the steps that need it. It posts as `github-actions[bot]`, whose ID is resolved from GitHub. Other workflows share that account; existing custom-App history is not automatically adopted. Model and worker processes receive no publisher token. Neither review job needs Actions write permission.
 
 In Settings → Actions → General → Workflow permissions, enable **Allow GitHub Actions to create and approve pull requests**. Keep default token permissions read-only; the workflow grants the publisher its explicit write scopes. Organization policy may prevent that setting. See [GitHub's documentation](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests). No custom App installation is needed. Existing protections may restrict approval dismissal; live acceptance must verify those permissions.
 
@@ -84,10 +84,12 @@ In Settings → Actions → General → Workflow permissions, enable **Allow Git
 3. Restart the existing worker command with `--review` added. Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
 4. Enable GitHub Actions approval as described above. Keep the existing CI pool/orchestrator secrets.
 5. Push to the existing same-repository implementation PR. A comment alone does not start review. A manual workflow rerun uses its original event head and skips if that head is now stale.
-6. Inspect `head-check`, `review-bot-tests`, `review-model`, `review-publish`, `review-persist`, `review-cleanup` and `review-bot-observer`. Confirm a review for the correct SHA, the service's confirmed receipt, and deletion of the result/receipt artifacts. Fix a finding and push again to exercise continued review and resolution.
-7. If a finding needs a Human decision, discuss the decision in an ordinary comment and push again. Verify agent assessment before resolution. Keep the temporary acceptance jobs enabled until Luka explicitly accepts the feature.
+6. Inspect `review-model` and `review-publish` in the separate PR Review Bot workflow. Confirm publication for the latest SHA and the service's confirmed receipt. Fix a finding and push again to exercise continued review and resolution.
+7. If a finding needs a Human decision not already settled by the specification or prior discussion, discuss it in an ordinary comment and push again. Verify the assessment against that decision.
 
-While temporary acceptance is enabled, the observer blocks ordinary CI if review fails. The whole-repository queue remains unchanged. Fork and Dependabot review paths remain ineligible. Native review jobs are advisory; do not add them as required checks or change branch protection to make acceptance pass.
+Review is independent of ordinary CI. Bot regression tests remain in CI, but no review job gates spec, test or browser jobs. Only the distributed test job uses the shared repository-wide queue; other CI jobs may overlap. Fork and Dependabot review paths remain ineligible. Native review jobs are advisory; do not add them as required checks or change branch protection to make acceptance pass.
+
+Review concurrency is per PR: active work finishes and only the newest pending run is retained. Admission skips a head already superseded before review begins. If the head changes during review, the completed report stays on the server and publication skips it without a failure comment. Acknowledgement releases ownership without advancing the confirmed-publication baseline. The next review resumes that conversation, accounts for current discussion and the latest private findings, and publishes only for the current head.
 
 ## Review policy and bounds
 
@@ -181,10 +183,11 @@ A valid future GitHub throttle reset is respected. Missing, invalid or expired r
 
 ## Cleanup and failures
 
-Every initial, resumed, format-correction and accounting-correction model turn
-includes the current controller-owned policy bundle in its input. Session history
-is preserved, but policy refresh does not rely only on `thread/resume` applying
-new developer instructions. Repository content cannot replace this bundle.
+Initial and resumed reviews receive the current controller-owned policy bundle.
+Internal format and accounting corrections reuse that conversation's loaded policy
+and receive focused repair instructions rather than another full review task.
+Both initial reviews and corrections emit progress. Repository content cannot
+replace the controller policy.
 
 Source-review completion is separate from runtime verification. Missing live
 acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
@@ -238,7 +241,7 @@ After changing native tool configuration, run the live `pinned native adapter ac
 
 Daily cleanup reads registered worktree manifests, queries GitHub, and rechecks a positive closed/merged state while holding PR ownership. Missing, denied or ambiguous observations preserve data. It deletes only registered native session IDs and owned worktree/report/attempt records. To run the same cleanup manually, stop the worker and use `yarn review-bot:cleanup /absolute/path/to/worker-work-root`.
 
-CI artifact cleanup waits for its consumers and deletes only recorded run/attempt artifacts; ordinary test logs remain. External interruption can leave deletion unconfirmed. Publication is not rolled back if receipt delivery fails.
+CI retains the model handoff artifact for one day and relies on GitHub expiration; there is no immediate artifact-deletion job. Ordinary test logs retain their own retention policy. Publication delivers its receipt directly to the worker in the same job, without another checkout or receipt artifact. Publication is not rolled back if receipt delivery fails: the private journal and durable generated result allow a publish-job retry to recover the confirmed round without another model execution or duplicate comments. Late receipts remain bound to their original attempt/execution and cannot roll back a newer confirmed baseline.
 
 A failed model/review remains a failed native CI job. Inspect its sanitized error, worker logs and job summary. `LOGIN_EXPIRED` requires restoring the worker user's login; `SUBSCRIPTION_LIMIT` requires waiting for included usage; `MODEL_UNAVAILABLE` requires the supported CLI/model; context errors require inspecting the missing public evidence. Do not add credential or paid-route fallbacks to hide failures.
 
@@ -252,6 +255,6 @@ changing HTML shell; the discussion collections must still be read separately.
 
 ## Verification boundaries
 
-`yarn review-bot:test` exercises real local Git, filesystem, process, DHT and worker dispatch owners plus recorded GitHub boundaries. It does not prove a live model review or GitHub permissions. The temporary CI observer checks the actual implementation PR's producers and artifact deletion.
+`yarn review-bot:test` exercises real local Git, filesystem, process, DHT and worker dispatch owners plus recorded GitHub boundaries. It does not prove a live model review or GitHub permissions. The temporary acceptance observer is no longer a CI gate; inspect live publication and receipt outcomes separately.
 
 For an explicit native lifecycle probe on the worker, use `REVIEW_NATIVE_ACCEPTANCE=1 REVIEW_WORK_ROOT=/absolute/worker-root REVIEW_NATIVE_WORKTREE=/absolute/source-fixture REVIEW_NATIVE_REPORT_DIR=/absolute/report-fixture yarn review-bot:test:e2e --grep 'pinned native adapter acceptance'`. Use fixture paths and run while the normal worker is stopped. This consumes a real model turn; missing inputs fail rather than count as success. Full review, Human interaction, resume, publication and lifecycle coverage still need observed live evidence.
