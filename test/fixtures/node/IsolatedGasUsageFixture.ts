@@ -22,8 +22,6 @@ const EXPLICIT_GAS_LIMIT = 100_000n;
 const RECEIPT_WAIT_BUDGET_MS = 1_000;
 /** A nonce no send will ever reach, so the node queues and never mines it. */
 const UNREACHABLE_NONCE = 50;
-/** Bounds the queued observation, so no timer outlives the case by minutes. */
-const QUEUED_RECEIPT_WAIT_MS = 5_000;
 /** How long the node gets to answer with a receipt it has already mined. */
 const RECEIPT_POLL_BUDGET_MS = 10_000;
 
@@ -187,10 +185,11 @@ export async function assertIsolatedDestroyedProviderSettles(): Promise<void> {
 export async function assertIsolatedSettleIgnoresLaterObservation(): Promise<void> {
     await withIsolatedHardhatNode(async (provider) => {
         provider.pollingInterval = 100;
-        const recorder = new GasUsageRecorder(
-            undefined,
-            QUEUED_RECEIPT_WAIT_MS
-        );
+        // The default receipt bound, not a short one: the recorder holds one
+        // bound for every observation, so a short bound would also cap the
+        // transaction that must mine, and would end a `settle()` that re-read
+        // the set inside the test timeout instead of failing it.
+        const recorder = new GasUsageRecorder();
         const mining = await fundedWallet(provider);
         const queued = await fundedWallet(provider);
         const callee = Wallet.createRandom().address;
@@ -208,7 +207,9 @@ export async function assertIsolatedSettleIgnoresLaterObservation(): Promise<voi
         );
         const settling = recorder.settle();
         // A second observation opens inside the window the first settle opened.
-        // Its nonce gap keeps the node from ever mining it.
+        // Its nonce gap keeps the node from ever mining it, so its own receipt
+        // wait is still pending when the case ends: it records nothing, and the
+        // node and the provider are gone with the call that owned them.
         recorder.observe(
             await queued.sendTransaction({
                 to: callee,
