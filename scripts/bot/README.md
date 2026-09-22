@@ -15,7 +15,7 @@ Operational setup, failure recovery and acceptance are in [the operations guide]
 | Source-only tools and public context | `source-tools.js`, `github-read.js` |
 | Pinned native session/process operations | `adapters/codex.js` |
 | CI-authenticated GitHub reads and every GitHub mutation | `github-write.js` |
-| Publication policy, stable state, reconciliation and Human decisions | `publish.js`, `state.js`, `reconcile.js`, `policy.js`, `approval.js` |
+| Publication policy, private journal, reconciliation and advisory Human labels | `publish.js`, `publication-store.js`, `state.js`, `reconcile.js`, `approval.js` |
 | Report parsing, diff targets and canonical Human rendering | `review-format.js` |
 | Data artifact validation, receipt delivery and exact artifact removal | `handoff.js`, `persist.js`, `artifacts.js` |
 | Manifest-bound local lifecycle cleanup | `cleanup.js` |
@@ -30,7 +30,7 @@ The service policy digest binds the checked-in review limits. Repository identit
 
 Source evidence retains raw response revision hashes and semantic context hashes. Only PR target-base SHA is removed from the latter. Evidence includes actual request/page/byte counts, configured limits, zero cache hits when no cache is used, pagination links, loaded-content availability and phase durations. A source marked unknown or an unfetched next page cannot support complete coverage. Evidence identity uses the latest observed revision per URL; it is not an atomic GitHub snapshot.
 
-Native session state belongs to the PR owner and may contain unpublished work. GitHub bot-authored state and confirmed receipts own permanent published rounds. Neither native memory nor a request hint proves current findings, consent or publication. Startup quarantines unfinished native ownership instead of assuming a crashed child stopped. CI receives only bounded result/report/receipt data, never native archives.
+Native session state and the publication journal belong to the PR owner on the worker and may contain unpublished work. CI checkpoints publication through authenticated service calls; GitHub contains only findings and small identity markers. Receipts and current GitHub observations establish which actions succeeded. Neither native memory nor a request hint proves publication. Startup quarantines unfinished native ownership instead of assuming a crashed child stopped. CI receives result/report/publication data, never native archives.
 
 ## Vendored maintenance boundary
 

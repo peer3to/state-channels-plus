@@ -158,6 +158,9 @@ jobs:
               if: needs.review-model.result == 'success'
               run: yarn review-bot:publish inspect temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/inspection.json
               env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
                   GITHUB_TOKEN: ${{ github.token }}
                   SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
                   REVIEW_ELIGIBLE: 'true'
@@ -173,6 +176,9 @@ jobs:
               if: ${{ !cancelled() && (steps.inspect.outcome == 'success' || needs.review-model.result == 'failure') }}
               id: publish
               env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
                   GITHUB_TOKEN: ${{ github.token }}
                   SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
                   REVIEW_ELIGIBLE: 'true'
@@ -194,6 +200,9 @@ jobs:
               if: ${{ !cancelled() && (steps.correction-final.outcome == 'success' || steps.correction-final.outcome == 'failure') }}
               run: yarn review-bot:publish publish temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/publication.json
               env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
                   GITHUB_TOKEN: ${{ github.token }}
                   SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
                   REVIEW_ELIGIBLE: 'true'

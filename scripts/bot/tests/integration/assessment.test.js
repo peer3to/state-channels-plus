@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { fetchAssessment } = require("../../fetch-assessment");
 const { Publisher } = require("../../publish");
+const { publicationStore } = require("../fixtures/publication");
 const { GitHubWriter } = require("../../github-write");
 const { encodeState, actionMarker, readStates } = require("../../state");
 const { wrapFinding } = require("../../finding-source");
@@ -177,7 +178,108 @@ function proposed(input, finding, previous) {
     });
 }
 describe("assessment GitHub lifecycle", function () {
-    it("publishes inline findings with hidden review state and fetches them for assessment", async function () {
+    it("publishes fifty detailed findings without snapshots and resumes from the private journal", async function () {
+        const wire = wireFixture();
+        wire.comments.splice(0);
+        wire.reviews.splice(0);
+        const store = publicationStore();
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: wire.exchange
+        });
+        const cards = Array.from({ length: 50 }, (_, index) => ({
+            ...wire.finding,
+            id: `FO${index + 1}`,
+            status: "new",
+            body:
+                `🟠 **[FO${index + 1}] — Retry defect.**\n\n` +
+                "The operation loses its result after this boundary; retain the result before acknowledging it. ".repeat(
+                    20
+                )
+        }));
+        const output = proposed(wire.input, cards[0]);
+        output.findings = cards;
+        output.report += cards
+            .slice(1)
+            .map(
+                (finding) =>
+                    proposed(wire.input, finding).report.split(
+                        "\n## Correctness"
+                    )[1]
+            )
+            .join("\n");
+        const publisher = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true, specApproved: false },
+            store
+        );
+        const first = await publisher.publish(output);
+        assert.equal(first.status, "complete");
+        assert.equal(wire.comments.length, 50);
+        assert.ok(
+            wire.comments.every(
+                (item) =>
+                    item.body.length < 65536 &&
+                    !item.body.includes("peer3-review-state")
+            )
+        );
+        assert.ok(JSON.stringify(await store.load(wire.input)).length > 65536);
+        const restarted = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true, specApproved: false },
+            new (require("../../publication-store").PublicationStore)(
+                store.root
+            )
+        );
+        assert.equal((await restarted.publish(output)).status, "complete");
+        assert.equal(wire.comments.length, 50);
+        const imported = require("../../fetch-assessment").assessmentFindings(
+            wire.input,
+            { ...wire, threads: [] },
+            9
+        );
+        assert.equal(imported.length, 50);
+        assert.ok(imported.every((finding) => !finding.resolved));
+    });
+    it("resolves an advisory Human decision without a separate accepted reply", async function () {
+        const wire = wireFixture();
+        wire.finding.human = {
+            required: true,
+            question: "Choose behavior",
+            reason: "Design choice",
+            revision: 1,
+            authority: "author"
+        };
+        const legacy = readStates(wire.comments, wire.input, 9)[0];
+        legacy.findings = [wire.finding];
+        wire.comments[0].body = encodeState(legacy);
+        const publisher = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true, specApproved: false },
+            publicationStore()
+        );
+        const output = proposed(
+            wire.input,
+            {
+                ...wire.finding,
+                status: "fixed",
+                body: "The specification settles the choice and the implementation now follows it."
+            },
+            wire.finding
+        );
+        assert.equal((await publisher.publish(output)).status, "complete");
+        assert.match(wire.reviews[0].body, /✅ RESOLVED/);
+        assert.equal(output.accounting[0].humanAssessment, null);
+    });
+    it("publishes inline findings with small markers and fetches them without worker state", async function () {
         await gitFixture(async ({ input, source, root }) => {
             const wire = wireFixture();
             Object.assign(wire.input, {
@@ -218,7 +320,8 @@ describe("assessment GitHub lifecycle", function () {
                     botId: 9,
                     exchange: wire.exchange
                 }),
-                { eligible: true, specApproved: false, repoRoot: source }
+                { eligible: true, specApproved: false, repoRoot: source },
+                publicationStore()
             );
             assert.equal((await publisher.publish(output)).status, "complete");
             assert.equal(wire.comments.length, 0);
@@ -247,22 +350,26 @@ describe("assessment GitHub lifecycle", function () {
         wire.comments.splice(0);
         wire.reviews.splice(0);
         let failEdit = true;
+        const store = publicationStore();
+        const save = store.save.bind(store);
+        store.save = async (...args) => {
+            if (args[2].at(-1).status === "partial" && failEdit) {
+                failEdit = false;
+                throw new Error("Worker unavailable after GitHub write");
+            }
+            return save(...args);
+        };
         const publisher = new Publisher(
             wire.input,
             new GitHubWriter(wire.input, {
                 token: "recorded",
                 botId: 9,
                 exchange: (url, options) => {
-                    if (options.method === "PATCH" && failEdit) {
-                        failEdit = false;
-                        return Promise.resolve(
-                            new Response("{}", { status: 503 })
-                        );
-                    }
                     return wire.exchange(url, options);
                 }
             }),
-            { eligible: true, specApproved: false }
+            { eligible: true, specApproved: false },
+            store
         );
         const output = proposed(wire.input, {
             ...wire.finding,
@@ -278,7 +385,7 @@ describe("assessment GitHub lifecycle", function () {
         assert.equal((await publisher.publish(output)).status, "complete");
         assert.equal(wire.comments.length, 1);
         assert.equal(
-            readStates(wire.comments, wire.input, 9).at(-1).status,
+            (await store.load(wire.input)).states.at(-1).status,
             "complete"
         );
     });
@@ -293,7 +400,8 @@ describe("assessment GitHub lifecycle", function () {
                 botId: 9,
                 exchange: wire.exchange
             }),
-            { eligible: true, specApproved: true }
+            { eligible: true, specApproved: true },
+            publicationStore()
         );
         assert.equal(
             (await publisher.publish(result(wire.input))).status,
@@ -305,7 +413,11 @@ describe("assessment GitHub lifecycle", function () {
             wire.reviews[0].body.replace(/<!--[\s\S]*?-->/g, "").trim(),
             ""
         );
-        assert.equal(readStates(wire, wire.input, 9).at(-1).status, "complete");
+        assert.equal(
+            (await publisher.store.load(wire.input)).states.at(-1).status,
+            "complete"
+        );
+        assert.ok(!wire.reviews[0].body.includes("peer3-review-state"));
         await publisher.publish(result(wire.input));
         assert.equal(wire.reviews.length, 1);
     });
@@ -380,10 +492,15 @@ describe("assessment GitHub lifecycle", function () {
             botId: 9,
             exchange: wire.exchange
         });
-        const publisher = new Publisher(wire.input, github, {
-            eligible: true,
-            specApproved: false
-        });
+        const publisher = new Publisher(
+            wire.input,
+            github,
+            {
+                eligible: true,
+                specApproved: false
+            },
+            publicationStore()
+        );
         const published = await publisher.publish(output);
         assert.equal(published.status, "complete");
         assert.match(
@@ -394,12 +511,12 @@ describe("assessment GitHub lifecycle", function () {
         assert.ok(wire.reviews[0].body.includes("Sibling stays visible."));
         assert.equal(
             wire.calls.filter((call) => call.method === "PUT").length,
-            4
+            1
         );
         await publisher.publish(output);
         assert.equal(
             wire.calls.filter((call) => call.method === "PUT").length,
-            4
+            1
         );
     });
     it("resolves and reopens a standalone comment using the same finding ID", async function () {
@@ -422,6 +539,7 @@ describe("assessment GitHub lifecycle", function () {
             status: "fixed",
             body: "The boundary is fixed."
         };
+        const store = publicationStore();
         const makePublisher = () =>
             new Publisher(
                 wire.input,
@@ -430,7 +548,8 @@ describe("assessment GitHub lifecycle", function () {
                     botId: 9,
                     exchange: wire.exchange
                 }),
-                { eligible: true, specApproved: false }
+                { eligible: true, specApproved: false },
+                store
             );
         assert.equal(
             (
@@ -444,7 +563,7 @@ describe("assessment GitHub lifecycle", function () {
             wire.comments.find((item) => item.id === 2).body,
             /✅ RESOLVED/
         );
-        const previous = readStates(wire.comments, wire.input, 9).at(-1)
+        const previous = (await store.load(wire.input)).states.at(-1)
             .findings[0];
         wire.input.head = "1".repeat(40);
         wire.input.attempt = "attempt-2";
@@ -467,7 +586,7 @@ describe("assessment GitHub lifecycle", function () {
         assert.match(current, /regressed again/);
         assert.equal(
             wire.calls.filter((call) => call.method === "PATCH").length,
-            8
+            2
         );
     });
     it("publishes a new general finding as its own section-labelled comment", async function () {
@@ -482,7 +601,8 @@ describe("assessment GitHub lifecycle", function () {
                 botId: 9,
                 exchange: wire.exchange
             }),
-            { eligible: true, specApproved: false }
+            { eligible: true, specApproved: false },
+            publicationStore()
         );
         assert.equal(
             (await publisher.publish(proposed(wire.input, finding))).status,
@@ -496,7 +616,7 @@ describe("assessment GitHub lifecycle", function () {
         assert.equal(wire.reviews.length, 0);
         assert.equal(wire.comments.length, 1);
         assert.equal(
-            readStates(wire.comments, wire.input, 9).at(-1).status,
+            (await publisher.store.load(wire.input)).states.at(-1).status,
             "complete"
         );
         await publisher.publish(proposed(wire.input, finding));

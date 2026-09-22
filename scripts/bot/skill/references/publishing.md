@@ -11,7 +11,7 @@ inline comment.
 ````markdown
 - [ ] **[TO1] Inline comment**
 
-          <!-- pr-review-finding {"id":"TO1","kind":"inline","path":"src/x.ts","line":118,"side":"RIGHT"} -->
+            <!-- pr-review-finding {"id":"TO1","kind":"inline","path":"src/x.ts","line":118,"side":"RIGHT"} -->
 
     **Target:** [`src/x.ts:118`](https://github.com/owner/repo/blob/<head-sha>/src/x.ts#L118) · `RIGHT`
 
@@ -26,12 +26,12 @@ inline comment.
     ```
 
     **Human**
-      <!-- human:TO1:start -->
-      <!-- Add your note here. This block is preserved on re-review. -->
-      <!-- human:TO1:end -->
+    <!-- human:TO1:start -->
+    <!-- Add your note here. This block is preserved on re-review. -->
+    <!-- human:TO1:end -->
 
     **AI-generated**
-      <!-- ai:TO1:start -->
+    <!-- ai:TO1:start -->
 
     🟠 **[TO1] — Finding.**
 
@@ -43,7 +43,7 @@ inline comment.
     > Explain the concrete change, its owner and any relevant trade-off. Describe
     > the regression scenario and expected outcome that would verify the fix.
 
-          <!-- ai:TO1:end -->
+            <!-- ai:TO1:end -->
 ````
 
 The preview is for the reviewer and is not posted. Show two or three lines on either side when available, use
@@ -63,17 +63,17 @@ precise target. Do not publish green summaries or no-change findings.
 ```markdown
 - [ ] **[TO2] General PR comment**
 
-          <!-- pr-review-finding {"id":"TO2","kind":"general"} -->
+            <!-- pr-review-finding {"id":"TO2","kind":"general"} -->
 
     **Destination:** General PR review comment, batched in the review body.
 
     **Human**
-      <!-- human:TO2:start -->
-      <!-- Add your note here. This block is preserved on re-review. -->
-      <!-- human:TO2:end -->
+    <!-- human:TO2:start -->
+    <!-- Add your note here. This block is preserved on re-review. -->
+    <!-- human:TO2:end -->
 
     **AI-generated**
-      <!-- ai:TO2:start -->
+    <!-- ai:TO2:start -->
 
     🧑 **HUMAN DECISION REQUIRED**
 
@@ -81,9 +81,10 @@ precise target. Do not publish green summaries or no-change findings.
 
     **Decision:** the precise question the engineer must answer.
 
-    **STOP — implementing agents:** Ask your human and wait for their explicit
-    comment before implementing or resolving this finding. Do not choose or reply
-    on their behalf. Code changes and thread resolution are not human consent.
+    **STOP — implementing agents:** If the specification or an existing human
+    decision does not settle this choice, ask your human before implementing it.
+    Do not invent consent or reply on their behalf. This advisory label uses the
+    same evidence-based resolution lifecycle as any other finding.
 
     Explain the evidence, the conflicting alternatives and the observable impact.
     Say why source alone cannot settle the intended behavior and which trade-off
@@ -94,7 +95,7 @@ precise target. Do not publish green summaries or no-change findings.
     > Give the recommended option and its rationale, the change conditional on
     > that decision, and the scenario that would verify the selected behavior.
 
-          <!-- ai:TO2:end -->
+            <!-- ai:TO2:end -->
 ```
 
 Keep exactly one single-line JSON metadata marker per finding. Keep the finding and fix inside its AI markers.

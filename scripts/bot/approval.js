@@ -1,12 +1,4 @@
-function canApprove({
-    result,
-    pull,
-    head,
-    botId,
-    blocked,
-    uncertain,
-    specApproved
-}) {
+function canApprove({ result, pull, head, botId, uncertain, specApproved }) {
     return (
         result.recommendation === "approve" &&
         result.coverage.complete &&
@@ -20,7 +12,6 @@ function canApprove({
         !pull.draft &&
         pull.head.sha === head &&
         pull.user.id !== botId &&
-        blocked.length === 0 &&
         !uncertain &&
         specApproved === true
     );

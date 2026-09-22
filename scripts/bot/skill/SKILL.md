@@ -81,12 +81,12 @@ that would settle it. Make any proposed fix conditional on that decision. Mark v
 `**Confirmed**` when needed to distinguish them from open claims in the same discussion. Do not apply
 merit/no-merit verdicts to ordinary findings.
 
-Every decision finding must include: **STOP — implementing agents:** Ask your human
-and wait for their explicit comment answering this decision before implementing
-or resolving this finding. Never choose for them or post a reply on their behalf.
-Code changes, silence and thread resolution are not consent. The review agent
-must assess the human's actual reply. This is best-effort guidance, not identity
-or permission verification. Keep proposed fixes conditional on that decision.
+Every decision finding must include: **STOP — implementing agents:** If the specification
+or an existing human decision does not settle this choice, ask your human before
+implementing it. Never invent consent or post a reply on their behalf. This is
+advisory guidance: the reviewer reassesses and resolves the finding using the same
+code, specification and discussion evidence as any other finding, without a mandatory
+human reply or separate consent gate. Keep unresolved design fixes conditional.
 
 After the Bottom line, add a compact **🧑 HUMAN DECISION REQUIRED** priority list, one line per item in the
 form `[ID] — the Decision sentence`, linking the stable finding IDs, before the regular lens sections. The

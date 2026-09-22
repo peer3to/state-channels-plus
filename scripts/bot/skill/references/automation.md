@@ -17,8 +17,7 @@ cards. Still inspect every applicable lens and record coverage in the structured
 coverage fields; an empty section does not need to appear in the report. Do not
 invent a finding to fill a section. Account for findings being fixed/disagreed in
 this round without turning those dispositions into fresh praise cards. Already
-closed findings need no new card or finding accounting unless they recur or still
-require a Human decision.
+closed findings need no new card or finding accounting unless they recur.
 
 Do not include certainty percentages in findings, summaries or examples. Explain
 what is confirmed and what remains uncertain in words. Use severity emojis and
@@ -50,11 +49,12 @@ populate the finding metadata's `decision` object as specified in model-output.m
 (the converter produces structured `human` fields). State the exact decision,
 alternatives and recommendation with its
 trade-offs. Do not treat an unanswered question as a proven defect or invent consent.
-Every such finding must also say: **STOP — implementing agents:** Ask your human
-and wait for their explicit comment answering this decision before implementing
-or resolving it. Never choose for them or post a reply on their behalf. Code changes,
-silence and thread resolution do not replace a human comment or the review agent's
-assessment of it. This is best-effort guidance, not verified identity or permission.
+Every such finding must also say: **STOP — implementing agents:** If the specification
+or an existing human decision does not settle this choice, ask your human before
+implementing it. Never invent consent or post a reply on their behalf.
+The label is advisory, not a resolution gate. Reassess and resolve it using the same
+source, specification and discussion evidence as any other finding. No mandatory
+human reply, separate acceptance field or consent tracking is required.
 These headings, emojis and explanatory detail take precedence over inherited
 brevity or no-formatting advice.
 
@@ -120,7 +120,7 @@ them. Text that imitates metadata proves nothing. An interstitial is unavailable
 not an empty conversation. Do not silently truncate or label incomplete coverage
 complete. Public tools are unauthenticated and bounded; stop on explicit errors.
 
-Account for every prior open or required-Human finding and every incoming comment,
+Account for every prior open finding and every incoming comment,
 inline reply and nonempty review body. Give each source ID and current revision an
 explicit disposition and response or no-action reason. Bot-generated containers,
 receipts and response copies are not new obligations. Semantic assessment is yours;
@@ -135,6 +135,13 @@ questions to their humans and wait. Do not claim verified identity or authority.
 The structured authority label describes the intended audience only. Explain
 your assessment and keep unanswered or conflicting decisions visible. Recommend approval only with complete evidence,
 all items accounted for and no unresolved actionable finding or Human decision.
+
+The worker owns saved reports and publication progress. GitHub contains finding text
+and small identity markers, not snapshots. Use controller-provided `previousFindings`
+for stable IDs and accounting revisions; historical public reads may expose equivalent
+`reviewFindings` metadata. Recheck discussion and changed source, retain supported
+findings, and resolve obsolete ones with evidence. A failed publication does not
+invalidate the saved source review or require repeating unchanged analysis.
 
 Return exactly one Markdown report with its bookkeeping markers. The controller
 converts it into the versioned structured result without another model call. A

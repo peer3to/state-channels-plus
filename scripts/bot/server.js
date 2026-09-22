@@ -5,6 +5,7 @@ const { check, digest, writeJson, writeText, ownedPath } = require("./data");
 const { sanitized } = require("./errors");
 const protocol = require("./protocol");
 const { Sessions } = require("./sessions");
+const { PublicationStore } = require("./publication-store");
 const { Worktrees, git } = require("./worktrees");
 const { SourceTools } = require("./source-tools");
 const {
@@ -25,6 +26,7 @@ const { acquireOsFileLock } = require("../e2e-parallel/distributed/hostLock");
 class ReviewService {
     config;
     sessions;
+    publications;
     worktrees;
     lock;
     skillDigest;
@@ -49,6 +51,7 @@ class ReviewService {
         this.worktrees = new Worktrees(
             path.join(this.config.stateRoot, "worktrees")
         );
+        this.publications = new PublicationStore(this.sessions.root);
     }
     async start() {
         await fs.mkdir(this.config.stateRoot, { recursive: true, mode: 0o700 });
@@ -213,6 +216,33 @@ class ReviewService {
                     }
                 );
                 await connection.send("result", requestId, attemptId, result);
+            } else if (operation === "publication") {
+                const delivery = this.sessions.attempts.get(
+                    this.sessions.attemptKey(input)
+                );
+                check(
+                    delivery &&
+                        delivery.requestDigest === digest(input) &&
+                        !delivery.failure,
+                    "UNAUTHORIZED"
+                );
+                const generated = await delivery.promise;
+                check(
+                    generated.executionId === value.executionId,
+                    "UNAUTHORIZED"
+                );
+                const publication =
+                    value.states === undefined
+                        ? await this.publications.load(input)
+                        : await this.publications.save(
+                              input,
+                              value.previous,
+                              value.states
+                          );
+                await connection.send("acknowledgement", requestId, attemptId, {
+                    accepted: true,
+                    publication
+                });
             } else if (operation === "correction") {
                 const result = await this.sessions.correct(
                     input,
@@ -320,7 +350,21 @@ class ReviewService {
             return await this.generate(
                 input,
                 execution,
-                { ...input, base: tree.base, incremental },
+                {
+                    ...input,
+                    base: tree.base,
+                    incremental,
+                    previousFindings:
+                        (await this.publications.load(input)).states
+                            .at(-1)
+                            ?.findings.map((finding) => ({
+                                id: finding.id,
+                                status: finding.status,
+                                threadId: finding.threadId,
+                                sourceId: `finding:${finding.id}`,
+                                sourceRevision: digest(finding)
+                            })) || []
+                },
                 outputRoot
             );
         } catch (error) {

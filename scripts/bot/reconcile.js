@@ -10,10 +10,7 @@ function sourceRevision(item) {
 function accountingSet(observations, botId) {
     const required = [];
     for (const finding of observations.findings) {
-        if (
-            !["fixed", "disagreement"].includes(finding.status) ||
-            finding.human?.required
-        )
+        if (!["fixed", "disagreement"].includes(finding.status))
             required.push({
                 id: `finding:${finding.id}`,
                 revision: digest(finding),
@@ -70,7 +67,7 @@ function findingEvidence(finding) {
         human: finding.human
     });
 }
-function findingActions(previous, proposed, observations, blocked) {
+function findingActions(previous, proposed, observations) {
     const actions = [];
     for (const finding of proposed) {
         const old = previous.find((entry) => entry.id === finding.id);
@@ -90,12 +87,11 @@ function findingActions(previous, proposed, observations, blocked) {
             if (thread) actions.push({ kind: "evidence", finding, thread });
         if (
             !old.threadId &&
-            !blocked.includes(finding.id) &&
             (findingEvidence(finding) !== findingEvidence(old) ||
                 finding.status !== old.status)
         )
             actions.push({ kind: "general-update", finding });
-        if (thread && !blocked.includes(finding.id)) {
+        if (thread) {
             if (closed && !thread.isResolved)
                 actions.push({ kind: "resolve", finding, thread });
             if (!closed && thread.isResolved)

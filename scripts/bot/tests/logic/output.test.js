@@ -222,7 +222,7 @@ describe("review recorded native output boundary", function () {
                     service.instructions.indexOf(full)
             );
             assert.ok(override.includes("HUMAN DECISION REQUIRED"));
-            assert.ok(override.includes("wait for their explicit comment"));
+            assert.ok(override.includes("advisory, not a resolution gate"));
         } finally {
             await service.close();
             await fs.rm(root, { recursive: true });

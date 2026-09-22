@@ -559,6 +559,7 @@ class Sessions {
             if (
                 name === `${key}.json` ||
                 name === `${key}-baseline.json` ||
+                name === `${key}-publication.json` ||
                 (name.startsWith(`${key}-receipt-`) && name.endsWith(".json"))
             )
                 await fs.rm(await ownedPath(this.root, name), { force: true });

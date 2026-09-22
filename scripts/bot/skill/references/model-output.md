@@ -33,7 +33,7 @@ Findings requiring a human decision instead start their AI block with
 `🧑 **HUMAN DECISION REQUIRED**` on its own first line, followed by the severity
 and finding ID. Include the STOP warning from automation.md telling
 implementing agents to wait for the human's explicit comment. Populate `decision`
-as well; prose alone does not activate the decision gate.
+as well so the warning renders consistently. It is advisory, not a resolution gate.
 The publisher normalizes this warning to one leading block from the structured
 decision. Keep the STOP warning in its own paragraph, separate from the evidence
 and proposed fix.

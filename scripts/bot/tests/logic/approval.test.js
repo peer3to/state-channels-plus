@@ -13,7 +13,6 @@ function state(overrides = {}) {
         },
         head: input.head,
         botId: 9,
-        blocked: [],
         uncertain: false,
         specApproved: true,
         ...overrides
@@ -35,8 +34,14 @@ describe("review advisory approval", function () {
     it("blocks missing spec approval", function () {
         assert.equal(canApprove(state({ specApproved: false })), false);
     });
-    it("blocks unresolved Human decisions and uncertain actions", function () {
-        assert.equal(canApprove(state({ blocked: ["R1TO1"] })), false);
+    it("treats advisory Human labels like ordinary findings and still blocks uncertain actions", function () {
+        const input = state();
+        input.result.findings = [
+            { status: "fixed", human: { required: true } }
+        ];
+        assert.equal(canApprove(input), true);
+        input.result.findings[0].status = "continued";
+        assert.equal(canApprove(input), false);
         assert.equal(canApprove(state({ uncertain: true })), false);
     });
     it("blocks incomplete context and retrieval failures", function () {

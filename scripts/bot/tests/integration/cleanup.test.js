@@ -52,11 +52,25 @@ describe("review owned lifecycle cleanup", function () {
         await cleanupFixture(async ({ cleanup, tree, deleted, root, wire }) => {
             const sentinel = path.join(root, "unregistered-developer-data");
             await fs.writeFile(sentinel, "keep");
+            const journal = path.join(
+                cleanup.sessions.root,
+                "1-6-publication.json"
+            );
+            const sibling = path.join(
+                cleanup.sessions.root,
+                "1-7-publication.json"
+            );
+            await fs.writeFile(journal, JSON.stringify({ states: [] }));
+            await fs.writeFile(sibling, JSON.stringify({ states: [] }));
             const summary = await cleanup.run();
             assert.equal(summary.deleted, 1);
             assert.deepEqual(deleted, ["registered-session"]);
             await assert.rejects(fs.access(tree.checkout), { code: "ENOENT" });
             assert.equal(await fs.readFile(sentinel, "utf8"), "keep");
+            await assert.rejects(fs.access(journal), { code: "ENOENT" });
+            assert.deepEqual(JSON.parse(await fs.readFile(sibling, "utf8")), {
+                states: []
+            });
             wire.done();
             const again = await cleanup.run();
             assert.equal(again.registered, 0);

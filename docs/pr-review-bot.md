@@ -127,8 +127,8 @@ when ready to publish. Fetching never posts, resolves or invents a Human answer.
 
 Rerunning the command preserves existing cards and all local assessment/reply/fix
 text. Resolved cards already in your file are marked resolved rather than removed;
-newly imported cards exclude addressed/resolved findings. Required unanswered Human
-decisions remain visible even if someone manually resolved their thread. Changed
+newly imported cards exclude addressed/resolved findings, including advisory Human
+decision findings. Changed
 remote findings are flagged for rechecking; local original text stays intact. A
 refresh creates a timestamped backup before replacing a changed assessment. An
 unmanaged existing assessment is refused rather than overwritten; move it aside
@@ -157,10 +157,10 @@ disagreements collapse the original finding under `✅ RESOLVED — [ID]`, strik
 through its prior text and retain the resolution explanation. Older grouped review
 bodies are edited only within the matching finding's controller-owned boundaries;
 sibling findings stay visible. Recurrence restores the finding in place. Ambiguous
-ownership/boundaries fail closed. Required Human decisions still require actual
-discussion and the reviewer's assessment before resolution.
+ownership/boundaries fail closed. Human-decision labels are advisory and follow the
+same evidence-based reassessment and resolution rules as other findings.
 
-The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval says `Human review still required`; it requires complete evidence and resolved findings/decisions, not merely green CI. A comment alone starts no run.
+The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval has a metadata-only body; it requires complete evidence and resolved findings, not merely green CI. A comment alone starts no run.
 
 Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Review retrieval has no cumulative request, page or byte cap; zero in those configured limits means unlimited. Counters remain recorded. Progress and reconnect do not reset the model timeout. Missing evidence prevents approval.
 
@@ -177,16 +177,26 @@ Source-review completion is separate from runtime verification. Missing live
 acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
 publishable and approval is blocked. Passive limitations stay in metadata, not
 public status comments. Concrete coverage defects use ordinary stable finding IDs.
-Publication state is hidden metadata on actual finding comments or review bodies,
-not separate intent/record/complete comments. Clean rounds do not create placeholder
-comments; failures use a deduplicated error notice. Legacy state remains readable.
+Publication state is persisted privately by the worker in its per-PR publication
+journal beside the saved reports and conversation records. Authenticated CI reads
+and checkpoints that journal; compare-and-swap rejects stale updates. GitHub stores
+only finding text and small finding/action identity markers, never report snapshots.
+Publication retries reuse the saved result and reconcile those markers before writes.
+Clean rounds do not create placeholder comments; failures use a deduplicated error
+notice. Historical snapshots are imported into the journal on first publication;
+edited finding bodies lose their legacy snapshots. Untouched historical comments
+are not bulk-edited. Public model reads strip those snapshots and retain only compact
+finding identities/revisions. Assessment fetching reads marked GitHub findings and
+resolved thread state without needing access to the worker journal.
 Human-decision findings display `🧑 HUMAN DECISION REQUIRED` and a STOP warning:
 this applies to unresolved design choices, not purely technical fixes or choices
 already settled by the specification or an explicit human decision. Cite the
 settling authority and proceed without requesting the same decision again. For
 unresolved choices,
-implementing agents must ask their human and wait for an explicit comment before
-implementing or resolving them. Code changes and thread resolution are not consent.
+implementing agents must ask their human before choosing. The label is advisory,
+not an extra publication or resolution gate. The reviewer can resolve it when code,
+specification or discussion evidence establishes it is addressed, without requiring
+a separate Human reply or consent record.
 Unread source/discussion still goes in `coverage.missing` and fails the round.
 The controller never reclassifies old incomplete reports by guessing from prose.
 

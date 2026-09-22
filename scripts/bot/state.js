@@ -1,11 +1,47 @@
 const { check, digest } = require("./data");
-// Round state and action markers live as HTML comments inside the bot's own
-// comment bodies, because GitHub gives the bot no other durable per-PR store it
-// owns. Model-authored prose is published into those same bodies, and this
-// payload only validates repository/PR/head, all of which the model already
-// knows. Anything model-authored must therefore have its HTML comment syntax
-// stripped before publication; review-format.js owns that.
+// Legacy snapshot codec is retained for migration and historical fixtures only.
+// New publication state belongs to the worker; GitHub carries small ID markers.
+// Model prose must still have HTML control markers stripped before publishing.
 const MARKER = /<!-- peer3-review-state:v1 ([A-Za-z0-9+/=]+) -->/g;
+function stripState(body) {
+    return body.replace(MARKER, "").trim();
+}
+function publicContext(value) {
+    if (Array.isArray(value)) return value.map(publicContext);
+    if (!value || typeof value !== "object") return value;
+    const result = Object.fromEntries(
+        Object.entries(value).map(([key, item]) => [
+            key,
+            key === "body" &&
+            typeof item === "string" &&
+            value.user?.type === "Bot"
+                ? stripState(item)
+                : publicContext(item)
+        ])
+    );
+    if (value.user?.type === "Bot" && typeof value.body === "string") {
+        const findings = new Map();
+        for (const match of value.body.matchAll(MARKER)) {
+            try {
+                const state = JSON.parse(
+                    Buffer.from(match[1], "base64").toString("utf8")
+                );
+                for (const finding of state.findings || [])
+                    findings.set(finding.id, {
+                        id: finding.id,
+                        status: finding.status,
+                        threadId: finding.threadId,
+                        sourceId: `finding:${finding.id}`,
+                        sourceRevision: digest(finding)
+                    });
+            } catch {
+                /* A malformed legacy marker is not review evidence. */
+            }
+        }
+        if (findings.size) result.reviewFindings = [...findings.values()];
+    }
+    return result;
+}
 function encodeState(state) {
     return `<!-- peer3-review-state:v1 ${Buffer.from(JSON.stringify(state)).toString("base64")} -->`;
 }
@@ -26,6 +62,8 @@ function attachState(body, state) {
     return `${retained}\n\n${encodeState(state)}`;
 }
 function readStates(comments, request, botId) {
+    if (!Array.isArray(comments) && comments.publicationStates)
+        return structuredClone(comments.publicationStates);
     const containers = Array.isArray(comments)
         ? comments.map((item) => ({ item, kind: "comment" }))
         : [
@@ -118,6 +156,8 @@ function findAction(observations, marker, botId) {
     );
 }
 module.exports = {
+    stripState,
+    publicContext,
     attachState,
     encodeState,
     readStates,

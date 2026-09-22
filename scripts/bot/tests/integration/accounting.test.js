@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { Sessions } = require("../../sessions");
 const { Publisher } = require("../../publish");
+const { PublicationStore } = require("../../publication-store");
 const { GitHubWriter } = require("../../github-write");
 const { DEFAULTS } = require("../../config");
 const { digest } = require("../../data");
@@ -37,10 +38,15 @@ describe("review accounting handoff", function () {
             botId: 9,
             exchange: records.exchange.bind(records)
         });
-        const publisher = new Publisher(input, writer, {
-            eligible: true,
-            specApproved: false
-        });
+        const publisher = new Publisher(
+            input,
+            writer,
+            {
+                eligible: true,
+                specApproved: false
+            },
+            new PublicationStore(root)
+        );
         try {
             const initial = await sessions.submit(
                 input,

@@ -4,37 +4,73 @@ const { execFileSync } = require("node:child_process");
 const { check, digest, ownedPath, writeText, writeJson } = require("./data");
 const { GitHubWriter, actionsBotId } = require("./github-write");
 const { readStates } = require("./state");
-const { findingSource } = require("./finding-source");
+const { findingSource, findingBounds } = require("./finding-source");
 const { safeText } = require("./review-format");
 
 const DOCUMENT = "<!-- peer3-assessment:v1 -->";
 function assessmentFindings(request, observations, botId) {
+    const marked = new Map();
+    for (const item of [
+        ...observations.reviews,
+        ...observations.comments,
+        ...observations.inline
+    ]) {
+        if (item.user?.id !== botId || item.user.type !== "Bot") continue;
+        for (const match of (item.body || "").matchAll(
+            /<!-- peer3-review-finding:v1 ([A-Z][A-Z0-9]{0,127}):start -->/g
+        )) {
+            const id = match[1],
+                bounds = findingBounds(id);
+            const end = item.body.indexOf(bounds.end, match.index);
+            check(end > match.index, "INVALID_RESULT");
+            const body = item.body
+                .slice(match.index + bounds.start.length, end)
+                .trim();
+            const thread = observations.threads.find((entry) =>
+                entry.comments.nodes.some((node) => node.databaseId === item.id)
+            );
+            marked.set(id, {
+                id,
+                url: item.html_url,
+                body: safeText(body),
+                resolved:
+                    thread?.isResolved === true ||
+                    body.startsWith("<details>\n<summary>✅ RESOLVED"),
+                human: /HUMAN DECISION REQUIRED/.test(body),
+                revision: digest(body)
+            });
+        }
+    }
     const state = readStates(observations, request, botId)
         .filter((item) => item.status !== "intent")
         .at(-1);
-    check(state, "CONTEXT_UNAVAILABLE");
-    return state.findings.map((finding) => {
-        const thread =
-            finding.threadId &&
-            observations.threads.find((item) => item.id === finding.threadId);
-        if (finding.threadId) check(thread, "CONTEXT_UNAVAILABLE");
-        const resolved =
-            !finding.human?.required &&
-            ((state.status === "complete" &&
-                ["fixed", "disagreement"].includes(finding.status)) ||
-                thread?.isResolved === true);
-        const source = findingSource(request, observations, botId, finding);
-        // Never silently omit an outstanding finding whose original was not located.
-        check(resolved || source, "CONTEXT_UNAVAILABLE");
-        return {
-            id: finding.id,
-            url: source?.item.html_url,
-            body: finding.body,
-            resolved,
-            human: finding.human?.required === true,
-            revision: digest(finding)
-        };
-    });
+    if (!state) return [...marked.values()];
+    const legacy = state.findings
+        .filter((finding) => !marked.has(finding.id))
+        .map((finding) => {
+            const thread =
+                finding.threadId &&
+                observations.threads.find(
+                    (item) => item.id === finding.threadId
+                );
+            if (finding.threadId) check(thread, "CONTEXT_UNAVAILABLE");
+            const resolved =
+                (state.status === "complete" &&
+                    ["fixed", "disagreement"].includes(finding.status)) ||
+                thread?.isResolved === true;
+            const source = findingSource(request, observations, botId, finding);
+            // Never silently omit an outstanding finding whose original was not located.
+            check(resolved || source, "CONTEXT_UNAVAILABLE");
+            return {
+                id: finding.id,
+                url: source?.item.html_url,
+                body: finding.body,
+                resolved,
+                human: finding.human?.required === true,
+                revision: digest(finding)
+            };
+        });
+    return [...legacy, ...marked.values()];
 }
 function mergeAssessment(previous, findings, request) {
     check(!previous || previous.includes(DOCUMENT), "INVALID_REQUEST");

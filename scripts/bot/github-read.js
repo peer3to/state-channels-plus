@@ -490,7 +490,7 @@ class PublicGitHub {
             if (next) next = this.permitted(next).href;
             this.budget.record(url.href, body, response.headers, data, next);
             return {
-                data,
+                data: require("./state").publicContext(data),
                 next,
                 source: this.budget.sources.at(-1),
                 threadResolution: {

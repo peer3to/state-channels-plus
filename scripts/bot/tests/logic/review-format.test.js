@@ -170,13 +170,13 @@ describe("review format", function () {
         assert.equal(output.split("**HUMAN DECISION REQUIRED**").length, 2);
         assert.ok(output.includes("🧑 **HUMAN DECISION REQUIRED**"));
         assert.ok(output.includes("STOP — implementing agents"));
-        assert.ok(output.includes("wait for their explicit comment"));
-        assert.ok(output.includes("not human consent"));
+        assert.ok(output.includes("no separate reply or consent gate"));
+        assert.ok(output.includes("Do not invent consent"));
         assert.ok(output.includes("**Decision:** Should retries stop?"));
         assert.ok(output.includes("Should retries stop?"));
         assert.ok(output.includes("@author"));
         assert.ok(!output.includes("Human reply\nFinding:"));
-        assert.ok(output.includes("Ask your human"));
-        assert.ok(output.includes("no special reply format is required"));
+        assert.ok(output.includes("ask your human"));
+        assert.ok(output.includes("This label is advisory"));
     });
 });

@@ -27,6 +27,7 @@ async function callService({
     seed,
     limits = DEFAULTS,
     dht,
+    interact,
     onProgress = () => {}
 }) {
     protocol.request(request);
@@ -46,6 +47,9 @@ async function callService({
     let timer,
         progressTimer,
         activeConnection,
+        waiting,
+        interacting = false,
+        terminal = false,
         lastProgress = 0;
     try {
         return await new Promise((resolve, reject) => {
@@ -62,6 +66,8 @@ async function callService({
                 total
             );
             pool.onConnection((stream, info) => {
+                // Discovery may queue a connection that closes before this listener is installed.
+                if (stream.destroyed) return;
                 if (
                     (serverKey &&
                         stream.remotePublicKey.toString("hex") !== serverKey) ||
@@ -76,12 +82,17 @@ async function callService({
                 connection.on("close", () => {
                     if (activeConnection === connection) {
                         activeConnection = null;
-                        onProgress(
-                            "Review service contact lost; waiting for reconnection."
-                        );
+                        if (!terminal)
+                            onProgress(
+                                "Review service contact lost; waiting for reconnection."
+                            );
                     }
                 });
-                connection.on("failure", () => connection.close());
+                connection.on("failure", () => {
+                    if (activeConnection === connection)
+                        activeConnection = null;
+                    connection.close();
+                });
                 connection.on("progress", (progress) => {
                     if (
                         progress.requestId === requestId &&
@@ -97,6 +108,13 @@ async function callService({
                     }
                 });
                 connection.on("payload", (message) => {
+                    const accept = (value) => {
+                        if (!interact) return resolve(value);
+                        check(waiting, "INVALID_RESULT");
+                        const pending = waiting;
+                        waiting = null;
+                        pending.resolve(value);
+                    };
                     try {
                         check(
                             message.requestId === requestId &&
@@ -109,12 +127,15 @@ async function callService({
                             );
                             const error = new ReviewError(failure.code);
                             error.diagnostics = failure.diagnostics;
-                            reject(error);
+                            if (waiting) {
+                                waiting.reject(error);
+                                waiting = null;
+                            } else reject(error);
                         } else if (message.operation === "result")
-                            resolve(protocol.result(message.value, request));
+                            accept(protocol.result(message.value, request));
                         else if (message.operation === "acknowledgement") {
                             check(message.value.accepted === true);
-                            resolve(message.value);
+                            accept(message.value);
                         } else check(false);
                     } catch (error) {
                         reject(error);
@@ -127,17 +148,66 @@ async function callService({
                         remoteKey: stream.remotePublicKey,
                         authKey: keys.authKey
                     })
-                    .then(() =>
-                        connection.send(
+                    .then(() => {
+                        if (interact) {
+                            const send = (value) =>
+                                connection.send(
+                                    operation,
+                                    requestId,
+                                    request.attempt,
+                                    { request, ...value }
+                                );
+                            if (interacting)
+                                return waiting
+                                    ? send(waiting.payload)
+                                    : undefined;
+                            interacting = true;
+                            Promise.resolve()
+                                .then(() =>
+                                    interact(
+                                        (value) =>
+                                            new Promise((yes, no) => {
+                                                check(
+                                                    !waiting,
+                                                    "INVALID_REQUEST"
+                                                );
+                                                waiting = {
+                                                    resolve: yes,
+                                                    reject: no,
+                                                    payload: value
+                                                };
+                                                if (activeConnection?.ready)
+                                                    activeConnection
+                                                        .send(
+                                                            operation,
+                                                            requestId,
+                                                            request.attempt,
+                                                            {
+                                                                request,
+                                                                ...value
+                                                            }
+                                                        )
+                                                        .catch(() =>
+                                                            activeConnection?.close()
+                                                        );
+                                            })
+                                    )
+                                )
+                                .then(resolve, reject);
+                            return;
+                        }
+                        return connection.send(
                             operation,
                             requestId,
                             request.attempt,
                             operation === "request"
                                 ? request
                                 : { request, ...payload }
-                        )
-                    )
+                        );
+                    })
                     .catch((error) => {
+                        if (activeConnection === connection)
+                            activeConnection = null;
                         connection.close();
                         pool.yieldFailedOutgoingDial(stream, info, error).catch(
                             reject
@@ -157,6 +227,8 @@ async function callService({
             }, limits.progressMs);
         });
     } finally {
+        terminal = true;
+        waiting?.reject(new ReviewError("SERVICE_UNAVAILABLE"));
         clearTimeout(timer);
         clearInterval(progressTimer);
         for (const connection of connections) connection.close();

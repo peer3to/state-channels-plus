@@ -43,15 +43,9 @@ describe("implementation PR observation", function () {
             assert.ok(job, `Missing live producer ${name}`);
             assert.equal(job.conclusion, "success", `${name} did not succeed`);
         }
-        const observations = await reader.observe();
-        assert.ok(
-            observations.reviews.some(
-                (review) =>
-                    review.user?.id === reader.botId &&
-                    review.commit_id === request.head
-            ),
-            "No bot-owned review exists for this exact head."
-        );
+        // The successful publisher and receipt consumer validate this round.
+        // General-only, continuation-only and silent clean rounds need no new
+        // GitHub review container or public state/notification comment.
         const resultId = Number(process.env.REVIEW_RESULT_ARTIFACT),
             receiptId = Number(process.env.REVIEW_RECEIPT_ARTIFACT);
         assert.ok(

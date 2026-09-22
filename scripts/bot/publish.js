@@ -15,11 +15,10 @@ const {
     renderGeneralSections,
     safeText
 } = require("./review-format");
-const { enforceHumanState } = require("./policy");
 const { canApprove } = require("./approval");
 const { findingSource, wrapFinding } = require("./finding-source");
 const {
-    attachState,
+    stripState,
     readStates,
     allocate,
     actionMarker,
@@ -48,14 +47,16 @@ class Publisher {
     github;
     policy;
     pendingState = null;
-    stateCarrier = null;
-    constructor(request, github, policy) {
+    store;
+    journal = null;
+    constructor(request, github, policy, store) {
         protocol.request(request);
         this.request = request;
         this.github = github;
         this.policy = policy;
+        this.store = store;
     }
-    async observe() {
+    async observe(withState = true) {
         const observations = await this.github.observe();
         check(observations.pull.head.sha === this.request.head, "STALE_HEAD");
         check(
@@ -64,6 +65,26 @@ class Publisher {
                 this.policy.eligible === true,
             "UNAUTHORIZED"
         );
+        if (!withState) return observations;
+        if (!this.journal) {
+            check(this.store, "SERVICE_UNAVAILABLE");
+            this.journal = await this.store.load(this.request);
+            // Import historical public state once; all subsequent writes are private.
+            if (!this.journal.states.length) {
+                const legacy = readStates(
+                    observations,
+                    this.request,
+                    this.github.botId
+                );
+                if (legacy.length)
+                    this.journal = await this.store.save(
+                        this.request,
+                        digest(this.journal),
+                        legacy
+                    );
+            }
+        }
+        observations.publicationStates = this.journal.states;
         const latest = readStates(observations, this.request, this.github.botId)
             .filter((state) => state.status !== "intent")
             .at(-1);
@@ -78,7 +99,7 @@ class Publisher {
             ),
             "UNAUTHORIZED"
         );
-        const observations = await this.observe();
+        const observations = await this.observe(false);
         const marker = actionMarker(
             this.request,
             "unavailable",
@@ -157,11 +178,13 @@ class Publisher {
     }
     async publish(result) {
         this.pendingState = null;
-        this.stateCarrier = null;
         try {
             return await this.apply(result);
         } catch (error) {
-            if (this.pendingState?.actions.length)
+            if (this.pendingState?.actions.length) {
+                this.pendingState.status = "partial";
+                // Keep the original failure if the worker is also unavailable.
+                await this.saveState(this.pendingState).catch(() => {});
                 error.publication = {
                     status: "partial",
                     receipt: reviewReceipt(
@@ -171,22 +194,20 @@ class Publisher {
                         require("./errors").sanitized(error).code
                     )
                 };
+            }
             throw error;
         }
     }
     async saveState(state) {
-        if (!this.stateCarrier) return;
-        const observed = await this.observe();
-        const entries =
-            this.stateCarrier.kind === "review"
-                ? observed.reviews
-                : observed.comments;
-        const item = entries.find((entry) => entry.id === this.stateCarrier.id);
-        check(item, "CONTEXT_UNAVAILABLE");
         state.sequence = (state.sequence || 0) + 1;
-        await this.github.editGeneral(
-            { kind: this.stateCarrier.kind, item },
-            attachState(item.body, state)
+        const states = this.journal.states.filter(
+            (entry) => entry.head !== state.head
+        );
+        states.push(structuredClone(state));
+        this.journal = await this.store.save(
+            this.request,
+            digest(this.journal),
+            states
         );
     }
     async apply(result) {
@@ -213,42 +234,7 @@ class Publisher {
                 };
             if (missing.length) throw new ReviewError("ACCOUNTING_INCOMPLETE");
         }
-        const blocked = enforceHumanState(current.findings, result, current);
         const state = allocate(this.request, current, this.github.botId);
-        const prior = readStates(current, this.request, this.github.botId).at(
-            -1
-        );
-        if (prior) {
-            const sources = prior.findings
-                .map((finding) =>
-                    findingSource(
-                        this.request,
-                        current,
-                        this.github.botId,
-                        finding
-                    )
-                )
-                .filter(Boolean);
-            const source = sources.find((entry) => entry.kind !== "inline");
-            if (source)
-                this.stateCarrier = { kind: source.kind, id: source.item.id };
-            else if (prior.commentKind === "review")
-                this.stateCarrier = { kind: "review", id: prior.commentId };
-            else {
-                const review = current.reviews.find(
-                    (entry) =>
-                        entry.user?.id === this.github.botId &&
-                        entry.user.type === "Bot" &&
-                        sources.some(
-                            (item) =>
-                                item.kind === "inline" &&
-                                item.item.pull_request_review_id === entry.id
-                        )
-                );
-                if (review)
-                    this.stateCarrier = { kind: "review", id: review.id };
-            }
-        }
         if (state.status === "complete")
             return {
                 status: "complete",
@@ -267,28 +253,17 @@ class Publisher {
                 state.mappings[finding.id] = `R${state.round}${finding.id}`;
             return { ...finding, id: state.mappings[finding.id] };
         });
-        // Required Human state survives omission or a proposed replacement.
+        // Omission alone does not establish that any finding has been addressed.
         for (const old of current.findings.filter(
             (finding) =>
-                !state.findings.some((entry) => entry.id === finding.id) ||
-                (finding.human?.required && blocked.includes(finding.id))
+                !state.findings.some((entry) => entry.id === finding.id)
         )) {
-            const index = state.findings.findIndex(
-                (finding) => finding.id === old.id
-            );
-            if (index === -1) state.findings.push(old);
-            else
-                state.findings[index] = {
-                    ...state.findings[index],
-                    human: old.human,
-                    status: "continued"
-                };
+            state.findings.push(old);
         }
         const operations = findingActions(
             current.findings,
             state.findings,
-            current,
-            blocked
+            current
         );
         this.pendingState = state;
         await this.saveState(state);
@@ -336,11 +311,9 @@ class Publisher {
                         state.mappings
                     );
                     action = await this.github.comment(
-                        attachState(wrapFinding(finding.id, body), state)
+                        wrapFinding(finding.id, body)
                     );
                 }
-                if (!this.stateCarrier)
-                    this.stateCarrier = { kind: "comment", id: action.id };
                 if (!state.actions.some((entry) => entry.id === action.id)) {
                     state.actions.push({
                         kind: "review-comment",
@@ -353,10 +326,12 @@ class Publisher {
             // An inline review needs a body, but no standalone status prose.
             if (rendered.some((finding) => finding.path !== null)) {
                 batch = await this.github.batch(
-                    rendered,
-                    attachState(batchMarker, state)
+                    rendered.map((finding) => ({
+                        ...finding,
+                        body: wrapFinding(finding.id, finding.body)
+                    })),
+                    batchMarker
                 );
-                this.stateCarrier = { kind: "review", id: batch.id };
             }
         }
         if (batch && !state.actions.some((action) => action.id === batch.id))
@@ -386,16 +361,6 @@ class Publisher {
                 evidence: findingEvidence(operation.finding)
             });
             if (operation.kind === "general-update") {
-                if (
-                    enforceHumanState(
-                        current.findings,
-                        result,
-                        observed
-                    ).includes(operation.finding.id)
-                ) {
-                    deferred = true;
-                    continue;
-                }
                 const source = findingSource(
                     this.request,
                     observed,
@@ -430,7 +395,7 @@ class Publisher {
                     source.item.body.slice(source.end);
                 const action =
                     findAction(observed, marker, this.github.botId) ||
-                    (await this.github.editGeneral(source, body));
+                    (await this.github.editGeneral(source, stripState(body)));
                 state.actions.push({
                     kind: "review-comment",
                     id: action.id,
@@ -449,10 +414,12 @@ class Publisher {
                     action = operation.thread
                         ? await this.github.reply(
                               operation.thread,
-                              body,
+                              wrapFinding(operation.finding.id, body),
                               observed
                           )
-                        : await this.github.comment(body);
+                        : await this.github.comment(
+                              wrapFinding(operation.finding.id, body)
+                          );
                 }
                 state.actions.push({
                     kind: "review-comment",
@@ -460,17 +427,6 @@ class Publisher {
                     url: action.html_url
                 });
             } else {
-                if (
-                    operation.kind === "resolve" &&
-                    enforceHumanState(
-                        current.findings,
-                        result,
-                        observed
-                    ).includes(operation.finding.id)
-                ) {
-                    deferred = true;
-                    continue;
-                }
                 await this.github.setResolved(
                     operation.thread,
                     operation.kind === "resolve",
@@ -516,7 +472,8 @@ class Publisher {
             accountingSet(beforeApproval, this.github.botId),
             result
         );
-        if (deferred || missing.length)
+        if (deferred || missing.length) {
+            await this.saveState(state);
             return {
                 status: "partial",
                 receipt: reviewReceipt(
@@ -526,6 +483,7 @@ class Publisher {
                     "ACCOUNTING_INCOMPLETE"
                 )
             };
+        }
         for (const stale of beforeApproval.reviews.filter(
             (entry) =>
                 entry.user?.id === this.github.botId &&
@@ -574,11 +532,6 @@ class Publisher {
                 pull: beforeApproval.pull,
                 head: this.request.head,
                 botId: this.github.botId,
-                blocked: enforceHumanState(
-                    current.findings,
-                    result,
-                    beforeApproval
-                ),
                 uncertain: false,
                 specApproved: this.policy.specApproved
             })
@@ -590,8 +543,7 @@ class Publisher {
             );
             const approval =
                 findAction(beforeApproval, approveMarker, this.github.botId) ||
-                (await this.github.approve(attachState(approveMarker, state)));
-            this.stateCarrier = { kind: "review", id: approval.id };
+                (await this.github.approve(approveMarker));
             state.actions.push({
                 kind: "approve",
                 id: approval.id,
@@ -642,6 +594,7 @@ async function main() {
         generateAuditSummary
     } = require("../../docs/spec/tools/generate-audit-summary");
     const specApproved = generateAuditSummary().issueCount === 0;
+    const { withPublicationStore } = require("./publication-store");
     const owner = new Publisher(request, github, {
         eligible: process.env.REVIEW_ELIGIBLE === "true",
         specApproved,
@@ -657,7 +610,15 @@ async function main() {
                 receipt: await owner.notice(input)
             };
             if (mode !== "notice") process.exitCode = 1;
-        } else output = await owner[mode](input);
+        } else
+            output = await withPublicationStore(
+                request,
+                input.executionId,
+                async (store) => {
+                    owner.store = store;
+                    return owner[mode](input);
+                }
+            );
     } catch (error) {
         if (error.publication) {
             output = error.publication;

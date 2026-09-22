@@ -116,8 +116,11 @@ describe("review CI workflow", function () {
                     assert.ok(step.run.includes("--ignore-scripts"));
                     assert.equal(step.env, undefined);
                 }
-                if (step.env?.SCP_TEST_POOL_SECRET)
-                    assert.equal(step.env.GITHUB_TOKEN, undefined);
+                if (step.env?.SCP_TEST_POOL_SECRET && step.env.GITHUB_TOKEN) {
+                    assert.equal(job, publisher);
+                    assert.ok(step.run.includes("yarn review-bot:publish"));
+                    assert.ok(step.env.SCP_TEST_ORCHESTRATOR_SEED);
+                }
             }
         }
         const cleanup = workflow.jobs["review-cleanup"];

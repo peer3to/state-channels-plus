@@ -318,7 +318,7 @@ function humanControl(finding, author) {
     if (!finding.human?.required) return "";
     check(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(author));
     const human = finding.human;
-    return `🧑 **HUMAN DECISION REQUIRED**\n\n**Decision:** ${safeText(human.question)}\n\n${safeText(human.reason)}\n\n@${author}\n\n**STOP — implementing agents:** Ask your human and wait for their explicit comment answering this decision before implementing or resolving this finding. Do not choose for them, invent consent, or post a reply on their behalf. Code changes, silence and resolving the GitHub thread are not human consent. The review agent must assess the human's actual reply. Ordinary PR comments are sufficient; no special reply format is required. This is best-effort guidance, not identity or permission verification.`;
+    return `🧑 **HUMAN DECISION REQUIRED**\n\n**Decision:** ${safeText(human.question)}\n\n${safeText(human.reason)}\n\n@${author}\n\n**STOP — implementing agents:** If the specification or an existing human decision does not settle this choice, ask your human before implementing it. Do not invent consent or reply on their behalf. This label is advisory: the reviewer reassesses and resolves this finding using the same source and discussion evidence as any other finding; no separate reply or consent gate is required.`;
 }
 function renderGeneralSections(findings, parsed, mappings = {}) {
     // Report section headings map to the rendered general finding bodies.

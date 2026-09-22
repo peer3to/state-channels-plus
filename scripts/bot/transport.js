@@ -16,6 +16,7 @@ const OPERATIONS = new Set([
     "failure",
     "correction",
     "receipt",
+    "publication",
     "acknowledgement"
 ]);
 class ReviewConnection extends EventEmitter {

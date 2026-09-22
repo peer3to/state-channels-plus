@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const { Publisher } = require("../../publish");
+const { publicationStore } = require("../fixtures/publication");
 const { GitHubWriter } = require("../../github-write");
 const { MESSAGES } = require("../../errors");
 const { binding, correctionPrompt } = require("../../protocol");
@@ -16,10 +17,15 @@ function publisher(input, records) {
     });
     return {
         wire,
-        owner: new Publisher(input, github, {
-            eligible: true,
-            specApproved: false
-        })
+        owner: new Publisher(
+            input,
+            github,
+            {
+                eligible: true,
+                specApproved: false
+            },
+            publicationStore()
+        )
     };
 }
 const comment = {

@@ -371,7 +371,10 @@ limit, so it implements only what needs its own storage and composition (`open`,
 
 ### Required Human review decisions
 
-- When an automated review requests a Human decision, implementing agents must
-  ask their human and wait for the answer. Agents must not invent or post a Human
-  reply or consent on the human's behalf. A code change or manual thread resolution
-  does not replace the required reply and the review agent's assessment.
+- When an automated review flags an unresolved design choice, implementing agents
+  must ask their human unless the specification or an existing human decision
+  already settles it. Never invent or post consent on the human's behalf.
+  The label is advisory to humans and implementing agents, not a special bot
+  resolution gate. Reviewers reassess and resolve these findings using the same
+  code, specification and discussion evidence as any other finding; no mandatory
+  human reply or separate consent tracking is required.

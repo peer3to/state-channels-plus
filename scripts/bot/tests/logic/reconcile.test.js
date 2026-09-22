@@ -79,7 +79,7 @@ describe("review finding reconciliation", function () {
             { code: "INVALID_RESULT" }
         );
     });
-    it("reopens a recurring finding and preserves required Human blocking", function () {
+    it("reopens a recurring finding and resolves it without a separate Human gate", function () {
         const resolved = { threads: [{ id: "thread1", isResolved: true }] };
         assert.equal(
             findingActions(
@@ -90,14 +90,14 @@ describe("review finding reconciliation", function () {
             )[0].kind,
             "reopen"
         );
-        assert.deepEqual(
+        assert.equal(
             findingActions(
                 [previous],
                 [{ ...previous, status: "fixed" }],
                 observed,
                 [previous.id]
-            ),
-            []
+            )[0].kind,
+            "resolve"
         );
     });
     it("requires explicit thread state instead of inferring absence means unresolved", function () {
@@ -131,7 +131,7 @@ describe("review finding reconciliation", function () {
         );
         assert.deepEqual(
             required.map((entry) => entry.id),
-            ["comment:3", "finding:R1HUMAN", "finding:R1TO1"]
+            ["comment:3", "finding:R1TO1"]
         );
     });
 });

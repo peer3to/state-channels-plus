@@ -187,7 +187,7 @@ describe("outstanding assessment import", function () {
         );
         assert.throws(() => parseTarget("../../etc", "owner/repo"));
     });
-    it("filters resolved threads but retains unanswered Human decisions", function () {
+    it("filters resolved threads equally for advisory Human decisions", function () {
         const f = fixture();
         f.finding.threadId = "thread";
         f.observations.threads = [{ id: "thread", isResolved: true }];
@@ -200,21 +200,21 @@ describe("outstanding assessment import", function () {
         f.observations.comments[0].body = encodeState(f.state);
         assert.equal(
             assessmentFindings(f.input, f.observations, 9)[0].resolved,
-            false
+            true
         );
     });
-    it("reconciles general resolution and recurrence by ID without closing blocked Human findings", function () {
+    it("reconciles general resolution and recurrence by ID without a special Human gate", function () {
         const f = fixture();
         const fixed = { ...f.finding, status: "fixed", body: "Fixed at head." };
         assert.equal(
             findingActions([f.finding], [fixed], f.observations, [])[0].kind,
             "general-update"
         );
-        assert.deepEqual(
+        assert.equal(
             findingActions([f.finding], [fixed], f.observations, [
                 f.finding.id
-            ]),
-            []
+            ])[0].kind,
+            "general-update"
         );
         assert.equal(
             findingActions(
