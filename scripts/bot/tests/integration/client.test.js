@@ -91,6 +91,7 @@ async function fixture(body) {
             serve,
             input,
             originalSeed,
+            network,
             nextOptions: () => ({ ...options, dht: network.node() })
         });
     } finally {
@@ -102,6 +103,292 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
+    it("replays a journal save after its acknowledgement is lost without appending another round", async function () {
+        await fixture(async ({ options, serve, input }) => {
+            const { ReviewService } = require("../../server");
+            const { digest } = require("../../data");
+            const { allocate } = require("../../state");
+            const service = new ReviewService({
+                stateRoot: path.join(options.stateRoot, "worker")
+            });
+            Object.assign(service, {
+                skillDigest: input.skillDigest,
+                botRevision: input.botRevision,
+                policyDigest: input.policyDigest
+            });
+            await service.sessions.initialize();
+            const generated = await service.sessions.submit(
+                input,
+                digest("context"),
+                async () => result(input),
+                async () => true
+            );
+            const state = allocate(input, { comments: [] }, 9);
+            const frames = [];
+            let dropped = false;
+            serve(async (connection, message) => {
+                frames.push({
+                    requestId: message.requestId,
+                    attemptId: message.attemptId,
+                    value: message.value
+                });
+                if (!dropped) {
+                    const send = connection.send.bind(connection);
+                    connection.send = async (operation, ...args) => {
+                        if (operation === "acknowledgement") {
+                            assert.deepEqual(
+                                (await service.publications.read(input)).states,
+                                [state]
+                            );
+                            dropped = true;
+                            connection.close();
+                            return;
+                        }
+                        return send(operation, ...args);
+                    };
+                }
+                return service.handle(
+                    connection,
+                    message.operation,
+                    message.value,
+                    message.requestId,
+                    message.attemptId
+                );
+            });
+            try {
+                const saved = await callService({
+                    ...options,
+                    operation: "publication",
+                    payload: {
+                        executionId: generated.executionId,
+                        previous: digest({ states: [] }),
+                        states: [state]
+                    }
+                });
+                assert.equal(saved.accepted, true);
+                assert.deepEqual(saved.publication.states, [state]);
+                assert.equal(frames.length, 2);
+                assert.deepEqual(frames[0], frames[1]);
+                assert.deepEqual(
+                    (await service.publications.read(input)).states,
+                    [state]
+                );
+                assert.equal(service.sessions.attempts.size, 1);
+                await service.sessions.acknowledge(
+                    input,
+                    generated.executionId
+                );
+            } finally {
+                await service.sessions.close();
+            }
+        });
+    });
+    it("replays a persisted result after its first response is lost without executing another review", async function () {
+        await fixture(async ({ options, serve, input }) => {
+            const { ReviewService } = require("../../server");
+            const { digest } = require("../../data");
+            const service = new ReviewService({
+                stateRoot: path.join(options.stateRoot, "worker")
+            });
+            Object.assign(service, {
+                skillDigest: input.skillDigest,
+                botRevision: input.botRevision,
+                policyDigest: input.policyDigest
+            });
+            await service.sessions.initialize();
+            let executions = 0,
+                deliveries = 0;
+            const generated = await service.sessions.submit(
+                input,
+                digest("context"),
+                async () => {
+                    executions++;
+                    return result(input);
+                },
+                async () => true
+            );
+            const frames = [];
+            serve(async (connection, message) => {
+                deliveries++;
+                frames.push({
+                    requestId: message.requestId,
+                    attemptId: message.attemptId
+                });
+                if (deliveries === 1) {
+                    // Drop the transport only after the actual service's validated result is ready.
+                    const send = connection.send.bind(connection);
+                    connection.send = async (operation, ...args) => {
+                        if (operation === "result") {
+                            connection.close();
+                            return;
+                        }
+                        return send(operation, ...args);
+                    };
+                }
+                return service.handle(
+                    connection,
+                    message.operation,
+                    message.value,
+                    message.requestId,
+                    message.attemptId
+                );
+            });
+            try {
+                const output = await callService(options);
+                assert.equal(output.executionId, generated.executionId);
+                assert.equal(executions, 1);
+                assert.equal(deliveries, 2);
+                assert.deepEqual(frames[0], frames[1]);
+                assert.equal(service.sessions.attempts.size, 1);
+                await service.sessions.acknowledge(
+                    input,
+                    generated.executionId
+                );
+            } finally {
+                await service.sessions.close();
+            }
+        });
+    });
+    it("consumes receipt CLI files through the authenticated service and preserves failures as bound output", async function () {
+        await fixture(
+            async ({ options, serve, input, originalSeed, network }) => {
+                // This case creates discovery nodes through the CLI loader instead.
+                await options.dht.destroy({ force: true });
+                const { ReviewService } = require("../../server");
+                const { digest } = require("../../data");
+                const { binding } = require("../../protocol");
+                const { runClientCli } = require("../fixtures/client-cli");
+                let service = new ReviewService({
+                    stateRoot: path.join(options.stateRoot, "worker")
+                });
+                Object.assign(service, {
+                    skillDigest: input.skillDigest,
+                    botRevision: input.botRevision,
+                    policyDigest: input.policyDigest
+                });
+                await service.sessions.initialize();
+                const generated = await service.sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => result(input),
+                    async () => true
+                );
+                serve((connection, message) =>
+                    service.handle(
+                        connection,
+                        message.operation,
+                        message.value,
+                        message.requestId,
+                        message.attemptId
+                    )
+                );
+                const requestFile = path.join(
+                        options.stateRoot,
+                        "request.json"
+                    ),
+                    extra = path.join(options.stateRoot, "receipt.json"),
+                    output = path.join(options.stateRoot, "ack.json");
+                const env = {
+                    SCP_TEST_POOL_SECRET: options.secret,
+                    SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
+                    SCP_REVIEW_CLIENT_STATE: path.join(options.stateRoot, "cli")
+                };
+                const receipt = {
+                    version: 1,
+                    binding: binding(input),
+                    kind: "review",
+                    complete: true,
+                    round: 1,
+                    actions: []
+                };
+                try {
+                    await fs.writeFile(requestFile, JSON.stringify(input));
+                    await fs.writeFile(
+                        extra,
+                        JSON.stringify({
+                            executionId: generated.executionId,
+                            receipt: {
+                                ...receipt,
+                                binding: binding({ ...input, pr: input.pr + 1 })
+                            }
+                        })
+                    );
+                    await assert.rejects(
+                        runClientCli(
+                            [requestFile, output, "receipt", extra],
+                            env,
+                            network.node
+                        ),
+                        { code: "INVALID_RESULT" }
+                    );
+                    const failure = JSON.parse(
+                        await fs.readFile(output, "utf8")
+                    );
+                    assert.equal(failure.code, "INVALID_RESULT");
+                    assert.deepEqual(failure.binding, binding(input));
+                    assert.equal(await service.sessions.baseline(input), null);
+                    await fs.writeFile(
+                        extra,
+                        JSON.stringify({
+                            executionId: generated.executionId,
+                            receipt
+                        })
+                    );
+                    await runClientCli(
+                        [requestFile, output, "receipt", extra],
+                        env,
+                        network.node
+                    );
+                    assert.equal(
+                        JSON.parse(await fs.readFile(output, "utf8")).accepted,
+                        true
+                    );
+                    assert.equal(
+                        (await service.sessions.baseline(input)).head,
+                        input.head
+                    );
+                    assert.equal(
+                        service.sessions.busy(service.sessions.key(input)),
+                        false
+                    );
+                    const baseline = await service.sessions.baseline(input);
+                    const stateRoot = service.config.stateRoot;
+                    await service.sessions.close();
+                    service = new ReviewService({ stateRoot });
+                    Object.assign(service, {
+                        skillDigest: input.skillDigest,
+                        botRevision: input.botRevision,
+                        policyDigest: input.policyDigest
+                    });
+                    await service.sessions.initialize();
+                    assert.deepEqual(
+                        await service.sessions.baseline(input),
+                        baseline
+                    );
+                    await runClientCli(
+                        [requestFile, output, "receipt", extra],
+                        env,
+                        network.node
+                    );
+                    assert.equal(
+                        JSON.parse(await fs.readFile(output, "utf8")).accepted,
+                        true
+                    );
+                    assert.deepEqual(
+                        await service.sessions.baseline(input),
+                        baseline
+                    );
+                    assert.equal(
+                        service.sessions.busy(service.sessions.key(input)),
+                        false
+                    );
+                    assert.equal(service.adapters.size, 0);
+                } finally {
+                    await service.sessions.close();
+                }
+            }
+        );
+    });
     it("keeps publication alive between journal calls beyond the model deadline", async function () {
         await fixture(async ({ options, serve }) => {
             let calls = 0;

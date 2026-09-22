@@ -374,7 +374,17 @@ class Publisher {
                     : rendered;
             publication.set(finding.id, {
                 exists: Boolean(source),
-                matches: visible === rendered || visible === sectioned
+                matches:
+                    visible === rendered ||
+                    visible === sectioned ||
+                    (finding.path === null &&
+                        ["fixed", "disagreement"].includes(finding.status) &&
+                        visible.startsWith(
+                            `<details>\n<summary>✅ RESOLVED — [${finding.id}]</summary>\n\n<del>`
+                        ) &&
+                        visible.endsWith(
+                            `</del>\n\n**Resolution:** ${safeText(finding.body)}\n\n</details>`
+                        ))
             });
         }
         const operations = findingActions(
@@ -523,8 +533,13 @@ class Publisher {
                         .replaceAll("&", "&amp;")
                         .replaceAll("<", "&lt;")
                         .replaceAll(">", "&gt;");
+                const original = ["fixed", "disagreement"].includes(old.status)
+                    ? source.item.body
+                          .slice(source.start, source.end)
+                          .match(/<del>([\s\S]*?)<\/del>/)?.[1]
+                    : undefined;
                 const content = closed
-                    ? `<details>\n<summary>✅ RESOLVED — [${operation.finding.id}]</summary>\n\n<del>${escape(old.body).replaceAll("\n", "<br>\n")}</del>\n\n**Resolution:** ${safeText(operation.finding.body)}\n\n</details>`
+                    ? `<details>\n<summary>✅ RESOLVED — [${operation.finding.id}]</summary>\n\n<del>${original ?? escape(old.body).replaceAll("\n", "<br>\n")}</del>\n\n**Resolution:** ${safeText(operation.finding.body)}\n\n</details>`
                     : renderFinding(operation.finding, current.pull.user.login);
                 const replacement = wrapFinding(
                     operation.finding.id,

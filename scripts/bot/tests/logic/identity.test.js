@@ -8,6 +8,64 @@ const {
     loadOrchestratorKeyPair
 } = require("../../../e2e-parallel/distributed/orchestratorIdentity");
 describe("review CI identity", function () {
+    it("rejects malformed CI repository run and attempt identifiers", function () {
+        const environment = {
+            SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32),
+            GITHUB_ACTIONS: "true",
+            GITHUB_REPOSITORY_ID: "1",
+            GITHUB_RUN_ID: "2",
+            GITHUB_RUN_ATTEMPT: "1"
+        };
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_REPOSITORY_ID: "0" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: "-2" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ATTEMPT: "1.5" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: "2x" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: " 2" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: "02" }),
+            { code: "UNAUTHORIZED" }
+        );
+    });
+    it("rejects partial run metadata outside Actions while retaining complete deterministic metadata", function () {
+        const environment = { SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32) };
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_REPOSITORY_ID: "1" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: "2" }),
+            { code: "UNAUTHORIZED" }
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ATTEMPT: "1" }),
+            { code: "UNAUTHORIZED" }
+        );
+        const complete = {
+            ...environment,
+            GITHUB_REPOSITORY_ID: "1",
+            GITHUB_RUN_ID: "2",
+            GITHUB_RUN_ATTEMPT: "1"
+        };
+        assert.equal(
+            clientSeed(complete),
+            clientSeed({ ...complete, GITHUB_ACTIONS: "true" })
+        );
+    });
     it("isolates repositories, runs and attempts while retaining reconnect identity", function () {
         const environment = {
             SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32),

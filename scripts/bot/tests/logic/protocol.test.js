@@ -3,6 +3,189 @@ const p = require("../../protocol");
 const records = require("../fixtures/records");
 const { digest } = require("../../data");
 describe("review protocol", () => {
+    it("compares complete accounting records against both validators and checks references separately", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/accounting"
+        });
+        const input = records.request();
+        const valid = {
+            sourceId: "comment:12",
+            sourceRevision: digest("comment"),
+            disposition: "response",
+            response: "The retry retains the pending operation.",
+            findingId: null,
+            humanAssessment: null
+        };
+        const missing = { ...valid };
+        delete missing.sourceRevision;
+        for (const value of [
+            valid,
+            missing,
+            { ...valid, unknown: true },
+            { ...valid, disposition: "unsupported" },
+            { ...valid, response: "" },
+            { ...valid, response: "x".repeat(30000) },
+            { ...valid, response: "x".repeat(30001) },
+            { ...valid, sourceRevision: null },
+            { ...valid, sourceId: "comment:0" },
+            { ...valid, humanAssessment: "required" }
+        ]) {
+            let runtime = true;
+            try {
+                p.result(records.result(input, { accounting: [value] }), input);
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(value), JSON.stringify(value));
+        }
+        const foreign = { ...valid, findingId: "FO1" };
+        assert.equal(validate(foreign), true);
+        assert.throws(() =>
+            p.result(records.result(input, { accounting: [foreign] }), input)
+        );
+    });
+    it("keeps the schema failure code vocabulary identical to runtime", function () {
+        assert.deepEqual(
+            [
+                ...require("../../schema/review-v1.json").$defs.failureCode.enum
+            ].sort(),
+            Object.keys(require("../../errors").MESSAGES).sort()
+        );
+    });
+    it("agrees on correction required fields unknown fields and malformed identifiers", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/correction"
+        });
+        const input = records.request();
+        const valid = {
+            version: 1,
+            kind: "missing-accounting",
+            binding: p.binding(input),
+            executionId: "execution-1",
+            resultRevision: 0,
+            effectiveIdentity: digest("context"),
+            ids: ["comment:12"]
+        };
+        const missing = { ...valid };
+        delete missing.executionId;
+        for (const value of [
+            valid,
+            missing,
+            { ...valid, unknown: true },
+            { ...valid, ids: [] },
+            { ...valid, ids: ["comment:0"] },
+            { ...valid, resultRevision: -1 }
+        ]) {
+            let runtime = true;
+            try {
+                p.correction(value, input);
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(value), JSON.stringify(value));
+        }
+    });
+    it("agrees on receipt required fields unknown fields and action bounds", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/receipt"
+        });
+        const input = records.request();
+        const valid = {
+            version: 1,
+            binding: p.binding(input),
+            kind: "review",
+            complete: true,
+            round: 1,
+            actions: []
+        };
+        const missing = { ...valid };
+        delete missing.complete;
+        for (const value of [
+            valid,
+            missing,
+            { ...valid, unknown: true },
+            { ...valid, round: 0 },
+            {
+                ...valid,
+                actions: [
+                    {
+                        kind: "resolve",
+                        id: 0,
+                        url: `https://github.com/${input.repository.name}/pull/${input.pr}`
+                    }
+                ]
+            }
+        ]) {
+            let runtime = true;
+            try {
+                p.receipt(value, input);
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(value), JSON.stringify(value));
+        }
+    });
+    it("agrees on result required fields unknown fields revision and coverage bounds", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/result"
+        });
+        const input = records.request(),
+            valid = records.result(input);
+        const missing = { ...valid };
+        delete missing.sessionId;
+        for (const value of [
+            valid,
+            missing,
+            { ...valid, unknown: true },
+            { ...valid, revision: 2 },
+            { ...valid, coverage: { ...valid.coverage, files: [null] } }
+        ]) {
+            let runtime = true;
+            try {
+                p.result(value, input);
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(value), JSON.stringify(value));
+        }
+    });
+    it("agrees on failure required fields unknown fields and unsupported codes", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/failure"
+        });
+        const input = records.request();
+        const valid = p.failure(
+            new (require("../../errors").ReviewError)("DISK_FULL"),
+            input
+        );
+        const missing = { ...valid };
+        delete missing.code;
+        for (const value of [
+            valid,
+            missing,
+            { ...valid, unknown: true },
+            { ...valid, code: "UNSUPPORTED" },
+            { ...valid, version: 2 }
+        ]) {
+            let runtime = true;
+            try {
+                p.failureResult(value, input);
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(value), JSON.stringify(value));
+        }
+    });
     it("agrees with the published request contract on required unknown and malformed fields", function () {
         const schema = require("../../schema/review-v1.json");
         const validate = new (require("ajv"))().compile({

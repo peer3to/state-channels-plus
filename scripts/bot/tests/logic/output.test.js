@@ -167,6 +167,7 @@ describe("review recorded native output boundary", function () {
         await fixture(
             [result(), "invalid Markdown", result()],
             async ({ service, input, execution, model, root }) => {
+                model.turnMs = 15;
                 execution.result = await service.generate(
                     input,
                     execution,
@@ -179,6 +180,20 @@ describe("review recorded native output boundary", function () {
                     "Account for the new discussion."
                 );
                 assert.equal(corrected.revision, 1);
+                const timing = corrected.evidence.durations;
+                assert.ok(timing.turns.every((duration) => duration >= 10));
+                assert.equal(
+                    timing.correctionMs,
+                    timing.turns[1] + timing.turns[2]
+                );
+                assert.equal(
+                    timing.gatheringMs + timing.assessmentMs,
+                    timing.turns[0]
+                );
+                assert.equal(
+                    timing.modelMs,
+                    timing.turns.reduce((sum, duration) => sum + duration, 0)
+                );
                 assert.equal(model.prompts.length, 3);
                 await fs.access(path.join(root, `${input.attempt}-0.json`));
                 await fs.access(path.join(root, `${input.attempt}-1.json`));
@@ -194,6 +209,39 @@ describe("review recorded native output boundary", function () {
     });
     it("repairs a recovered read error with only a footer and preserves the substantive draft", async function () {
         const original = result(undefined, { recommendation: "comment" });
+        original.report += `
+## Correctness
+- [ ] **[FO1] General PR comment**
+<!-- pr-review-finding {"id":"FO1","kind":"general","status":"new","evidence":["retry owner source"]} -->
+<!-- human:FO1:start -->
+<!-- human:FO1:end -->
+<!-- ai:FO1:start -->
+🟠 **[FO1] Retry loses the pending operation.**
+Keep the operation until its acknowledgment is persisted.
+> **Fix FO1-FIX**
+> Preserve the pending operation across retry.
+<!-- ai:FO1:end -->
+- [ ] **[FO2] Inline comment**
+<!-- pr-review-finding {"id":"FO2","kind":"inline","path":"README.md","line":1,"side":"RIGHT","status":"new","evidence":["source line 1"]} -->
+<!-- human:FO2:start -->
+<!-- human:FO2:end -->
+<!-- ai:FO2:start -->
+🟠 **[FO2] Missing validation at this source boundary.**
+> **Fix FO2-FIX**
+> Validate before accepting the operation.
+<!-- ai:FO2:end -->
+- [ ] **[FO3] General PR comment**
+<!-- pr-review-finding {"id":"FO3","kind":"general","status":"new","decision":{"required":true,"question":"Which policy applies?","reason":"The contract leaves this open.","revision":1,"authority":"author"},"evidence":["policy gap"]} -->
+<!-- human:FO3:start -->
+<!-- human:FO3:end -->
+<!-- ai:FO3:start -->
+🧑 **HUMAN DECISION REQUIRED**
+**[FO3] Choose the intended retry policy.**
+**STOP — implementing agents:** Ask the Human.
+> **Fix FO3-FIX**
+> Follow the chosen policy.
+<!-- ai:FO3:end -->
+`;
         const control = {
             coverage: original.coverage,
             accounting: [],
@@ -221,6 +269,27 @@ describe("review recorded native output boundary", function () {
                     root
                 );
                 assert.equal(output.report.trim(), original.report.trim());
+                assert.equal(output.findings.length, 3);
+                const expected =
+                    require("../../markdown-result").decodeModelResult(
+                        original.report + "\n" + footer,
+                        { request: input }
+                    );
+                assert.deepEqual(output.findings, expected.findings);
+                assert.equal(output.findings[1].path, "README.md");
+                assert.equal(output.findings[1].line, 1);
+                assert.equal(
+                    output.findings[2].human.question,
+                    "Which policy applies?"
+                );
+                assert.equal(output.findings[0].id, "FO1");
+                assert.match(
+                    output.findings[0].body,
+                    /Preserve the pending operation across retry/
+                );
+                assert.deepEqual(output.findings[0].evidence, [
+                    "retry owner source"
+                ]);
                 assert.deepEqual(output.evidence.errors, []);
                 assert.ok(
                     model.prompts[1].includes("coverage.complete is true")
@@ -584,6 +653,31 @@ describe("review recorded native output boundary", function () {
                 );
                 assert.equal(model.prompts.length, 3);
                 assert.equal(output.evidence.durations.turns.length, 3);
+                const timing = output.evidence.durations;
+                assert.ok(timing.turns.every((duration) => duration > 0));
+                assert.equal(
+                    timing.correctionMs,
+                    timing.turns[1] + timing.turns[2]
+                );
+                assert.equal(
+                    timing.modelMs,
+                    timing.turns.reduce((sum, duration) => sum + duration, 0)
+                );
+                assert.equal(
+                    timing.assessmentMs + timing.gatheringMs,
+                    timing.turns[0]
+                );
+                assert.equal(timing.modelMs, execution.budget.consumed);
+                const firstRepair = JSON.parse(
+                    model.prompts[1].split("\nController timing: ")[1]
+                );
+                const secondRepair = JSON.parse(
+                    model.prompts[2].split("\nController timing: ")[1]
+                );
+                assert.ok(
+                    secondRepair.modelBudgetRemainingMs <=
+                        firstRepair.modelBudgetRemainingMs
+                );
                 assert.equal(execution.correctionUsed, false);
                 await fs.access(path.join(root, `${input.attempt}-0.json`));
             }
@@ -661,6 +755,85 @@ describe("review recorded native output boundary", function () {
                         fs.access(
                             path.join(root, `${input.attempt}-0-review.md`)
                         ),
+                        { code: "ENOENT" }
+                    );
+                } finally {
+                    fs.writeFile = original;
+                }
+            }
+        );
+    });
+    it("fails mandatory draft persistence before accepting a result or retrying the model", async function () {
+        const output = result();
+        const draft =
+            output.report +
+            `\n<!-- review-result ${JSON.stringify({ coverage: output.coverage, accounting: [], recommendation: "approve", errors: [] })} -->`;
+        await fixture(
+            [draft],
+            async ({ service, input, model, execution, root }) => {
+                const original = fs.writeFile;
+                try {
+                    // Only the storage syscall is fault-injected; validation and persistence remain real.
+                    fs.writeFile = async (file, ...args) => {
+                        if (String(file).includes("-draft-0.md.")) {
+                            const error = new Error("No space left");
+                            error.code = "ENOSPC";
+                            throw error;
+                        }
+                        return original(file, ...args);
+                    };
+                    await assert.rejects(
+                        service.generate(input, execution, input, root),
+                        { code: "DISK_FULL" }
+                    );
+                    assert.equal(model.prompts.length, 1);
+                    assert.equal(execution.result, undefined);
+                    await assert.rejects(
+                        fs.access(path.join(root, `${input.attempt}-0.json`)),
+                        { code: "ENOENT" }
+                    );
+                    await assert.rejects(
+                        fs.access(
+                            path.join(root, `${input.attempt}-0-draft-0.md`)
+                        ),
+                        { code: "ENOENT" }
+                    );
+                } finally {
+                    fs.writeFile = original;
+                }
+            }
+        );
+    });
+    it("preserves the first draft when a later repair draft cannot be written", async function () {
+        const originalDraft = "Malformed first draft retained for recovery.";
+        await fixture(
+            [originalDraft, "Second draft"],
+            async ({ service, input, model, execution, root }) => {
+                const original = fs.writeFile;
+                try {
+                    fs.writeFile = async (file, ...args) => {
+                        if (String(file).includes("-draft-1.md.")) {
+                            const error = new Error("No space left");
+                            error.code = "ENOSPC";
+                            throw error;
+                        }
+                        return original(file, ...args);
+                    };
+                    await assert.rejects(
+                        service.generate(input, execution, input, root),
+                        { code: "DISK_FULL" }
+                    );
+                    assert.equal(model.prompts.length, 2);
+                    assert.equal(execution.result, undefined);
+                    assert.equal(
+                        await fs.readFile(
+                            path.join(root, `${input.attempt}-0-draft-0.md`),
+                            "utf8"
+                        ),
+                        originalDraft
+                    );
+                    await assert.rejects(
+                        fs.access(path.join(root, `${input.attempt}-0.json`)),
                         { code: "ENOENT" }
                     );
                 } finally {

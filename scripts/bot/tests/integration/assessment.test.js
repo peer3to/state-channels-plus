@@ -110,16 +110,28 @@ function wireFixture() {
                         pullRequest: {
                             number: input.pr,
                             reviewThreads: {
-                                nodes: inline.map((item) => ({
-                                    id: `thread-${item.id}`,
-                                    isResolved: resolved.has(
-                                        `thread-${item.id}`
-                                    ),
-                                    comments: {
-                                        nodes: [{ databaseId: item.id }],
-                                        pageInfo: { hasNextPage: false }
-                                    }
-                                })),
+                                nodes: inline
+                                    .filter((item) => !item.in_reply_to_id)
+                                    .map((item) => ({
+                                        id: `thread-${item.id}`,
+                                        isResolved: resolved.has(
+                                            `thread-${item.id}`
+                                        ),
+                                        comments: {
+                                            nodes: inline
+                                                .filter(
+                                                    (comment) =>
+                                                        comment.id ===
+                                                            item.id ||
+                                                        comment.in_reply_to_id ===
+                                                            item.id
+                                                )
+                                                .map((comment) => ({
+                                                    databaseId: comment.id
+                                                })),
+                                            pageInfo: { hasNextPage: false }
+                                        }
+                                    })),
                                 pageInfo: { hasNextPage: false }
                             }
                         }
@@ -129,7 +141,23 @@ function wireFixture() {
         } else if (route === `${prefix}/pulls/${input.pr}`) response = pull;
         else if (route === `${prefix}/pulls/${input.pr}/comments`)
             response = inline;
-        else if (/\/issues\/comments\/[0-9]+$/.test(route)) {
+        else if (/\/pulls\/\d+\/comments\/\d+\/replies$/.test(route)) {
+            assert.equal(options.method, "POST");
+            const parent = Number(route.split("/").at(-2));
+            assert.ok(
+                inline.some(
+                    (item) => item.id === parent && !item.in_reply_to_id
+                )
+            );
+            response = {
+                id: nextId++,
+                user: bot,
+                in_reply_to_id: parent,
+                body: body.body,
+                html_url: `${url}#discussion_r${nextId - 1}`
+            };
+            inline.push(response);
+        } else if (/\/issues\/comments\/[0-9]+$/.test(route)) {
             const item = comments.find(
                 (comment) => comment.id === Number(route.split("/").at(-1))
             );
@@ -278,15 +306,24 @@ async function failedConfirmation(missing) {
         1
     );
 }
-async function unchangedNextHead(human) {
+async function unchangedNextHead(human, tree) {
     const wire = wireFixture(),
         store = publicationStore();
     wire.comments.splice(0);
     wire.reviews.splice(0);
+    if (tree) {
+        Object.assign(wire.input, {
+            head: tree.input.head,
+            base: tree.input.base,
+            mergeBase: tree.input.mergeBase
+        });
+        wire.pull.head.sha = wire.input.head;
+    }
     const finding = {
         ...wire.finding,
         id: "FO1",
         status: "new",
+        ...(tree ? { path: "README.md", line: 1 } : {}),
         human,
         body: human
             ? "🧑 **HUMAN DECISION REQUIRED**\n\nChoose the specified behavior.\n\n**STOP — implementing agents:** Ask the Human."
@@ -300,25 +337,57 @@ async function unchangedNextHead(human) {
                 botId: 9,
                 exchange: wire.exchange
             }),
-            { eligible: true },
+            { eligible: true, ...(tree ? { repoRoot: tree.source } : {}) },
             store
         );
-    assert.equal(
-        (await owner().publish(proposed(wire.input, finding))).status,
-        "complete"
-    );
-    const previous = (await store.load(wire.input)).states.at(-1).findings[0];
+    const output = (next, previous) => {
+        const generated = proposed(wire.input, next, previous);
+        if (tree)
+            generated.report = generated.report.replace(
+                '"kind":"general"',
+                '"kind":"inline","path":"README.md","line":1,"side":"RIGHT"'
+            );
+        return generated;
+    };
+    assert.equal((await owner().publish(output(finding))).status, "complete");
+    let previous = (await store.load(wire.input)).states.at(-1).findings[0];
+    if (tree) {
+        await fs.writeFile(
+            path.join(tree.source, "evidence.md"),
+            "Additional evidence\n"
+        );
+        tree.command(tree.source, ["add", "evidence.md"]);
+        tree.command(tree.source, ["commit", "-m", "Updated finding evidence"]);
+        wire.input.head = tree.command(tree.source, ["rev-parse", "HEAD"]);
+        wire.pull.head.sha = wire.input.head;
+        const changed = {
+            ...previous,
+            status: "continued",
+            body: previous.body + "\n\nAdditional verified evidence."
+        };
+        assert.equal(
+            (await owner().publish(output(changed, previous))).status,
+            "complete"
+        );
+        assert.equal(
+            wire.inline.filter((item) => item.in_reply_to_id).length,
+            1
+        );
+        previous = (await store.load(wire.input)).states.at(-1).findings[0];
+    }
     wire.input.head = "e".repeat(40);
+    if (tree) {
+        await fs.writeFile(path.join(tree.source, "next.md"), "Another head\n");
+        tree.command(tree.source, ["add", "next.md"]);
+        tree.command(tree.source, ["commit", "-m", "Next review head"]);
+        wire.input.head = tree.command(tree.source, ["rev-parse", "HEAD"]);
+    }
     wire.pull.head.sha = wire.input.head;
     const before = wire.calls.length;
     assert.equal(
         (
             await owner().publish(
-                proposed(
-                    wire.input,
-                    { ...previous, status: "continued" },
-                    previous
-                )
+                output({ ...previous, status: "continued" }, previous)
             )
         ).status,
         "complete"
@@ -335,6 +404,204 @@ async function unchangedNextHead(human) {
     );
 }
 describe("assessment GitHub lifecycle", function () {
+    it("keeps retained threads unresolved after deferring an operation even if final accounting becomes complete", async function () {
+        const { wire, store } = retainedFixture();
+        const old = readStates(wire.comments, wire.input, 9)[0];
+        const general = { ...wire.finding, id: "R1FO2" };
+        old.findings.push(general);
+        wire.comments[0].body = encodeState(old);
+        wire.comments.push({
+            id: 51,
+            user: { id: 9, type: "Bot" },
+            html_url: `https://github.com/${wire.input.repository.name}/pull/${wire.input.pr}#issuecomment-51`,
+            body: wrapFinding(
+                general.id,
+                general.body +
+                    "\n" +
+                    actionMarker(
+                        { ...wire.input, head: old.head },
+                        "finding",
+                        general.id
+                    )
+            )
+        });
+        let observations = 0;
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: (url, options) => {
+                if (new URL(url).pathname.endsWith(`/pulls/${wire.input.pr}`)) {
+                    observations++;
+                    if (observations === 4)
+                        wire.comments.push({
+                            id: 99,
+                            user: { id: 7, type: "User" },
+                            body: "Hold this update for new evidence."
+                        });
+                    if (observations === 5)
+                        wire.comments.splice(
+                            wire.comments.findIndex((item) => item.id === 99),
+                            1
+                        );
+                }
+                return wire.exchange(url, options);
+            }
+        });
+        const output = proposed(
+            wire.input,
+            { ...general, body: "Updated evidence for the continuing defect." },
+            general
+        );
+        const outcome = await new Publisher(
+            wire.input,
+            writer,
+            { eligible: true },
+            store
+        ).publish(output);
+        assert.ok(observations >= 5);
+        assert.equal(
+            wire.comments.some((item) => item.id === 99),
+            false
+        );
+        assert.equal(outcome.status, "partial");
+        assert.equal(wire.resolved.size, 0);
+        assert.equal(
+            wire.calls.filter((call) =>
+                call.body?.query?.startsWith("mutation ")
+            ).length,
+            0
+        );
+        assert.equal(
+            wire.calls.filter((call) => ["PUT", "PATCH"].includes(call.method))
+                .length,
+            0
+        );
+    });
+    it("does not reply to an unchanged ordinary inline finding on a new head", async function () {
+        await gitFixture((tree) => unchangedNextHead(null, tree));
+    });
+    it("does not duplicate canonical Human guidance on an unchanged inline finding", async function () {
+        await gitFixture((tree) =>
+            unchangedNextHead(
+                {
+                    required: true,
+                    question: "Which behavior?",
+                    reason: "Design choice",
+                    revision: 1,
+                    authority: "author"
+                },
+                tree
+            )
+        );
+    });
+    it("publishes fixes resolves and reopens one inline thread without duplicate roots on retry", async function () {
+        await gitFixture(async (tree) => {
+            const wire = wireFixture(),
+                store = publicationStore();
+            wire.comments.splice(0);
+            wire.reviews.splice(0);
+            Object.assign(wire.input, {
+                head: tree.input.head,
+                base: tree.input.base,
+                mergeBase: tree.input.mergeBase
+            });
+            wire.pull.head.sha = wire.input.head;
+            const publisher = () =>
+                new Publisher(
+                    wire.input,
+                    new GitHubWriter(wire.input, {
+                        token: "recorded",
+                        botId: 9,
+                        exchange: wire.exchange
+                    }),
+                    { eligible: true, repoRoot: tree.source },
+                    store
+                );
+            const output = (finding, previous) => {
+                const value = proposed(wire.input, finding, previous);
+                value.report = value.report.replace(
+                    '"kind":"general"',
+                    '"kind":"inline","path":"README.md","line":1,"side":"RIGHT"'
+                );
+                return value;
+            };
+            const finding = {
+                ...wire.finding,
+                id: "FO1",
+                status: "new",
+                path: "README.md",
+                line: 1
+            };
+            assert.equal(
+                (await publisher().publish(output(finding))).status,
+                "complete"
+            );
+            const root = wire.inline[0].id;
+            let previous = (await store.load(wire.input)).states.at(-1)
+                .findings[0];
+            for (const status of ["fixed", "recurred"]) {
+                await fs.writeFile(path.join(tree.source, "phase.md"), status);
+                tree.command(tree.source, ["add", "phase.md"]);
+                tree.command(tree.source, ["commit", "-m", status]);
+                wire.input.head = tree.command(tree.source, [
+                    "rev-parse",
+                    "HEAD"
+                ]);
+                wire.pull.head.sha = wire.input.head;
+                const next = {
+                    ...previous,
+                    status,
+                    body: `The retry boundary is ${status}.`,
+                    evidence: [`${status} source inspected`]
+                };
+                const generated = output(next, previous);
+                assert.equal(
+                    (await publisher().publish(generated)).status,
+                    "complete"
+                );
+                const calls = wire.calls.filter(
+                    (call) =>
+                        call.method !== "GET" &&
+                        !call.body?.query?.startsWith("query ")
+                ).length;
+                assert.equal(
+                    (await publisher().publish(generated)).status,
+                    "complete"
+                );
+                assert.equal(
+                    wire.calls.filter(
+                        (call) =>
+                            call.method !== "GET" &&
+                            !call.body?.query?.startsWith("query ")
+                    ).length,
+                    calls
+                );
+                assert.equal(
+                    wire.resolved.has(`thread-${root}`),
+                    status === "fixed"
+                );
+                previous = (await store.load(wire.input)).states.at(-1)
+                    .findings[0];
+                assert.equal(previous.id, "R1FO1");
+                assert.equal(previous.threadId, `thread-${root}`);
+            }
+            assert.equal(
+                wire.inline.filter((item) => !item.in_reply_to_id).length,
+                1
+            );
+            assert.equal(
+                wire.inline.filter((item) => item.in_reply_to_id === root)
+                    .length,
+                2
+            );
+            assert.equal(
+                wire.calls.filter((call) =>
+                    call.body?.query?.startsWith("mutation ")
+                ).length,
+                2
+            );
+        });
+    });
     it("does not edit unchanged ordinary findings on a new head", async function () {
         await unchangedNextHead(null);
     });
@@ -1274,6 +1541,30 @@ describe("assessment GitHub lifecycle", function () {
         );
         const previous = (await store.load(wire.input)).states.at(-1)
             .findings[0];
+        const closedBody = wire.comments.find((item) => item.id === 2).body;
+        const writes = wire.calls.filter((call) =>
+            ["PATCH", "PUT"].includes(call.method)
+        ).length;
+        wire.input.head = "2".repeat(40);
+        wire.input.attempt = "clean-head";
+        wire.pull.head.sha = wire.input.head;
+        assert.equal(
+            (await makePublisher().publish(result(wire.input))).status,
+            "complete"
+        );
+        assert.equal(
+            (await makePublisher().publish(result(wire.input))).status,
+            "complete"
+        );
+        assert.equal(
+            wire.comments.find((item) => item.id === 2).body,
+            closedBody
+        );
+        assert.equal(
+            wire.calls.filter((call) => ["PATCH", "PUT"].includes(call.method))
+                .length,
+            writes
+        );
         wire.input.head = "1".repeat(40);
         wire.input.attempt = "attempt-2";
         wire.pull.head.sha = wire.input.head;

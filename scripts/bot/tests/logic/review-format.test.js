@@ -10,6 +10,91 @@ function report(input, finding) {
     return `<!-- pr-review-document ${JSON.stringify({ schema: 2, repo: input.repository.name, pr: input.pr, headSha: input.head, baseSha: input.base })} -->\n\n- [ ] **[TO1] General PR comment**\n\n  <!-- pr-review-finding {"id":"TO1","kind":"general"} -->\n\n  **Human**\n  <!-- human:TO1:start -->\n  <!-- human:TO1:end -->\n\n  <!-- ai:TO1:start -->\n  ${finding.body}\n  <!-- ai:TO1:end -->\n`;
 }
 describe("review format", function () {
+    it("rejects LEFT routing through report validation even for a valid finding body", function () {
+        const input = request();
+        const finding = {
+            id: "TO1",
+            path: "README.md",
+            line: 1,
+            body: "The deleted source has a defect."
+        };
+        const markdown = report(input, finding).replace(
+            '"kind":"general"',
+            '"kind":"inline","path":"README.md","line":1,"side":"LEFT"'
+        );
+        assert.throws(
+            () =>
+                validateReport(
+                    result(input, { findings: [finding], report: markdown }),
+                    input
+                ),
+            { code: "INVALID_RESULT" }
+        );
+        validateReport(
+            result(input, {
+                findings: [finding],
+                report: markdown.replace('"side":"LEFT"', '"side":"RIGHT"')
+            }),
+            input
+        );
+    });
+    it("rejects an addition on LEFT and a deletion on RIGHT in real asymmetric hunks", async function () {
+        const { gitFixture } = require("../fixtures/git");
+        const fs = require("node:fs/promises");
+        const path = require("node:path");
+        const { lineAppearsInDiff } = require("../../review-format");
+        await gitFixture(async ({ source, command }) => {
+            const lines = Array.from({ length: 20 }, (_, i) => `line ${i}`);
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                lines.join("\n") + "\n"
+            );
+            command(source, ["commit", "-am", "Before addition"]);
+            const before = command(source, ["rev-parse", "HEAD"]);
+            await fs.appendFile(path.join(source, "README.md"), "added\n");
+            command(source, ["commit", "-am", "Add final line"]);
+            const after = command(source, ["rev-parse", "HEAD"]);
+            const target = { path: "README.md", line: 21 };
+            assert.equal(
+                lineAppearsInDiff(
+                    { baseSha: before, headSha: after },
+                    { ...target, side: "RIGHT" },
+                    source
+                ),
+                true
+            );
+            assert.equal(
+                lineAppearsInDiff(
+                    { baseSha: before, headSha: after },
+                    { ...target, side: "LEFT" },
+                    source
+                ),
+                false
+            );
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                lines.join("\n") + "\n"
+            );
+            command(source, ["commit", "-am", "Delete final line"]);
+            const deleted = command(source, ["rev-parse", "HEAD"]);
+            assert.equal(
+                lineAppearsInDiff(
+                    { baseSha: after, headSha: deleted },
+                    { ...target, side: "LEFT" },
+                    source
+                ),
+                true
+            );
+            assert.equal(
+                lineAppearsInDiff(
+                    { baseSha: after, headSha: deleted },
+                    { ...target, side: "RIGHT" },
+                    source
+                ),
+                false
+            );
+        });
+    });
     it("maps context and additions across separated real diff hunks", async function () {
         const { gitFixture } = require("../fixtures/git");
         const fs = require("node:fs/promises");

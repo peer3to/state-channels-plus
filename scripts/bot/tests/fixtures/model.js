@@ -4,6 +4,7 @@ class RecordedModelOutput {
     outputs;
     prompts = [];
     beforeTurn;
+    turnMs = 0;
     constructor(outputs, beforeTurn = async () => {}) {
         this.outputs = [...outputs];
         this.beforeTurn = beforeTurn;
@@ -15,7 +16,13 @@ class RecordedModelOutput {
             throw new Error("Unexpected extra model turn");
         const output = this.outputs.shift();
         return budget.run(
-            async () => structuredClone(output),
+            async () => {
+                if (this.turnMs)
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, this.turnMs)
+                    );
+                return structuredClone(output);
+            },
             async () => {}
         );
     }

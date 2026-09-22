@@ -19,9 +19,9 @@ async function stopTree(forceParent) {
             "-e",
             `
         const {spawn}=require('node:child_process');
-        const nested=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)"],{stdio:['ignore','ignore','ignore','ipc']});
+        const nested=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>setTimeout(()=>process.exit(0),50));process.send('ready');setInterval(()=>{},1000)"],{stdio:['ignore','ignore','ignore','ipc']});
         nested.on('message',()=>process.stdout.write(JSON.stringify({method:'ready',params:{pid:nested.pid}})+'\\n'));
-        process.on('SIGTERM',()=>nested.kill('SIGKILL'));
+        process.on('SIGTERM',()=>{});
         nested.on('exit',()=>{if(!${forceParent})process.exit(0)});
         setInterval(()=>{},1000);
     `
@@ -45,7 +45,7 @@ async function stopTree(forceParent) {
     }
 }
 describe("review native adapter controls", function () {
-    it("waits for a descendant that ignores graceful termination before releasing its parent", async function () {
+    it("signals the descendant directly and waits for its delayed exit before releasing its parent", async function () {
         await stopTree(false);
     });
     it("forces an uncooperative parent after its descendant has been reaped", async function () {

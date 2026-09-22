@@ -3,6 +3,32 @@
     "$id": "urn:peer3:review:v1",
     "title": "Review automation protocol version 1",
     "$defs": {
+        "failureCode": {
+            "enum": [
+                "SUBSCRIPTION_LIMIT",
+                "LOGIN_EXPIRED",
+                "MODEL_UNAVAILABLE",
+                "SERVICE_UNAVAILABLE",
+                "DISK_FULL",
+                "TRANSFER_TIMEOUT",
+                "QUEUE_TIMEOUT",
+                "SETUP_TIMEOUT",
+                "REVIEW_TIMEOUT",
+                "CONTEXT_BUDGET_EXCEEDED",
+                "CONTEXT_RATE_LIMITED",
+                "CONTEXT_UNAVAILABLE",
+                "REVIEW_INCOMPLETE",
+                "ACCOUNTING_INCOMPLETE",
+                "INVALID_REQUEST",
+                "INVALID_RESULT",
+                "UNAUTHORIZED",
+                "STALE_HEAD",
+                "BUSY",
+                "VALIDATION_EXPIRED",
+                "ISOLATION_UNVERIFIED",
+                "BILLING_UNVERIFIED"
+            ]
+        },
         "run": {
             "type": "object",
             "additionalProperties": false,
@@ -717,7 +743,7 @@
                     "$ref": "#/$defs/binding"
                 },
                 "code": {
-                    "type": "string"
+                    "$ref": "#/$defs/failureCode"
                 },
                 "message": {
                     "type": "string",
@@ -813,7 +839,7 @@
                     "minimum": 1
                 },
                 "code": {
-                    "type": "string"
+                    "$ref": "#/$defs/failureCode"
                 },
                 "actions": {
                     "type": "array",
