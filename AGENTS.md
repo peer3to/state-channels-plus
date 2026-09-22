@@ -34,7 +34,7 @@ trigger src code).
 
 For any design, source, contract, or test change that affects specified
 behavior, follow `docs/spec/AGENTS.md` in the same pass. Identify affected
-requirements, planned tests, matching implementation subjects and source inventories, conformance traceability,
+requirements, planned tests, the file reports' requirement bullets and case lists,
 test traceability, individual test declarations, questions, findings, and audit
 approvals. Planned tests preserve the owning requirement ID, for example
 `INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers, rerun related evidence, and

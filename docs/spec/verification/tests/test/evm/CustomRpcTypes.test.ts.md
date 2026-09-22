@@ -20,6 +20,6 @@ executes against a transport.
 
 ## Tests and covered test IDs
 
-| Test                                                                                                                                     | Covers                                                                                                                                        |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`CustomRpc typing > allows custom RPC classes to extend MainRpcService`](../../../../../../test/evm/CustomRpcTypes.test.ts#L7) (line 7) | [`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16`](../../../../implementation/source/src/rpc/network/RpcHandler.ts.md#unit-test-rpc-handler-1-8bp2k8.p16) |
+| Test                                                                                                                                     | Covers                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| [`CustomRpc typing > allows custom RPC classes to extend MainRpcService`](../../../../../../test/evm/CustomRpcTypes.test.ts#L7) (line 7) | [`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16`](../../../../implementation/source/src/rpc/network/RpcHandler.ts.md#unit-test-rpc-handler-1-8bp2k8) |

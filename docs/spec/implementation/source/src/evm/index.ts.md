@@ -1,83 +1,9 @@
-# index.ts — Source Report
+# index.ts
 
-> **Source:** [src/evm/index.ts](../../../../../../src/evm/index.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/evm/index.ts](../../../../../../src/evm/index.ts)
+>
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
-## Responsibility and observable boundary
-
-EVM module re-exports.
-
-## Key design decisions
-
-The standalone createContractExecutorFactory and ContractExecutorFactoryOptions package exports are removed. Executor creation is internal to SDK setup and requires its owning endpoint. Unrelated exports retain their existing public contracts; the replacement internal factory and owner endpoint are not exported here. See [createContractExecutor.ts](contractExecutor/createContractExecutor.ts.md).
-
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                    | Specification IDs                                                                                                |
-| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [index.ts](../../../../../../src/evm/index.ts) | [`REQ-TJOIN-1-5VGR1F`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
-
-## Specification adherence
-
-- Role-consistent with the runtime views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                            | Gap / divergence |
-| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-TJOIN-1-5VGR1F`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f) | Covered               | **Here:** exports the public targeted-connect option type from the EVM SDK surface. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- [runtime-and-concurrency view](../../../views/architecture/sdk/runtime-and-concurrency.md).
+- [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)

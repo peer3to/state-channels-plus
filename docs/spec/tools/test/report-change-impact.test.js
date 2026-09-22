@@ -26,7 +26,7 @@ function fixture(run) {
     const sourceReport = (source) => {
         const report = `docs/spec/implementation/source/${source}.md`;
         const link = path.relative(path.dirname(report), source);
-        return `# Source\n\n> **Source:** [${source}](${link})\n\n| Source file | Specification IDs |\n| --- | --- |\n| [${source}](${link}) | ${requirement} |\n`;
+        return `# Source\n\n> **Source:** [${source}](${link})\n\n## Requirements\n\n- \`${requirement}\`\n`;
     };
     const commit = () => {
         git("add", "--all");
@@ -395,4 +395,150 @@ test("blocks a replacement whose requirement does not exist", () =>
                 "\n> **Replaces:** `src/old.ts`\n"
         );
         assert.equal(f.check().status, 1);
+    }));
+
+const other = "REQ-OTHER-1-000002";
+const specDocument = (...ids) =>
+    `# Spec\n\n| ID | Statement |\n| --- | --- |\n${ids.map((id) => `| ${id} | Preserves behavior |\n`).join("")}\n| Plan item | Expected result | Required permutations |\n| --- | --- | --- |\n${ids.map((id) => `| ${id}.T1 | Preserves behavior | ${id}.T1.P1 |\n`).join("")}`;
+const testReport = (file, ...rows) =>
+    `# Test\n\n> **Test file:** [test](../../../../../test/${file})\n\n| Test | Covers |\n| --- | --- |\n${rows
+        .map(
+            ([line, covers]) =>
+                `| [case ${line}](../../../../../test/${file}#L${line}) (line ${line}) | ${covers} |\n`
+        )
+        .join("")}`;
+const noSpecReport = (source) => {
+    const link = path.relative(
+        path.dirname(`docs/spec/implementation/source/${source}.md`),
+        source
+    );
+    return `# Source\n\n> **Source:** [${source}](${link})\n\nNo specified behavior: export barrel.\n`;
+};
+
+test("lists only the changed source's own requirements", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/specification/runtime.md",
+            specDocument(requirement, other)
+        );
+        f.write("src/other.ts", "export const other = 1;\n");
+        f.write(
+            "docs/spec/implementation/source/src/other.ts.md",
+            f.sourceReport("src/other.ts").replaceAll(requirement, other)
+        );
+        f.write("test/shared.test.ts", 'it("case 1", () => {});\n');
+        f.write(
+            "docs/spec/verification/tests/test/shared.test.ts.md",
+            testReport("shared.test.ts", [
+                1,
+                `${requirement}.T1.P1, ${other}.T1.P1`
+            ])
+        );
+        f.commit();
+        f.write("src/old.ts", "export const value = 2;\n");
+        const result = f.check();
+        assertMapped(result);
+        assert.doesNotMatch(result.stdout, new RegExp(`## ${other}`));
+    }));
+
+test("accounts a source with no specified behavior", () =>
+    fixture((f) => {
+        f.write("src/index.ts", "export * from './old';\n");
+        f.write(
+            "docs/spec/implementation/source/src/index.ts.md",
+            noSpecReport("src/index.ts")
+        );
+        f.commit();
+        f.write("src/index.ts", "export * from './old';\nexport {};\n");
+        const result = f.check();
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        assert.doesNotMatch(result.stdout, /Unmapped changed files/);
+    }));
+
+test("blocks a source whose report has neither a requirement nor the line", () =>
+    fixture((f) => {
+        f.write("src/index.ts", "export * from './old';\n");
+        f.write(
+            "docs/spec/implementation/source/src/index.ts.md",
+            noSpecReport("src/index.ts").replace(/No specified behavior: /, "")
+        );
+        f.commit();
+        f.write("src/index.ts", "export * from './old';\nexport {};\n");
+        const result = f.check();
+        assert.equal(result.status, 1, result.stderr + result.stdout);
+        assert.match(result.stdout, /Unmapped changed files[^]*src\/index\.ts/);
+    }));
+
+test("does not block deleting a source with no specified behavior", () =>
+    fixture((f) => {
+        f.write("src/index.ts", "export * from './old';\n");
+        f.write(
+            "docs/spec/implementation/source/src/index.ts.md",
+            noSpecReport("src/index.ts")
+        );
+        f.commit();
+        f.remove("src/index.ts");
+        f.remove("docs/spec/implementation/source/src/index.ts.md");
+        const result = f.check();
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        assert.doesNotMatch(result.stdout, /Unmapped changed files/);
+    }));
+
+test("ignores the derived requirement status file", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/specification/runtime.md",
+            specDocument(requirement, other)
+        );
+        f.write("test/a.test.ts", 'it("case 1", () => {});\n');
+        f.write("test/b.test.ts", 'it("case 1", () => {});\n');
+        f.write(
+            "docs/spec/verification/tests/test/a.test.ts.md",
+            testReport("a.test.ts", [1, `${requirement}.T1.P1`])
+        );
+        f.write(
+            "docs/spec/verification/tests/test/b.test.ts.md",
+            testReport("b.test.ts", [1, "—"])
+        );
+        f.commit();
+        f.write(
+            "docs/spec/verification/tests/test/b.test.ts.md",
+            testReport("b.test.ts", [1, `${other}.T1.P1`])
+        );
+        // The branch that first writes the status file adds every block.
+        f.write(
+            "docs/spec/verification/requirements.md",
+            `# Requirement test status\n\n\`${other}\`\nSpecification cases tested: 1/1.\n\n\`${requirement}\`\nSpecification cases tested: 1/1.\n`
+        );
+        f.git("add", "--all");
+        const result = f.check("--staged");
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        assert.match(result.stdout, new RegExp(`## ${other}`));
+        assert.doesNotMatch(result.stdout, new RegExp(`## ${requirement}`));
+    }));
+
+test("a family that names several requirements does not join them", () =>
+    fixture((f) => {
+        f.write(
+            "docs/spec/specification/runtime.md",
+            specDocument(requirement)
+        );
+        f.write("docs/spec/specification/other.md", specDocument(other));
+        f.write(
+            "docs/spec/implementation/views/flow.md",
+            `# Flow\n\nThe flow runs through [old.ts](../../../../src/old.ts).\n\n## INTEGRATION-TEST-FLOW-1-000001\n\nBoth together.\n\n- Specification: \`${requirement}\`, \`${other}\`\n\n- \`INTEGRATION-TEST-FLOW-1-000001.P1\` — together\n`
+        );
+        f.commit();
+        f.write("src/old.ts", "export const value = 2;\n");
+        const fromSource = f.check();
+        assertMapped(fromSource);
+        assert.doesNotMatch(fromSource.stdout, new RegExp(`## ${other}`));
+        f.git("checkout", "--", "src/old.ts");
+        f.write(
+            "docs/spec/specification/runtime.md",
+            specDocument(requirement).replace("Preserves", "Keeps")
+        );
+        const fromRequirement = f.check();
+        assert.match(fromRequirement.stdout, new RegExp(`## ${requirement}`));
+        assert.doesNotMatch(fromRequirement.stdout, new RegExp(`## ${other}`));
     }));

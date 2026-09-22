@@ -1,80 +1,22 @@
-# createContractExecutor.ts — Source Report
+# createContractExecutor.ts
 
-> **Source:** [src/evm/contractExecutor/createContractExecutor.ts](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/evm/contractExecutor/createContractExecutor.ts](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts)
+>
 > **Design views:** [Runtime and concurrency](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Responsibility and observable boundary
+## Requirements
 
-Constructs the SDK-owned executor port facade. The supplied SDK host root owns the caller connection, callbacks and logger route. Placement selects a local MessageChannel or worker port; both return the same executor facade and invoke the same receiving service.
+- [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)
+- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)
+- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
+- [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm)
 
-## Key design decisions
+## UNIT-TEST-CREATE-CONTRACT-EXECUTOR-1-M5H56N
 
-Inline supplied loggers use createRoot.logger. Worker creation carries no live logger; the receiving base root constructs its own. No logger-only local argument or explicit service registration remains.
+Detached-error route selection
 
-Calls createRoot with ContractExecutorRoot, its required owner and the fixed internal platform entry URL. One factory options object selects placement, logging and application precompile manifests; there is no separate dependency argument or worker override.
+- Setup: Build the dedicated executor through genuine SDK setup with its supplied owner and the scripted worker entry
+- Oracle: The supplied SDK route receives the report once and the executor keeps serving; no report is dropped
 
-The returned ContractExecutorRemoteRoot is the only connection field passed to RpcContractExecutor. Common creation waits for executor initialization and readiness. Common root lifetime installs diagnostics and discovers logger connections automatically. No factory observer or logger announcement is needed.
-
-## Inputs, outputs, state, and side effects
-
-Inputs are ContractExecutorFactoryOptions and the owning root. Output is a placement-independent executor adapter holding one remote root handle. Its disposal delegates to that handle and shares root-owned cleanup. Application precompile manifests remain cloneable startup inputs.
-
-## Linked requirements
-
-| Source file                                                                                               | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L1) | [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak), [`REQ-RUNTIME-1-RSM6MZ`](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-2-KBXKTG`](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg), [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-6-6F4SSM`](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) |
-
-- [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak): Both placements return the same port facade and receiving executor contract
-- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz): Manifest addresses are normalized and options cross structured clone with initialization
-- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): The SDK host root owns each executor connection and inline receiving root
-- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59): Early worker failure rejects root creation, and required SDK ownership supplies the detached-error route
-- [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm): The initialized host clock adjustment is supplied to the receiving service
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-This is an internal module, not a package-root construction API. The public createContractExecutorFactory wrapper and its exported options were removed by the engineer-approved contract change. Inline manifest functions and live resources are unsupported because structured clone is universal. Executor disposal and StateManager abort release the engine and close its root connection in both placements; later calls reject. Failed-init attachment timing is preserved.
-
-## Specification adherence
-
-- [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak): Both placements return the same port facade and receiving executor contract See [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L44).
-- [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz): Manifest addresses are normalized and options cross structured clone with initialization See [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L73).
-- [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): The SDK host root owns each executor connection and inline receiving root See [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L37).
-- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59): Early worker failure rejects root creation, and required SDK ownership supplies the detached-error route See [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L27).
-- [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm): The initialized host clock adjustment is supplied to the receiving service See [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L84).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence                         |
-| ------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) | Covered               | **Here:** Both placements return the same port facade and receiving executor contract [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L44). **Other files:** [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK domain and common error service composition), [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK graph construction and deployment/final disposal order), [RpcContractExecutor.ts](RpcContractExecutor.ts.md) (placement-independent executor adapter), [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md) (receiving executor endpoint composition), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (receiving engine initialization, monitoring and disposal).                              | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** Manifest addresses are normalized and options cross structured clone with initialization [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L73). **Other files:** [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK domain and common error service composition), [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK graph construction and deployment/final disposal order), [RpcContractExecutor.ts](RpcContractExecutor.ts.md) (placement-independent executor adapter), [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md) (receiving executor endpoint composition), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (receiving engine initialization, monitoring and disposal).                 | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-2-KBXKTG`](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg) | Covered               | **Here:** The SDK host root owns each executor connection and inline receiving root [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L37). **Other files:** [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK domain and common error service composition), [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK graph construction and deployment/final disposal order), [RpcContractExecutor.ts](RpcContractExecutor.ts.md) (placement-independent executor adapter), [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md) (receiving executor endpoint composition), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (receiving engine initialization, monitoring and disposal).                                | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** Early worker failure rejects root creation, and required SDK ownership supplies the detached-error route [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L27). **Other files:** [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK domain and common error service composition), [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK graph construction and deployment/final disposal order), [RpcContractExecutor.ts](RpcContractExecutor.ts.md) (placement-independent executor adapter), [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md) (receiving executor endpoint composition), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (receiving engine initialization, monitoring and disposal). | None demonstrated for this contribution. |
-| [`REQ-RUNTIME-6-6F4SSM`](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) | Covered               | **Here:** The initialized host clock adjustment is supplied to the receiving service [`createContractExecutor.ts`](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L84). **Other files:** [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK domain and common error service composition), [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (SDK graph construction and deployment/final disposal order), [RpcContractExecutor.ts](RpcContractExecutor.ts.md) (placement-independent executor adapter), [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md) (receiving executor endpoint composition), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (receiving engine initialization, monitoring and disposal).                               | None demonstrated for this contribution. |
-
-## Component test obligations
-
-Exact test evidence belongs to verification reports. Existing family identities remain unchanged when their implementation owner moves.
-
-| Unit test ID                                                                                          | Obligation                     | Public entry and setup                                                                                       | Oracle and forbidden effects                                                                         | Required permutations                                                                                                                                                                          |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-create-contract-executor-1-m5h56n"></a>`UNIT-TEST-CREATE-CONTRACT-EXECUTOR-1-M5H56N` | Detached-error route selection | Build the dedicated executor through genuine SDK setup with its supplied owner and the scripted worker entry | The supplied SDK route receives the report once and the executor keeps serving; no report is dropped | <a id="unit-test-create-contract-executor-1-m5h56n.p1"></a>`UNIT-TEST-CREATE-CONTRACT-EXECUTOR-1-M5H56N.P1` — the supplied SDK route receives one detached report and the worker keeps serving |
-
-## Related source reports
-
-- [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
-- [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
-- [RpcContractExecutor.ts](RpcContractExecutor.ts.md)
-- [ContractExecutorRoot.ts](../../rpc/internal/roots/ContractExecutorRoot.ts.md)
-- [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)
-
-Worker requests carry the host clock adjustment. Inline construction omits that field so its executor keeps reading the live shared Clock; an explicitly supplied adjustment takes precedence in either placement.
+- [x] `UNIT-TEST-CREATE-CONTRACT-EXECUTOR-1-M5H56N.P1` — the supplied SDK route receives one detached report and the worker keeps serving

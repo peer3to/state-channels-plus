@@ -28,4 +28,4 @@ positionally, and order-sensitive consumers exist (slash application order can c
 serialized output state and therefore the successor `forkId`; the empty-timeout fold of [`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../implementation/open-questions.md#oq-14-5c8kv7) is
 last-writer-wins). Candidate directions: canonicalize (sort) the survivor set before reduction,
 or prove and permutation-test independence including kills and slash-application order. See
-[protocol/disputes.md](../specification/disputes/disputes.md) §5 ([`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.md#inv-dis-5-j1qz92)).
+[protocol/disputes.md](../specification/disputes/disputes.md) §5 ([`INV-DIS-5-J1QZ92` (The reduced result is independent of the order in which valid dispute inputs…)](../specification/disputes/disputes.md#inv-dis-5-j1qz92)).

@@ -309,7 +309,7 @@ outbound value, slash proceeds, dispute-data retention, and who may submit final
 **Decided (2026-08-10):** turn authorization is a protocol-layer responsibility, enforced
 generically for all state machines — the SDK validation pipeline rejects a wrong-author block
 before it reaches `stateTransition`, and in-contract turn checks are optional defense in depth
-([`REQ-SM-6-BJZVQ5`](protocol-model/state-machines.md#req-sm-6-bjzvq5) / [`REQ-CON-7-DXVW98`](../implementation/views/architecture/contracts/state-machine-base.md#req-con-7-dxvw98) corrected accordingly).
+([`REQ-SM-6-BJZVQ5`](protocol-model/state-machines.md#req-sm-6-bjzvq5) / [`REQ-CON-7-DXVW98` (Turn authorization is protocol-enforced)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-7-dxvw98) corrected accordingly).
 
 **Remaining question — the on-chain side.** Observed facts: the
 `BlockInvalidStateTransition` handler (`FraudProofFacet._handleBlockInvalidStateTransition`)
@@ -453,9 +453,9 @@ message count for pre-readiness traffic.
 
 ## OQ-38-EY27T5 — Runtime budgets, scheduling determinism, and test isolation
 
-Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T`](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)/14/15):
+Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T` (Worker boundaries are the defaults)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)/14/15):
 
-- **Memory budget under the phone envelope (blocks [`REQ-RUN-13-27YE2T`](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)).** Default-on workers put three
+- **Memory budget under the phone envelope (blocks [`REQ-RUN-13-27YE2T` (Worker boundaries are the defaults)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)).** Default-on workers put three
   execution contexts per peer on a device with a few hundred MB of usable heap. _Resolved
   2026-08-10:_ placement does not vary by device — no profile branching; the envelope is a hard
   budget the implementation must meet. _Still open:_ the concrete per-context budget, the
@@ -464,13 +464,13 @@ Follow-ons to the 2026-08-10 runtime decisions ([`REQ-RUN-13-27YE2T`](../impleme
 - **Worker capability detection.** Flipping the defaults requires detecting runtimes that deny
   workers and falling back inline; the mechanism and its failure behavior are undesigned. This is
   a fallback path, not a device profile.
-- **Throughput/latency targets.** None exist, so [`REQ-RUN-14-YAHYR4`](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-14-yahyr4) is a memory envelope only and the
+- **Throughput/latency targets.** None exist, so [`REQ-RUN-14-YAHYR4` (Six participants on a mid-range mobile browser)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-14-yahyr4) is a memory envelope only and the
   measurement §44 requires cannot be defined. Decide block-confirmation round-trip, dispute-path
   latency, and sustained rate at six participants.
 - **Default-flip prerequisites.** Whether flipping the worker defaults requires runtime
   feature-detection with automatic inline fallback (browsers that deny workers).
 - **Equivalence oracle scope.** Whether event _ordering_ must match exactly or only the emitted
-  multiset ([`REQ-RUN-15-8CBVKB`](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-15-8cbvkb) currently says same set/payloads).
+  multiset ([`REQ-RUN-15-8CBVKB` (Inline and worker equivalence)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-15-8cbvkb) currently says same set/payloads).
 - **Test scheduling and isolation.** No cross-peer deterministic scheduler exists — coordination is
   polling plus event barriers and cooperative hold/release stubs; and the default is one shared
   chain and discovery registry per machine, with concurrent tests separated only by account-range

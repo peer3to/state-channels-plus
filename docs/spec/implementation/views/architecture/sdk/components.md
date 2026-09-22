@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/architecture/sdk.md](../../../../specification/runtime/sdk.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** Concise white-box reference for every SDK component: what it does,
 > why it exists, dependencies, guarantees, non-guarantees, and verification.
 > Flow-level behavior is specified in
@@ -139,17 +138,37 @@ singleton set by `createConfig` during `p2pSetup`; precedence overrides >
   is quadratic, so the design target is small partitions (~≤10 participants;
   [security/trust-model.md](../../../../specification/security/trust-model.md)).
 
-### Implementation test plan
+## Design invariants
 
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
+<a id="req-sdk-3-91xmzr"></a>
 
-| Plan item                                             | Requirement / invariant                         | Setup and stimulus                                                                                                      | Expected result                                                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-sdk-3-91xmzr.t1"></a>`REQ-SDK-3-91XMZR.T1` | <a id="req-sdk-3-91xmzr"></a>`REQ-SDK-3-91XMZR` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Handshake signatures are domain-tagged and cannot collide with block signatures.                                  | <a id="req-sdk-3-91xmzr.t1.p1"></a>`REQ-SDK-3-91XMZR.T1.P1` — valid case<br><a id="req-sdk-3-91xmzr.t1.p2"></a>`REQ-SDK-3-91XMZR.T1.P2` — correct identity/signature<br><a id="req-sdk-3-91xmzr.t1.p3"></a>`REQ-SDK-3-91XMZR.T1.P3` — direct invalid/opposite case<br><a id="req-sdk-3-91xmzr.t1.p4"></a>`REQ-SDK-3-91XMZR.T1.P4` — wrong identity/signature<br><a id="req-sdk-3-91xmzr.t1.p5"></a>`REQ-SDK-3-91XMZR.T1.P5` — missing identity/signature<br><a id="req-sdk-3-91xmzr.t1.p6"></a>`REQ-SDK-3-91XMZR.T1.P6` — duplicate identity/signature<br><a id="req-sdk-3-91xmzr.t1.p7"></a>`REQ-SDK-3-91XMZR.T1.P7` — forged identity/signature<br><a id="req-sdk-3-91xmzr.t1.p8"></a>`REQ-SDK-3-91XMZR.T1.P8` — membership boundary |
-| <a id="req-sdk-4-1jdchm.t1"></a>`REQ-SDK-4-1JDCHM.T1` | <a id="req-sdk-4-1jdchm"></a>`REQ-SDK-4-1JDCHM` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Only the addressed peer may settle an RPC request; oversized/undecodable frames disconnect.                       | <a id="req-sdk-4-1jdchm.t1.p1"></a>`REQ-SDK-4-1JDCHM.T1.P1` — valid case<br><a id="req-sdk-4-1jdchm.t1.p2"></a>`REQ-SDK-4-1JDCHM.T1.P2` — correct identity/signature<br><a id="req-sdk-4-1jdchm.t1.p3"></a>`REQ-SDK-4-1JDCHM.T1.P3` — direct invalid/opposite case<br><a id="req-sdk-4-1jdchm.t1.p4"></a>`REQ-SDK-4-1JDCHM.T1.P4` — wrong identity/signature<br><a id="req-sdk-4-1jdchm.t1.p5"></a>`REQ-SDK-4-1JDCHM.T1.P5` — missing identity/signature<br><a id="req-sdk-4-1jdchm.t1.p6"></a>`REQ-SDK-4-1JDCHM.T1.P6` — duplicate identity/signature<br><a id="req-sdk-4-1jdchm.t1.p7"></a>`REQ-SDK-4-1JDCHM.T1.P7` — forged identity/signature<br><a id="req-sdk-4-1jdchm.t1.p8"></a>`REQ-SDK-4-1JDCHM.T1.P8` — membership boundary |
-| <a id="inv-sdk-4-15bvjq.t1"></a>`INV-SDK-4-15BVJQ.T1` | <a id="inv-sdk-4-15bvjq"></a>`INV-SDK-4-15BVJQ` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | `BlockStorage` never overwrites a stored block with a conflicting body; `justPersist` never advances live height. | <a id="inv-sdk-4-15bvjq.t1.p1"></a>`INV-SDK-4-15BVJQ.T1.P1` — valid case<br><a id="inv-sdk-4-15bvjq.t1.p2"></a>`INV-SDK-4-15BVJQ.T1.P2` — zero/empty/no-op case where meaningful<br><a id="inv-sdk-4-15bvjq.t1.p3"></a>`INV-SDK-4-15BVJQ.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-4-15bvjq.t1.p4"></a>`INV-SDK-4-15BVJQ.T1.P4` — exact boundary<br><a id="inv-sdk-4-15bvjq.t1.p5"></a>`INV-SDK-4-15BVJQ.T1.P5` — failure/recovery<br><a id="inv-sdk-4-15bvjq.t1.p6"></a>`INV-SDK-4-15BVJQ.T1.P6` — relevant race                                                                                                                                                                                                        |
-| <a id="inv-sdk-5-xxzcpz.t1"></a>`INV-SDK-5-XXZCPZ.T1` | <a id="inv-sdk-5-xxzcpz"></a>`INV-SDK-5-XXZCPZ` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The event pipeline's processed-block watermark never advances past an incomplete or failed log.                   | <a id="inv-sdk-5-xxzcpz.t1.p1"></a>`INV-SDK-5-XXZCPZ.T1.P1` — valid case<br><a id="inv-sdk-5-xxzcpz.t1.p2"></a>`INV-SDK-5-XXZCPZ.T1.P2` — malformed input<br><a id="inv-sdk-5-xxzcpz.t1.p3"></a>`INV-SDK-5-XXZCPZ.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-5-xxzcpz.t1.p4"></a>`INV-SDK-5-XXZCPZ.T1.P4` — adversarial input<br><a id="inv-sdk-5-xxzcpz.t1.p5"></a>`INV-SDK-5-XXZCPZ.T1.P5` — partial failure<br><a id="inv-sdk-5-xxzcpz.t1.p6"></a>`INV-SDK-5-XXZCPZ.T1.P6` — retry and recovery                                                                                                                                                                                                                        |
-| <a id="inv-sdk-6-ccg31h.t1"></a>`INV-SDK-6-CCG31H.T1` | <a id="inv-sdk-6-ccg31h"></a>`INV-SDK-6-CCG31H` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Blacklisting is peer-identity-keyed and survives transport replacement.                                           | <a id="inv-sdk-6-ccg31h.t1.p1"></a>`INV-SDK-6-CCG31H.T1.P1` — valid case<br><a id="inv-sdk-6-ccg31h.t1.p2"></a>`INV-SDK-6-CCG31H.T1.P2` — correct identity/signature<br><a id="inv-sdk-6-ccg31h.t1.p3"></a>`INV-SDK-6-CCG31H.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-6-ccg31h.t1.p4"></a>`INV-SDK-6-CCG31H.T1.P4` — wrong identity/signature<br><a id="inv-sdk-6-ccg31h.t1.p5"></a>`INV-SDK-6-CCG31H.T1.P5` — missing identity/signature<br><a id="inv-sdk-6-ccg31h.t1.p6"></a>`INV-SDK-6-CCG31H.T1.P6` — duplicate identity/signature<br><a id="inv-sdk-6-ccg31h.t1.p7"></a>`INV-SDK-6-CCG31H.T1.P7` — forged identity/signature<br><a id="inv-sdk-6-ccg31h.t1.p8"></a>`INV-SDK-6-CCG31H.T1.P8` — membership boundary |
+### REQ-SDK-3-91XMZR — Domain-tagged handshake signatures
+
+Handshake signatures are domain-tagged and cannot collide with block signatures.
+
+<a id="req-sdk-4-1jdchm"></a>
+
+### REQ-SDK-4-1JDCHM — Only the addressed peer settles an RPC request
+
+Only the addressed peer may settle an RPC request; oversized/undecodable frames disconnect.
+
+<a id="inv-sdk-4-15bvjq"></a>
+
+### INV-SDK-4-15BVJQ — No conflicting overwrite of a stored block
+
+`BlockStorage` never overwrites a stored block with a conflicting body; `justPersist` never advances live height.
+
+<a id="inv-sdk-5-xxzcpz"></a>
+
+### INV-SDK-5-XXZCPZ — Event watermark never passes incomplete work
+
+The event pipeline's processed-block watermark never advances past an incomplete or failed log.
+
+<a id="inv-sdk-6-ccg31h"></a>
+
+### INV-SDK-6-CCG31H — Identity-keyed blacklisting
+
+Blacklisting is peer-identity-keyed and survives transport replacement.
 
 ## Future Work
 
@@ -163,16 +182,6 @@ _Non-normative._
   ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5)).
 - Wire `OpenChannelNegotiationService` into the default RPC root or document
   the integrator wiring pattern as the supported path.
-
-## Implementation traceability
-
-| Requirement / invariant                              | Statement                                                                                                         | Implementation status | Implementation evidence                                                                                                                                                    | Gap / divergence |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-SDK-3-91XMZR`](components.md#req-sdk-3-91xmzr) | Handshake signatures are domain-tagged and cannot collide with block signatures.                                  | Covered               | [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L4) (`HANDSHAKE_DOMAIN`) | None.            |
-| [`REQ-SDK-4-1JDCHM`](components.md#req-sdk-4-1jdchm) | Only the addressed peer may settle an RPC request; oversized/undecodable frames disconnect.                       | Covered               | [src/P2PManager.ts](../../../../../../src/P2PManager.ts#L1) (`handleRpcResponse`, `onRpc`)                                                                                 | None.            |
-| [`INV-SDK-4-15BVJQ`](components.md#inv-sdk-4-15bvjq) | `BlockStorage` never overwrites a stored block with a conflicting body; `justPersist` never advances live height. | Covered               | [src/storage/BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts#L1)                                                                                            | None.            |
-| [`INV-SDK-5-XXZCPZ`](components.md#inv-sdk-5-xxzcpz) | The event pipeline's processed-block watermark never advances past an incomplete or failed log.                   | Covered               | [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1) (`publishCompletedBlocks`)                                               | None.            |
-| [`INV-SDK-6-CCG31H`](components.md#inv-sdk-6-ccg31h) | Blacklisting is peer-identity-keyed and survives transport replacement.                                           | Covered               | [src/ProfileManager.ts](../../../../../../src/ProfileManager.ts#L1), [src/P2PManager.ts](../../../../../../src/P2PManager.ts#L1)                                           | None.            |
 
 ## Shared operation ownership
 

@@ -1,90 +1,42 @@
-# ADiamondStateMachine.ts — Source Report
+# ADiamondStateMachine.ts
 
-> **Source:** [src/ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts)
+>
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-MIRROR-1-VAF778` (Single implementation)](../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+- [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
+  Partial: No channel-level encoding/version guard proves that an existing channel cannot be pointed at incompatible logic or encoding.
+- [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+  Partial: Interface split across contract and local adapter; engineer audit pending — Interface presence is visible in source, but completeness, atomic failure, and semantic equivalence have not been audited operation by operation.
 
-## Responsibility and observable boundary
+## UNIT-TEST-SM-INTERFACE-1-P7RP93
 
-The abstract local-machine surface: the client-side handle pairing the mirror deployment with the
-state-machine instance (`localDiamondContract`, execution entry points) that concrete EVM
-executors implement.
+Capability completeness
 
-## Key design decisions
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
-Positive balance uses the application's zero balance and comparison methods in one operation. Callers pass their existing labels and retain their own failure handling. See [ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L55).
+- [ ] `UNIT-TEST-SM-INTERFACE-1-P7RP93.P1` — A concrete conformance subclass must implement transition, view, participant, selector, state, balance, inbound, address, and disposal capabilities
 
-1. **One handle for all mirrored evaluation** — services depend on this abstraction, not on a concrete VM.
+## UNIT-TEST-SM-INTERFACE-2-PGAF55
 
-## Inputs, outputs, state, and side effects
+Boundary typing and failure
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
-## Linked requirements
+- [ ] `UNIT-TEST-SM-INTERFACE-2-PGAF55.P1` — Valid values are representable without undocumented return shapes
+- [ ] `UNIT-TEST-SM-INTERFACE-2-PGAF55.P2` — boundary values are representable without undocumented return shapes
+- [ ] `UNIT-TEST-SM-INTERFACE-2-PGAF55.P3` — malformed values and rejection semantics are representable without partial mutation
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+## UNIT-TEST-SM-INTERFACE-3-VD5ZBB
 
-| Source file                                                           | Specification IDs                                                                               |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts) | [`INV-MIRROR-1-VAF778`](../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) |
+Adapter substitutability
 
-## Assumptions, dependencies, trust boundaries, and limits
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`INV-SM-2-0FTJ2T.T1`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-- Operates inside the participant runtime; untrusted input arrives only through the documented ingress paths.
-
-## Specification adherence
-
-- Role-consistent with the owning views; no divergence observed at this file's boundary.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- [EvmDiamondStateMachine](./evm/EvmDiamondStateMachine.ts.md).
-
-## Balance comparison exposure
-
-The SDK state-machine abstraction exposes the existing Solidity `isBalanceLesserThan` operation beside
-`getZeroBalance`. Negotiation and join trust boundaries use `isBalanceLesserThan(zero, received)` instead of
-inventing a TypeScript numeric comparison.
+- [ ] `UNIT-TEST-SM-INTERFACE-3-VD5ZBB.P1` — Every concrete adapter can be used through this abstraction without changing deterministic transition or state semantics

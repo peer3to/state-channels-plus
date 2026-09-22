@@ -1,110 +1,26 @@
-# Clock.ts — Source Report
+# Clock.ts
 
-> **Source:** [src/Clock.ts](../../../../../src/Clock.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/Clock.ts](../../../../../src/Clock.ts)
+>
 > **Design views:** [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../../../specification/protocol-model/time.md#req-time-1-fm4651)
+- [`REQ-TIME-2-VG94S7` (Honest participants keep estimated chain time within the skew bound)](../../../specification/protocol-model/time.md#req-time-2-vg94s7)
+  Partial: The specification does not set a numeric skew bound, and this file does not periodically resynchronize after initialization.
+- [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../../../specification/protocol-model/time.md#req-time-5-s9nqxk)
+- [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../specification/runtime/execution.md#req-runtime-6-6f4ssm)
 
-## Responsibility and observable boundary
+## UNIT-TEST-CLOCK-1-6K546K
 
-The process-wide chain-time tracker. `Clock.init` derives an adjustment and average block time from
-the active provider, then the static read methods serve estimated or direct chain time to protocol
-window calculations. A provider replacement is a make-before-break handover: the initialized clock
-stays readable until the replacement has synchronized successfully.
+Initialization and handover
 
-## Key design decisions
+- Setup: Call `Clock.init` with identical, replacement, failed, and overlapping providers
+- Oracle: One usable owner is published; failed or pending replacement never creates an uninitialized interval or claims ownership
 
-Clock exposes the runtime adjustment getter only. Test adjustment and restoration stay in the test tree; there is no public test setter. See [Clock.ts](../../../../../src/Clock.ts#L56).
-
-1. **Local wall time is adjusted from chain observations.** Consumers use the chain-derived clock,
-   while `getBlockchainTime` reads the provider directly
-   ([`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651)).
-2. **Initialization is shared.** Calls using the same provider await one synchronization promise.
-3. **The adjustment is exposed for contexts without the singleton.** `getClockAdjustmentSeconds`
-   ([#L48](../../../../../src/Clock.ts#L48)) lets a contract-executor worker build the same perception
-   from its own wall clock; `isInitialized` lets the executor factory attach a clock only when a runtime
-   has synced one ([`REQ-TIME-5-S9NQXK`](../../../specification/protocol-model/time.md#req-time-5-s9nqxk)).
-4. **Provider replacement is make-before-break.** A different provider starts a new synchronization
-   without clearing the live instance. Successful synchronization swaps the singleton; failure
-   clears only the pending promise, leaving the previous clock available and allowing retry.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                                                                                                              |
-| ------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | An ethers provider at initialization; wall time and recent chain blocks during synchronization.                       |
-| Outputs      | Estimated chain seconds, average observed block time, direct latest-block time/height, and provider ownership checks. |
-| Owned state  | One live `Clock` instance and one shared initialization promise.                                                      |
-| Side effects | Provider reads during initialization and direct chain-time/network queries; atomic replacement of the live singleton. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                             | Specification IDs                                                                                                                                                              |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Clock.ts](../../../../../src/Clock.ts) | [`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651), [`REQ-TIME-2-VG94S7`](../../../specification/protocol-model/time.md#req-time-2-vg94s7) |
-
-Contribution in this file: [`REQ-TIME-5-S9NQXK`](../../../specification/protocol-model/time.md#req-time-5-s9nqxk), [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../specification/runtime/execution.md#req-runtime-6-6f4ssm). The conformance rows below name this owner and the other required owners.
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- The provider is the trusted chain-view dependency described by the protocol trust model.
-- `Clock` is process-global. Concurrent runtimes therefore share the live instance and replacement
-  handover.
-- The previous provider may be stale or shutting down during replacement. It remains a temporary
-  read fallback, not the final owner after the new provider synchronizes.
-
-## Specification adherence
-
-- The estimate is based on recent block timestamps and is exposed instead of raw wall time.
-- A successful replacement is not published until its chain reads and adjustment calculation
-  complete.
-- A failed replacement neither installs the failed provider nor creates an uninitialized interval
-  for concurrent readers.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Gap / divergence                                                                                                             |
-| ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651)     | Covered               | **Here:** initialization derives the local protocol clock from the provider's latest block timestamp; direct chain-time reads use the same live provider.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | None.                                                                                                                        |
-| [`REQ-TIME-2-VG94S7`](../../../specification/protocol-model/time.md#req-time-2-vg94s7)     | Partial               | **Here:** `syncClock` estimates adjustment and average block time from up to ten recent blocks, including replacement providers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | The specification does not set a numeric skew bound, and this file does not periodically resynchronize after initialization. |
-| [`REQ-TIME-5-S9NQXK`](../../../specification/protocol-model/time.md#req-time-5-s9nqxk)     | Covered               | **Here:** [source](../../../../../src/Clock.ts#L6) exposes initialization state and the correction used by the runtime executor factory. **Other files:** [ContractExecutor.ts](evm/contractExecutor/ContractExecutor.ts.md) (timestamped execution and simulation), [createContractExecutor.ts](evm/contractExecutor/createContractExecutor.ts.md) (clock/factory wiring), [ContractExecutorService.ts](rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (worker-local clock derivation).                                                                                                                              | —                                                                                                                            |
-| [`REQ-RUNTIME-6-6F4SSM`](../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) | Covered               | **Here:** [source](../../../../../src/Clock.ts#L6) exposes initialization state and the correction used by the runtime executor factory. **Other files:** [createContractExecutor.ts](evm/contractExecutor/createContractExecutor.ts.md) (clock/factory wiring), [RpcContractExecutor.ts](evm/contractExecutor/RpcContractExecutor.ts.md) (initialization transport), [ContractExecutorService.ts](rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (worker-local clock derivation), [ContractExecutorService.ts](rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (initialization message shape). | —                                                                                                                            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                    | Obligation                  | Public entry and setup                                                           | Oracle and forbidden effects                                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-clock-1-6k546k"></a>`UNIT-TEST-CLOCK-1-6K546K` | Initialization and handover | Call `Clock.init` with identical, replacement, failed, and overlapping providers | One usable owner is published; failed or pending replacement never creates an uninitialized interval or claims ownership | <a id="unit-test-clock-1-6k546k.p1"></a>`UNIT-TEST-CLOCK-1-6K546K.P1` — overlapping calls for one provider share initialization; <a id="unit-test-clock-1-6k546k.p2"></a>`UNIT-TEST-CLOCK-1-6K546K.P2` — a synchronized replacement becomes the live owner and serves reads; <a id="unit-test-clock-1-6k546k.p3"></a>`UNIT-TEST-CLOCK-1-6K546K.P3` — failed replacement does not take ownership and a later live replacement succeeds; <a id="unit-test-clock-1-6k546k.p4"></a>`UNIT-TEST-CLOCK-1-6K546K.P4` — reads during replacement continue through the previous initialized instance until atomic cutover; <a id="unit-test-clock-1-6k546k.p5"></a>`UNIT-TEST-CLOCK-1-6K546K.P5` — overlapping different-provider initializations settle on one usable owner |
-
-## Related source reports
-
-- [EventSyncService](./stateManager/eventSync/EventSyncService.ts.md) (feeds observations).
+- [x] `UNIT-TEST-CLOCK-1-6K546K.P1` — overlapping calls for one provider share initialization
+- [x] `UNIT-TEST-CLOCK-1-6K546K.P2` — a synchronized replacement becomes the live owner and serves reads
+- [x] `UNIT-TEST-CLOCK-1-6K546K.P3` — failed replacement does not take ownership and a later live replacement succeeds
+- [ ] `UNIT-TEST-CLOCK-1-6K546K.P4` — reads during replacement continue through the previous initialized instance until atomic cutover
+- [x] `UNIT-TEST-CLOCK-1-6K546K.P5` — overlapping different-provider initializations settle on one usable owner

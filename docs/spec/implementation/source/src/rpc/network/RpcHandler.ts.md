@@ -1,96 +1,35 @@
-# RpcHandler.ts — Source Report
+# RpcHandler.ts
 
-> **Source:** [src/rpc/network/RpcHandler.ts](../../../../../../../src/rpc/network/RpcHandler.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/network/RpcHandler.ts](../../../../../../../src/rpc/network/RpcHandler.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 
-## Responsibility and observable boundary
+## UNIT-TEST-RPC-HANDLER-1-8BP2K8
 
-The sender-side delivery handle: one constructed envelope plus the delivery verbs — broadcast,
-sendOne (transport, address, or loopback-self), sendMultiple, and `request(target)` which registers
-correlation state and returns the remote handler's value.
+Delivery routing and typed face
 
-## Key design decisions
+- Setup: Exercise every delivery verb through real peer runtimes using loopback, address, native transport, and constructor-independent compatible transport targets; include missing targets
+- Oracle: Intended peers receive each envelope exactly once; loopback reaches self; unresolved fire-and-forget targets have no effect; unresolvable requests and remote errors reject; request options control timeout
 
-1. **Delivery is the caller's choice, constrained by type.** The typed proxy exposes fire-and-forget verbs only for `void` methods and `request` only for value-returning ones — misuse is a compile error, not a runtime surprise ([#L7](../../../../../../../src/rpc/network/RpcHandler.ts#L10)).
-2. **Omitting the target means loopback self.** Local invocation uses the same envelope and dispatch path as remote calls — one code path, trusted transport ([#L12](../../../../../../../src/rpc/network/RpcHandler.ts#L15)).
-3. **Address targets resolve to the live transport** via the profile manager, so callers survive transport churn ([#L70](../../../../../../../src/rpc/network/RpcHandler.ts#L81)).
-4. **Transport overloads use the public transport shape.** Direct transport targets loaded through another module graph remain distinct from request options and addresses without relying on constructor identity ([#L61](../../../../../../../src/rpc/network/RpcHandler.ts#L72), [#L91](../../../../../../../src/rpc/network/RpcHandler.ts#L110), [#L125](../../../../../../../src/rpc/network/RpcHandler.ts#L144)).
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                                               |
-| ------------ | ------------------------------------------------------ |
-| Inputs       | The envelope; targets (transport/address/none).        |
-| Outputs      | Sends; a correlated promise for requests.              |
-| Owned state  | None — per-call object.                                |
-| Side effects | Transport sends; correlation registration (delegated). |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                         | Specification IDs                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [RpcHandler.ts](../../../../../../../src/rpc/network/RpcHandler.ts) | [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RUNTIME-4-B0N70Y`](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Request timeout/correlation mechanics live in the p2p manager; this class only routes.
-- Direct transport values may originate from a compatible application module graph.
-- Fire-and-forget delivery silently skips an unresolved address. Address-list delivery continues
-  past unresolved entries, while request delivery rejects locally when its single target cannot be
-  resolved.
-- Transport send and broadcast failures are not recovered here; synchronous failures propagate to
-  the caller, while transport-specific asynchronous failure handling remains transport-owned.
-- `sendMultiple` receives a homogeneous array through its typed public surface. Runtime
-  classification uses the first entry and does not validate a caller-forged mixed array.
-
-## Specification adherence
-
-- Delivery-mode identification per [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0); single-settlement requests delegated per [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                    | Gap / divergence |
-| ------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** recipient selection and delegation to the manager’s single router. **Other files:** [NetworkRpcRouter](../router/NetworkRpcRouter.ts.md) supplies network timeout and response admission; [ARpcRouter](../router/ARpcRouter.ts.md) owns pending settlement; [P2PManager](../../P2PManager.ts.md) owns connections and retirement. | None.            |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** transport overload classification delegates to the structural predicate. **Other files:** [ATransport](../../transport/ATransport.ts.md) owns that predicate.                                                                                                                                                                     | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                | Obligation                      | Public entry and setup                                                                                                                                                               | Oracle and forbidden effects                                                                                                                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-rpc-handler-1-8bp2k8"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8` | Delivery routing and typed face | Exercise every delivery verb through real peer runtimes using loopback, address, native transport, and constructor-independent compatible transport targets; include missing targets | Intended peers receive each envelope exactly once; loopback reaches self; unresolved fire-and-forget targets have no effect; unresolvable requests and remote errors reject; request options control timeout | <a id="unit-test-rpc-handler-1-8bp2k8.p1"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P1` — broadcast reaches each open peer once and not self; <a id="unit-test-rpc-handler-1-8bp2k8.p2"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P2` — `sendOne` accepts a constructor-independent compatible direct transport; <a id="unit-test-rpc-handler-1-8bp2k8.p3"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P3` — `sendMultiple` native transports overload; <a id="unit-test-rpc-handler-1-8bp2k8.p4"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P4` — loopback request registers and resolves; <a id="unit-test-rpc-handler-1-8bp2k8.p5"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P5` — `sendOne` by address reaches the addressed peer; <a id="unit-test-rpc-handler-1-8bp2k8.p6"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P6` — targetless `sendOne` reaches loopback self; <a id="unit-test-rpc-handler-1-8bp2k8.p7"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P7` — `sendMultiple` addresses overload reaches each addressed peer once; <a id="unit-test-rpc-handler-1-8bp2k8.p8"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P8` — empty `sendMultiple` has no effect; <a id="unit-test-rpc-handler-1-8bp2k8.p9"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P9` — unresolved `sendOne` address has no effect; <a id="unit-test-rpc-handler-1-8bp2k8.p10"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P10` — address-list delivery skips an unresolved entry and continues to later valid entries; <a id="unit-test-rpc-handler-1-8bp2k8.p11"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P11` — addressed request with options resolves; <a id="unit-test-rpc-handler-1-8bp2k8.p12"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P12` — request accepts a constructor-independent compatible direct transport; <a id="unit-test-rpc-handler-1-8bp2k8.p13"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P13` — request to an unresolved address rejects locally with no send; <a id="unit-test-rpc-handler-1-8bp2k8.p14"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P14` — options-only loopback request forwards its timeout; <a id="unit-test-rpc-handler-1-8bp2k8.p15"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P15` — remote request error propagates; <a id="unit-test-rpc-handler-1-8bp2k8.p16"></a>`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16` — compile-time face exposes only fire-and-forget verbs for `void` methods and only `request` for value methods |
-
-## Related source reports
-
-- [RpcHandleProxy](RpcHandleProxy.ts.md) (constructs handlers), [P2PManager](../../P2PManager.ts.md), [ProfileManager](../../ProfileManager.ts.md) (address resolution).
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P1` — broadcast reaches each open peer once and not self
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P2` — `sendOne` accepts a constructor-independent compatible direct transport
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P3` — `sendMultiple` native transports overload
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P4` — loopback request registers and resolves
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P5` — `sendOne` by address reaches the addressed peer
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P6` — targetless `sendOne` reaches loopback self
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P7` — `sendMultiple` addresses overload reaches each addressed peer once
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P8` — empty `sendMultiple` has no effect
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P9` — unresolved `sendOne` address has no effect
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P10` — address-list delivery skips an unresolved entry and continues to later valid entries
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P11` — addressed request with options resolves
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P12` — request accepts a constructor-independent compatible direct transport
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P13` — request to an unresolved address rejects locally with no send
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P14` — options-only loopback request forwards its timeout
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P15` — remote request error propagates
+- [x] `UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16` — compile-time face exposes only fire-and-forget verbs for `void` methods and only `request` for value methods

@@ -1,107 +1,54 @@
-# DisputeFraudProofFacet.sol — Source Report
+# DisputeFraudProofFacet.sol
 
-> **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
+- [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
+- [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
+- [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
+- [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+- [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
+- [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
+- [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
+- [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
+- [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
+- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 
-## Responsibility and observable boundary
+## UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7
 
-Dispute fraud-proof application: skip already-killed, kill-period-open gate, dispatch across the
-17 content/timeout families, valid → kill + slash disputer, invalid → slash submitter; plus the
-timeout-evidence view predicates (calldata-posted validation, last-milestone finality, header
-mismatch, inbound-hash validity).
+Kill application
 
-## Key design decisions
+- Setup: Apply each family against valid/invalid disputes at window edges from eligible/ineligible submitters
+- Oracle: Valid kills remove + slash; invalid self-slash; closed windows revert; killed disputes skipped
 
-Dispute-fraud targets use the same bounded current eligibility as ordinary fraud proofs. Historical proof validation keeps its historical membership walk; eligibility is not inferred from old joins outside the current boundary. See [DisputeFraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L32).
-
-1. **Kill is the only commitment-removal path**, pairing with the window bookkeeping's swap-removal — the order perturbation input to [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx) originates here.
-2. **Typed self-calls go through the manager interface, not the proxy contract.** The three
-   operations this facet reaches on `address(this)` — the dispute-window creation timestamp
-   ([#L482](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L482)), the state transition
-   ([#L652](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L652)) and the milestone finality check
-   ([#L806](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L806)) — are typed by
-   [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md). The calls are
-   unchanged; only the compile-time type is, which removes this facet's dependency on
-   [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) now that the proxy no longer
-   declares the routed functions.
-3. **A listed slash set that is a subset reverts with both sets.**
-   `_handleDisputeOnChainSlashesNotSubset` returns the disputer as the offender the moment one
-   listed slash is absent from the chain's record; reaching the end means the proof was wrong and
-   the call reverts with `RaceConditionOnChainSlashes(channelId, disputeSlashes, onChainSlashes)`
-   ([#L387](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L387)).
-   Slash-set contents are time-dependent, so the client classifying this race needs to know which
-   slashes the two sides held, not how many: the arrays are already in memory at the revert, and
-   the sets can differ while their counts agree. The site is a plain `revert`, so nothing is
-   evaluated before the loop has proven the subset relation.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                                              |
-| ------------ | ----------------------------------------------------- |
-| Inputs       | Routed calls from the manager (delegatecall context). |
-| Outputs      | State mutations/verdicts/events per operation group.  |
-| Owned state  | None declared (shared layout via inheritance).        |
-| Side effects | Events; escrow via consumer where applicable.         |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                         | Specification IDs                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [DisputeFraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol) | [`REQ-ENFFP-1-BREACW`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw), [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb), [`REQ-DIS-3-C4KYSF`](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Executes only in the manager's delegatecall context (except UtilityFacet's plain calls).
-- Deployment-size budget applies per deployable ([architecture view](../../../../views/architecture/contracts/architecture.md) §3 measurements).
-
-## Specification adherence
-
-- Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                               | Implementation status | Evidence                                               | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------ | ---------------- |
-| [`REQ-DIS-3-C4KYSF`](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)              | Covered               | **Here:** kill-during-open-window with disputer slash. | None.            |
-| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** family dispatch incl. safe rejection.        | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                            | Obligation       | Public entry and setup                                                                               | Oracle and forbidden effects                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7` | Kill application | Apply each family against valid/invalid disputes at window edges from eligible/ineligible submitters | Valid kills remove + slash; invalid self-slash; closed windows revert; killed disputes skipped | <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p1"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P1` — DisputeNotLatestState family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p2"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P2` — kill accepted at open window edge; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p3"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P3` — already-killed skip; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p4"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4` — self-slash branch; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p5"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P5` — timeout predicate parity with auditor preflight; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p6"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P6` — DisputeInvalidOutputState family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p7"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P7` — DisputeInvalidStateProof family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p8"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P8` — DisputeInvalidBalanceInvariant family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p9"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P9` — DisputeOnChainSlashesNotSubset family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p10"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P10` — TimeoutThreshold family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p11"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P11` — TimeoutCalldataPosted family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p12"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P12` — TimeoutNotLinkedToLatestState family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p13"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P13` — TimeoutParticipantNotNext family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p14"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P14` — TimeoutTooEarly family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p15"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P15` — DisputeInvalidBlockInStateProofApplyFraudProof family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p16"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P16` — DisputeLastMilestoneNotFinalAndNoAuditingData family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p17"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P17` — InvalidDisputeReason family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p18"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P18` — DisputeStateProofHeaderMismatch family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p19"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P19` — DisputeInboundHashNotInChain family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p20"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P20` — DisputeInvalidBlockStructure family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p21"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P21` — DisputeBlockAuthorNotParticipant family; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p22"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P22` — kill reverts after window closes; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p23"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P23` — a DisputeOnChainSlashesNotSubset proof whose listed slashes are all recorded on chain reverts `RaceConditionOnChainSlashes` naming both address arrays, not their sizes; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p24"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P24` — a TimeoutTooEarly proof on a genesis fork the chain cannot date reverts `RaceConditionGenesisTimestampNotAvailable` naming channel, origin fork and target fork; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p25"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25` — a TimeoutTooEarly proof that denies an on-chain timestamp for a previous block whose calldata is posted reverts `RaceConditionUnexpectedBlockCalldataPosted` naming that block's fork, height, author and stored commitment; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p26"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26` — the same undatable genesis reached through `validateTimeoutCalldataPostedProof` reverts `RaceConditionGenesisTimestampNotAvailable` naming channel, origin fork and target fork; <a id="unit-test-dispute-fraud-proof-facet-1-qk8hq7.p27"></a>`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P27` — `validateTimeoutCalldataPostedProof` with a posted previous block and no claimed timestamp for it reverts `RaceConditionUnexpectedBlockCalldataPosted` naming the previous block's fork, height, author and stored commitment rather than the timed-out block's |
-
-## Related source reports
-
-- [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), [StateChannelCommon](./StateChannelCommon.sol.md).
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P1` — DisputeNotLatestState family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P2` — kill accepted at open window edge
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P3` — already-killed skip
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4` — self-slash branch
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P5` — timeout predicate parity with auditor preflight
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P6` — DisputeInvalidOutputState family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P7` — DisputeInvalidStateProof family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P8` — DisputeInvalidBalanceInvariant family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P9` — DisputeOnChainSlashesNotSubset family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P10` — TimeoutThreshold family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P11` — TimeoutCalldataPosted family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P12` — TimeoutNotLinkedToLatestState family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P13` — TimeoutParticipantNotNext family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P14` — TimeoutTooEarly family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P15` — DisputeInvalidBlockInStateProofApplyFraudProof family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P16` — DisputeLastMilestoneNotFinalAndNoAuditingData family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P17` — InvalidDisputeReason family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P18` — DisputeStateProofHeaderMismatch family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P19` — DisputeInboundHashNotInChain family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P20` — DisputeInvalidBlockStructure family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P21` — DisputeBlockAuthorNotParticipant family
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P22` — kill reverts after window closes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P23` — a DisputeOnChainSlashesNotSubset proof whose listed slashes are all recorded on chain reverts `RaceConditionOnChainSlashes` naming both address arrays, not their sizes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P24` — a TimeoutTooEarly proof on a genesis fork the chain cannot date reverts `RaceConditionGenesisTimestampNotAvailable` naming channel, origin fork and target fork
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25` — a TimeoutTooEarly proof that denies an on-chain timestamp for a previous block whose calldata is posted reverts `RaceConditionUnexpectedBlockCalldataPosted` naming that block's fork, height, author and stored commitment
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26` — the same undatable genesis reached through `validateTimeoutCalldataPostedProof` reverts `RaceConditionGenesisTimestampNotAvailable` naming channel, origin fork and target fork
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P27` — `validateTimeoutCalldataPostedProof` with a posted previous block and no claimed timestamp for it reverts `RaceConditionUnexpectedBlockCalldataPosted` naming the previous block's fork, height, author and stored commitment rather than the timed-out block's

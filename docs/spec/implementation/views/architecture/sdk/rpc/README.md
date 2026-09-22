@@ -2,14 +2,12 @@
 
 > **Specification subject:** [specification/architecture/rpc.md](../../../../../specification/peer-communication/rpc.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The peer-RPC system as the protocol's peer-to-peer entry-point surface: service
 > registration, typed proxy derivation, wire envelope, guards, delivery modes,
 > correlation/timeout/error semantics, failure outcomes, and rate limiting. This is the deep
 > reference behind the component summary in [components.md](../components.md) §2. Layering context:
 > [architecture.md](../architecture.md); flow-level behavior of the main consumer:
 > [block-confirmation-pipeline.md](../block-confirmation-pipeline.md).
-
 
 ## Shared routing and transport ownership
 
@@ -475,7 +473,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
 RPC handlers run as ordinary tasks on the single-threaded host runtime; nothing in the RPC layer
 acquires the `StateManager` mutex. This is deliberate and load-bearing: peer ingest is the
 cheap, mergeable, out-of-order regime, and only the downstream dequeue-and-execute path takes the
-mutex ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, [`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4).
+mutex ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, [`REQ-BCP-3-1GCEH9` (Intake and merge never take the transition mutex)](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4).
 Consequently an RPC endpoint MUST NOT assume exclusive access to live state — it hands validated
 input to the owning manager, which enforces its own concurrency discipline. The block-queue
 boundedness argument also lands here: the queue deliberately has no cap of its own because the
@@ -515,7 +513,7 @@ state effect is a defect.
   checks `stateManager.isDisposed` at its own checkpoints (e.g.
   [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242)).
 - **Transport replacement.** Peer identity is the EVM address; profiles (and blacklist state)
-  survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H`](../components.md#inv-sdk-6-ccg31h)). The
+  survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H` (Identity-keyed blacklisting)](../components.md#inv-sdk-6-ccg31h)). The
   WebRTC upgrade retires the old transport after an `agreementTime` grace; address-targeted
   delivery always resolves the current transport, and response correlation tolerates the upgrade
   (§6.5). Services that must survive churn key their state by address, not transport
@@ -526,7 +524,7 @@ state effect is a defect.
 
 **Current:** there is no protocol-version negotiation anywhere in the RPC layer. The envelope has
 no version field; no version is exchanged in the handshake; the only versioned identifier on the
-wire is the handshake domain string `peer3:init-handshake:v1` ([`REQ-SDK-3-91XMZR`](../components.md#req-sdk-3-91xmzr)), which scopes exactly
+wire is the handshake domain string `peer3:init-handshake:v1` ([`REQ-SDK-3-91XMZR` (Domain-tagged handshake signatures)](../components.md#req-sdk-3-91xmzr)), which scopes exactly
 one message type. Two peers running incompatible SDK revisions discover it only through
 downstream failures (unknown service/method → disconnect; undecodable Codec payloads → endpoint
 failure).
@@ -673,30 +671,82 @@ The neutral [RPC specification](../../../../../specification/peer-communication/
 is the only owner of canonical RPC requirement and test-plan meanings. This implementation view
 records status and evidence without redefining those IDs.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| --- | --- | --- | --- |
-| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Partial | Handshake and service reports prove mutual success, pre-auth rejection, and half-auth isolation. | Forged, stale, and reconnect identity permutations remain exact-evidence gaps where no mapped test exists. |
-| [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Partial | `Rpc`, `Codec`, transport, cross-module, and service reports own wire and structural evidence. | Version-mismatch handling is absent. |
-| [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial | `NetworkRpcRouter` supplies response admission and timeout hooks to the shared request owner; `P2PManager` owns disconnect policy and disposal; `ANetworkRpcService` owns one-attempt response delivery. | No cancellation API exists. |
-| [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Partial | Service-owned block, sync, join, dispute, and signaling reports. | Join has one complete mapped matrix. Block, sync, dispute, transport-upgrade, and unwired open-channel authorization remain unassigned where no single declaration proves the full family oracle. |
-| [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Partial | Service-owned block merge/order, handshake replay, dispute replay, and sync concurrency evidence. | Block-delivery retry after failure has no exact no-duplicate-effect oracle. |
-| [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Missing | The fixed frame cap and sync in-flight limit provide narrow local bounds. | No central pending-count, aggregate, per-peer, proof-work, or signaling-work bound; see [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5). |
-| [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Covered | `NetworkRpcRouter` and `ANetworkRpcService` own the ordered ingress and endpoint-resolution stages. | None demonstrated. |
-| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial | `runGuards`, `HandshakeCompletedGuard`, `ANetworkRpcService`, and loopback/network tests. | Request-style retry is ineffective during negotiation; see [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
-| [`REQ-RPC-8-44XECF`](../../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | Missing | No compatibility field or handshake negotiation exists. | All compatibility permutations remain unassigned under [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
+- [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
+  Partial: Forged, stale, and reconnect identity permutations remain exact-evidence gaps where no mapped test exists.
+- [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+  Partial: Version-mismatch handling is absent.
+- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+  Partial: No cancellation API exists.
+- [`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)
+  Partial: Join has one complete mapped matrix. Block, sync, dispute, transport-upgrade, and unwired open-channel authorization remain unassigned where no single declaration proves the full family oracle.
+- [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
+  Partial: Block-delivery retry after failure has no exact no-duplicate-effect oracle.
+- [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)
+  Missing: No central pending-count, aggregate, per-peer, proof-work, or signaling-work bound; see [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5).
+- [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
+  Partial: Request-style retry is ineffective during negotiation; see [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2).
+- [`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf)
+  Missing: All compatibility permutations remain unassigned under [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2).
 
-## 12. Implementation integration test plan
+## INTEGRATION-TEST-RPC-2-PBZ4QY
 
-Canonical permutation meanings stay in the neutral specification. These integration IDs group
-cross-file implementation evidence and link to those canonical owners.
+- Specification: [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+- Setup and oracle: Dispatch authenticated and unauthenticated frames through real sessions; failed ingress stays isolated from unrelated sessions.
 
-| Integration test ID | Canonical owners | Setup and expected result | Required permutations |
-| --- | --- | --- | --- |
-| <a id="integration-test-rpc-2-pbz4qy"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY` | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Dispatch authenticated and unauthenticated frames through real sessions; failed ingress stays isolated from unrelated sessions. | <a id="integration-test-rpc-2-pbz4qy.p1"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P1` authenticated dispatch; <a id="integration-test-rpc-2-pbz4qy.p2"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P2` pre-auth rejection; <a id="integration-test-rpc-2-pbz4qy.p3"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P3` crafted endpoint isolation; <a id="integration-test-rpc-2-pbz4qy.p4"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P4` multibyte oversized offender isolation. |
-| <a id="integration-test-rpc-3-zkfxgt"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT` | [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Race every implemented settlement outcome and require one winner plus registry/timer cleanup. | <a id="integration-test-rpc-3-zkfxgt.p1"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P1` response/error/send cleanup; <a id="integration-test-rpc-3-zkfxgt.p5"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P5` disposal cleanup; <a id="integration-test-rpc-3-zkfxgt.p6"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P6` response/timeout; <a id="integration-test-rpc-3-zkfxgt.p7"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P7` response/disconnect; <a id="integration-test-rpc-3-zkfxgt.p8"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P8` replacement/unknown/duplicate response; <a id="integration-test-rpc-3-zkfxgt.p9"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P9` remote-error/timeout; <a id="integration-test-rpc-3-zkfxgt.p10"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P10` response/remote-error; <a id="integration-test-rpc-3-zkfxgt.p11"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P11` remote-error/disconnect; <a id="integration-test-rpc-3-zkfxgt.p12"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P12` timeout/disconnect; <a id="integration-test-rpc-3-zkfxgt.p13"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P13` foreign responder; <a id="integration-test-rpc-3-zkfxgt.p14"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P14` concurrent distinct/duplicate response. |
-| <a id="integration-test-rpc-4-exz35f"></a>`INTEGRATION-TEST-RPC-4-EXZ35F` | [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Run guards in order across trusted loopback and untrusted network paths; one failure owns the consequence. | <a id="integration-test-rpc-4-exz35f.p1"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P1` order and short-circuit; <a id="integration-test-rpc-4-exz35f.p2"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P2` loopback bypass; <a id="integration-test-rpc-4-exz35f.p3"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P3` pre-handshake consequence; <a id="integration-test-rpc-4-exz35f.p4"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P4` unrelated-session isolation. |
-| <a id="integration-test-rpc-5-acp2qt"></a>`INTEGRATION-TEST-RPC-5-ACP2QT` | [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Install one structural custom root and deliver through inline and worker hosts. | <a id="integration-test-rpc-5-acp2qt.p1"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P1` structural recognition; <a id="integration-test-rpc-5-acp2qt.p2"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P2` inline host; <a id="integration-test-rpc-5-acp2qt.p3"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P3` worker host; <a id="integration-test-rpc-5-acp2qt.p4"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P4` request/error delivery. |
-| <a id="integration-test-rpc-6-009egg"></a>`INTEGRATION-TEST-RPC-6-009EGG` | [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Reuse service-owned authorization and replay tests; no shared omnibus test duplicates their payload matrices. | <a id="integration-test-rpc-6-009egg.p3"></a>`INTEGRATION-TEST-RPC-6-009EGG.P3` join authorization; <a id="integration-test-rpc-6-009egg.p4"></a>`INTEGRATION-TEST-RPC-6-009EGG.P4` handshake replay; <a id="integration-test-rpc-6-009egg.p5"></a>`INTEGRATION-TEST-RPC-6-009EGG.P5` dispute replay; <a id="integration-test-rpc-6-009egg.p6"></a>`INTEGRATION-TEST-RPC-6-009EGG.P6` block authorization; <a id="integration-test-rpc-6-009egg.p7"></a>`INTEGRATION-TEST-RPC-6-009EGG.P7` sync authorization; <a id="integration-test-rpc-6-009egg.p8"></a>`INTEGRATION-TEST-RPC-6-009EGG.P8` block merge; <a id="integration-test-rpc-6-009egg.p9"></a>`INTEGRATION-TEST-RPC-6-009EGG.P9` sync concurrency. |
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P1` — authenticated dispatch
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P2` — pre-auth rejection
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P3` — crafted endpoint isolation
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P4` — multibyte oversized offender isolation
+
+## INTEGRATION-TEST-RPC-3-ZKFXGT
+
+- Specification: [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+- Setup and oracle: Race every implemented settlement outcome and require one winner plus registry/timer cleanup.
+
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P1` — response/error/send cleanup
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P5` — disposal cleanup
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P6` — response/timeout
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P7` — response/disconnect
+- [ ] `INTEGRATION-TEST-RPC-3-ZKFXGT.P8` — replacement/unknown/duplicate response
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P9` — remote-error/timeout
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P10` — response/remote-error
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P11` — remote-error/disconnect
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P12` — timeout/disconnect
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P13` — foreign responder
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P14` — concurrent distinct/duplicate response
+
+## INTEGRATION-TEST-RPC-4-EXZ35F
+
+- Specification: [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
+- Setup and oracle: Run guards in order across trusted loopback and untrusted network paths; one failure owns the consequence.
+
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P1` — order and short-circuit
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P2` — loopback bypass
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P3` — pre-handshake consequence
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P4` — unrelated-session isolation
+
+## INTEGRATION-TEST-RPC-5-ACP2QT
+
+- Specification: [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+- Setup and oracle: Install one structural custom root and deliver through inline and worker hosts.
+
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P1` — structural recognition
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P2` — inline host
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P3` — worker host
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P4` — request/error delivery
+
+## INTEGRATION-TEST-RPC-6-009EGG
+
+- Specification: [`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
+- Setup and oracle: Reuse service-owned authorization and replay tests; no shared omnibus test duplicates their payload matrices.
+
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P3` — join authorization
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P4` — handshake replay
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P5` — dispute replay
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P6` — block authorization
+- [ ] `INTEGRATION-TEST-RPC-6-009EGG.P7` — sync authorization
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P8` — block merge
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P9` — sync concurrency
 
 ## Future Work
 
@@ -713,13 +763,3 @@ cross-file implementation evidence and link to those canonical owners.
 - Wire `OpenChannelNegotiationService` or document integrator wiring as the supported path
   ([open-channel-negotiation.md](./open-channel-negotiation.md);
   [components.md](../components.md) Future Work).
-
-## Implementation traceability
-
-The detailed status table in [Canonical requirement ownership](#canonical-requirement-ownership)
-is authoritative for this view. Source-level evidence remains in the linked reports, and exact
-test assignments remain in verification reports. The neutral specification owns all canonical
-test-plan meanings; unsupported cancellation, central rate limiting, compatibility negotiation,
-and open-channel wire authorization stay visible as gaps rather than receiving partial mappings.
-
-Common lifecycle composition: every internal endpoint owns readiness waits and child-first disposal/quiescence through its lifecycle service. SDK deployment completion remains separate. Repeated cleanup shares completion, and domain readiness points stay unchanged. Forced port removal remains distinct from graceful request/acknowledgement cleanup.

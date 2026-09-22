@@ -1,219 +1,134 @@
-# StateChannelManagerProxy.sol — Source Report
+# StateChannelManagerProxy.sol
 
-> **Source:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)
+- [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
+- [`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)
+- [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)
+  Partial: The constructor does not verify that code-bearing targets implement the expected module semantics.
+- [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1)
+  Partial: An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here.
+- [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
+- [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
+- [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
+- [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
+- [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
+  Partial: No channel-level encoding/version guard proves that an existing channel cannot be pointed at incompatible logic or encoding.
+- [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../../../../../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
+- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+- [`REQ-TIME-3-MT1MMF` (Window values and skew bound are explicit configuration trade-offs)](../../../../../specification/protocol-model/time.md#req-time-3-mt1mmf)
+- [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immutable for its key and binding)](../../../../../specification/security/data-availability.md#inv-da-1-ts7hx2)
 
-## Responsibility and observable boundary
+## UNIT-TEST-MANAGER-PROXY-1-NTYR71
 
-The manager: the single stable address, and the only contract that owns the storage layout every
-facet writes.
+Opening and calldata posting
 
-It implements itself only what needs its own storage or composition: `open` (unanimous opening
-with composable atomic deposits and genesis snapshot storage,
-[#L119](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L119)),
-`postBlockCalldata` (commitment keyed channel/sender/fork/height with the too-late guard,
-author-only, no overwrite, unverified-by-design,
-[#L92](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L92)),
-the `onlySelf` composables `depositAssetsComposable`
-([#L199](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L199)),
-`withdrawAssetsComposable`
-([#L243](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L243))
-and `executeStateTransition`
-([#L249](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)),
-`multicall` (delegatecall loop against itself, first-revert bubbling,
-[#L264](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L264)),
-the read-only routing introspection `facetAddressForSelector`
-([#L80](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80)),
-and the timing-config constructor with zero-means-default sentinels
-([#L33](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L33)).
-After a successful opening stores its genesis snapshot, `open` appends the channel ID to the
-enumerable open-channel set before emitting `ChannelOpened`. Failed and duplicate opens cannot
-change the set.
+- Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits; post calldata within/after the window, as non-author, and twice
+- Oracle: Only valid unanimous opens store genesis; posting guards enforce author/no-overwrite/deadline; [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) cases documented
 
-Every other operation of the diamond reaches its facet through the non-payable `fallback()`
-([#L67](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67)),
-which delegatecalls the facet chosen by the internal routing table `_facetForSelector`
-([#L286](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286))
-with raw `msg.data`. Unrouted selectors resolve to the integrator's consumer facet
-([#L355](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)) —
-the fallback of last resort. The proxy does not inherit
-[StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md); that abstract contract is
-the caller-side declaration of the same surface.
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P3` — short threshold
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4` — atomic deposits open
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P5` — non-author post revert
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length mismatch (documents finding)
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P7` — zero channel id
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P8` — partial-deposit open
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P9` — overwrite post revert
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P10` — post-deadline post revert
+- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) zero-address (documents finding)
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12` — duplicate participants rejected
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13` — partial-deposit open revert carries the count of SUCCESSFUL joins, not the submitted participant count
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P14` — overwrite post revert carries the fork id, transaction count, posting participant and the stored commitment
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P15` — non-author post revert carries the block author and the actual sender
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16` — a participant list larger than the channel's configured participant maximum is rejected, naming the requested and permitted sizes
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17` — a list at exactly the maximum passes the bound and fails later, so the check rejects above the limit rather than at it
 
-## Key design decisions
+## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 
-1. **Selector routing replaced the typed forwarders, to fit EIP-170.** The proxy previously
-   mirrored `StateChannelManagerInterface` with one `abi.encodeCall` + `_delegatecall` +
-   `abi.decode` body per facet function plus its own copies of ~28 state views, and measured 29,342
-   deployed bytes — over the 24,576-byte budget. Routing by selector removes ~28 forwarder bodies
-   and the constructor-populated map brings the proxy runtime to 12,464 bytes
-   ([`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje);
-   measurements in the [architecture view](../../../../views/architecture/contracts/architecture.md) §3).
-2. **The constructor calls `_registerRoute(Facet.fn.selector, facetAddress)`, never a literal hash.**
-   The compiler derives every selector. The helper rejects an exact duplicate and rejects a route
-   target without deployed code before deployment
-   ([#L338](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L338)).
-3. **Lookup is constant-time and routing is constructor-only.** A configured route returns its
-   code-bearing address; only an unconfigured selector reaches the consumer. The map is
-   chosen for scalable routing and future governance-controlled upgradeability, which requires a
-   separate authorization, collision, event, and upgrade-test design. This architecture is chosen
-   for that upgrade path; no routing-comparison benchmark is maintained.
-4. **The proxy deliberately does not inherit the interface.** Inheriting it would force a body for
-   every declaration — exactly the code the refactor removed. The interface is instead a
-   caller-side typing artifact that facets and TypeScript bind to `address(this)`, so the external
-   ABI is unchanged while the proxy carries none of it
-   ([StateChannelManagerInterface.sol.md](../../StateChannelManagerInterface.sol.md)).
-5. **Only storage-owning and composing operations stay on the proxy.** `open`, `postBlockCalldata`,
-   the three `onlySelf` composables and `multicall` need the proxy's own storage context or compose
-   several operations in one frame; everything else is a facet's. The bodies are unchanged by the
-   refactor except that `open` now calls the internal `_isChannelOpen` moved into
-   [StateChannelCommon](./StateChannelCommon.sol.md) instead of its own former public view
-   ([#L122](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L122)).
-6. **Unrouted selectors keep falling through to the consumer facet.** This is unchanged behaviour,
-   deliberately preserved: the integrator's custom operations are reachable at the manager address.
-   It is also the reason an unowned selector is not rejected — see
-   [Missing behavior](#missing-behavior)
-   ([#L355](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)).
-7. **`facetAddressForSelector` makes the deployed surface enumerable.** The only new externally
-   reachable function is this `view`; it lets a caller (and the routing test) reconcile every facet
-   ABI against the deployed routing table. Because the proxy's own declared functions dispatch
-   before the fallback, they are deliberately absent from the table and the introspection reports
-   the consumer facet for them
-   ([#L77](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L77)).
-8. **Calldata posting stores a commitment, not truth.** The block is unverified at posting; the
-   sender vouches and junk is later slashable against the commitment
-   ([data-availability.md](../../../../../specification/security/data-availability.md)).
-9. **`multicall` enables atomic compositions** (proofs-then-upload, reduce-then-advance) without
-   relaxing per-operation validation.
+Selector routing, interface agreement and confinement
 
-## Inputs, outputs, state, and side effects
+- Setup: Resolve every function of each facet's compiled ABI through `facetAddressForSelector` on a deployed diamond; reconcile the proxy ABI, the routed facet ABIs and the `StateChannelManagerInterface` ABI against each other; call routed operations, each `onlySelf` op directly and via composition, and multicall compositions with a failing leg
+- Oracle: Each facet's routed selectors resolve to that facet's deployed address and nowhere else; deliberately excluded facet functions and unknown selectors resolve to the consumer facet; no routed selector is shadowed by a proxy-implemented function; the interface declares exactly the callable surface, with the implementor's mutability and signature; routed calls execute against one state; direct internal calls revert; multicall is all-or-nothing
 
-| Aspect       | Contents                                                                                                                                                                               |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | All external operations of the operation inventory: the ones implemented here, plus every routed selector arriving as raw `msg.data` at the fallback.                                  |
-| Outputs      | Events; delegatecall results returned verbatim from the fallback (revert data bubbles through `_delegatecall`); view results; the routed facet address from `facetAddressForSelector`. |
-| Owned state  | The entire manager storage layout (facets are stateless delegate targets) and the constructor-fixed facet addresses.                                                                   |
-| Side effects | Escrow movements via the consumer facet; every routed operation's own effects, executed in this contract's storage.                                                                    |
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1` — every routed dispute-manager selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P2` — depositAssetsComposable direct revert
+- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P3` — multicall bubbling
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P4` — every routed dispute-verification selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P5` — every routed fraud-proof selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P6` — every routed dispute-fraud-proof selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7` — every routed state-snapshot selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8` — every routed join-channel selector resolves to that facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9` — every routed state-proof selector resolves to that facet
+- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback
+- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P11` — withdrawAssetsComposable direct revert
+- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P12` — executeStateTransition direct revert
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P13` — atomic deposit failure rolls back prior adapter effects
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P14` — non-atomic deposit filters failures and appends only successful deposits
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P15` — all-failed deposit batch reverts without an inbound block
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P16` — empty deposit batch reverts before adapter execution
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17` — every routed utility-view selector resolves to the utility facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18` — the utility facet's stateless helpers are absent from the routing table
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P19` — the dispute-verification facet's internal steps are absent from the routing table
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P20` — the fraud-proof facet's internal step is absent from the routing table
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P21` — no selector is defined by two facet ABIs
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P22` — an unknown selector resolves to the consumer facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P23` — the proxy's own selectors are absent from the routing table
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P24` — no routed facet selector is shadowed by a proxy-implemented function
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25` — every proxy-implemented and routed function is declared on the interface
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P26` — the interface declares nothing the proxy neither implements nor routes
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27` — every interface declaration repeats the implementing function's state mutability
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28` — every interface declaration repeats the implementing function's full signature
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P29` — constructor duplicate selector registration reverts with the exact selector
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30` — deployed facet inventory equals the canonical routed-facet owner
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P32` — constructor rejects a codeless routed target with the exact selector and address
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant
 
-Value handling is unchanged by the refactor: no function here is `payable` and the `fallback()` is
-non-payable, so a call carrying value reverts before any routing decision.
+## UNIT-TEST-SM-MANAGER-PROXY-1-8GBCH7
 
-## Linked requirements
+Replay execution
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-| Source file                                                                                                             | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [StateChannelManagerProxy.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol) | [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm), [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390), [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78), [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje), [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1), [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca), [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb), [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) |
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-1-8GBCH7.P1` — Restore the supplied pre-state, call the configured implementation, and return the exact success classification, state bytes, and ordered messages
 
-Contribution per ID: [`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) — every route is a delegatecall into this
-contract's own layout; [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — one address answers the whole surface,
-whichever facet implements it; [`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) — `onlySelf` on the three
-composition-internal operations; [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) — the constructor names every
-required routed module, rejects duplicate selectors and codeless route targets, and the deployable fits the platform size limit;
-[`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — the routing table assigns each externally reachable protocol
-operation to exactly one owning facet, and `facetAddressForSelector` makes that assignment
-readable; [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)/[`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) — the opening path and the composable
-deposit batch.
+## UNIT-TEST-SM-MANAGER-PROXY-2-579ESN
 
-## Assumptions, dependencies, trust boundaries, and limits
+Replay failure
 
-- Constructor wiring is trusted: every routed facet must contain code, but the deployer still chooses
-  the address and nothing verifies that its code is the expected module.
-- Facets MUST NOT declare state (convention-only today — an automated layout check is future work).
-- The routing table is fixed at compile time and the facet addresses at construction: there is no
-  facet replacement, so an upgrade means a new deployment.
-- `StateChannelManagerInterface` is not compiler-checked against the routing table. Nothing
-  implements it, so a declaration with no routing entry, or a routed selector with no declaration,
-  is caught only by review and by the routing test — both directions
-  ([`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p25),
-  [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P26`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p26)),
-  plus the mutability and signature the declaration repeats
-  ([`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p27),
-  [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p28)).
-  A declared function whose selector the proxy also implements would be routed but unreachable;
-  that direction is
-  [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P24`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p24).
-- Trust boundary: everything arriving at the fallback is adversarial calldata. Routing makes no
-  authorization decision — it selects a facet, and the facet performs every check.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-## Specification adherence
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-2-579ESN.P1` — A revert with data produces the expected rejection without accepting partial replay output
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-2-579ESN.P2` — a revert without data produces the same rejection
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-2-579ESN.P3` — a failed low-level call produces the same rejection
 
-- Single logical state via delegatecall-into-own-storage ([`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)); stable
-  external boundary ([`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)); `onlySelf` confinement for
-  composition-internal operations ([`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)).
-- The external ABI, per-function state mutability, revert-data propagation and the unknown-selector
-  fallback are unchanged by the move from forwarders to routing; the revert data of a routed call
-  still bubbles through the unchanged `_delegatecall` helper
-  ([GeneralUtils.sol#L6](../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6)).
-- Every deployable in the composition now fits the 24,576-byte platform limit
-  ([`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)).
-- Every registered routed facet has deployed code, so a void delegatecall cannot silently succeed
-  against an empty account.
+## UNIT-TEST-SM-MANAGER-PROXY-3-XKZ0BK
 
-## Specification contradictions
+State restoration
 
-None demonstrated.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-## Missing behavior
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-3-XKZ0BK.P1` — Valid encodings restore exactly
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-3-XKZ0BK.P2` — malformed encodings reject and do not contaminate later calls
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-3-XKZ0BK.P3` — incompatible encodings reject and do not contaminate later calls
 
-- **No rejection of an unowned selector.** [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) requires that an
-  externally reachable operation with no owning group cannot affect channel state. An unrouted
-  selector is delegatecalled into the integrator's consumer facet in this contract's storage
-  context, so the guarantee rests entirely on the integrator's facet
-  ([#L355](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)).
-- **No module-identity verification.** Route registration proves that the target has code, but does
-  not prove that the code implements the expected facet selectors or storage semantics.
-- **No facet replacement and no namespaced storage** — the remaining parts of the intended Diamond
-  direction (see the [architecture view](../../../../views/architecture/contracts/architecture.md) §4).
-- [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) (missing `open()` length/zero-address checks) lives on this surface.
+## UNIT-TEST-SM-MANAGER-PROXY-4-C2TN34
 
-## Conformance traceability
+Forwarded interface semantics
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
-| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Gap / divergence                                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the fallback delegatecalls the routed facet with raw `msg.data`, so every route executes against this contract's layout ([#L67](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67)). **Other files:** [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md) defines the layout every facet inherits.                                                                                                                                                                                                                       | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Covered               | **Here:** the routing table resolves every routed operation at this one address ([#L286](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286)); input/output encoding is untouched because raw calldata is forwarded. **Other files:** [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md) declares the same surface for callers; each facet report owns its operations' semantics.                                                                                                                                         | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) | Covered               | **Here:** `onlySelf` on `depositAssetsComposable` ([#L199](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L199)), `withdrawAssetsComposable` ([#L243](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L243)) and `executeStateTransition` ([#L249](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)). **Other files:** the modifier lives on [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md); facets self-call through the interface type. | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Partial               | **Here:** the constructor names every required routed module, registers 56 compiler-derived selectors, rejects duplicate selectors and codeless route targets, and remains below EIP-170. **Other files:** the architecture view records compiled-size and size-gate evidence.                                                                                                                                                                                                                                                                                                             | The constructor does not verify that code-bearing targets implement the expected module semantics.                                                                                                                |
-| [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Partial               | **Here:** `_facetForSelector` assigns each externally reachable protocol operation to exactly one owning facet ([#L286](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286)), and `facetAddressForSelector` publishes that assignment for reconciliation ([#L80](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80)). **Other files:** each facet report owns its group's semantics; [AConsumerFacet](./AConsumerFacet.sol.md) is the integrator surface reached by unrouted selectors.                | An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here. |
-| [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)     | Covered               | **Here:** the stable manager boundary routes `joinChannel`/`topUpBalance` into the join facet with the initiating caller and shared manager storage preserved ([#L318](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L318)). **Other files:** [JoinChannelFacet](./JoinChannelFacet.sol.md) implements them.                                                                                                                                                                                                                                     | None.                                                                                                                                                                                                             |
-| [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)     | Covered               | **Here:** `depositAssetsComposable` confines adapter calls with `onlySelf`, rolls back atomic failures, filters non-atomic failures, rejects an all-failed batch, and appends only successful deposits ([#L199](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L199)).                                                                                                                                                                                                                                                                            | None.                                                                                                                                                                                                             |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                    | Obligation                                            | Public entry and setup                                                                                                                                                                                                                                                                                                                            | Oracle and forbidden effects                                                                                                                                                                                                                                                                                                                                                                                                                                | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-manager-proxy-1-ntyr71"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71` | Opening and calldata posting                          | Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits; post calldata within/after the window, as non-author, and twice                                                                                                                                                                                        | Only valid unanimous opens store genesis; posting guards enforce author/no-overwrite/deadline; [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) cases documented                                                                                                                                                                                                                                                                        | <a id="unit-test-manager-proxy-1-ntyr71.p1"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open; <a id="unit-test-manager-proxy-1-ntyr71.p2"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id; <a id="unit-test-manager-proxy-1-ntyr71.p3"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P3` — short threshold; <a id="unit-test-manager-proxy-1-ntyr71.p4"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4` — atomic deposits open; <a id="unit-test-manager-proxy-1-ntyr71.p5"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P5` — non-author post revert; <a id="unit-test-manager-proxy-1-ntyr71.p6"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length mismatch (documents finding); <a id="unit-test-manager-proxy-1-ntyr71.p7"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P7` — zero channel id; <a id="unit-test-manager-proxy-1-ntyr71.p8"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P8` — partial-deposit open; <a id="unit-test-manager-proxy-1-ntyr71.p9"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P9` — overwrite post revert; <a id="unit-test-manager-proxy-1-ntyr71.p10"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P10` — post-deadline post revert; <a id="unit-test-manager-proxy-1-ntyr71.p11"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11` — [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) zero-address (documents finding); <a id="unit-test-manager-proxy-1-ntyr71.p12"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12` — duplicate participants rejected; <a id="unit-test-manager-proxy-1-ntyr71.p13"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13` — partial-deposit open revert carries the count of SUCCESSFUL joins, not the submitted participant count; <a id="unit-test-manager-proxy-1-ntyr71.p14"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P14` — overwrite post revert carries the fork id, transaction count, posting participant and the stored commitment; <a id="unit-test-manager-proxy-1-ntyr71.p15"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P15` — non-author post revert carries the block author and the actual sender; <a id="unit-test-manager-proxy-1-ntyr71.p16"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16` — a participant list larger than the channel's configured participant maximum is rejected, naming the requested and permitted sizes; <a id="unit-test-manager-proxy-1-ntyr71.p17"></a>`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17` — a list at exactly the maximum passes the bound and fails later, so the check rejects above the limit rather than at it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| <a id="unit-test-manager-proxy-2-kjrmb8"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8` | Selector routing, interface agreement and confinement | Resolve every function of each facet's compiled ABI through `facetAddressForSelector` on a deployed diamond; reconcile the proxy ABI, the routed facet ABIs and the `StateChannelManagerInterface` ABI against each other; call routed operations, each `onlySelf` op directly and via composition, and multicall compositions with a failing leg | Each facet's routed selectors resolve to that facet's deployed address and nowhere else; deliberately excluded facet functions and unknown selectors resolve to the consumer facet; no routed selector is shadowed by a proxy-implemented function; the interface declares exactly the callable surface, with the implementor's mutability and signature; routed calls execute against one state; direct internal calls revert; multicall is all-or-nothing | <a id="unit-test-manager-proxy-2-kjrmb8.p1"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1` — every routed dispute-manager selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p2"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P2` — depositAssetsComposable direct revert; <a id="unit-test-manager-proxy-2-kjrmb8.p3"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P3` — multicall bubbling; <a id="unit-test-manager-proxy-2-kjrmb8.p4"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P4` — every routed dispute-verification selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p5"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P5` — every routed fraud-proof selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p6"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P6` — every routed dispute-fraud-proof selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p7"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7` — every routed state-snapshot selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p8"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8` — every routed join-channel selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p9"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9` — every routed state-proof selector resolves to that facet; <a id="unit-test-manager-proxy-2-kjrmb8.p10"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback; <a id="unit-test-manager-proxy-2-kjrmb8.p11"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P11` — withdrawAssetsComposable direct revert; <a id="unit-test-manager-proxy-2-kjrmb8.p12"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P12` — executeStateTransition direct revert; <a id="unit-test-manager-proxy-2-kjrmb8.p13"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P13` — atomic deposit failure rolls back prior adapter effects; <a id="unit-test-manager-proxy-2-kjrmb8.p14"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P14` — non-atomic deposit filters failures and appends only successful deposits; <a id="unit-test-manager-proxy-2-kjrmb8.p15"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P15` — all-failed deposit batch reverts without an inbound block; <a id="unit-test-manager-proxy-2-kjrmb8.p16"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P16` — empty deposit batch reverts before adapter execution; <a id="unit-test-manager-proxy-2-kjrmb8.p17"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17` — every routed utility-view selector resolves to the utility facet; <a id="unit-test-manager-proxy-2-kjrmb8.p18"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18` — the utility facet's stateless helpers are absent from the routing table; <a id="unit-test-manager-proxy-2-kjrmb8.p19"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P19` — the dispute-verification facet's internal steps are absent from the routing table; <a id="unit-test-manager-proxy-2-kjrmb8.p20"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P20` — the fraud-proof facet's internal step is absent from the routing table; <a id="unit-test-manager-proxy-2-kjrmb8.p21"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P21` — no selector is defined by two facet ABIs; <a id="unit-test-manager-proxy-2-kjrmb8.p22"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P22` — an unknown selector resolves to the consumer facet; <a id="unit-test-manager-proxy-2-kjrmb8.p23"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P23` — the proxy's own selectors are absent from the routing table; <a id="unit-test-manager-proxy-2-kjrmb8.p24"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P24` — no routed facet selector is shadowed by a proxy-implemented function; <a id="unit-test-manager-proxy-2-kjrmb8.p25"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25` — every proxy-implemented and routed function is declared on the interface; <a id="unit-test-manager-proxy-2-kjrmb8.p26"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P26` — the interface declares nothing the proxy neither implements nor routes; <a id="unit-test-manager-proxy-2-kjrmb8.p27"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27` — every interface declaration repeats the implementing function's state mutability; <a id="unit-test-manager-proxy-2-kjrmb8.p28"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28` — every interface declaration repeats the implementing function's full signature; <a id="unit-test-manager-proxy-2-kjrmb8.p29"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P29` — constructor duplicate selector registration reverts with the exact selector; <a id="unit-test-manager-proxy-2-kjrmb8.p30"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30` — deployed facet inventory equals the canonical routed-facet owner; <a id="unit-test-manager-proxy-2-kjrmb8.p32"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P32` — constructor rejects a codeless routed target with the exact selector and address; <a id="unit-test-manager-proxy-2-kjrmb8.p33"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet; <a id="unit-test-manager-proxy-2-kjrmb8.p34"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet; <a id="unit-test-manager-proxy-2-kjrmb8.p35"></a>`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant |
-
-## Related source reports
-
-- [StateChannelManagerInterface.sol](../../StateChannelManagerInterface.sol.md) — the caller-side declaration of this surface.
-- [UtilityFacet.sol](./UtilityFacet.sol.md) — now hosts the state views this contract used to declare.
-- [UtilityFacetInterface.sol](./UtilityFacetInterface.sol.md) — the helper type `StateChannelCommon` binds.
-- [StateChannelCommon.sol](./StateChannelCommon.sol.md) — shared base; owns `_isChannelOpen`/`_isForkDisputed`.
-- [AConsumerFacet.sol](./AConsumerFacet.sol.md) — the integrator surface reached by unrouted selectors.
-- Every other facet report in this directory — the routed operations' implementations.
-- [utils/GeneralUtils.sol](./utils/GeneralUtils.sol.md) — `_delegatecall` and its revert-data bubbling.
+- [ ] `UNIT-TEST-SM-MANAGER-PROXY-4-C2TN34.P1` — The proxy forwards canonical inputs/outputs to the configured implementation without introducing a second state-machine meaning

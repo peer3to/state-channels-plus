@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/architecture/sdk.md](../../../../specification/runtime/sdk.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** How the TypeScript SDK is layered, how an application enters it
 > (`p2pSetup`), the runtime host/client split, signer ownership, the two local
 > state-machine instances, and the component map. The two core algorithms live in
@@ -248,36 +247,51 @@ per-component contracts in [components.md](./components.md).
 
 ## 7. Invariants & failure behavior
 
-- **[`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed)** — All application interaction with the runtime crosses the
-  `RuntimePort`; direct state-manager access is disabled in every mode.
+<a id="inv-sdk-1-de9yed"></a>
 
-- **[`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)** — The runtime host owns the signing key and the chain nonce;
-  no injected signer exists, and every on-chain manager send goes through the
-  host's nonce manager.
+### INV-SDK-1-DE9YED — All app-runtime interaction crosses the port
 
-- **[`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p)** — Dispute re-execution never runs against the live replicated
-  state machine (two separate deployments; §4).
+All application interaction with the runtime crosses the
+`RuntimePort`; direct state-manager access is disabled in every mode.
+
+<a id="inv-sdk-2-nh0yge"></a>
+
+### INV-SDK-2-NH0YGE — Host-owned signing key and nonce
+
+The runtime host owns the signing key and the chain nonce;
+no injected signer exists, and every on-chain manager send goes through the
+host's nonce manager.
+
+<a id="inv-sdk-3-87wk8p"></a>
+
+### INV-SDK-3-87WK8P — Dedicated state machine for dispute replay
+
+Dispute re-execution never runs against the live replicated
+state machine (two separate deployments; §4).
+
 - **Failure behavior.** Host construction failures post `hostError` and close
   the port (client creation rejects). A dead client port triggers
   host self-disposal. `StateManager.abort()` (slashed/removed, unrecoverable
   sync failure, fatal reduction error) fires `onAbort`, drops status to
   `OPENED`, and disposes the owning root and its children. Final cleanup closes the runtime port; late queries reject in both placements.
 
+<a id="req-sdk-1-jkc9w7"></a>
+
+### REQ-SDK-1-JKC9W7 — The runtime owns its signer
+
+The runtime owns its signer; `p2pSetup` accepts only `signerSecret` (random when omitted), never an injected `Signer`.
+
+- [x] `REQ-SDK-1-JKC9W7.T1.P1` — valid case
+
+<a id="req-sdk-2-m2pgdm"></a>
+
+### REQ-SDK-2-M2PGDM — At least one honest RPC endpoint
+
+The SDK requires at least one available honest RPC endpoint; current implementation uses exactly one WebSocket `PROVIDER_URL`.
+
 ## 8. Verification
 
 Concrete test evidence is owned by the downstream verification layer. This section defines implementation-specific obligations only.
-
-### Implementation test plan
-
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
-
-| Plan item                                             | Requirement / invariant                         | Setup and stimulus                                                                                                      | Expected result                                                                                                                | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-sdk-1-jkc9w7.t1"></a>`REQ-SDK-1-JKC9W7.T1` | <a id="req-sdk-1-jkc9w7"></a>`REQ-SDK-1-JKC9W7` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The runtime owns its signer; `p2pSetup` accepts only `signerSecret` (random when omitted), never an injected `Signer`.         | <a id="req-sdk-1-jkc9w7.t1.p1"></a>`REQ-SDK-1-JKC9W7.T1.P1` — valid case<br><a id="req-sdk-1-jkc9w7.t1.p2"></a>`REQ-SDK-1-JKC9W7.T1.P2` — correct identity/signature<br><a id="req-sdk-1-jkc9w7.t1.p3"></a>`REQ-SDK-1-JKC9W7.T1.P3` — before deadline<br><a id="req-sdk-1-jkc9w7.t1.p4"></a>`REQ-SDK-1-JKC9W7.T1.P4` — direct invalid/opposite case<br><a id="req-sdk-1-jkc9w7.t1.p5"></a>`REQ-SDK-1-JKC9W7.T1.P5` — wrong identity/signature<br><a id="req-sdk-1-jkc9w7.t1.p6"></a>`REQ-SDK-1-JKC9W7.T1.P6` — missing identity/signature<br><a id="req-sdk-1-jkc9w7.t1.p7"></a>`REQ-SDK-1-JKC9W7.T1.P7` — duplicate identity/signature<br><a id="req-sdk-1-jkc9w7.t1.p8"></a>`REQ-SDK-1-JKC9W7.T1.P8` — forged identity/signature<br><a id="req-sdk-1-jkc9w7.t1.p9"></a>`REQ-SDK-1-JKC9W7.T1.P9` — membership boundary<br><a id="req-sdk-1-jkc9w7.t1.p10"></a>`REQ-SDK-1-JKC9W7.T1.P10` — at deadline<br><a id="req-sdk-1-jkc9w7.t1.p11"></a>`REQ-SDK-1-JKC9W7.T1.P11` — after deadline<br><a id="req-sdk-1-jkc9w7.t1.p12"></a>`REQ-SDK-1-JKC9W7.T1.P12` — maximum honest skew |
-| <a id="req-sdk-2-m2pgdm.t1"></a>`REQ-SDK-2-M2PGDM.T1` | <a id="req-sdk-2-m2pgdm"></a>`REQ-SDK-2-M2PGDM` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The SDK requires at least one available honest RPC endpoint; current implementation uses exactly one WebSocket `PROVIDER_URL`. | <a id="req-sdk-2-m2pgdm.t1.p1"></a>`REQ-SDK-2-M2PGDM.T1.P1` — valid case<br><a id="req-sdk-2-m2pgdm.t1.p2"></a>`REQ-SDK-2-M2PGDM.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-sdk-2-m2pgdm.t1.p3"></a>`REQ-SDK-2-M2PGDM.T1.P3` — direct invalid/opposite case<br><a id="req-sdk-2-m2pgdm.t1.p4"></a>`REQ-SDK-2-M2PGDM.T1.P4` — exact boundary<br><a id="req-sdk-2-m2pgdm.t1.p5"></a>`REQ-SDK-2-M2PGDM.T1.P5` — failure/recovery<br><a id="req-sdk-2-m2pgdm.t1.p6"></a>`REQ-SDK-2-M2PGDM.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="inv-sdk-1-de9yed.t1"></a>`INV-SDK-1-DE9YED.T1` | <a id="inv-sdk-1-de9yed"></a>`INV-SDK-1-DE9YED` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | All app↔runtime interaction crosses the runtime port; `getStateManager()` throws.                                             | <a id="inv-sdk-1-de9yed.t1.p1"></a>`INV-SDK-1-DE9YED.T1.P1` — valid case<br><a id="inv-sdk-1-de9yed.t1.p2"></a>`INV-SDK-1-DE9YED.T1.P2` — before deadline<br><a id="inv-sdk-1-de9yed.t1.p3"></a>`INV-SDK-1-DE9YED.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-1-de9yed.t1.p4"></a>`INV-SDK-1-DE9YED.T1.P4` — at deadline<br><a id="inv-sdk-1-de9yed.t1.p5"></a>`INV-SDK-1-DE9YED.T1.P5` — after deadline<br><a id="inv-sdk-1-de9yed.t1.p6"></a>`INV-SDK-1-DE9YED.T1.P6` — maximum honest skew                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="inv-sdk-2-nh0yge.t1"></a>`INV-SDK-2-NH0YGE.T1` | <a id="inv-sdk-2-nh0yge"></a>`INV-SDK-2-NH0YGE` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | On-chain sends draw nonces from the host-owned nonce manager.                                                                  | <a id="inv-sdk-2-nh0yge.t1.p1"></a>`INV-SDK-2-NH0YGE.T1.P1` — valid case<br><a id="inv-sdk-2-nh0yge.t1.p2"></a>`INV-SDK-2-NH0YGE.T1.P2` — zero/empty/no-op case where meaningful<br><a id="inv-sdk-2-nh0yge.t1.p3"></a>`INV-SDK-2-NH0YGE.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-2-nh0yge.t1.p4"></a>`INV-SDK-2-NH0YGE.T1.P4` — exact boundary<br><a id="inv-sdk-2-nh0yge.t1.p5"></a>`INV-SDK-2-NH0YGE.T1.P5` — failure/recovery<br><a id="inv-sdk-2-nh0yge.t1.p6"></a>`INV-SDK-2-NH0YGE.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="inv-sdk-3-87wk8p.t1"></a>`INV-SDK-3-87WK8P.T1` | <a id="inv-sdk-3-87wk8p"></a>`INV-SDK-3-87WK8P` | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Dispute execution uses a dedicated state-machine instance, never the live one.                                                 | <a id="inv-sdk-3-87wk8p.t1.p1"></a>`INV-SDK-3-87WK8P.T1.P1` — valid case<br><a id="inv-sdk-3-87wk8p.t1.p2"></a>`INV-SDK-3-87WK8P.T1.P2` — malformed input<br><a id="inv-sdk-3-87wk8p.t1.p3"></a>`INV-SDK-3-87WK8P.T1.P3` — direct invalid/opposite case<br><a id="inv-sdk-3-87wk8p.t1.p4"></a>`INV-SDK-3-87WK8P.T1.P4` — adversarial input<br><a id="inv-sdk-3-87wk8p.t1.p5"></a>`INV-SDK-3-87WK8P.T1.P5` — partial failure<br><a id="inv-sdk-3-87wk8p.t1.p6"></a>`INV-SDK-3-87WK8P.T1.P6` — retry and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Future Work
 
@@ -290,13 +304,3 @@ _Non-normative._
   change restart/recovery behavior of both pipelines.
 - Inject the discovery backend (Holepunch vs local discovery) behind one
   lifecycle API instead of `DEBUG_LOCAL_TRANSPORT` branching.
-
-## Implementation traceability
-
-| Requirement / invariant                                | Statement                                                                                                                      | Implementation status | Implementation evidence                                                                                                                                                                                             | Gap / divergence |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7) | The runtime owns its signer; `p2pSetup` accepts only `signerSecret` (random when omitted), never an injected `Signer`.         | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1), [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1)            | None.            |
-| [`REQ-SDK-2-M2PGDM`](architecture.md#req-sdk-2-m2pgdm) | The SDK requires at least one available honest RPC endpoint; current implementation uses exactly one WebSocket `PROVIDER_URL`. | Covered               | [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1), [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                        | None.            |
-| [`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed) | All app↔runtime interaction crosses the runtime port; `getStateManager()` throws.                                             | Covered               | [src/evm/P2pInstance.ts](../../../../../../src/evm/P2pInstance.ts#L1)                                                                                                                                               | None.            |
-| [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge) | On-chain sends draw nonces from the host-owned nonce manager.                                                                  | Covered               | [src/rpc/internal/roots/P2pRuntimeHostRoot.ts](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L126), [src/evm/signer/HostNonceManager.ts](../../../../../../src/evm/signer/HostNonceManager.ts#L15) | None.            |
-| [`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p) | Dispute execution uses a dedicated state-machine instance, never the live one.                                                 | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1) (`createStandaloneFromLocalStateMachineWithExecutor`, `p2pSetup` double deploy)                                         | None.            |

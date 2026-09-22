@@ -1,92 +1,33 @@
-# Holepunch.ts — Source Report
+# Holepunch.ts
 
-> **Source:** [src/Holepunch.ts](../../../../../src/Holepunch.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/Holepunch.ts](../../../../../src/Holepunch.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
 
-## Responsibility and observable boundary
+## UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J
 
-Holepunch discovery/NAT-traversal wiring produces bootstrap transports and owns the ordered set of
-joined discovery topics. The caller's lobby topic is the Hyperswarm rendezvous itself; it is not copied
-onto each transport. Every resulting connection still requires identity proof, and the lobby session
-checks the topic carried by each lobby RPC.
+Discovery topic lifecycle
 
-## Key design decisions
+- Setup: Drive the real public join/leave surface with a typed swarm recorder, equal-byte buffers, duplicates, absent topics, and restart
+- Oracle: Calls and retained topic order match the byte-exact contract; removed topics are not announced again
 
-Join and rejoin share the synchronous announcement body. Topic order and duplicates stay intact; worker detection comes from the platform-neutral WebRTC provider helper. See [Holepunch.ts](../../../../../src/Holepunch.ts#L82).
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P1` — join and options
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P2` — separate equal buffer
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P3` — duplicate first match
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P4` — absent leave
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P5` — pre-creation leave
+- [x] `UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P6` — no reannouncement after restart
 
-1. **Discovery metadata proves nothing** — every produced transport still runs the handshake.
-2. **Topics stay byte values.** Join stores every supplied `Buffer`; leave removes the first
-   byte-equal entry before forwarding the leave, so removed topics do not return on restart.
-3. **Topic membership is rendezvous only.** It forms connections but does not authenticate the peer
-   or replace the active-session topic check on lobby messages.
+## UNIT-TEST-HOLEPUNCH-32-72PXTG
 
-## Inputs, outputs, state, and side effects
+Discovery reannouncement
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+- Setup: Record swarm join calls through the real rejoin path; retained duplicate topics appear in insertion order.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                     | Specification IDs                                                                                                                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Holepunch.ts](../../../../../src/Holepunch.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-UPG-6-BC60XD`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Operates inside the participant runtime; untrusted input arrives only through the documented ingress paths.
-
-## Specification adherence
-
-- Role-consistent with the owning views; no divergence observed at this file's boundary.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                             | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`REQ-UPG-6-BC60XD`](../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) | Covered               | **Here:** public join/leave retain ordered `Buffer` topics, compare by bytes, remove before leave, and replay only retained entries. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                        | Obligation                | Public entry and setup                                                                                                           | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-holepunch-topic-1-syjt8j"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J` | Discovery topic lifecycle | Drive the real public join/leave surface with a typed swarm recorder, equal-byte buffers, duplicates, absent topics, and restart | Calls and retained topic order match the byte-exact contract; removed topics are not announced again         | <a id="unit-test-holepunch-topic-1-syjt8j.p1"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P1` — join and options; <a id="unit-test-holepunch-topic-1-syjt8j.p2"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P2` — separate equal buffer; <a id="unit-test-holepunch-topic-1-syjt8j.p3"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P3` — duplicate first match; <a id="unit-test-holepunch-topic-1-syjt8j.p4"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P4` — absent leave; <a id="unit-test-holepunch-topic-1-syjt8j.p5"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P5` — pre-creation leave; <a id="unit-test-holepunch-topic-1-syjt8j.p6"></a>`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P6` — no reannouncement after restart. |
-| <a id="unit-test-holepunch-32-72pxtg"></a>`UNIT-TEST-HOLEPUNCH-32-72PXTG`           | Discovery reannouncement  | Record swarm join calls through the real rejoin path; retained duplicate topics appear in insertion order.                       | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-holepunch-32-72pxtg.p1"></a>`UNIT-TEST-HOLEPUNCH-32-72PXTG.P1` — reannounces duplicate topics in their insertion order                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-
-## Related source reports
-
-- [transport/HolepunchTransport](./transport/HolepunchTransport.ts.md).
+- [x] `UNIT-TEST-HOLEPUNCH-32-72PXTG.P1` — reannounces duplicate topics in their insertion order

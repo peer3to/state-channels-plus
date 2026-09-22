@@ -31,9 +31,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                      | Covers                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../test/Clock.test.ts#L13) (line 13)                | [`UNIT-TEST-CLOCK-1-6K546K.P1`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p1) |
-| [`Clock > re-initializes when a different provider arrives`](../../../../../test/Clock.test.ts#L29) (line 29)                         | [`UNIT-TEST-CLOCK-1-6K546K.P2`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p2) |
-| [`Clock > recovers with a live provider after a failed replacement`](../../../../../test/Clock.test.ts#L42) (line 42)                 | [`UNIT-TEST-CLOCK-1-6K546K.P3`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p3) |
-| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../test/Clock.test.ts#L63) (line 63) | [`UNIT-TEST-CLOCK-1-6K546K.P5`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p5) |
+| Test declaration                                                                                                                      | Covers                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../test/Clock.test.ts#L13) (line 13)                | [`UNIT-TEST-CLOCK-1-6K546K.P1`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k) |
+| [`Clock > re-initializes when a different provider arrives`](../../../../../test/Clock.test.ts#L29) (line 29)                         | [`UNIT-TEST-CLOCK-1-6K546K.P2`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k) |
+| [`Clock > recovers with a live provider after a failed replacement`](../../../../../test/Clock.test.ts#L42) (line 42)                 | [`UNIT-TEST-CLOCK-1-6K546K.P3`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k) |
+| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../test/Clock.test.ts#L63) (line 63) | [`UNIT-TEST-CLOCK-1-6K546K.P5`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k) |

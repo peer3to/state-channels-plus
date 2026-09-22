@@ -1,87 +1,18 @@
-# LoggerUtils.ts — Source Report
+# LoggerUtils.ts
 
-> **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/utils/LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts)
+>
 > **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
-## Contents
+No specified behavior: Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+## UNIT-TEST-LOGGER-UTILS-32-WMBBZA
 
-## Responsibility and observable boundary
+Enum and failed time metadata
 
-Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
+- Setup: Use a real logger store and captured time; inspect exact enum output, severity, message and metadata including optional prior timestamps.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Key design decisions
-
-Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L457).
-
-Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L110).
-
-Dispute metadata includes the signed `requireExistingDisputeWindow` value. Logs distinguish a conditional state contribution from an independently justified dispute without changing either classification.
-
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                  | Specification IDs |
-| ------------------------------------------------------------ | ----------------- |
-| [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts) |                   |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Role-consistent with the owning views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                    | Obligation                    | Public entry and setup                                                                                                                    | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-logger-utils-32-wmbbza"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA` | Enum and failed time metadata | Use a real logger store and captured time; inspect exact enum output, severity, message and metadata including optional prior timestamps. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-logger-utils-32-wmbbza.p1"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1` — formats known and unknown numeric enum members without changing strings; <a id="unit-test-logger-utils-32-wmbbza.p2"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2` — logs objective time failure using captured time and previous timestamps; <a id="unit-test-logger-utils-32-wmbbza.p3"></a>`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3` — omits previous timestamp fields for subjective time failures |
-
-## Related source reports
-
-- Consumers per the views.
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1` — formats known and unknown numeric enum members without changing strings
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2` — logs objective time failure using captured time and previous timestamps
+- [x] `UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3` — omits previous timestamp fields for subjective time failures

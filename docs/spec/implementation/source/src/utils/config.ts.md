@@ -1,86 +1,12 @@
-# config.ts — Source Report
+# config.ts
 
-> **Source:** [src/utils/config.ts](../../../../../../src/utils/config.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/utils/config.ts](../../../../../../src/utils/config.ts)
+>
 > **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
-## Responsibility and observable boundary
-
-Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debug gates).
-
-## Key design decisions
-
-CRASH_LOG_UPLOAD_COALESCE_MS defaults to 3,000 ms and controls deterministic gossip coalescing independently of random upload jitter. The obsolete per-hop flush timeout is removed; uploader HTTP deadlines and retries are unchanged.
-
-1. **`EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS` is a per-context throw, not a process kill.** The monitor throws in its own context; the sdk and contract-executor workers report that throw to the host as a detached error and keep serving, inline it surfaces like any uncaught error. The same flag enables the `##E2E_TIMING##` diagnostics.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                        | Specification IDs                                                                               |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [config.ts](../../../../../../src/utils/config.ts) | [`REQ-CONFIG-1-PDHA8T`](../../../../specification/runtime/configuration.md#req-config-1-pdha8t) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Role-consistent with the owning views.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- Consumers per the views.
-
-# Terminal leave contribution
-
-`LEAVE_CHANNEL_WATCHDOG_MS` is a runtime-local liveness bound with a 15,000 millisecond default. It is configurable and is not an on-chain timing parameter. This contributes to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+- [`REQ-CONFIG-1-PDHA8T` (Explicit precedence)](../../../../specification/runtime/configuration.md#req-config-1-pdha8t)
+- [`REQ-TRUST-2-X8GCZ7` (A client MUST have at least one available, honest RPC connection through which…)](../../../../specification/security/trust-model.md#req-trust-2-x8gcz7)
+- [`INV-CONFIG-1-0FJ2HX` (Deterministic effective configuration)](../../../../specification/runtime/configuration.md#inv-config-1-0fj2hx)
+- [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)

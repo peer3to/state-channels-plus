@@ -29,8 +29,8 @@ selects proved history and creates a mandatory successor fork.
 | Layer | Question answered | Maintained contents |
 | --- | --- | --- |
 | [Specification](./specification/README.md) | What must every conforming implementation do, and what must be tested? | Neutral requirements/invariants, assumptions, limits, security model, and exhaustive black-box test plans. |
-| [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/`, directory READMEs for subsystem ownership, and cross-directory design views. |
-| [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` — a short overview plus a table assigning each declaration the test IDs it covers in full. |
+| [Implementation](./implementation/README.md) | How does this repository implement those rules? | Repository-shaped: one file report per production source file under `implementation/source/` — the requirements it contributes to, its divergences, and its test cases — plus cross-directory design views. |
+| [Verification](./verification/README.md) | How are the real tests judged? | Repository-shaped: one report per test file under `verification/tests/` — a short overview plus a table assigning each declaration the test IDs it covers in full — and the tool-written per-requirement test status in `verification/requirements.md`. |
 | [Audit](./audit/README.md) | Is the complete system structurally complete, semantically correct, sufficiently tested, and approved? | Current specification, implementation, verification, and security assessments; findings; questions; and engineer approvals. |
 
 The three layers answer different questions and deliberately do NOT share one filesystem structure
@@ -64,7 +64,7 @@ Follow the IDs — via the generated traceability views — for the full picture
 earlier one, but it may not silently redefine it.
 
 Root IDs combine a readable semantic stem with an immutable six-character Crockford Base32 suffix,
-for example [`INV-DA-1-TS7HX2`](specification/security/data-availability.md#inv-da-1-ts7hx2). The suffix prevents collisions when separate branches allocate the
+for example [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immutable for its key and binding)](specification/security/data-availability.md#inv-da-1-ts7hx2). The suffix prevents collisions when separate branches allocate the
 same readable ordinal. Planned tests and permutations inherit that namespace (`.T1`, `.T1.P1`),
 so the hierarchy remains short and readable. Allocate roots with
 `yarn spec:id:new REQ-X-10`; do not hand-author the suffix. The defining occurrence is plain
@@ -90,7 +90,7 @@ Generated files contain current structural facts only and are never hand-edited:
 | Generated file | Meaning |
 | --- | --- |
 | [Specification index](./generated/specification-index.md) | Specification IDs that do not appear in any specification test plan, with a link to the specification that defines each ID. |
-| [Implementation coverage](./generated/implementation-coverage.md) | Design views without declared specification owners, source files without file reports, and source files no inventory references. |
+| [Implementation coverage](./generated/implementation-coverage.md) | Requirements no file report or view links, requirements with a recorded `Partial`/`Contradicts`/`Missing` divergence, and source files without file reports. |
 | [Verification coverage](./generated/verification-coverage.md) | Permutations without traceability rows, planned tests without exact repository-test references, test files without test reports, and repository tests that verification does not reference. |
 | [Traceability views](./generated/traceability.md) | Inverse joins: requirement → production files and mapped tests; production file → requirements and report; mapped declaration → level and permutations; protocol system → evidence rollup. |
 | [Open-question index](./generated/open-questions-index.md) | Unresolved questions from the specification, implementation, verification, and audit question registers. |
@@ -102,7 +102,7 @@ Run all generators and schema checks together:
 yarn spec:refresh
 ```
 
-Run it after changing a requirement, planned permutation, source inventory/report, implementation test plan,
+Run it after changing a requirement, planned permutation, file report, implementation test case,
 verification mapping, test declaration, open question, finding, or audit state. Review all five generated
 files; a successful refresh means the documents are parseable and the reports are deterministic, not that
 the system is complete. It also rejects legacy or colliding IDs, missing or duplicate definition
@@ -144,10 +144,10 @@ assumptions and constraints, security considerations, and a verification/test pl
 the requirement identity ([`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1)) and enumerates independently checkable permutations
 ([`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1) … `.PN`).
 
-Every implementation subject contains, in order, an implementation overview, assumptions and constraints,
-system design, system integration test plan, source inventory with one source report and unit-test plan per
-file, and conformance traceability. Implementation cases use `INTEGRATION-TEST-*` and `UNIT-TEST-*`, each with
-explicit `.P1` … `.PN` permutations.
+Every file report contains its `Source` header, one bullet per requirement the file contributes to (with a
+hand-written divergence line where the code departs), and its `UNIT-TEST-*` families; a design view keeps its
+narrative, its `INTEGRATION-TEST-*` families, its view-local requirements, and a `Gaps` section. Each family is a
+heading with one checkbox bullet per `.P1` … `.PN` case; the checkboxes are written by `yarn spec:ids:fix`.
 
 Every verification test report contains only a short overview and the tests table: one row per
 declaration with the test IDs it covers **in full** (never partial credit; each test ID belongs to
@@ -276,9 +276,9 @@ by agents.
 - *Understand a behavior:* start at the system README (specification), follow the owned document,
   then jump by ID through [generated/traceability.md](./generated/traceability.md) to the file
   reports and test evidence.
-- *Understand a source file:* open its report under `implementation/source/<path>.md` — boundary,
-  key design decisions, linked requirements, conformance with Here/Other-files evidence, and its
-  `UNIT-TEST-*` obligations.
+- *Understand a source file:* open its report under `implementation/source/<path>.md` — linked
+  requirements, then the case list with checkboxes; requirement status is in
+  `verification/requirements.md`.
 - *Judge test coverage:* `verification/tests/<path>.md` per file, and the verification-coverage
   report for the queue.
 

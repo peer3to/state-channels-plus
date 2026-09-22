@@ -1,86 +1,38 @@
-# CalldataCommittedStrategy.ts — Source Report
+# CalldataCommittedStrategy.ts
 
-> **Source:** [src/stateManager/validationStrategy/CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/stateManager/validationStrategy/CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts)
+>
 > **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
+  Missing: A calldata-authenticity failure returns DISPUTE but builds no fraud proof and opens no dispute (two code TODOs); the required proof type is unresolved. See [`OQ-22-99DDSZ` (Inauthentic on-chain calldata is not escalated)](../../../../open-questions.md#oq-22-99ddsz).
 
-## Responsibility and observable boundary
+## UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ
 
-The chain-observed context: delegates to the live strategy except authenticity failure, which is an objective fault by the on-chain poster; hooks presupposing extra signers throw as unreachable (the confirmation carries only the author's signature).
+Consequence profile
 
-## Key design decisions
+- Setup: Drive every hook in this context incl. impossible-context hooks
+- Oracle: Each deviation maps to exactly the documented consequence; impossible hooks throw; keep-connection interpretation correct
 
-Observed calldata constructs a confirmation-free entry. The unrecoverable-confirmation hook therefore reports an impossible input instead of silently accepting a confirmation-bearing calldata entry. Objective author/block checks and trusted posting timestamps remain in the existing calldata path. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L51).
-
-The subjective hook accepts the chain-committed block after objective timestamp validation. The shared pipeline now calls the hook instead of deciding by class identity. See [CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L169).
-
-1. **Delegation keeps one consequence table** — only the poster-fault difference is local.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                                                    |
-| ------------ | ----------------------------------------------------------- |
-| Inputs       | Deviation hook calls with block context.                    |
-| Outputs      | Verdicts + context consequences.                            |
-| Owned state  | None.                                                       |
-| Side effects | Evidence storage, escalation, penalties, restores per hook. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                           | Specification IDs                                                                                                       |
-| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts) | [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Hooks run under the caller's execution boundary; consequences must not assume otherwise.
-
-## Specification adherence
-
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the calldata consequence delta.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                        | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | Covered               | **Here:** the calldata consequence delta. **Other files:** verdict production in [ValidationService](../ingest/ValidationService.ts.md); base vocabulary in [AValidationStrategy](./AValidationStrategy.ts.md). | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                              | Obligation          | Public entry and setup                                          | Oracle and forbidden effects                                                                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-calldatacommitted-strategy-1-24k7dz"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ` | Consequence profile | Drive every hook in this context incl. impossible-context hooks | Each deviation maps to exactly the documented consequence; impossible hooks throw; keep-connection interpretation correct | <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p1"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P1` — authenticateBlockFailed hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p2"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P2` — wrongChannel impossible hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p3"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P3` — keep-connection mapping; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p4"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P4` — channelNotOpened hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p5"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P5` — noNewSignaturesOnExistingBlock hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p6"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P6` — doubleSignDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p7"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P7` — invalidStateTransitionDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p8"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P8` — forgedInboundMessageBlockDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p9"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P9` — wrongGenesisDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p10"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P10` — conflictingButNotLinkedBlockDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p11"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P11` — blockForkIsDisputed hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p12"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P12` — blockIsNotNextAndIsInTheFuture hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p13"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P13` — blockIsNotLinkedAndIsNotFirstBlock hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p14"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P14` — prepareStateMachineForLeaderCheck hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p15"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P15` — objectiveInvalidTimestampDetected hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p16"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P16` — notAllSingersAreParticipants impossible hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p17"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P17` — goodNewSignaturesOnExistingBlock impossible hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p18"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P18` — blockAuthorIsNotParticipant impossible hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p19"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P19` — subjectiveInvalidTimestampDetected impossible hook; <a id="unit-test-calldatacommitted-strategy-1-24k7dz.p20"></a>`UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P20` — calldata strategy rejects the impossible confirmation-bearing shape |
-
-## Related source reports
-
-- [ValidationService](../ingest/ValidationService.ts.md), [StateManager](../StateManager.ts.md), [FraudProofService](../utils/FraudProofService.ts.md).
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P1` — authenticateBlockFailed hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P2` — wrongChannel impossible hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P3` — keep-connection mapping
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P4` — channelNotOpened hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P5` — noNewSignaturesOnExistingBlock hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P6` — doubleSignDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P7` — invalidStateTransitionDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P8` — forgedInboundMessageBlockDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P9` — wrongGenesisDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P10` — conflictingButNotLinkedBlockDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P11` — blockForkIsDisputed hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P12` — blockIsNotNextAndIsInTheFuture hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P13` — blockIsNotLinkedAndIsNotFirstBlock hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P14` — prepareStateMachineForLeaderCheck hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P15` — objectiveInvalidTimestampDetected hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P16` — notAllSingersAreParticipants impossible hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P17` — goodNewSignaturesOnExistingBlock impossible hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P18` — blockAuthorIsNotParticipant impossible hook
+- [ ] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P19` — subjectiveInvalidTimestampDetected impossible hook
+- [x] `UNIT-TEST-CALLDATACOMMITTED-STRATEGY-1-24K7DZ.P20` — calldata strategy rejects the impossible confirmation-bearing shape

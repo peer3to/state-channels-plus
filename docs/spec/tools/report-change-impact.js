@@ -4,7 +4,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { REPO_ROOT, localTargets } = require("./shared/traceability-utils");
+const {
+    REPO_ROOT,
+    REQUIREMENT_STATUS,
+    localTargets
+} = require("./shared/traceability-utils");
 const {
     REQUIREMENT_PATTERN,
     SPECIFICATION_PLAN_PATTERN,
@@ -21,6 +25,22 @@ const {
 const { ignoreDisposition } = require("./shared/test-inventory");
 
 const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
+const REQUIREMENT_ID_RE = new RegExp(`^${REQUIREMENT_PATTERN}$`);
+// A file report that implements no specified behavior says so in one line.
+const NO_SPECIFIED_BEHAVIOR_RE = /^No specified behavior:/m;
+// Derived by `yarn spec:ids:fix` and names every requirement; the Covers edit
+// that changed it is in the same diff and seeds the right requirement.
+const REQUIREMENT_STATUS_PATH = path
+    .relative(REPO_ROOT, REQUIREMENT_STATUS)
+    .split(path.sep)
+    .join("/");
+
+function specifiesNothing(report) {
+    return (
+        NO_SPECIFIED_BEHAVIOR_RE.test(report) &&
+        !new RegExp(REQUIREMENT_PATTERN).test(report)
+    );
+}
 const PLAN_GLOBAL_RE = new RegExp(
     `${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
     "g"
@@ -203,7 +223,7 @@ function replacementOwners(graph, sourcePath) {
     return owners;
 }
 
-function priorSourceReasons(graph, change, directReasons) {
+function priorSourceReasons(graph, change, directReasons, accountedFiles) {
     const issues = [];
     for (const sourcePath of change.removedSources) {
         const reportPath = `docs/spec/implementation/source/${sourcePath}.md`;
@@ -264,7 +284,9 @@ function priorSourceReasons(graph, change, directReasons) {
             addReason(directReasons, id, sourcePath);
             recovered = true;
         }
-        if (!recovered)
+        if (!recovered && specifiesNothing(report))
+            accountedFiles.add(sourcePath);
+        else if (!recovered)
             issues.push(
                 `${sourcePath}: no surviving requirement or test owner from its prior report`
             );
@@ -285,6 +307,7 @@ function changedDocumentationIds(patch) {
         const target = section.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1];
         if (
             !target ||
+            target === REQUIREMENT_STATUS_PATH ||
             !/^docs\/spec\/(?:specification|implementation|verification|audit)\//.test(
                 target
             )
@@ -319,7 +342,8 @@ function main() {
     const deletedSourceIssues = priorSourceReasons(
         graph,
         change,
-        directReasons
+        directReasons,
+        accountedFiles
     );
 
     for (const testPath of change.removedTests) {
@@ -372,10 +396,12 @@ function main() {
         accountedFiles.add(document);
     }
 
-    for (const source of graph.sources) {
+    for (const { source, owners } of graph.mirrors) {
         const sourcePath = relative(graph.roots.repo, source);
         if (!changed.has(sourcePath)) continue;
         addReason(directReasons, `source:${sourcePath}`, sourcePath);
+        if (owners.some(({ raw }) => specifiesNothing(raw)))
+            accountedFiles.add(sourcePath);
     }
 
     for (const test of graph.tests.tests) {
@@ -412,6 +438,7 @@ function main() {
 
     for (const changedPath of changed) {
         if (
+            changedPath === REQUIREMENT_STATUS_PATH ||
             !/^docs\/spec\/(?:specification|implementation|verification|audit)\//.test(
                 changedPath
             )
@@ -463,9 +490,16 @@ function main() {
         }
     }
 
+    // A changed source impacts exactly the requirements its report links. A
+    // requirement, and a test or source reached from elsewhere, is a leaf:
+    // walking on would join unrelated obligations through shared tests and
+    // families.
     const propagatedReasons = new Map();
     for (const [seed, reasons] of directReasons) {
-        const queue = [seed];
+        const fromSource = seed.startsWith("source:");
+        const queue = fromSource
+            ? [seed, ...(graph.dependencies.get(seed) || [])]
+            : [seed];
         const visited = new Set();
         while (queue.length) {
             const current = queue.shift();
@@ -473,6 +507,14 @@ function main() {
             visited.add(current);
             for (const reason of reasons)
                 addReason(propagatedReasons, current, reason);
+            if (
+                fromSource ||
+                REQUIREMENT_ID_RE.test(current) ||
+                (current !== seed &&
+                    (current.startsWith("test:") ||
+                        current.startsWith("source:")))
+            )
+                continue;
             queue.push(...(adjacency.get(current) || []));
         }
     }
