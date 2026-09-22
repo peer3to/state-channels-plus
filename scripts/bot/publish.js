@@ -54,12 +54,14 @@ class Publisher {
     pendingState = null;
     store;
     journal = null;
-    constructor(request, github, policy, store) {
+    onProgress;
+    constructor(request, github, policy, store, onProgress = () => {}) {
         protocol.request(request);
         this.request = request;
         this.github = github;
         this.policy = policy;
         this.store = store;
+        this.onProgress = onProgress;
     }
     async observe(withState = true) {
         const observations = await this.github.observe();
@@ -481,6 +483,9 @@ class Publisher {
         for (const operation of operations.filter(
             (entry) => entry.kind !== "new"
         )) {
+            this.onProgress(
+                `Publishing ${operation.finding.id}: checking current discussion before ${operation.kind}.`
+            );
             const observed = await this.observe();
             observed.findings = current.findings;
             if (
@@ -580,6 +585,9 @@ class Publisher {
                     url: root.html_url
                 });
             }
+            this.onProgress(
+                `Published ${operation.finding.id}: ${operation.kind}.`
+            );
         }
         state.status = "partial";
         await this.saveState(state);
@@ -777,11 +785,17 @@ async function main() {
     } = require("../../docs/spec/tools/generate-audit-summary");
     const specApproved = generateAuditSummary().issueCount === 0;
     const { withPublicationStore } = require("./publication-store");
-    const owner = new Publisher(request, github, {
-        eligible: process.env.REVIEW_ELIGIBLE === "true",
-        specApproved,
-        repoRoot: process.cwd()
-    });
+    const owner = new Publisher(
+        request,
+        github,
+        {
+            eligible: process.env.REVIEW_ELIGIBLE === "true",
+            specApproved,
+            repoRoot: process.cwd()
+        },
+        undefined,
+        (message) => console.log(message)
+    );
     const root = path.dirname(path.resolve(outputFile));
     await fs.mkdir(root, { recursive: true, mode: 0o700 });
     let output;

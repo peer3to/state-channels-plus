@@ -102,6 +102,60 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
+    it("keeps publication alive between journal calls beyond the model deadline", async function () {
+        await fixture(async ({ options, serve }) => {
+            let calls = 0;
+            serve(async (connection, message) => {
+                assert.equal(message.operation, "publication");
+                calls++;
+                await connection.send(
+                    "acknowledgement",
+                    message.requestId,
+                    message.attemptId,
+                    { accepted: true, publication: { calls } }
+                );
+            });
+            const value = await callService({
+                ...options,
+                operation: "publication",
+                limits: {
+                    ...options.limits,
+                    queueMs: 100,
+                    setupMs: 100,
+                    transferMs: 100,
+                    modelMs: 1,
+                    validationMs: 1,
+                    terminationMs: 1,
+                    cleanupMs: 1
+                },
+                interact: async (send) => {
+                    await send({});
+                    await new Promise((resolve) => setTimeout(resolve, 650));
+                    return send({});
+                }
+            });
+            assert.equal(value.publication.calls, 2);
+        });
+    });
+    it("bounds an unanswered publication journal call without claiming model timeout", async function () {
+        await fixture(async ({ options, serve }) => {
+            serve(async () => {});
+            await assert.rejects(
+                callService({
+                    ...options,
+                    operation: "publication",
+                    limits: {
+                        ...options.limits,
+                        queueMs: 100,
+                        setupMs: 100,
+                        transferMs: 100
+                    },
+                    interact: (send) => send({})
+                }),
+                { code: "SERVICE_UNAVAILABLE" }
+            );
+        });
+    });
     it("keeps simultaneous original and salted orchestrator connections distinct", async function () {
         await fixture(async ({ options, nextOptions, originalSeed, serve }) => {
             const seen = new Set();

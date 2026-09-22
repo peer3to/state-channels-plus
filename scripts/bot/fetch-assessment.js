@@ -102,22 +102,32 @@ function mergeAssessment(previous, findings, request) {
     let next = Math.max(0, ...cards.map((card) => card.number)) + 1;
     const statusLine = (finding, changed = false) =>
         `<!-- peer3-assessment-status:start -->\n**GitHub status:** ${finding ? (finding.resolved ? "✅ RESOLVED / ADDRESSED" : finding.human ? "🙋 HUMAN DECISION REQUIRED" : "OPEN") : "UNKNOWN — not present in current publication state"}${changed ? " — source changed; local assessment and original text preserved. Recheck the source link." : ""}\n<!-- peer3-assessment-status:end -->`;
-    const output = cards.map((card) => {
-        const finding = findings.find((item) => item.id === card.identity.id);
-        const statuses = [
-            ...card.text.matchAll(
-                /<!-- peer3-assessment-status:start -->[\s\S]*?<!-- peer3-assessment-status:end -->/g
-            )
-        ];
-        check(statuses.length === 1, "INVALID_REQUEST");
-        return card.text.replace(
-            statuses[0][0],
-            statusLine(
-                finding,
-                finding && finding.revision !== card.identity.revision
-            )
-        );
-    });
+    const output = cards
+        .filter(
+            (card) =>
+                !findings.some(
+                    (finding) =>
+                        finding.id === card.identity.id && finding.resolved
+                )
+        )
+        .map((card) => {
+            const finding = findings.find(
+                (item) => item.id === card.identity.id
+            );
+            const statuses = [
+                ...card.text.matchAll(
+                    /<!-- peer3-assessment-status:start -->[\s\S]*?<!-- peer3-assessment-status:end -->/g
+                )
+            ];
+            check(statuses.length === 1, "INVALID_REQUEST");
+            return card.text.replace(
+                statuses[0][0],
+                statusLine(
+                    finding,
+                    finding && finding.revision !== card.identity.revision
+                )
+            );
+        });
     for (const finding of findings.filter(
         (item) =>
             !item.resolved &&
@@ -204,7 +214,7 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
     await writeJson(
         root,
         `temp/pr-github-reviews/${request.pr}/github-findings.json`,
-        { request, findings }
+        { request, findings: findings.filter((finding) => !finding.resolved) }
     );
     await writeText(root, relative, next);
     return filename;

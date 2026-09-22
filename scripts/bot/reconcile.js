@@ -9,8 +9,19 @@ function sourceRevision(item) {
 }
 function accountingSet(observations, botId) {
     const required = [];
+    const resolvedThreads = (observations.threads || []).filter(
+        (thread) => thread.isResolved
+    );
+    const resolvedComments = new Set(
+        resolvedThreads.flatMap((thread) =>
+            thread.comments.nodes.map((comment) => comment.databaseId)
+        )
+    );
     for (const finding of observations.findings) {
-        if (!["fixed", "disagreement"].includes(finding.status))
+        if (
+            !["fixed", "disagreement"].includes(finding.status) &&
+            !resolvedThreads.some((thread) => thread.id === finding.threadId)
+        )
             required.push({
                 id: `finding:${finding.id}`,
                 revision: digest(finding),
@@ -23,6 +34,7 @@ function accountingSet(observations, botId) {
         ["review", observations.reviews]
     ]) {
         for (const item of items) {
+            if (kind === "inline" && resolvedComments.has(item.id)) continue;
             if (item.user.id === botId || !item.body?.trim()) continue;
             required.push({
                 id: `${kind}:${item.id}`,

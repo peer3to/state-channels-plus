@@ -34,6 +34,11 @@ describe("review CI request setup", function () {
             );
             const output = path.join(root, "outputs");
             const file = path.join(root, "request.json");
+            const resolvedFile = path.join(root, "resolved.json");
+            await fs.writeFile(
+                resolvedFile,
+                JSON.stringify([{ id: "thread1", comments: [1, 2] }])
+            );
             const environment = {
                 PATH: process.env.PATH,
                 GITHUB_ACTIONS: "true",
@@ -47,7 +52,11 @@ describe("review CI request setup", function () {
             };
             execFileSync(
                 process.execPath,
-                [path.resolve(__dirname, "../../request.js"), file],
+                [
+                    path.resolve(__dirname, "../../request.js"),
+                    file,
+                    resolvedFile
+                ],
                 {
                     cwd: source,
                     env: environment,
@@ -56,6 +65,9 @@ describe("review CI request setup", function () {
             );
             const request = JSON.parse(await fs.readFile(file, "utf8"));
             assert.equal(request.policyDigest, policyDigest(DEFAULTS));
+            assert.deepEqual(request.resolvedThreads, [
+                { id: "thread1", comments: [1, 2] }
+            ]);
             assert.equal(request.caller, clientPublicKey(environment));
             assert.equal(
                 await fs.readFile(output, "utf8"),

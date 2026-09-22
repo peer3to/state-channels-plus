@@ -11,6 +11,38 @@ const { RecordedGitHub } = require("../fixtures/github");
 const repository = "peer3to/state-channels-plus";
 const prefix = `/repos/${repository}`;
 describe("review public context", function () {
+    it("omits CI-confirmed resolved roots and replies but retains open discussion", async function () {
+        const comments = [
+            { id: 1, body: "closed root", user: { id: 7, type: "User" } },
+            {
+                id: 2,
+                body: "closed reply",
+                in_reply_to_id: 1,
+                user: { id: 7, type: "User" }
+            },
+            { id: 3, body: "open root", user: { id: 7, type: "User" } }
+        ];
+        const records = new RecordedGitHub([
+            { path: `${prefix}/pulls/6/comments`, response: comments }
+        ]);
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            new ContextBudget(DEFAULTS),
+            records.exchange.bind(records),
+            null,
+            [{ id: "thread1", comments: [1, 2] }]
+        );
+        const page = await owner.read(
+            `https://api.github.com${prefix}/pulls/6/comments`
+        );
+        assert.deepEqual(
+            page.data.map((item) => item.id),
+            [3]
+        );
+        assert.deepEqual([...owner.requiredDiscussion], ["inline:3"]);
+        records.done();
+    });
     it("maps Files HTML to paginated API data and leaves resolution explicitly unknown", async function () {
         const records = new RecordedGitHub([
             {

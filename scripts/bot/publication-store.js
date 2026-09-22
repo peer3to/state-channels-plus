@@ -122,9 +122,7 @@ async function withPublicationStore(request, executionId, body) {
         limits: {
             ...DEFAULTS,
             queueMs: 60000,
-            setupMs: 60000,
-            modelMs: 1,
-            validationMs: 1
+            setupMs: 60000
         },
         interact: async (send) => {
             const call = async (payload) =>

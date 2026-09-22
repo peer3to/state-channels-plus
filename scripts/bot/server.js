@@ -206,7 +206,8 @@ class ReviewService {
                                 this.publicAccounting
                             ),
                             undefined,
-                            input.head
+                            input.head,
+                            input.resolvedThreads
                         );
                         const pr = await context.read(
                             `https://api.github.com/repos/${input.repository.name}/pulls/${input.pr}`
@@ -286,7 +287,8 @@ class ReviewService {
                 input.pr,
                 new ContextBudget(this.config.limits, this.publicAccounting),
                 undefined,
-                input.head
+                input.head,
+                input.resolvedThreads
             );
         const budget = context.budget;
         execution.context = context;
@@ -353,7 +355,14 @@ class ReviewService {
                     previousFindings:
                         (await this.publications.load(input)).states
                             .at(-1)
-                            ?.findings.map((finding) => ({
+                            ?.findings.filter(
+                                (finding) =>
+                                    !(input.resolvedThreads || []).some(
+                                        (thread) =>
+                                            thread.id === finding.threadId
+                                    )
+                            )
+                            .map((finding) => ({
                                 id: finding.id,
                                 status: finding.status,
                                 threadId: finding.threadId,
@@ -492,7 +501,10 @@ class ReviewService {
             ...previous
                 .filter(
                     (finding) =>
-                        !["fixed", "disagreement"].includes(finding.status)
+                        !["fixed", "disagreement"].includes(finding.status) &&
+                        !(input.resolvedThreads || []).some(
+                            (thread) => thread.id === finding.threadId
+                        )
                 )
                 .map((finding) => `finding:${finding.id}`)
         ];

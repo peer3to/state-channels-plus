@@ -61,10 +61,21 @@ async function callService({
                 limits.transferMs * 2 +
                 limits.terminationMs +
                 limits.cleanupMs;
-            timer = setTimeout(
-                () => reject(new ReviewError("REVIEW_TIMEOUT")),
-                total
-            );
+            // Publication does no model work. Bound discovery and each journal
+            // RPC, not the GitHub work performed between journal calls.
+            const armPublicationTimer = () => {
+                clearTimeout(timer);
+                timer = setTimeout(
+                    () => reject(new ReviewError("SERVICE_UNAVAILABLE")),
+                    limits.queueMs + limits.setupMs + limits.transferMs * 2
+                );
+            };
+            if (operation === "publication") armPublicationTimer();
+            else
+                timer = setTimeout(
+                    () => reject(new ReviewError("REVIEW_TIMEOUT")),
+                    total
+                );
             pool.onConnection((stream, info) => {
                 // Discovery may queue a connection that closes before this listener is installed.
                 if (stream.destroyed) return;
@@ -109,6 +120,7 @@ async function callService({
                 });
                 connection.on("payload", (message) => {
                     const accept = (value) => {
+                        if (operation === "publication") clearTimeout(timer);
                         if (!interact) return resolve(value);
                         check(waiting, "INVALID_RESULT");
                         const pending = waiting;
@@ -150,6 +162,8 @@ async function callService({
                     })
                     .then(() => {
                         if (interact) {
+                            if (operation === "publication" && !waiting)
+                                clearTimeout(timer);
                             const send = (value) =>
                                 connection.send(
                                     operation,
@@ -176,6 +190,8 @@ async function callService({
                                                     reject: no,
                                                     payload: value
                                                 };
+                                                if (operation === "publication")
+                                                    armPublicationTimer();
                                                 if (activeConnection?.ready)
                                                     activeConnection
                                                         .send(

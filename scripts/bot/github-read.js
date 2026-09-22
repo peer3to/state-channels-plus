@@ -371,10 +371,21 @@ class PublicGitHub {
     head;
     budget;
     exchange;
+    resolvedComments;
     // Canonical permitted URLs whose latest attempted read has not succeeded.
     unavailable = new Set();
     controller = new AbortController();
-    constructor(repository, pr, budget, exchange = fetch, head = null) {
+    constructor(
+        repository,
+        pr,
+        budget,
+        exchange = fetch,
+        head = null,
+        resolvedThreads = []
+    ) {
+        this.resolvedComments = new Set(
+            resolvedThreads.flatMap((thread) => thread.comments)
+        );
         this.repository =
             typeof repository === "string" ? repository : repository.name;
         this.repositoryId =
@@ -479,7 +490,7 @@ class PublicGitHub {
                 chunks.push(Buffer.from(chunk));
             }
             const body = Buffer.concat(chunks).toString("utf8");
-            const data = decodePage(
+            let data = decodePage(
                 url.href,
                 body,
                 response.headers.get("content-type") || "",
@@ -500,6 +511,10 @@ class PublicGitHub {
                   : url.pathname.endsWith(`/pulls/${this.pr}/reviews`)
                     ? "review"
                     : null;
+            if (kind === "inline" && Array.isArray(data))
+                data = data.filter(
+                    (item) => !this.resolvedComments.has(item.id)
+                );
             if (kind && Array.isArray(data))
                 for (const item of data) {
                     this.revisions.set(

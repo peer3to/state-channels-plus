@@ -157,7 +157,7 @@ describe("outstanding assessment import", function () {
         assert.match(text, /### Proposed fix/);
         assert.equal(mergeAssessment(text, findings, f.input), text);
     });
-    it("keeps local edits and marks imported resolved cards without adding closed findings", function () {
+    it("excludes imported resolved cards from the active assessment", function () {
         const f = fixture();
         const findings = assessmentFindings(f.input, f.observations, 9);
         const original = mergeAssessment("", findings, f.input)
@@ -171,9 +171,8 @@ describe("outstanding assessment import", function () {
             );
         const closed = findings.map((item) => ({ ...item, resolved: true }));
         const refreshed = mergeAssessment(original, closed, f.input);
-        assert.match(refreshed, /RESOLVED \/ ADDRESSED/);
-        assert.match(refreshed, /My assessment/);
-        assert.match(refreshed, /My implementation plan/);
+        assert.ok(!refreshed.includes("## APR-"));
+        assert.ok(!refreshed.includes("My assessment"));
         assert.ok(!mergeAssessment("", closed, f.input).includes("## APR-"));
     });
     it("does not trust forged user sources and does not overwrite unmanaged assessments", function () {

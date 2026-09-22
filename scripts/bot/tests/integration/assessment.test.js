@@ -1080,6 +1080,34 @@ describe("assessment GitHub lifecycle", function () {
                 await fs.readFile(filename, "utf8"),
                 /Human implementation plan/
             );
+            wire.reviews[0].body = wrapFinding(
+                "R1FO1",
+                "<details>\n<summary>✅ RESOLVED — [R1FO1]</summary>\nFixed.\n</details>"
+            );
+            await fetchAssessment(structuredClone(wire.input), {
+                token: "recorded",
+                root,
+                exchange: wire.exchange
+            });
+            assert.ok(
+                !(await fs.readFile(filename, "utf8")).includes("## APR-")
+            );
+            const backups = (await fs.readdir(path.dirname(filename))).filter(
+                (name) => name.startsWith("assessment.md.backup-")
+            );
+            assert.ok(backups.length > 0);
+            assert.ok(
+                (
+                    await Promise.all(
+                        backups.map((name) =>
+                            fs.readFile(
+                                path.join(path.dirname(filename), name),
+                                "utf8"
+                            )
+                        )
+                    )
+                ).some((text) => text.includes("Human implementation plan"))
+            );
             assert.ok(
                 wire.calls.every(
                     (call) =>

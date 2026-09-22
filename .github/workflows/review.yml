@@ -46,8 +46,11 @@ jobs:
             - name: Bind review request
               id: request
               if: steps.admit.outputs.current == 'true'
-              run: node scripts/bot/request.js temp/review-handoff/request.json
+              run: |
+                  node scripts/bot/resolved-threads.js temp/review-resolved-threads.json
+                  node scripts/bot/request.js temp/review-handoff/request.json temp/review-resolved-threads.json
               env:
+                  GITHUB_TOKEN: ${{ github.token }}
                   SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
             - name: Request source-only review
               id: model

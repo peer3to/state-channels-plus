@@ -78,6 +78,25 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+                "resolvedThreads": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "comments"],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "comments": {
+                                "type": "array",
+                                "uniqueItems": true,
+                                "items": { "type": "integer", "minimum": 1 }
+                            }
+                        }
+                    }
+                },
                 "version": {
                     "const": 1
                 },

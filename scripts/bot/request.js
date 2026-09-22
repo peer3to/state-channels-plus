@@ -73,6 +73,11 @@ async function main() {
         readScope: ["source", "discussion", "reviews"]
     });
     const output = process.argv[2];
+    if (process.argv[3])
+        input.resolvedThreads = JSON.parse(
+            await fs.readFile(process.argv[3], "utf8")
+        );
+    request(input);
     check(output);
     const directory = path.dirname(path.resolve(output));
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });

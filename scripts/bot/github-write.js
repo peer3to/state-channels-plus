@@ -196,7 +196,10 @@ class GitHubWriter {
         }
         return parsed.data;
     }
-    async threads() {
+    async threads({ idsOnly = false } = {}) {
+        const commentFields = idsOnly
+            ? "id databaseId"
+            : "id databaseId body author { __typename login }";
         const [owner, name] = this.request.repository.name.split("/");
         const threads = [];
         let cursor = null;
@@ -204,7 +207,7 @@ class GitHubWriter {
             const data = await this.graph(
                 `query ReviewThreads($owner:String!,$name:String!,$pr:Int!,$cursor:String) {
                 repository(owner:$owner,name:$name) { databaseId pullRequest(number:$pr) { number reviewThreads(first:100,after:$cursor) {
-                    nodes { id isResolved comments(first:100) { nodes { id databaseId body author { __typename login } } pageInfo { hasNextPage endCursor } } }
+                    nodes { id isResolved comments(first:100) { nodes { ${commentFields} } pageInfo { hasNextPage endCursor } } }
                     pageInfo { hasNextPage endCursor }
                 } } }
             }`,
@@ -236,7 +239,7 @@ class GitHubWriter {
                         "CONTEXT_UNAVAILABLE"
                     );
                     const more = await this.graph(
-                        `query ReviewReplies($id:ID!,$cursor:String!) { node(id:$id) { ... on PullRequestReviewThread { id comments(first:100,after:$cursor) { nodes { id databaseId body author { __typename login } } pageInfo { hasNextPage endCursor } } } } }`,
+                        `query ReviewReplies($id:ID!,$cursor:String!) { node(id:$id) { ... on PullRequestReviewThread { id comments(first:100,after:$cursor) { nodes { ${commentFields} } pageInfo { hasNextPage endCursor } } } } }`,
                         { id: thread.id, cursor: next.endCursor }
                     );
                     check(

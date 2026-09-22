@@ -4,6 +4,15 @@ Operational setup, failure recovery and acceptance are in [the operations guide]
 
 ## Owners
 
+CI reads current thread resolution via GraphQL and binds only resolved thread and
+comment IDs into the review request. The worker omits those comments and replies
+from model input. The publisher checks live resolution again; reopened discussion
+still needs accounting. No GitHub token is sent to the worker.
+
+Assessment refresh excludes resolved findings from the active Markdown and JSON.
+When existing cards are removed, the pre-refresh Markdown (including Human notes)
+is preserved in `assessment.md.backup-<timestamp>` beside the active file.
+
 | Operation | Owner |
 | --- | --- |
 | Existing authenticated peer lifecycle, framing, identities and authorization | `../e2e-parallel/distributed/{poolTransport,protocol,authentication,orchestratorIdentity,authorizationStore}.js` |
@@ -49,3 +58,10 @@ CI derives a review identity per run attempt by SHA-256 hashing the fixed `peer3
 Publication uses the publisher job's `GITHUB_TOKEN`, with pull requests write and issues write. Credentials remain step-scoped. The model job remains read-only; result artifacts expire after one day without a cleanup job. Receipt delivery runs directly in the publish job. Enable the repository's Actions approval setting. See [first live run](../../docs/pr-review-bot.md#first-live-run).
 
 Human-decision markers are guidance for people and implementing agents. The reviewer assesses ordinary discussion; the publisher does not authenticate Human replies or query maintainer permissions. No review enablement variable or maintainer list is needed.
+# Publication transport lifetime
+
+Publishing executes the completed review's dispositions; journal load/save calls
+do not invoke the model. Discovery and each pending journal RPC have a transport
+deadline. Time spent executing GitHub operations between those calls does not
+consume a model or journal deadline. GitHub freshness checks still run before
+existing-finding actions, and CI logs each action's start and completion.

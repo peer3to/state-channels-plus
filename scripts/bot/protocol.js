@@ -31,7 +31,21 @@ function unique(values) {
     check(Array.isArray(values) && new Set(values).size === values.length);
 }
 function request(value) {
-    exact(value, REQUEST_KEYS);
+    exact(value, [...REQUEST_KEYS, "resolvedThreads"]);
+    if (value.resolvedThreads !== undefined) {
+        check(Array.isArray(value.resolvedThreads));
+        unique(value.resolvedThreads.map((thread) => thread.id));
+        for (const thread of value.resolvedThreads) {
+            exact(thread, ["id", "comments"]);
+            string(thread.id);
+            unique(thread.comments);
+            check(
+                thread.comments.every(
+                    (id) => Number.isSafeInteger(id) && id > 0
+                )
+            );
+        }
+    }
     check(
         REQUEST_KEYS.every((key) => Object.hasOwn(value, key)) &&
             value.version === VERSION
@@ -87,6 +101,7 @@ function effectiveIdentity(value, evidenceIdentity) {
         runtime: value.runtime,
         operations: [...value.operations].sort(),
         readScope: [...value.readScope].sort(),
+        resolvedThreads: value.resolvedThreads || [],
         evidenceIdentity
     });
 }

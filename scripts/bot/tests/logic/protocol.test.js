@@ -14,6 +14,15 @@ describe("review protocol", () => {
         delete missing.caller;
         const corpus = [
             input,
+            {
+                ...input,
+                resolvedThreads: [{ id: "thread1", comments: [1, 2] }]
+            },
+            { ...input, resolvedThreads: [{ id: "thread1", comments: [0] }] },
+            {
+                ...input,
+                resolvedThreads: [{ id: "thread1", comments: [1, 1] }]
+            },
             missing,
             { ...input, unknown: true },
             { ...input, caller: null },
