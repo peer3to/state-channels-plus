@@ -24,6 +24,10 @@ const RECEIPT_WAIT_BUDGET_MS = 1_000;
 const UNREACHABLE_NONCE = 50;
 /** How long the node gets to answer with a receipt it has already mined. */
 const RECEIPT_POLL_BUDGET_MS = 10_000;
+/** ethers caches one `perform` result per tag for 250ms; retry past that. */
+const BLOCK_EVENT_RETRY_MS = 250;
+/** A background mine this often: past the 250ms cache, so each poll re-reads. */
+const BACKGROUND_MINE_INTERVAL_MS = 300;
 
 /** A random wallet on `provider`, funded by the node's first account. */
 async function fundedWallet(provider: JsonRpcProvider): Promise<HDNodeWallet> {
@@ -68,6 +72,87 @@ async function awaitReceiptSubscription(
     await provider.getBlockNumber();
 }
 
+/**
+ * Mines until the provider reports a block, for a case whose oracle is that no
+ * receipt appears. The block poller bootstraps at whatever number its own first
+ * read returns and emits nothing for it, so a block mined before that read is
+ * never reported, and a registered listener does not prove that read happened.
+ * The extra empty blocks are harmless: the first mined block already carries
+ * the pending transaction.
+ */
+async function mineUntilBlockEvent(provider: JsonRpcProvider): Promise<void> {
+    let reported = false;
+    let onBlock: (() => void) | undefined;
+    const listener = () => {
+        reported = true;
+        onBlock?.();
+    };
+    // One listener for the whole loop. Removing it between attempts would
+    // drop the last "block" listener whenever no receipt wait holds one, and
+    // ethers deletes the subscription with it: its replacement bootstraps a
+    // fresh baseline every attempt and can never report a block.
+    await provider.on("block", listener);
+    try {
+        while (!reported) {
+            const blockReported = new Promise<void>((resolve) => {
+                onBlock = resolve;
+            });
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                await provider.send("hardhat_mine", ["0x1"]);
+                await Promise.race([
+                    blockReported,
+                    new Promise<void>((resolve) => {
+                        timer = setTimeout(resolve, BLOCK_EVENT_RETRY_MS);
+                    })
+                ]);
+            } finally {
+                if (timer !== undefined) clearTimeout(timer);
+            }
+        }
+    } finally {
+        await provider.off("block", listener);
+    }
+}
+
+/**
+ * Runs `section` while a block is mined every 300ms. A receipt wait re-reads
+ * its receipt only on a block event, and it subscribes asynchronously, so a
+ * single mine can land before it subscribes and leave it pending for its whole
+ * bound. Mining for as long as the section waits means a block event always
+ * follows, whenever the wait subscribed, and the interval outlives the 250ms
+ * perform cache so the poll that event triggers cannot answer from a cached
+ * empty receipt. The extra empty blocks are harmless: the first mined block
+ * already carries the pending transaction, and no assertion counts blocks.
+ */
+async function withBackgroundMining<T>(
+    provider: JsonRpcProvider,
+    section: () => Promise<T>
+): Promise<T> {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let mining: Promise<unknown> = Promise.resolve();
+    const mineOnce = () => {
+        mining = provider
+            .send("hardhat_mine", ["0x1"])
+            // A mine that loses its node is the teardown, not a failure.
+            .catch(() => undefined)
+            .then(() => {
+                if (!stopped)
+                    timer = setTimeout(mineOnce, BACKGROUND_MINE_INTERVAL_MS);
+            });
+    };
+    mineOnce();
+    try {
+        return await section();
+    } finally {
+        stopped = true;
+        if (timer !== undefined) clearTimeout(timer);
+        // Let the in-flight mine land, so the node is not hit after teardown.
+        await mining;
+    }
+}
+
 export async function assertIsolatedRevertedGasRecorded(): Promise<void> {
     await withIsolatedHardhatNode(async (provider) => {
         provider.pollingInterval = 100;
@@ -88,15 +173,20 @@ export async function assertIsolatedRevertedGasRecorded(): Promise<void> {
             data: selector,
             gasLimit: EXPLICIT_GAS_LIMIT
         });
-        await awaitReceiptSubscription(provider);
-        await provider.send("hardhat_mine", ["0x1"]);
+        const { receipt, rows } = await withBackgroundMining(
+            provider,
+            async () => {
+                const mined = await minedReceiptOf(provider, response.hash);
+                return {
+                    receipt: mined,
+                    rows: await manager.gasUsage.settledSnapshot()
+                };
+            }
+        );
 
-        const receipt = await minedReceiptOf(provider, response.hash);
         expect(receipt.status, "the call must have reverted on chain").to.equal(
             0
         );
-
-        const rows = await manager.gasUsage.settledSnapshot();
         expect(rows.length).to.equal(1);
         expect(rows[0].contractAddress).to.equal(revertingContract);
         expect(rows[0].functionSelector).to.equal(selector);
@@ -138,8 +228,7 @@ export async function assertIsolatedReplacedTransactionAbsent(): Promise<void> {
             nonce: original.nonce,
             gasPrice: gasPrice * 2n
         });
-        await awaitReceiptSubscription(provider);
-        await provider.send("hardhat_mine", ["0x1"]);
+        await mineUntilBlockEvent(provider);
 
         expect(
             await manager.gasUsage.settledSnapshot(),
@@ -218,12 +307,9 @@ export async function assertIsolatedSettleIgnoresLaterObservation(): Promise<voi
                 nonce: UNREACHABLE_NONCE
             })
         );
-        await awaitReceiptSubscription(provider);
-        await provider.send("hardhat_mine", ["0x1"]);
-
         // Hangs if `settle()` re-read the set instead of the observations it
         // was asked about.
-        await settling;
+        await withBackgroundMining(provider, () => settling);
         const rows = recorder.snapshot();
         expect(rows.length).to.equal(1);
         expect(rows[0].functionSelector).to.equal(minedSelector);
