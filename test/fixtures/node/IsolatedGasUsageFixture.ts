@@ -7,6 +7,7 @@ import {
     ethers,
     type HDNodeWallet,
     type JsonRpcProvider,
+    type TransactionReceipt,
     Wallet
 } from "ethers";
 
@@ -23,6 +24,8 @@ const RECEIPT_WAIT_BUDGET_MS = 1_000;
 const UNREACHABLE_NONCE = 50;
 /** Bounds the queued observation, so no timer outlives the case by minutes. */
 const QUEUED_RECEIPT_WAIT_MS = 5_000;
+/** How long the node gets to answer with a receipt it has already mined. */
+const RECEIPT_POLL_BUDGET_MS = 10_000;
 
 /** A random wallet on `provider`, funded by the node's first account. */
 async function fundedWallet(provider: JsonRpcProvider): Promise<HDNodeWallet> {
@@ -35,6 +38,26 @@ async function fundedWallet(provider: JsonRpcProvider): Promise<HDNodeWallet> {
         })
     ).wait();
     return wallet;
+}
+
+/**
+ * The receipt of `hash`, once the node has it. ethers caches one `perform`
+ * result per request tag for 250ms, and the observation's own wait has already
+ * asked for this receipt and been told `null`, so a single read right after
+ * mining answers from that cache.
+ */
+async function minedReceiptOf(
+    provider: JsonRpcProvider,
+    hash: string
+): Promise<TransactionReceipt> {
+    const started = Date.now();
+    for (;;) {
+        const receipt = await provider.getTransactionReceipt(hash);
+        if (receipt) return receipt;
+        if (Date.now() - started > RECEIPT_POLL_BUDGET_MS)
+            throw new Error(`No receipt mined for ${hash}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 }
 
 /** ethers subscribes its receipt wait asynchronously; mine only after it did. */
@@ -70,7 +93,7 @@ export async function assertIsolatedRevertedGasRecorded(): Promise<void> {
         await awaitReceiptSubscription(provider);
         await provider.send("hardhat_mine", ["0x1"]);
 
-        const receipt = (await provider.getTransactionReceipt(response.hash))!;
+        const receipt = await minedReceiptOf(provider, response.hash);
         expect(receipt.status, "the call must have reverted on chain").to.equal(
             0
         );
