@@ -186,6 +186,48 @@ describe("outstanding assessment import", function () {
         );
         assert.throws(() => parseTarget("../../etc", "owner/repo"));
     });
+    it("exports the full inline conversation and the finding's Human decision flag", function () {
+        const f = fixture();
+        const root = {
+            id: 101,
+            html_url: `https://github.com/${f.input.repository.name}/pull/${f.input.pr}#discussion_r101`,
+            user: { id: 9, type: "Bot", login: "github-actions[bot]" },
+            created_at: "2026-01-01",
+            body: "<!-- peer3-review-finding:v1 R1FO1:start -->\n🙋 **HUMAN DECISION REQUIRED**\nChoose behavior.\n<!-- peer3-review-finding:v1 R1FO1:end -->"
+        };
+        const reply = {
+            id: 102,
+            user: { id: 7, type: "User", login: "engineer" },
+            created_at: "2026-01-02",
+            body: "My decision.",
+            html_url: root.html_url
+        };
+        const findings = assessmentFindings(
+            f.input,
+            {
+                reviews: [],
+                comments: [],
+                inline: [root, reply],
+                threads: [
+                    {
+                        id: "thread",
+                        isResolved: false,
+                        comments: {
+                            nodes: [{ databaseId: 101 }, { databaseId: 102 }]
+                        }
+                    }
+                ]
+            },
+            9
+        );
+        assert.equal(findings[0].human, true);
+        assert.deepEqual(
+            findings[0].conversation.map((entry) => entry.author),
+            ["github-actions[bot]", "engineer"]
+        );
+        assert.ok(!findings[0].conversation[0].body.includes("<!--"));
+        assert.match(mergeAssessment("", findings, f.input), /My decision/);
+    });
     it("filters resolved threads equally for advisory Human decisions", function () {
         const f = fixture();
         f.finding.threadId = "thread";

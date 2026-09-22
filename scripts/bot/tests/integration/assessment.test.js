@@ -1052,6 +1052,56 @@ describe("assessment GitHub lifecycle", function () {
         await publisher.publish(result(wire.input));
         assert.equal(wire.reviews.length, 1);
     });
+    it("backs up an unmanaged assessment before creating a managed assessment", async function () {
+        const root = await fs.mkdtemp(
+            path.join(os.tmpdir(), "assessment-import-")
+        );
+        try {
+            const wire = wireFixture();
+            const directory = path.join(
+                root,
+                "temp/pr-github-reviews",
+                String(wire.input.pr)
+            );
+            await fs.mkdir(directory, { recursive: true });
+            const original =
+                "# Manual assessment\n\nHuman notes must survive.\n";
+            await fs.writeFile(path.join(directory, "assessment.md"), original);
+            const filename = await fetchAssessment(
+                structuredClone(wire.input),
+                { token: "recorded", root, exchange: wire.exchange }
+            );
+            const backups = (await fs.readdir(directory)).filter((name) =>
+                name.startsWith("assessment.md.backup-")
+            );
+            assert.equal(backups.length, 1);
+            assert.equal(
+                await fs.readFile(path.join(directory, backups[0]), "utf8"),
+                original
+            );
+            assert.match(
+                await fs.readFile(filename, "utf8"),
+                /<!-- peer3-assessment:v1 -->/
+            );
+            assert.match(
+                await fs.readFile(filename, "utf8"),
+                /Finding ID: R1FO1/
+            );
+            await fetchAssessment(structuredClone(wire.input), {
+                token: "recorded",
+                root,
+                exchange: wire.exchange
+            });
+            assert.equal(
+                (await fs.readdir(directory)).filter((name) =>
+                    name.startsWith("assessment.md.backup-")
+                ).length,
+                1
+            );
+        } finally {
+            await fs.rm(root, { recursive: true, force: true });
+        }
+    });
     it("fetches only through reads and preserves edited assessment text on refresh", async function () {
         const root = await fs.mkdtemp(
             path.join(os.tmpdir(), "assessment-fetch-")

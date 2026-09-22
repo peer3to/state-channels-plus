@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const { check, digest, ownedPath, writeText, writeJson } = require("./data");
 const { GitHubWriter, actionsBotId } = require("./github-write");
@@ -37,6 +38,26 @@ function assessmentFindings(request, observations, botId) {
                     thread?.isResolved === true ||
                     body.startsWith("<details>\n<summary>✅ RESOLVED"),
                 human: /HUMAN DECISION REQUIRED/.test(body),
+                conversation: thread
+                    ? observations.inline
+                          .filter((comment) =>
+                              thread.comments.nodes.some(
+                                  (node) => node.databaseId === comment.id
+                              )
+                          )
+                          .sort(
+                              (a, b) =>
+                                  String(a.created_at).localeCompare(
+                                      String(b.created_at)
+                                  ) || a.id - b.id
+                          )
+                          .map((comment) => ({
+                              author: comment.user?.login || "Unknown author",
+                              createdAt: comment.created_at || "",
+                              body: safeText(comment.body || ""),
+                              url: comment.html_url
+                          }))
+                    : [],
                 revision: digest(body)
             });
         }
@@ -140,7 +161,16 @@ function mergeAssessment(previous, findings, request) {
             "INVALID_RESULT"
         );
         const id = `APR-${String(next++).padStart(3, "0")}`;
-        const quote = safeText(finding.body)
+        const quote = (
+            finding.conversation?.length
+                ? finding.conversation
+                      .map(
+                          (comment) =>
+                              `**${comment.author} · ${comment.createdAt}**\n\n${comment.body}`
+                      )
+                      .join("\n\n---\n\n")
+                : safeText(finding.body)
+        )
             .split("\n")
             .map((line) => `> ${line}`)
             .join("\n");
@@ -200,7 +230,8 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
     } catch (error) {
         if (error.code !== "ENOENT") throw error;
     }
-    const next = mergeAssessment(previous, findings, request);
+    const unmanaged = previous && !previous.includes(DOCUMENT);
+    const next = mergeAssessment(unmanaged ? "" : previous, findings, request);
     // A concurrent local edit must not be overwritten by this fetch.
     let current = "";
     try {
@@ -209,8 +240,14 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
         if (error.code !== "ENOENT") throw error;
     }
     check(current === previous, "INVALID_REQUEST");
-    if (previous && previous !== next)
-        await writeText(root, `${relative}.backup-${Date.now()}`, previous);
+    if (previous && previous !== next) {
+        const backup = `${relative}.backup-${Date.now()}-${randomUUID()}`;
+        await writeText(root, backup, previous);
+        if (unmanaged)
+            console.log(
+                `Existing unmanaged assessment preserved: ${path.join(root, backup)}`
+            );
+    }
     await writeJson(
         root,
         `temp/pr-github-reviews/${request.pr}/github-findings.json`,
