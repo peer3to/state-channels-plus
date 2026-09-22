@@ -11,6 +11,11 @@ export class ChainSignerService extends AInternalRpcService<ChainSignerRpcMethod
     ) {
         super(router);
     }
+    /** The peer's gas usage table, settled, in the endpoint's named field. */
+    public async gasUsageTable() {
+        return { gasUsage: await this.chainSigner.gasUsage.settledSnapshot() };
+    }
+
     public createRPCMethods(sender: InternalTransport) {
         return new ChainSignerRpcMethods(this, sender);
     }

@@ -67,7 +67,10 @@ class StateManager<
     p2pEventHooks: P2pEventHooks;
     /**
      * The peer's real-chain signer: the owner of its nonce, and the one point
-     * that sees every transaction the runtime sends.
+     * that sees every transaction the runtime sends. The concrete type is a
+     * rule, not an accident — the runtime constructs a `StateManager` with
+     * exactly one signer type, and holders reach the nonce owner and its gas
+     * usage through this field.
      */
     signer: HostNonceManager;
     signerAddress: Address;

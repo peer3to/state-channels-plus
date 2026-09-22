@@ -87,8 +87,9 @@ export default class P2pInstance<
     }
 
     /**
-     * Gas used per contract function by this peer's real-chain transactions,
-     * aggregated from the receipts the host observed.
+     * Gas used per contract function by the transactions the SDK runtime sent
+     * for this peer. Transactions the application sends with its own signer
+     * are not included.
      */
     public getGasUsageTable(): Promise<GasUsageRow[]> {
         return this.chainSigner.getGasUsageTable();

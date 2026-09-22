@@ -31,7 +31,7 @@ export class ChainSignerRpcMethods extends AInternalRpcMethods<ChainSignerServic
 
     /** Aggregated gas of the transactions this peer's chain signer sent. */
     public getGasUsageTable() {
-        return { gasUsage: this.service.chainSigner.gasUsage.snapshot() };
+        return this.service.gasUsageTable();
     }
 
     public async signMessage(message: SerializedSignerMessage) {

@@ -9,19 +9,27 @@ export interface GasUsageEntry {
     reverted: boolean;
 }
 
-/** One aggregated (contract, function) row of a gas usage snapshot. */
+/**
+ * One aggregated (contract, function) row of a gas usage snapshot. Every field
+ * describes either the successful transactions or the reverted ones; the two
+ * are never mixed, so `minGasUsed` stays the cheapest real cost of the call
+ * and not the cost of its cheapest failure.
+ */
 export interface GasUsageRow {
     contractAddress: ChecksumAddress;
     functionSelector: FunctionSelector;
     functionName: string;
-    /** Mined transactions, reverted ones included. */
-    minedCount: number;
-    /** How many of `minedCount` came back with receipt status 0. */
-    revertedCount: number;
+    /** Mined transactions that did not revert. */
+    successCount: number;
     /** Decimal strings: a raw bigint must never reach `JSON.stringify`. */
-    totalGasUsed: string;
+    successGasUsed: string;
+    /** Bounds over the successful transactions only; `"0"` while there are none. */
     minGasUsed: string;
     maxGasUsed: string;
+    /** Mined transactions that came back with receipt status 0. */
+    revertedCount: number;
+    /** What those reverted transactions burned. */
+    revertedGasUsed: string;
 }
 
 /** Running totals behind one snapshot row. */
@@ -29,11 +37,12 @@ interface GasUsageAggregate {
     contractAddress: ChecksumAddress;
     functionSelector: FunctionSelector;
     functionName: string;
-    minedCount: number;
-    revertedCount: number;
-    totalGasUsed: bigint;
+    successCount: number;
+    successGasUsed: bigint;
     minGasUsed: bigint;
     maxGasUsed: bigint;
+    revertedCount: number;
+    revertedGasUsed: bigint;
 }
 
 /** Identifies one aggregate: the called contract plus the selector on it. */
@@ -50,9 +59,11 @@ function compareText(left: string, right: string): number {
  * function). Pure: it takes finished receipts and answers snapshots, and owns
  * no timers, no I/O and no chain access.
  *
- * A reverted transaction is a mined transaction that burned real gas, so it
- * counts in `minedCount`, `totalGasUsed` and the min/max, and `revertedCount`
- * says how many of those mined transactions reverted.
+ * A reverted transaction burned real gas, so it carries its own count and its
+ * own total in the same row. It stays out of the success count, the success
+ * total and the bounds, because a revert costs a fraction of the call and
+ * would otherwise answer "how much does this function cost" with the price of
+ * its cheapest failure.
  */
 class GasUsageTable {
     private readonly aggregates = new Map<GasUsageKey, GasUsageAggregate>();
@@ -65,21 +76,32 @@ class GasUsageTable {
                 contractAddress: entry.contractAddress,
                 functionSelector: entry.functionSelector,
                 functionName: entry.functionName,
-                minedCount: 0,
+                successCount: 0,
+                successGasUsed: 0n,
+                minGasUsed: 0n,
+                maxGasUsed: 0n,
                 revertedCount: 0,
-                totalGasUsed: 0n,
-                minGasUsed: entry.gasUsed,
-                maxGasUsed: entry.gasUsed
+                revertedGasUsed: 0n
             };
             this.aggregates.set(key, aggregate);
         }
-        aggregate.minedCount += 1;
-        if (entry.reverted) aggregate.revertedCount += 1;
-        aggregate.totalGasUsed += entry.gasUsed;
+        if (entry.reverted) {
+            aggregate.revertedCount += 1;
+            aggregate.revertedGasUsed += entry.gasUsed;
+            return;
+        }
+        // The first success seeds both bounds; a zeroed bound would otherwise
+        // stay the minimum forever.
+        if (aggregate.successCount === 0) {
+            aggregate.minGasUsed = entry.gasUsed;
+            aggregate.maxGasUsed = entry.gasUsed;
+        }
         if (entry.gasUsed < aggregate.minGasUsed)
             aggregate.minGasUsed = entry.gasUsed;
         if (entry.gasUsed > aggregate.maxGasUsed)
             aggregate.maxGasUsed = entry.gasUsed;
+        aggregate.successCount += 1;
+        aggregate.successGasUsed += entry.gasUsed;
     }
 
     /** Rows ordered by contract address, then function name, then selector. */
@@ -89,11 +111,12 @@ class GasUsageTable {
                 contractAddress: aggregate.contractAddress,
                 functionSelector: aggregate.functionSelector,
                 functionName: aggregate.functionName,
-                minedCount: aggregate.minedCount,
-                revertedCount: aggregate.revertedCount,
-                totalGasUsed: aggregate.totalGasUsed.toString(),
+                successCount: aggregate.successCount,
+                successGasUsed: aggregate.successGasUsed.toString(),
                 minGasUsed: aggregate.minGasUsed.toString(),
-                maxGasUsed: aggregate.maxGasUsed.toString()
+                maxGasUsed: aggregate.maxGasUsed.toString(),
+                revertedCount: aggregate.revertedCount,
+                revertedGasUsed: aggregate.revertedGasUsed.toString()
             }))
             .sort(
                 (left, right) =>

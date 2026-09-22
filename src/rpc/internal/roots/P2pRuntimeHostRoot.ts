@@ -389,8 +389,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
     }
 
     /** Gas used per contract function by this peer's real-chain transactions. */
-    public getGasUsageTable(): GasUsageRow[] {
-        return this.managedSigner.gasUsage.snapshot();
+    public getGasUsageTable(): Promise<GasUsageRow[]> {
+        return this.managedSigner.gasUsage.settledSnapshot();
     }
 
     // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
@@ -408,13 +408,16 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 const runtimeHandle = this.runtimeHandle;
                 const provider = this.chainContext?.provider;
                 const ctx = this.context;
-                // What the peer spent on chain, reported once while its logger
-                // is still alive. Observations still waiting for a receipt are
-                // not waited for: disposal must not hang on the chain.
+                // Reported before the provider closes; the settle is bounded
+                // so disposal never hangs on the chain.
                 if (this.managedSigner)
                     this.rootLogger.info(
                         "gas usage",
-                        LoggerUtils.getGasUsageMetadata(this.getGasUsageTable())
+                        LoggerUtils.getGasUsageMetadata(
+                            await this.managedSigner.gasUsage.settledSnapshot(
+                                config.GAS_USAGE_DISPOSAL_SETTLE_MS
+                            )
+                        )
                     );
                 try {
                     try {

@@ -95,11 +95,12 @@ export class LoggerUtils {
     > = new WeakMap();
     private static nextTransportDebugId = 1;
     /**
-     * Names the selectors of the whole SDK contract surface: the local
+     * Selector to function name over the whole SDK contract surface: the local
      * diamond's own functions plus every selector the manager proxy routes.
-     * Built on first use, since most log lines never need it.
+     * Built on first use, since most log lines never need it. A map lookup is
+     * total, so peer-controlled calldata can never reach an ABI parse.
      */
-    private static contractSurface?: ethers.Interface;
+    private static functionNames?: Map<FunctionSelector, string>;
 
     // ====================================
     // SIMPLE FORMATTERS
@@ -234,14 +235,15 @@ export class LoggerUtils {
      * that surface does not declare is its own name, so an unknown call still
      * identifies itself.
      */
-    private static getFunctionName(
-        functionSelector: FunctionSelector
-    ): string {
-        this.contractSurface ??= new ethers.Interface(localDiamondAbi);
-        return (
-            this.contractSurface.getFunction(functionSelector)?.name ??
-            functionSelector
+    private static getFunctionName(functionSelector: FunctionSelector): string {
+        this.functionNames ??= new Map(
+            localDiamondAbi
+                .filter((fragment) =>
+                    ethers.FunctionFragment.isFunction(fragment)
+                )
+                .map((fragment) => [fragment.selector, fragment.name])
         );
+        return this.functionNames.get(functionSelector) ?? functionSelector;
     }
 
     /**

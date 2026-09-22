@@ -1,4 +1,5 @@
 import GasUsageTable, { type GasUsageRow } from "./GasUsageTable";
+import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -8,20 +9,20 @@ import {
     type TransactionResponse
 } from "ethers";
 
-/**
- * Feeds real receipts into a {@link GasUsageTable}. The observation runs
- * beside the caller on a wait of its own, so the response the caller got back
- * keeps its own `wait()` semantics and the nonce owner keeps its bookkeeping.
- * Only mined transactions are counted; a dropped or replaced one is not.
- */
+/** Feeds mined receipts into the table on a wait of its own; never rejects. */
 class GasUsageRecorder {
     private readonly table = new GasUsageTable();
     /** Receipt waits still running. Each one settles and never rejects. */
     private readonly inFlight = new Set<Promise<void>>();
     private readonly logger?: Logger;
+    private readonly receiptWaitMs: number;
 
-    constructor(logger?: Logger) {
+    constructor(
+        logger?: Logger,
+        receiptWaitMs: number = config.GAS_USAGE_RECEIPT_WAIT_MS
+    ) {
         this.logger = logger;
+        this.receiptWaitMs = receiptWaitMs;
     }
 
     /** Count `response` once it mines. Returns at once; never throws. */
@@ -36,12 +37,44 @@ class GasUsageRecorder {
         void observation.finally(() => this.inFlight.delete(observation));
     }
 
-    /** Resolves once every observation started so far has settled. */
-    public async settle(): Promise<void> {
-        while (this.inFlight.size > 0) await Promise.all([...this.inFlight]);
+    /**
+     * Resolves once every observation started before this call has settled.
+     * `timeoutMs` gives up on the ones still running, for a caller that may
+     * not wait on the chain.
+     */
+    public async settle(timeoutMs?: number): Promise<void> {
+        const pending = [...this.inFlight];
+        if (pending.length === 0) return;
+        const settled = Promise.all(pending).then(() => undefined);
+        if (timeoutMs === undefined) {
+            await settled;
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+            await Promise.race([
+                settled,
+                new Promise<void>((resolve) => {
+                    timer = setTimeout(resolve, timeoutMs);
+                })
+            ]);
+        } finally {
+            if (timer !== undefined) clearTimeout(timer);
+        }
     }
 
+    /** The unsettled rows; a reader wanting freshness uses `settledSnapshot`. */
     public snapshot(): GasUsageRow[] {
+        return this.table.snapshot();
+    }
+
+    /**
+     * The read every reporter uses: the rows once the observations already
+     * started have settled, so a caller that awaited its own `wait()` never
+     * reads a table that is one microtask short of its own transaction.
+     */
+    public async settledSnapshot(timeoutMs?: number): Promise<GasUsageRow[]> {
+        await this.settle(timeoutMs);
         return this.table.snapshot();
     }
 
@@ -68,14 +101,17 @@ class GasUsageRecorder {
         response: TransactionResponse
     ): Promise<TransactionReceipt | null> {
         try {
-            return await response.wait();
+            // The bound is what ends the wait when the provider is destroyed
+            // under it: ethers only clears its own timer and listeners, so an
+            // unbounded wait would stay pending and `settle()` with it.
+            return await response.wait(1, this.receiptWaitMs);
         } catch (error) {
             // A reverted transaction still mined and still burned its gas;
             // ethers reports it as a CALL_EXCEPTION carrying the receipt.
             if (ethers.isError(error, "CALL_EXCEPTION"))
                 return error.receipt ?? null;
-            // Replaced, dropped, or the provider closed under the wait: no
-            // receipt means nothing mined, so nothing is counted.
+            // Replaced, dropped, or the wait timed out: no receipt means
+            // nothing mined, so nothing is counted.
             this.logger?.debug("Transaction left out of the gas usage table", {
                 hash: response.hash,
                 error: errorMessage(error)
