@@ -60,4 +60,33 @@ function decodeModelResult(generated) {
     }
     return markdownResult(generated);
 }
-module.exports = { markdownResult, decodeModelResult };
+function repairModelResult(previous, reply) {
+    if (typeof previous !== "string" || typeof reply !== "string") return reply;
+    const footer = /^<!-- review-result (\{[^\n]*\}) -->$/;
+    if (!footer.test(reply.trim())) return reply;
+    const markers = [
+        ...previous.matchAll(/^<!-- review-result (\{[^\n]*\}) -->\r?$/gm)
+    ];
+    if (markers.length !== 1) return reply;
+    return previous.replace(markers[0][0], () => reply.trim());
+}
+function formatFeedback(generated) {
+    let value;
+    try {
+        value = decodeModelResult(generated);
+    } catch {
+        return "The response could not be decoded as the required Markdown document and single review-result footer. Check document/card metadata, matching Human/AI markers and footer JSON.";
+    }
+    if (
+        value?.coverage?.complete &&
+        (value.coverage.missing?.length || value.evidence?.errors?.length)
+    )
+        return "coverage.complete is true but coverage.missing or errors is nonempty. errors means UNRESOLVED failures, not recovered tool attempts. If a wrong-path read was followed by a successful read of the intended file, remove that recovered incident from errors. Do not clear a real unresolved failure: finish the missing work or report incomplete coverage honestly.";
+    return "The decoded report failed result validation. Check finding IDs, dispositions, field types, evidence, document SHAs and the supplied model-output contract. Do not redo the substantive review merely to repair its format.";
+}
+module.exports = {
+    markdownResult,
+    decodeModelResult,
+    repairModelResult,
+    formatFeedback
+};

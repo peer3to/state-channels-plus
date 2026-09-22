@@ -39,7 +39,7 @@ the existing conversation ID; older cleared registry IDs can be recovered from
 the last confirmed publication baseline. This does not bypass report validation
 or change the CI result-transfer limit.
 
-`server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. A single fixed correction prompt may name invalid schema identifiers or missing discussion-accounting IDs. Initial and corrective turns share the model budget.
+`server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. Invalid output is repaired in the same conversation within the remaining cumulative model budget, rather than failing after one repair. Bookkeeping-only repairs may return just the `review-result` footer; the worker preserves the report verbatim and validates the merged result normally. Recovered tool attempts are not unresolved errors. Drafts are retained as `<attempt>-<revision>-draft-<n>.md` before validation. Internal format repairs do not consume CI's discussion-accounting correction, whose output uses the same repair loop. Missing evidence, provider failures and exhausted time still produce honest failures, never a fabricated successful review.
 
 ## CI setup
 

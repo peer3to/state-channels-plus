@@ -62,7 +62,12 @@ ones. Recommendation is comment, or approve only when the existing approval rule
 are satisfied. `coverage.complete` means the source and discussion review is
 complete, not that runtime acceptance has passed. Use `coverage.missing` only for
 unread source, required discussion, or unfinished review surfaces; those make
-complete false. Tool failures belong in errors.
+complete false. Only unresolved tool failures belong in errors. A failed attempt
+followed by a successful read of the intended source is recovered, not an error
+in the completed review. Keep errors empty when no failures remain unresolved.
+On format repair, follow the worker's specific validation feedback. When it
+accepts a footer-only repair, return just the corrected review-result marker;
+the worker retains the findings without another full report generation.
 
 Put absent, pending or unverified CI/live acceptance evidence in the optional
 `coverage.verificationMissing` string array. This does not make source coverage

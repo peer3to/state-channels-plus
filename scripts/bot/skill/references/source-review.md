@@ -25,6 +25,12 @@ missing audit evidence require it. A failed attempt is context, not a completed 
 baseline is unavailable, non-ancestral or has a different merge-base, inspect the
 full diff and say why. Always gather current discussion and verify source revisions
 before reusing prior accounting. Do not reread old drafts merely to rewrite them.
+A format or publication failure does not erase source analysis already completed
+in this conversation. Reuse its concrete findings and audit dispositions when
+their source is unchanged; repair the failed output and inspect new discussion
+and changed code. Do not restart the full audit just because no receipt was issued.
+This reuse does not promote a failed attempt to a confirmed publication baseline
+or imply that its proposed comments were actually posted.
 
 Retain the concrete behavior-to-test and owner/caller dispositions in the report's
 coverage inventory so the next turn can reuse verified work. Inspect every

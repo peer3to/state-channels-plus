@@ -79,6 +79,121 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("repairs malformed accounting-correction output without advancing beyond revision one", async function () {
+        await fixture(
+            [result(), "invalid Markdown", result()],
+            async ({ service, input, execution, model, root }) => {
+                execution.result = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                const corrected = await service.correct(
+                    input,
+                    execution,
+                    "Account for the new discussion."
+                );
+                assert.equal(corrected.revision, 1);
+                assert.equal(model.prompts.length, 3);
+                await fs.access(path.join(root, `${input.attempt}-0.json`));
+                await fs.access(path.join(root, `${input.attempt}-1.json`));
+                assert.equal(
+                    await fs.readFile(
+                        path.join(root, `${input.attempt}-1-draft-0.md`),
+                        "utf8"
+                    ),
+                    "invalid Markdown"
+                );
+            }
+        );
+    });
+    it("repairs a recovered read error with only a footer and preserves the substantive draft", async function () {
+        const original = result(undefined, { recommendation: "comment" });
+        const control = {
+            coverage: original.coverage,
+            accounting: [],
+            recommendation: "comment",
+            errors: [
+                "Wrong-path read failed; the intended source was subsequently read in full."
+            ]
+        };
+        const draft =
+            original.report +
+            "\n<!-- review-result " +
+            JSON.stringify(control) +
+            " -->\n";
+        const footer =
+            "<!-- review-result " +
+            JSON.stringify({ ...control, errors: [] }) +
+            " -->";
+        await fixture(
+            [draft, footer],
+            async ({ service, input, execution, model, root }) => {
+                const output = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.equal(output.report.trim(), original.report.trim());
+                assert.deepEqual(output.evidence.errors, []);
+                assert.ok(
+                    model.prompts[1].includes("coverage.complete is true")
+                );
+                assert.ok(model.prompts[1].includes("UNRESOLVED"));
+                assert.equal(
+                    await fs.readFile(
+                        path.join(root, `${input.attempt}-0-draft-0.md`),
+                        "utf8"
+                    ),
+                    draft
+                );
+                assert.equal(model.prompts.length, 2);
+            }
+        );
+    });
+    it("does not silently clear a genuinely unresolved failure during footer repair", async function () {
+        const original = result(undefined, { recommendation: "comment" });
+        const control = {
+            coverage: original.coverage,
+            accounting: [],
+            recommendation: "comment",
+            errors: ["Required source remains unavailable"]
+        };
+        const draft =
+            original.report +
+            "\n<!-- review-result " +
+            JSON.stringify(control) +
+            " -->\n";
+        const footer =
+            "<!-- review-result " +
+            JSON.stringify({
+                ...control,
+                coverage: {
+                    ...control.coverage,
+                    complete: false,
+                    missing: ["Required source"]
+                }
+            }) +
+            " -->";
+        await fixture(
+            [draft, footer],
+            async ({ service, input, execution, root }) => {
+                await assert.rejects(
+                    service.generate(input, execution, input, root),
+                    { code: "REVIEW_INCOMPLETE" }
+                );
+                await fs.access(
+                    path.join(root, `${input.attempt}-0-draft-0.md`)
+                );
+                await assert.rejects(
+                    fs.access(path.join(root, `${input.attempt}-1.json`)),
+                    { code: "ENOENT" }
+                );
+            }
+        );
+    });
     it("loads the full review audits before source-only automation overrides", async function () {
         const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-skill-"));
         const service = new ReviewService({ stateRoot: root });
@@ -291,7 +406,19 @@ describe("review recorded native output boundary", function () {
     });
     it("rejects complete coverage after a permitted evidence read fails", async function () {
         await fixture(
-            [result(), result()],
+            [
+                result(),
+                result(undefined, {
+                    coverage: {
+                        complete: false,
+                        missing: ["files"],
+                        files: [],
+                        lenses: [],
+                        behaviors: []
+                    },
+                    recommendation: "comment"
+                })
+            ],
             async ({ service, input, execution, root }) => {
                 const route = `/repos/${input.repository.name}/pulls/${input.pr}/files`;
                 const failure = new RecordedGitHub([
@@ -306,7 +433,7 @@ describe("review recorded native output boundary", function () {
                 failure.done();
                 await assert.rejects(
                     service.generate(input, execution, input, root),
-                    { code: "INVALID_RESULT" }
+                    { code: "REVIEW_INCOMPLETE" }
                 );
                 await assert.rejects(
                     fs.access(path.join(root, `${input.attempt}-1.json`)),
@@ -341,20 +468,12 @@ describe("review recorded native output boundary", function () {
                     input,
                     root
                 );
-                assert.equal(output.revision, 1);
+                assert.equal(output.revision, 0);
                 assert.equal(output.sessionId, "owned-session");
                 assert.equal(model.prompts.length, 2);
-                assert.ok(
-                    model.prompts.every((prompt) =>
-                        prompt.includes(service.instructions)
-                    )
-                );
-                assert.equal(
-                    model.prompts[1]
-                        .split("\nController timing: ")[0]
-                        .split("\n\nCurrent task:\n")[1],
-                    "Structured output failed these schema identifiers: schema:result. Read the original context through the permitted tools and return the complete corrected Markdown report with bookkeeping markers; do not duplicate prose as JSON findings."
-                );
+                assert.ok(model.prompts[0].includes(service.instructions));
+                assert.ok(!model.prompts[1].includes(service.instructions));
+                assert.ok(model.prompts[1].includes("Validation feedback:"));
                 const timing = JSON.parse(
                     model.prompts[1].split("\nController timing: ")[1]
                 );
@@ -363,24 +482,24 @@ describe("review recorded native output boundary", function () {
                         timing.modelBudgetRemainingMs <= 1000
                 );
                 assert.equal(execution.budget.durations.length, 2);
-                assert.equal(execution.correctionUsed, true);
+                assert.equal(execution.correctionUsed, false);
             }
         );
     });
-    it("fails two invalid outputs without a third turn or success report", async function () {
+    it("repairs more than one invalid output on the same cumulative budget", async function () {
         await fixture(
-            ["invalid JSON", "still invalid"],
+            ["invalid JSON", "still invalid", result()],
             async ({ service, input, model, execution, root }) => {
-                await assert.rejects(
-                    service.generate(input, execution, input, root),
-                    { code: "INVALID_RESULT" }
+                const output = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
                 );
-                assert.equal(model.prompts.length, 2);
-                assert.equal(execution.correctionUsed, true);
-                await assert.rejects(
-                    fs.access(path.join(root, `${input.attempt}-1.json`)),
-                    { code: "ENOENT" }
-                );
+                assert.equal(model.prompts.length, 3);
+                assert.equal(output.evidence.durations.turns.length, 3);
+                assert.equal(execution.correctionUsed, false);
+                await fs.access(path.join(root, `${input.attempt}-0.json`));
             }
         );
     });
@@ -402,7 +521,19 @@ describe("review recorded native output boundary", function () {
     });
     it("rejects complete coverage when a required discussion collection was never read", async function () {
         await fixture(
-            [result(), result()],
+            [
+                result(),
+                result(undefined, {
+                    coverage: {
+                        complete: false,
+                        missing: ["reviews"],
+                        files: [],
+                        lenses: [],
+                        behaviors: []
+                    },
+                    recommendation: "comment"
+                })
+            ],
             async ({ service, input, model, execution, root }) => {
                 execution.context.budget.sources =
                     execution.context.budget.sources.filter(
@@ -410,7 +541,7 @@ describe("review recorded native output boundary", function () {
                     );
                 await assert.rejects(
                     service.generate(input, execution, input, root),
-                    { code: "INVALID_RESULT" }
+                    { code: "REVIEW_INCOMPLETE" }
                 );
                 assert.equal(model.prompts.length, 2);
                 await assert.rejects(

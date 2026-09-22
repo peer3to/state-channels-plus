@@ -16,7 +16,11 @@ const { CodexAdapter } = require("./adapters/codex");
 const { ReviewConnection } = require("./transport");
 const { bundleDigest } = require("./request");
 const { validateReport } = require("./review-format");
-const { decodeModelResult } = require("./markdown-result");
+const {
+    decodeModelResult,
+    repairModelResult,
+    formatFeedback
+} = require("./markdown-result");
 const { acquireOsFileLock } = require("../e2e-parallel/distributed/hostLock");
 class ReviewService {
     config;
@@ -356,30 +360,63 @@ class ReviewService {
             execution.budget
         );
         execution.initialGatheringMs = execution.tools.gatheringMs;
-        try {
-            return await this.complete(input, execution, generated, outputRoot);
-        } catch (error) {
-            if (!["INVALID_RESULT", "INVALID_REQUEST"].includes(error.code))
-                throw error;
-            execution.correctionUsed = true;
-            execution.revision = 1;
-            await this.sessions.persist(this.sessions.key(input), execution);
-            const correction = {
-                version: 1,
-                kind: "invalid-format",
-                binding: protocol.binding(input),
-                executionId: execution.id,
-                resultRevision: 0,
-                effectiveIdentity: execution.effective,
-                ids: ["schema:result"]
-            };
-            const corrected = await execution.adapter.turn(
-                this.currentPolicyPrompt(
-                    protocol.correctionPrompt(correction, input)
-                ) + this.remainingPrompt(execution),
-                execution.budget
-            );
-            return this.complete(input, execution, corrected, outputRoot);
+        return this.completeWithRepair(input, execution, generated, outputRoot);
+    }
+    async completeWithRepair(
+        input,
+        execution,
+        generated,
+        outputRoot,
+        revision = execution.revision
+    ) {
+        let repair = 0;
+        while (true) {
+            // Keep completed work even when validation or a later model turn fails.
+            if (typeof generated === "string")
+                await writeText(
+                    outputRoot,
+                    `${input.attempt}-${revision}-draft-${repair}.md`,
+                    generated
+                );
+            try {
+                return await this.complete(
+                    input,
+                    execution,
+                    generated,
+                    outputRoot,
+                    revision
+                );
+            } catch (error) {
+                if (!["INVALID_RESULT", "INVALID_REQUEST"].includes(error.code))
+                    throw error;
+                // No new revision has been accepted yet. Preserve CI's accounting
+                // correction slot and public result revision during format repair.
+                await this.sessions.persist(
+                    this.sessions.key(input),
+                    execution
+                );
+                const correction = {
+                    version: 1,
+                    kind: "invalid-format",
+                    binding: protocol.binding(input),
+                    executionId: execution.id,
+                    resultRevision: revision,
+                    effectiveIdentity: execution.effective,
+                    ids: ["schema:result"]
+                };
+                const corrected = await execution.adapter.turn(
+                    protocol.correctionPrompt(correction, input) +
+                        "\nValidation feedback: " +
+                        (execution.context.gathered()
+                            ? formatFeedback(generated)
+                            : "Controller evidence is incomplete. Read the missing required PR/discussion collections and every next page; recover failed reads before claiming coverage.complete. Rewriting the report cannot repair missing retrieval evidence.") +
+                        "\nRepair the existing draft, not the review analysis. If only bookkeeping changes, return ONLY the single <!-- review-result {...} --> line; the worker will retain the entire report and findings unchanged. Otherwise return the corrected Markdown document. Do not repeat source reads unless needed to resolve an actual missing fact." +
+                        this.remainingPrompt(execution),
+                    execution.budget
+                );
+                generated = repairModelResult(generated, corrected);
+                repair++;
+            }
         }
     }
     async complete(
@@ -435,7 +472,9 @@ class ReviewService {
                     (execution.budget.durations[0] || 0) -
                         (execution.initialGatheringMs || 0)
                 ),
-                correctionMs: execution.budget.durations[1] || 0,
+                correctionMs: execution.budget.durations
+                    .slice(1)
+                    .reduce((sum, duration) => sum + duration, 0),
                 modelMs: execution.budget.consumed,
                 validationMs: execution.validationMs,
                 turns: execution.budget.durations
@@ -467,7 +506,7 @@ class ReviewService {
             this.currentPolicyPrompt(prompt) + this.remainingPrompt(execution),
             execution.budget
         );
-        return this.complete(
+        return this.completeWithRepair(
             input,
             execution,
             generated,
