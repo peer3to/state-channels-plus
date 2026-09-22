@@ -93,67 +93,12 @@ function assessmentFindings(request, observations, botId) {
         });
     return [...legacy, ...marked.values()];
 }
-function mergeAssessment(previous, findings, request) {
-    check(!previous || previous.includes(DOCUMENT), "INVALID_REQUEST");
-    const starts = [...previous.matchAll(/^## APR-([0-9]+)[^\n]*\n/gm)];
-    check(
-        !previous || starts.length || previous.trim().endsWith(DOCUMENT),
-        "INVALID_REQUEST"
-    );
-    const cards = starts.map((match, index) => {
-        const text = previous.slice(
-            match.index,
-            starts[index + 1]?.index ?? previous.length
-        );
-        const meta = [
-            ...text.matchAll(/^<!-- peer3-assessment-card (\{[^\n]*\}) -->$/gm)
-        ];
-        check(meta.length === 1, "INVALID_REQUEST");
-        const identity = JSON.parse(meta[0][1]);
-        check(
-            typeof identity.id === "string" && typeof identity.url === "string",
-            "INVALID_REQUEST"
-        );
-        return { number: Number(match[1]), text, identity };
-    });
-    check(
-        new Set(cards.map((card) => card.identity.id)).size === cards.length,
-        "INVALID_REQUEST"
-    );
-    let next = Math.max(0, ...cards.map((card) => card.number)) + 1;
-    const statusLine = (finding, changed = false) =>
-        `<!-- peer3-assessment-status:start -->\n**GitHub status:** ${finding ? (finding.resolved ? "✅ RESOLVED / ADDRESSED" : finding.human ? "🙋 HUMAN DECISION REQUIRED" : "OPEN") : "UNKNOWN — not present in current publication state"}${changed ? " — source changed; local assessment and original text preserved. Recheck the source link." : ""}\n<!-- peer3-assessment-status:end -->`;
-    const output = cards
-        .filter(
-            (card) =>
-                !findings.some(
-                    (finding) =>
-                        finding.id === card.identity.id && finding.resolved
-                )
-        )
-        .map((card) => {
-            const finding = findings.find(
-                (item) => item.id === card.identity.id
-            );
-            const statuses = [
-                ...card.text.matchAll(
-                    /<!-- peer3-assessment-status:start -->[\s\S]*?<!-- peer3-assessment-status:end -->/g
-                )
-            ];
-            check(statuses.length === 1, "INVALID_REQUEST");
-            return card.text.replace(
-                statuses[0][0],
-                statusLine(
-                    finding,
-                    finding && finding.revision !== card.identity.revision
-                )
-            );
-        });
-    for (const finding of findings.filter(
-        (item) =>
-            !item.resolved &&
-            !cards.some((card) => card.identity.id === item.id)
-    )) {
+function renderAssessment(findings, request) {
+    let next = 1;
+    const statusLine = (finding) =>
+        `<!-- peer3-assessment-status:start -->\n**GitHub status:** ${finding.human ? "🙋 HUMAN DECISION REQUIRED" : "OPEN"}\n<!-- peer3-assessment-status:end -->`;
+    const output = [];
+    for (const finding of findings.filter((item) => !item.resolved)) {
         check(
             new URL(finding.url).origin === "https://github.com" &&
                 new URL(finding.url).pathname ===
@@ -178,9 +123,7 @@ function mergeAssessment(previous, findings, request) {
             `## ${id} — [${finding.id}] — ${finding.human ? "🙋 Human assessment needed" : "Not yet assessed"}\n\n<!-- peer3-assessment-card ${JSON.stringify({ id: finding.id, url: finding.url, revision: finding.revision })} -->\nSource: [GitHub finding](${finding.url})\n\nFinding ID: ${finding.id}\n\n${statusLine(finding)}\n\n> [!QUOTE]\n> **Original comment**\n>\n${quote}\n\n### Assessment\n\n### Ready-to-post reply\n\n### Proposed fix\n\n`
         );
     }
-    const header = previous
-        ? previous.slice(0, starts[0]?.index ?? previous.length)
-        : `# PR #${request.pr} assessment\n\nRepository: ${request.repository.name}\n\n${DOCUMENT}\n\n`;
+    const header = `# PR #${request.pr} assessment\n\nRepository: ${request.repository.name}\n\n${DOCUMENT}\n\n`;
     return header + output.join("");
 }
 function parseTarget(value, repo) {
@@ -232,7 +175,7 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
     } catch (error) {
         if (error.code !== "ENOENT") throw error;
     }
-    const next = mergeAssessment("", findings, request);
+    const next = renderAssessment(findings, request);
     // A concurrent local edit must not be overwritten by this fetch.
     let current = "";
     try {
@@ -318,7 +261,7 @@ if (require.main === module)
 module.exports = {
     githubToken,
     assessmentFindings,
-    mergeAssessment,
+    renderAssessment,
     parseTarget,
     fetchAssessment
 };

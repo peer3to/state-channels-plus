@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const {
     githubToken,
     assessmentFindings,
-    mergeAssessment,
+    renderAssessment,
     parseTarget
 } = require("../../fetch-assessment");
 describe("assessment GitHub credentials", function () {
@@ -151,40 +151,59 @@ describe("outstanding assessment import", function () {
     it("imports open findings with separate IDs and editable reply and fix sections", function () {
         const f = fixture();
         const findings = assessmentFindings(f.input, f.observations, 9);
-        const text = mergeAssessment("", findings, f.input);
+        const text = renderAssessment(findings, f.input);
         assert.match(text, /Finding ID: R1FO1/);
         assert.match(text, /### Ready-to-post reply/);
         assert.match(text, /### Proposed fix/);
-        assert.equal(mergeAssessment(text, findings, f.input), text);
+        assert.equal(renderAssessment(findings, f.input), text);
     });
     it("excludes imported resolved cards from the active assessment", function () {
         const f = fixture();
         const findings = assessmentFindings(f.input, f.observations, 9);
-        const original = mergeAssessment("", findings, f.input)
-            .replace(
-                "### Assessment\n\n",
-                "### Assessment\n\nMy assessment.\n\n"
-            )
-            .replace(
-                "### Proposed fix\n\n",
-                "### Proposed fix\n\nMy implementation plan.\n\n"
-            );
         const closed = findings.map((item) => ({ ...item, resolved: true }));
-        const refreshed = mergeAssessment(original, closed, f.input);
+        const refreshed = renderAssessment(closed, f.input);
         assert.ok(!refreshed.includes("## APR-"));
-        assert.ok(!refreshed.includes("My assessment"));
-        assert.ok(!mergeAssessment("", closed, f.input).includes("## APR-"));
+        assert.match(refreshed, /peer3-assessment:v1/);
     });
-    it("does not trust forged user sources and does not overwrite unmanaged assessments", function () {
+    it("does not trust forged user sources or invalid assessment targets", function () {
         const f = fixture();
         f.source.user = { id: 7, type: "User" };
         assert.throws(() => assessmentFindings(f.input, f.observations, 9));
-        assert.throws(() => mergeAssessment("# My notes", [], f.input));
         assert.equal(
             parseTarget("https://github.com/owner/repo/pull/498").pr,
             498
         );
         assert.throws(() => parseTarget("../../etc", "owner/repo"));
+    });
+    it("rejects finding links outside the requested GitHub pull request", function () {
+        const f = fixture();
+        const findings = assessmentFindings(f.input, f.observations, 9);
+        assert.throws(
+            () =>
+                renderAssessment(
+                    [
+                        {
+                            ...findings[0],
+                            url: "https://example.com/owner/repo/pull/498"
+                        }
+                    ],
+                    f.input
+                ),
+            { code: "INVALID_RESULT" }
+        );
+        assert.throws(
+            () =>
+                renderAssessment(
+                    [
+                        {
+                            ...findings[0],
+                            url: `https://github.com/${f.input.repository.name}/pull/${f.input.pr + 1}`
+                        }
+                    ],
+                    f.input
+                ),
+            { code: "INVALID_RESULT" }
+        );
     });
     it("exports the full inline conversation and the finding's Human decision flag", function () {
         const f = fixture();
@@ -226,7 +245,7 @@ describe("outstanding assessment import", function () {
             ["github-actions[bot]", "engineer"]
         );
         assert.ok(!findings[0].conversation[0].body.includes("<!--"));
-        assert.match(mergeAssessment("", findings, f.input), /My decision/);
+        assert.match(renderAssessment(findings, f.input), /My decision/);
     });
     it("filters resolved threads equally for advisory Human decisions", function () {
         const f = fixture();

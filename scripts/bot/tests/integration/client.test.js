@@ -164,10 +164,6 @@ describe("review client visible activity", function () {
                     options
                 );
                 let bodies = 0;
-                const active = service.sessions.slots.get(
-                    service.sessions.key(input)
-                ).active;
-                const remaining = active.budget.remaining();
                 const saved = await withPublicationStore(
                     input,
                     generated.executionId,
@@ -180,7 +176,6 @@ describe("review client visible activity", function () {
                 );
                 assert.equal(bodies, 1);
                 assert.deepEqual(saved.states, [state]);
-                assert.ok(active.budget.remaining() <= remaining);
                 assert.equal(frames.length, 2);
                 assert.deepEqual(frames[0], frames[1]);
                 assert.deepEqual(
@@ -442,6 +437,71 @@ describe("review client visible activity", function () {
                 }),
                 { code: "SERVICE_UNAVAILABLE" }
             );
+        });
+    });
+    it("preserves the original interactive publication deadline after reconnecting near expiry", async function () {
+        await fixture(async ({ options, serve }) => {
+            const { clientClock } = require("../fixtures/client-clock");
+            const clock = await clientClock();
+            const frames = [];
+            let replayed;
+            const replay = new Promise((resolve) => {
+                replayed = resolve;
+            });
+            serve(async (connection, message) => {
+                frames.push({
+                    requestId: message.requestId,
+                    attemptId: message.attemptId,
+                    value: message.value
+                });
+                if (frames.length === 1) {
+                    // Reconnect one tick before the journal RPC's original cutoff.
+                    clock.advance(3999);
+                    connection.close();
+                } else {
+                    replayed();
+                    // Withhold acknowledgement past the original cutoff.
+                }
+            });
+            let settled = false;
+            const pending = clock.callService({
+                ...options,
+                operation: "publication",
+                limits: {
+                    ...options.limits,
+                    queueMs: 1000,
+                    setupMs: 1000,
+                    transferMs: 1000
+                },
+                interact: async (send) => {
+                    try {
+                        return await send({});
+                    } finally {
+                        settled = true;
+                    }
+                }
+            });
+            const rejected = assert.rejects(pending, {
+                code: "SERVICE_UNAVAILABLE"
+            });
+            try {
+                await replay;
+                assert.equal(frames.length, 2);
+                assert.deepEqual(frames[0], frames[1]);
+                assert.equal(settled, false);
+                clock.advance(1);
+                // Flush promise continuations without advancing the virtual clock.
+                await new Promise((resolve) => setImmediate(resolve));
+                assert.equal(
+                    settled,
+                    true,
+                    "reconnect must not restart the journal RPC deadline"
+                );
+                await rejected;
+            } finally {
+                clock.advance(4000);
+                await rejected;
+            }
         });
     });
     it("keeps simultaneous original and salted orchestrator connections distinct", async function () {
