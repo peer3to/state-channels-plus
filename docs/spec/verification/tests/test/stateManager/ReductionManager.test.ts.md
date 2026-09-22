@@ -36,6 +36,12 @@ of later old-fork event delivery.
 
 Terminal-disposal cases share the existing single-disputer staging: one real committed dispute supplies reduction input while unrelated sibling submissions are suppressed. Their cancellation, persistence and installation assertions are unchanged.
 
+The SYNCED-leaver case also uses one real disputer: the leaver itself. It checks
+that this peer retained its successful dispute marker and that the reducing peer
+observed the commitment. After leave completion it waits for the reduction attempt
+to settle before recording membership reads. The zero-read and zero-submission
+oracles remain unchanged; sibling uploads cannot exhaust the evidence window first.
+
 The post-install disposal case waits for the held gas-limit read and then the
 detached caller's settled outcome before disposal. Reaching the hold alone does
 not prove that the result callback has run. The existing no-chain-write oracle
