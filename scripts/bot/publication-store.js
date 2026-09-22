@@ -71,8 +71,21 @@ class PublicationStore {
                 {
                     states: states.map((state, index) => {
                         const historical = stored.states.find(
-                            (entry) => entry.head === state.head
+                            (entry) =>
+                                entry.head === state.head &&
+                                digest(
+                                    this.project({
+                                        states: [entry, states.at(-1)]
+                                    }).states[0]
+                                ) === digest(next.states[index])
                         );
+                        if (
+                            index < states.length - 1 &&
+                            stored.states.some(
+                                (entry) => entry.head === state.head
+                            )
+                        )
+                            check(historical, "INVALID_RESULT");
                         if (index < states.length - 1 && historical) {
                             check(
                                 digest(

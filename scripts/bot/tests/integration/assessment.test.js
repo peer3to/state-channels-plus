@@ -73,6 +73,7 @@ function wireFixture() {
     ];
     const calls = [];
     const inline = [];
+    const resolved = new Set();
     let nextId = 10;
     async function exchange(endpoint, options) {
         const route = new URL(endpoint).pathname;
@@ -81,6 +82,26 @@ function wireFixture() {
         let response;
         if (route === "/users/github-actions%5Bbot%5D") response = bot;
         else if (route === "/graphql") {
+            if (body.query.startsWith("mutation ")) {
+                const operation = body.query.includes("unresolveReviewThread")
+                    ? "unresolveReviewThread"
+                    : "resolveReviewThread";
+                if (operation === "resolveReviewThread")
+                    resolved.add(body.variables.id);
+                else resolved.delete(body.variables.id);
+                return new Response(
+                    JSON.stringify({
+                        data: {
+                            [operation]: {
+                                thread: {
+                                    id: body.variables.id,
+                                    isResolved: resolved.has(body.variables.id)
+                                }
+                            }
+                        }
+                    })
+                );
+            }
             assert.match(body.query, /^query /);
             response = {
                 data: {
@@ -91,7 +112,9 @@ function wireFixture() {
                             reviewThreads: {
                                 nodes: inline.map((item) => ({
                                     id: `thread-${item.id}`,
-                                    isResolved: false,
+                                    isResolved: resolved.has(
+                                        `thread-${item.id}`
+                                    ),
                                     comments: {
                                         nodes: [{ databaseId: item.id }],
                                         pageInfo: { hasNextPage: false }
@@ -151,7 +174,17 @@ function wireFixture() {
             );
         return new Response(JSON.stringify(response), { status: 200 });
     }
-    return { input, finding, reviews, comments, inline, calls, exchange, pull };
+    return {
+        input,
+        finding,
+        reviews,
+        comments,
+        inline,
+        calls,
+        exchange,
+        pull,
+        resolved
+    };
 }
 function proposed(input, finding, previous) {
     return result(input, {
@@ -178,6 +211,50 @@ function proposed(input, finding, previous) {
     });
 }
 describe("assessment GitHub lifecycle", function () {
+    it("confirms retained fixed threads are resolved before completing publication", async function () {
+        const wire = wireFixture(),
+            store = publicationStore();
+        const old = readStates(wire.comments, wire.input, 9)[0];
+        const closed = {
+            ...wire.finding,
+            status: "fixed",
+            path: "README.md",
+            line: 1,
+            threadId: "thread-50"
+        };
+        old.findings = [closed];
+        wire.comments[0].body = encodeState(old);
+        wire.inline.push({
+            id: 50,
+            user: { id: 9, type: "Bot" },
+            body: "Legacy fixed finding",
+            html_url: `https://github.com/${wire.input.repository.name}/pull/${wire.input.pr}#discussion_r50`
+        });
+        const publisher = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true },
+            store
+        );
+        const output = result(wire.input);
+        assert.equal((await publisher.publish(output)).status, "complete");
+        assert.ok(wire.resolved.has("thread-50"));
+        const mutations = wire.calls.filter((call) =>
+            call.body?.query?.startsWith("mutation ")
+        );
+        assert.equal(mutations.length, 1);
+        await publisher.publish(output);
+        assert.equal(
+            wire.calls.filter((call) =>
+                call.body?.query?.startsWith("mutation ")
+            ).length,
+            1
+        );
+    });
     it("preserves accepted actions through exhausted publication retries and a later recovery", async function () {
         const wire = wireFixture(),
             store = publicationStore();

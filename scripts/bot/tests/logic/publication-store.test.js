@@ -2,10 +2,55 @@ const assert = require("node:assert/strict");
 const { publicationStore } = require("../fixtures/publication");
 const { PublicationStore } = require("../../publication-store");
 const { allocate, publicContext, encodeState } = require("../../state");
-const { digest } = require("../../data");
+const { digest, writeJson } = require("../../data");
 const { request } = require("../fixtures/records");
 
 describe("private publication journal", function () {
+    it("preserves distinct legacy snapshots for one head when saving the next review", async function () {
+        const store = publicationStore(),
+            input = request();
+        const original = allocate(input, { comments: [] }, 9);
+        const states = [
+            {
+                ...original,
+                status: "intent",
+                findings: [{ id: "R1FO1", body: "original" }]
+            },
+            {
+                ...original,
+                status: "partial",
+                findings: [{ id: "R1FO1", body: "updated" }]
+            },
+            {
+                ...original,
+                status: "complete",
+                findings: [{ id: "R1FO1", body: "confirmed" }]
+            }
+        ];
+        await writeJson(
+            store.root,
+            `${input.repository.id}-${input.pr}-publication.json`,
+            { states }
+        );
+        const before = await store.load(input);
+        const next = { ...original, head: "f".repeat(40), round: 2 };
+        const saved = await store.save(input, digest(before), [
+            ...before.states,
+            next
+        ]);
+        assert.deepEqual((await store.read(input)).states.slice(0, 3), states);
+        assert.deepEqual(await store.load(input), saved);
+        assert.deepEqual(
+            await store.save(input, digest(before), [...before.states, next]),
+            saved
+        );
+        const changed = structuredClone(saved.states);
+        changed[0].status = "complete";
+        changed[0].findings = [{ id: "FOREIGN" }];
+        await assert.rejects(store.save(input, digest(saved), changed), {
+            code: "INVALID_RESULT"
+        });
+    });
     it("transfers only current prose while retaining full historical reports on the worker", async function () {
         const store = publicationStore(),
             input = request();

@@ -556,7 +556,7 @@ class Publisher {
         }
         state.status = "partial";
         await this.saveState(state);
-        const beforeApproval = await this.observe();
+        let beforeApproval = await this.observe();
         for (const finding of state.findings.filter(
             (entry) => entry.path !== null && !entry.threadId
         )) {
@@ -575,6 +575,52 @@ class Publisher {
                     )
                 );
             if (thread) finding.threadId = thread.id;
+        }
+        // A saved disposition is not proof that GitHub resolved its thread.
+        // Reconcile retained closed findings too, including interrupted rounds.
+        beforeApproval.findings = current.findings;
+        const closedThreads = (
+            deferred ||
+            missingAccounting(
+                accountingSet(beforeApproval, this.github.botId),
+                result
+            ).length
+                ? []
+                : state.findings
+        ).filter(
+            (finding) =>
+                finding.threadId &&
+                ["fixed", "disagreement"].includes(finding.status)
+        );
+        for (const finding of closedThreads) {
+            const thread = beforeApproval.threads.find(
+                (entry) => entry.id === finding.threadId
+            );
+            check(thread, "CONTEXT_UNAVAILABLE");
+            if (!thread.isResolved) {
+                await this.github.setResolved(thread, true, beforeApproval);
+                const root = beforeApproval.inline.find(
+                    (entry) => entry.id === thread.comments.nodes[0]?.databaseId
+                );
+                check(root, "CONTEXT_UNAVAILABLE");
+                state.actions.push({
+                    kind: "resolve",
+                    id: root.id,
+                    url: root.html_url
+                });
+            }
+        }
+        if (closedThreads.length) {
+            beforeApproval = await this.observe();
+            check(
+                closedThreads.every((finding) =>
+                    beforeApproval.threads.some(
+                        (thread) =>
+                            thread.id === finding.threadId && thread.isResolved
+                    )
+                ),
+                "CONTEXT_UNAVAILABLE"
+            );
         }
         beforeApproval.findings = current.findings;
         const missing = missingAccounting(
