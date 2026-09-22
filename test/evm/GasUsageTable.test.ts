@@ -1,10 +1,19 @@
 import GasUsageTable from "@/evm/gasUsage/GasUsageTable";
+import * as factory from "@test/factory";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
-const MANAGER_ADDRESS = "0x1111111111111111111111111111111111111111";
-const OTHER_MANAGER_ADDRESS = "0x2222222222222222222222222222222222222222";
-const POST_SELECTOR = "0x0a0b0c0d";
-const OPEN_SELECTOR = "0x1a1b1c1d";
+// Real manager selectors, so name and selector agree in every row below.
+const POST_SELECTOR = ethers
+    .id("postBlockCalldata((bytes,bytes),uint256)")
+    .slice(0, 10);
+const OPEN_SELECTOR = ethers.id("open((bytes,bytes[]))").slice(0, 10);
+// Code-unit order decides the row order, and both are real checksummed
+// addresses, so the test sorts them the way a reader would.
+const [FIRST_MANAGER, SECOND_MANAGER] = [
+    factory.randomWallet().address,
+    factory.randomWallet().address
+].sort();
 
 describe("GasUsageTable", () => {
     it("reports no rows before a transaction is recorded", () => {
@@ -17,7 +26,7 @@ describe("GasUsageTable", () => {
         const table = new GasUsageTable();
 
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 120_000n,
@@ -26,14 +35,15 @@ describe("GasUsageTable", () => {
 
         expect(table.snapshot()).to.deep.equal([
             {
-                contractAddress: MANAGER_ADDRESS,
+                contractAddress: FIRST_MANAGER,
                 functionSelector: POST_SELECTOR,
                 functionName: "postBlockCalldata",
-                minedCount: 1,
-                revertedCount: 0,
-                totalGasUsed: "120000",
+                successCount: 1,
+                successGasUsed: "120000",
                 minGasUsed: "120000",
-                maxGasUsed: "120000"
+                maxGasUsed: "120000",
+                revertedCount: 0,
+                revertedGasUsed: "0"
             }
         ]);
     });
@@ -43,7 +53,7 @@ describe("GasUsageTable", () => {
 
         for (const gasUsed of [90_000n, 150_000n, 120_000n]) {
             table.record({
-                contractAddress: MANAGER_ADDRESS,
+                contractAddress: FIRST_MANAGER,
                 functionSelector: POST_SELECTOR,
                 functionName: "postBlockCalldata",
                 gasUsed,
@@ -52,25 +62,27 @@ describe("GasUsageTable", () => {
         }
 
         const [row] = table.snapshot();
-        expect(row.minedCount).to.equal(3);
+        expect(row.successCount).to.equal(3);
         // 90000 + 150000 + 120000
-        expect(row.totalGasUsed).to.equal("360000");
+        expect(row.successGasUsed).to.equal("360000");
         expect(row.minGasUsed).to.equal("90000");
         expect(row.maxGasUsed).to.equal("150000");
     });
 
-    it("counts a reverted transaction separately while keeping its gas in the totals", () => {
+    it("keeps the gas of a reverted transaction out of the success bounds", () => {
         const table = new GasUsageTable();
 
+        for (const gasUsed of [200_000n, 120_000n]) {
+            table.record({
+                contractAddress: FIRST_MANAGER,
+                functionSelector: OPEN_SELECTOR,
+                functionName: "open",
+                gasUsed,
+                reverted: false
+            });
+        }
         table.record({
-            contractAddress: MANAGER_ADDRESS,
-            functionSelector: OPEN_SELECTOR,
-            functionName: "open",
-            gasUsed: 200_000n,
-            reverted: false
-        });
-        table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: OPEN_SELECTOR,
             functionName: "open",
             gasUsed: 30_000n,
@@ -78,26 +90,51 @@ describe("GasUsageTable", () => {
         });
 
         const [row] = table.snapshot();
-        expect(row.minedCount).to.equal(2);
-        expect(row.revertedCount).to.equal(1);
-        // the reverted transaction burned 30000 of the 230000
-        expect(row.totalGasUsed).to.equal("230000");
-        expect(row.minGasUsed).to.equal("30000");
+        expect(row.successCount).to.equal(2);
+        // 200000 + 120000, with the reverted 30000 in its own total
+        expect(row.successGasUsed).to.equal("320000");
+        // the cheapest success, not the cheaper failure
+        expect(row.minGasUsed).to.equal("120000");
         expect(row.maxGasUsed).to.equal("200000");
+        expect(row.revertedCount).to.equal(1);
+        expect(row.revertedGasUsed).to.equal("30000");
+    });
+
+    it("reports a function that only ever reverted with empty success fields", () => {
+        const table = new GasUsageTable();
+
+        for (const gasUsed of [45_000n, 26_000n]) {
+            table.record({
+                contractAddress: FIRST_MANAGER,
+                functionSelector: OPEN_SELECTOR,
+                functionName: "open",
+                gasUsed,
+                reverted: true
+            });
+        }
+
+        const [row] = table.snapshot();
+        expect(row.successCount).to.equal(0);
+        expect(row.successGasUsed).to.equal("0");
+        expect(row.minGasUsed).to.equal("0");
+        expect(row.maxGasUsed).to.equal("0");
+        expect(row.revertedCount).to.equal(2);
+        // 45000 + 26000
+        expect(row.revertedGasUsed).to.equal("71000");
     });
 
     it("keeps the same selector on two contracts in separate rows", () => {
         const table = new GasUsageTable();
 
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 100_000n,
             reverted: false
         });
         table.record({
-            contractAddress: OTHER_MANAGER_ADDRESS,
+            contractAddress: SECOND_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 70_000n,
@@ -107,10 +144,10 @@ describe("GasUsageTable", () => {
         const rows = table.snapshot();
         expect(rows.length).to.equal(2);
         expect(rows.map((row) => row.contractAddress)).to.deep.equal([
-            MANAGER_ADDRESS,
-            OTHER_MANAGER_ADDRESS
+            FIRST_MANAGER,
+            SECOND_MANAGER
         ]);
-        expect(rows.map((row) => row.totalGasUsed)).to.deep.equal([
+        expect(rows.map((row) => row.successGasUsed)).to.deep.equal([
             "100000",
             "70000"
         ]);
@@ -120,21 +157,21 @@ describe("GasUsageTable", () => {
         const table = new GasUsageTable();
 
         table.record({
-            contractAddress: OTHER_MANAGER_ADDRESS,
+            contractAddress: SECOND_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 1n,
             reverted: false
         });
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 1n,
             reverted: false
         });
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: OPEN_SELECTOR,
             functionName: "open",
             gasUsed: 1n,
@@ -146,9 +183,9 @@ describe("GasUsageTable", () => {
                 .snapshot()
                 .map((row) => `${row.contractAddress}:${row.functionName}`)
         ).to.deep.equal([
-            `${MANAGER_ADDRESS}:open`,
-            `${MANAGER_ADDRESS}:postBlockCalldata`,
-            `${OTHER_MANAGER_ADDRESS}:postBlockCalldata`
+            `${FIRST_MANAGER}:open`,
+            `${FIRST_MANAGER}:postBlockCalldata`,
+            `${SECOND_MANAGER}:postBlockCalldata`
         ]);
     });
 
@@ -157,14 +194,14 @@ describe("GasUsageTable", () => {
         const hugeGasUsed = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
 
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: hugeGasUsed,
             reverted: false
         });
         table.record({
-            contractAddress: MANAGER_ADDRESS,
+            contractAddress: FIRST_MANAGER,
             functionSelector: POST_SELECTOR,
             functionName: "postBlockCalldata",
             gasUsed: 1n,
@@ -172,9 +209,9 @@ describe("GasUsageTable", () => {
         });
 
         const [row] = table.snapshot();
-        expect(row.totalGasUsed).to.equal((hugeGasUsed + 1n).toString());
+        expect(row.successGasUsed).to.equal((hugeGasUsed + 1n).toString());
         // the snapshot must survive the port and the logger as it is
-        expect(JSON.parse(JSON.stringify(row)).totalGasUsed).to.equal(
+        expect(JSON.parse(JSON.stringify(row)).successGasUsed).to.equal(
             (hugeGasUsed + 1n).toString()
         );
     });

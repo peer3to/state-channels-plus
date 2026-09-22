@@ -118,6 +118,20 @@ describe("LoggerUtils", function () {
         });
     });
 
+    it("names any calldata a peer can author without throwing", function () {
+        // peer-authored calldata reaches this on every block validation
+        const shorterThanASelector = ["0x", "0x12"];
+        const unknownSelector = ethers
+            .id("neverOnAnySdkContract()")
+            .slice(0, 10);
+
+        for (const data of [...shorterThanASelector, unknownSelector]) {
+            expect(
+                LoggerUtils.getContractCallMetadata(data).functionName
+            ).to.equal(data);
+        }
+    });
+
     it("names a selector the SDK contract surface declares", function () {
         // selector of the manager's postBlockCalldata(SignedBlock,uint256)
         const functionSelector = ethers

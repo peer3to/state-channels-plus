@@ -1,5 +1,11 @@
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { withGasHeadroom } from "@/utils/gas";
+import {
+    assertIsolatedDestroyedProviderSettles,
+    assertIsolatedReplacedTransactionAbsent,
+    assertIsolatedRevertedGasRecorded,
+    assertIsolatedSettleIgnoresLaterObservation
+} from "@test/fixtures/node/IsolatedGasUsageFixture";
 import { expect } from "chai";
 import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
@@ -123,9 +129,8 @@ describe("HostNonceManager", () => {
             });
             await response.wait();
         }
-        await manager.gasUsage.settle();
 
-        const rows = manager.gasUsage.snapshot();
+        const rows = await manager.gasUsage.settledSnapshot();
         expect(rows.length).to.equal(2);
         const named = rows.find(
             (row) => row.functionSelector === namedSelector
@@ -136,15 +141,32 @@ describe("HostNonceManager", () => {
         expect(named.functionName).to.equal("postBlockCalldata");
         expect(unknown.functionName).to.equal(unknownSelector);
         expect(named.contractAddress).to.equal(callee.address);
-        expect(named.minedCount).to.equal(2);
+        expect(named.successCount).to.equal(2);
         expect(named.revertedCount).to.equal(0);
+        expect(named.revertedGasUsed).to.equal("0");
         // two identical calls: the total is twice each bound
         expect(named.minGasUsed).to.equal(named.maxGasUsed);
-        expect(BigInt(named.totalGasUsed)).to.equal(
+        expect(BigInt(named.successGasUsed)).to.equal(
             BigInt(named.minGasUsed) * 2n
         );
         expect(BigInt(named.minGasUsed) > 0n).to.equal(true);
-        expect(unknown.minedCount).to.equal(1);
+        expect(unknown.successCount).to.equal(1);
+    });
+
+    it("records a reverted call under the reverted fields only", async () => {
+        await assertIsolatedRevertedGasRecorded();
+    });
+
+    it("leaves a replaced transaction out of the table", async () => {
+        await assertIsolatedReplacedTransactionAbsent();
+    });
+
+    it("settles an observation whose provider closed under its receipt wait", async () => {
+        await assertIsolatedDestroyedProviderSettles();
+    });
+
+    it("settles the observations started before the call, not the later ones", async () => {
+        await assertIsolatedSettleIgnoresLaterObservation();
     });
 
     it("cannot create another nonce owner by reconnecting", async () => {

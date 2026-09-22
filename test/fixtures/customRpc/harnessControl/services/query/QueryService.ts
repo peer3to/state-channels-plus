@@ -152,14 +152,9 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         };
     }
 
-    /**
-     * The peer's gas usage table once every receipt wait it already started
-     * has settled, so an assertion never races an observation that is one
-     * microtask away from being recorded.
-     */
+    /** The peer's gas usage table, settled by its one owner in `src`. */
     async settledGasUsage(): Promise<{ gasUsage: GasUsageRow[] }> {
-        await this.sm.signer.gasUsage.settle();
-        return { gasUsage: this.sm.signer.gasUsage.snapshot() };
+        return { gasUsage: await this.sm.signer.gasUsage.settledSnapshot() };
     }
 
     public createRPCMethods(transport: NetworkTransport): QueryRpcMethods {

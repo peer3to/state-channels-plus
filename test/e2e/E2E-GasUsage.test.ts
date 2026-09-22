@@ -1,5 +1,6 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * E2E Tests for the aggregated gas usage table
@@ -31,27 +32,38 @@ describe("E2E: Gas Usage", function () {
             .validation.postBlockCalldataOnChain(block!.encodedSignedBlock)
             .request();
 
-        const { gasUsage } = await h
-            .control(author)
-            .query.getGasUsageTable()
-            .request();
+        // the shipped public read, across the chain-signer port
+        const gasUsage = await author.p2pInstance.getGasUsageTable();
 
         const post = gasUsage.find(
             (row) => row.functionName === "postBlockCalldata"
         );
         expect(post, "the calldata post must be recorded").to.not.be.undefined;
-        expect(post!.minedCount).to.equal(1);
+        expect(post!.contractAddress).to.equal(
+            await author.p2pInstance.stateChannelManagerContract.getAddress()
+        );
+        expect(post!.functionSelector).to.equal(
+            ethers.id("postBlockCalldata((bytes,bytes),uint256)").slice(0, 10)
+        );
+        expect(post!.successCount).to.equal(1);
         expect(post!.revertedCount).to.equal(0);
+        expect(post!.revertedGasUsed).to.equal("0");
         expect(
-            BigInt(post!.totalGasUsed) > 0n,
+            BigInt(post!.successGasUsed) > 0n,
             "a mined post burns gas"
         ).to.equal(true);
-        expect(post!.totalGasUsed).to.equal(post!.minGasUsed);
-        expect(post!.totalGasUsed).to.equal(post!.maxGasUsed);
+        expect(post!.successGasUsed).to.equal(post!.minGasUsed);
+        expect(post!.successGasUsed).to.equal(post!.maxGasUsed);
         // the harness opens the channel from the test process, so no peer
         // signer ever sent `open`
         expect(gasUsage.some((row) => row.functionName === "open")).to.equal(
             false
         );
+        // both readers settle through the same owner, so they agree
+        const { gasUsage: harnessRows } = await h
+            .control(author)
+            .query.getGasUsageTable()
+            .request();
+        expect(harnessRows).to.deep.equal(gasUsage);
     });
 });
