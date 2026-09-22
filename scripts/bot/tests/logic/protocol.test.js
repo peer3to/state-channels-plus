@@ -204,6 +204,13 @@ describe("review protocol", () => {
             { ...input, resolvedThreads: [{ id: "thread1", comments: [0] }] },
             {
                 ...input,
+                resolvedThreads: [
+                    { id: "thread1", comments: [1] },
+                    { id: "thread1", comments: [1] }
+                ]
+            },
+            {
+                ...input,
                 resolvedThreads: [{ id: "thread1", comments: [1, 1] }]
             },
             missing,
@@ -222,6 +229,21 @@ describe("review protocol", () => {
             }
             assert.equal(accepted, validate(value), JSON.stringify(value));
         }
+    });
+    it("enforces thread ID uniqueness beyond schema item equality", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/request"
+        });
+        const input = records.request({
+            resolvedThreads: [
+                { id: "thread1", comments: [1] },
+                { id: "thread1", comments: [2] }
+            ]
+        });
+        assert.equal(validate(input), true);
+        assert.throws(() => p.request(input));
     });
     it("matches published evidence string and array boundaries", function () {
         const Ajv = require("ajv");

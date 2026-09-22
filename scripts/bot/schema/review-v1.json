@@ -106,6 +106,8 @@
             "properties": {
                 "resolvedThreads": {
                     "type": "array",
+                    "uniqueItems": true,
+                    "$comment": "Thread IDs must also be unique across entries with different comment arrays; the runtime enforces that semantic constraint.",
                     "items": {
                         "type": "object",
                         "additionalProperties": false,

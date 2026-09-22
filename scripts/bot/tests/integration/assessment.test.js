@@ -1363,13 +1363,13 @@ describe("assessment GitHub lifecycle", function () {
                 (await fs.readdir(directory)).filter((name) =>
                     name.startsWith("assessment.md.backup-")
                 ).length,
-                1
+                2
             );
         } finally {
             await fs.rm(root, { recursive: true, force: true });
         }
     });
-    it("fetches only through reads and preserves edited assessment text on refresh", async function () {
+    it("regenerates from current reads and preserves edited assessment text only in backup", async function () {
         const root = await fs.mkdtemp(
             path.join(os.tmpdir(), "assessment-fetch-")
         );
@@ -1393,7 +1393,7 @@ describe("assessment GitHub lifecycle", function () {
                 root,
                 exchange: wire.exchange
             });
-            assert.match(
+            assert.doesNotMatch(
                 await fs.readFile(filename, "utf8"),
                 /Human implementation plan/
             );

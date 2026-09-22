@@ -51,7 +51,86 @@ async function separate(change) {
         assert.notEqual(a.executionId, b.executionId);
     });
 }
+async function separateUnfinished(change) {
+    await fixture(async (sessions) => {
+        const first = request();
+        const second = request({ attempt: "retry", ...change });
+        let release, started;
+        const ready = new Promise((resolve) => {
+            started = resolve;
+        });
+        const held = new Promise((resolve) => {
+            release = resolve;
+        });
+        let executions = 0;
+        const a = sessions.submit(
+            first,
+            digest("context"),
+            async () => {
+                executions++;
+                started();
+                await held;
+                return result(first);
+            },
+            async () => true
+        );
+        await ready;
+        const b = sessions.submit(
+            second,
+            digest("context"),
+            async () => {
+                executions++;
+                return result(second);
+            },
+            async () => true
+        );
+        try {
+            const slot = sessions.slots.get(sessions.key(first));
+            assert.equal(slot.active.deliveries.length, 1);
+            assert.equal(slot.pending.length, 1);
+            assert.equal(executions, 1);
+        } finally {
+            release();
+        }
+        const one = await a;
+        await sessions.acknowledge(first, one.executionId);
+        const two = await b;
+        assert.equal(executions, 2);
+        assert.notEqual(one.executionId, two.executionId);
+        assert.deepEqual(one.binding, binding(first));
+        assert.deepEqual(two.binding, binding(second));
+    });
+}
 describe("review sessions", function () {
+    it("queues an incompatible head while review is unfinished", async function () {
+        await separateUnfinished({ head: "f".repeat(40) });
+    });
+    it("queues an incompatible merge base while review is unfinished", async function () {
+        await separateUnfinished({ mergeBase: "f".repeat(40) });
+    });
+    it("queues an incompatible bot revision while review is unfinished", async function () {
+        await separateUnfinished({ botRevision: "f".repeat(40) });
+    });
+    it("queues an incompatible skill while review is unfinished", async function () {
+        await separateUnfinished({ skillDigest: digest("new skill") });
+    });
+    it("queues an incompatible policy while review is unfinished", async function () {
+        await separateUnfinished({ policyDigest: digest("new policy") });
+    });
+    it("queues an incompatible runtime while review is unfinished", async function () {
+        await separateUnfinished({ runtime: "codex-next" });
+    });
+    it("queues incompatible operations while review is unfinished", async function () {
+        await separateUnfinished({ operations: ["review"] });
+    });
+    it("queues incompatible read scope while review is unfinished", async function () {
+        await separateUnfinished({ readScope: ["source"] });
+    });
+    it("queues incompatible resolved threads while review is unfinished", async function () {
+        await separateUnfinished({
+            resolvedThreads: [{ id: "thread", comments: [1] }]
+        });
+    });
     it("attaches an equivalent retry during setup without a finished evidence snapshot", async function () {
         await fixture(async (sessions) => {
             let release, started;
@@ -751,6 +830,83 @@ describe("review sessions", function () {
             assert.equal(executions, 1);
             assert.equal(stopped, true);
             assert.equal(active.budget.remaining(), 0);
+        });
+    });
+    it("persists a shared timeout separately for a joined caller and replays both after restart", async function () {
+        await fixture(async (sessions) => {
+            const first = request();
+            const second = request({
+                attempt: "retry",
+                caller: "9".repeat(64)
+            });
+            let started,
+                executions = 0,
+                stopped = false;
+            const ready = new Promise((resolve) => {
+                started = resolve;
+            });
+            const run = async (execution) => {
+                executions++;
+                execution.budget.limit = 60;
+                started();
+                return execution.budget.run(
+                    () => new Promise(() => {}),
+                    async () => {
+                        stopped = true;
+                    }
+                );
+            };
+            const a = assert.rejects(
+                sessions.submit(
+                    first,
+                    digest("context"),
+                    run,
+                    async () => true
+                ),
+                { code: "REVIEW_TIMEOUT" }
+            );
+            await ready;
+            const b = assert.rejects(
+                sessions.submit(
+                    second,
+                    digest("context"),
+                    run,
+                    async () => true
+                ),
+                { code: "REVIEW_TIMEOUT" }
+            );
+            assert.equal(
+                sessions.slots.get(sessions.key(first)).active.deliveries
+                    .length,
+                2
+            );
+            await Promise.all([a, b]);
+            assert.equal(stopped, true);
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            await reopened.initialize();
+            try {
+                for (const input of [first, second]) {
+                    const saved = reopened.attempts.get(
+                        reopened.attemptKey(input)
+                    );
+                    assert.deepEqual(saved.failure.binding, binding(input));
+                    assert.equal(saved.failure.code, "REVIEW_TIMEOUT");
+                    await assert.rejects(
+                        reopened.submit(
+                            input,
+                            digest("context"),
+                            run,
+                            async () => true
+                        ),
+                        { code: "REVIEW_TIMEOUT" }
+                    );
+                }
+                assert.equal(executions, 1);
+                assert.equal(reopened.busy(reopened.key(first)), false);
+            } finally {
+                await reopened.close();
+            }
         });
     });
 });

@@ -249,7 +249,12 @@ class ReviewService {
                     input,
                     value.correction,
                     (execution, prompt) =>
-                        this.correct(input, execution, prompt)
+                        this.correct(
+                            input,
+                            execution,
+                            prompt,
+                            value.correction.ids
+                        )
                 );
                 await connection.send("result", requestId, attemptId, result);
             } else if (
@@ -511,7 +516,9 @@ class ReviewService {
                     (finding) =>
                         !["fixed", "disagreement"].includes(finding.status) &&
                         !(input.resolvedThreads || []).some(
-                            (thread) => thread.id === finding.threadId
+                            (thread) =>
+                                thread.id === finding.threadId &&
+                                !execution.reopenedThreads?.has(thread.id)
                         )
                 )
                 .map((finding) => `finding:${finding.id}`)
@@ -627,7 +634,31 @@ class ReviewService {
         execution.outputRoot = outputRoot;
         return generated;
     }
-    async correct(input, execution, prompt) {
+    async correct(input, execution, prompt, ids = []) {
+        const previous =
+            (await this.publications.load(input)).states.at(-1)?.findings || [];
+        // Source IDs required by the authenticated publisher's current observation.
+        const required = new Set(ids);
+        const restored = previous.filter((finding) =>
+            required.has(`finding:${finding.id}`)
+        );
+        // Initially excluded thread IDs restored during this execution's correction.
+        execution.reopenedThreads ||= new Set();
+        for (const thread of input.resolvedThreads || []) {
+            if (
+                !thread.comments.some((id) => required.has(`inline:${id}`)) &&
+                !restored.some((finding) => finding.threadId === thread.id)
+            )
+                continue;
+            // The authenticated publisher now requires this formerly excluded thread.
+            execution.reopenedThreads.add(thread.id);
+            for (const id of thread.comments)
+                execution.context.resolvedComments.delete(id);
+        }
+        if (restored.length)
+            prompt +=
+                "\nPreviously excluded finding context: " +
+                JSON.stringify(restored);
         const generated = await execution.adapter.turn(
             prompt +
                 "\nThis is a focused correction of the saved review in this conversation, not a new review. Preserve existing findings and analysis. Read only the missing or changed discussion needed for these IDs, update their dispositions, and return the corrected report. The existing review policy still applies." +

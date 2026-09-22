@@ -103,7 +103,7 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
-    it("replays a journal save after its acknowledgement is lost without appending another round", async function () {
+    it("replays the interactive publication save after a lost acknowledgement without appending another round", async function () {
         await fixture(async ({ options, serve, input }) => {
             const { ReviewService } = require("../../server");
             const { digest } = require("../../data");
@@ -156,17 +156,31 @@ describe("review client visible activity", function () {
                 );
             });
             try {
-                const saved = await callService({
-                    ...options,
-                    operation: "publication",
-                    payload: {
-                        executionId: generated.executionId,
-                        previous: digest({ states: [] }),
-                        states: [state]
+                const { configuredOwner } = require("../fixtures/client-cli");
+                const { withPublicationStore } = await configuredOwner(
+                    "publication-store",
+                    [],
+                    {},
+                    options
+                );
+                let bodies = 0;
+                const active = service.sessions.slots.get(
+                    service.sessions.key(input)
+                ).active;
+                const remaining = active.budget.remaining();
+                const saved = await withPublicationStore(
+                    input,
+                    generated.executionId,
+                    async (store) => {
+                        bodies++;
+                        return store.save(input, digest({ states: [] }), [
+                            state
+                        ]);
                     }
-                });
-                assert.equal(saved.accepted, true);
-                assert.deepEqual(saved.publication.states, [state]);
+                );
+                assert.equal(bodies, 1);
+                assert.deepEqual(saved.states, [state]);
+                assert.ok(active.budget.remaining() <= remaining);
                 assert.equal(frames.length, 2);
                 assert.deepEqual(frames[0], frames[1]);
                 assert.deepEqual(
@@ -249,7 +263,7 @@ describe("review client visible activity", function () {
             }
         });
     });
-    it("consumes receipt CLI files through the authenticated service and preserves failures as bound output", async function () {
+    it("consumes persistence handoff files and rejects foreign receipts before authenticated delivery", async function () {
         await fixture(
             async ({ options, serve, input, originalSeed, network }) => {
                 // This case creates discovery nodes through the CLI loader instead.
@@ -257,7 +271,7 @@ describe("review client visible activity", function () {
                 const { ReviewService } = require("../../server");
                 const { digest } = require("../../data");
                 const { binding } = require("../../protocol");
-                const { runClientCli } = require("../fixtures/client-cli");
+                const { configuredOwner } = require("../fixtures/client-cli");
                 let service = new ReviewService({
                     stateRoot: path.join(options.stateRoot, "worker")
                 });
@@ -286,8 +300,7 @@ describe("review client visible activity", function () {
                         options.stateRoot,
                         "request.json"
                     ),
-                    extra = path.join(options.stateRoot, "receipt.json"),
-                    output = path.join(options.stateRoot, "ack.json");
+                    extra = path.join(options.stateRoot, "publication.json");
                 const env = {
                     SCP_TEST_POOL_SECRET: options.secret,
                     SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
@@ -301,8 +314,24 @@ describe("review client visible activity", function () {
                     round: 1,
                     actions: []
                 };
+                const persist = async () => {
+                    const owner = await configuredOwner(
+                        "persist",
+                        [options.stateRoot],
+                        env,
+                        {
+                            serverKey: options.serverKey,
+                            dht: network.node
+                        }
+                    );
+                    await owner.main();
+                };
                 try {
                     await fs.writeFile(requestFile, JSON.stringify(input));
+                    await fs.writeFile(
+                        path.join(options.stateRoot, "result.json"),
+                        JSON.stringify(generated)
+                    );
                     await fs.writeFile(
                         extra,
                         JSON.stringify({
@@ -313,19 +342,7 @@ describe("review client visible activity", function () {
                             }
                         })
                     );
-                    await assert.rejects(
-                        runClientCli(
-                            [requestFile, output, "receipt", extra],
-                            env,
-                            network.node
-                        ),
-                        { code: "INVALID_RESULT" }
-                    );
-                    const failure = JSON.parse(
-                        await fs.readFile(output, "utf8")
-                    );
-                    assert.equal(failure.code, "INVALID_RESULT");
-                    assert.deepEqual(failure.binding, binding(input));
+                    await assert.rejects(persist(), { code: "INVALID_RESULT" });
                     assert.equal(await service.sessions.baseline(input), null);
                     await fs.writeFile(
                         extra,
@@ -334,15 +351,7 @@ describe("review client visible activity", function () {
                             receipt
                         })
                     );
-                    await runClientCli(
-                        [requestFile, output, "receipt", extra],
-                        env,
-                        network.node
-                    );
-                    assert.equal(
-                        JSON.parse(await fs.readFile(output, "utf8")).accepted,
-                        true
-                    );
+                    await persist();
                     assert.equal(
                         (await service.sessions.baseline(input)).head,
                         input.head
@@ -365,15 +374,7 @@ describe("review client visible activity", function () {
                         await service.sessions.baseline(input),
                         baseline
                     );
-                    await runClientCli(
-                        [requestFile, output, "receipt", extra],
-                        env,
-                        network.node
-                    );
-                    assert.equal(
-                        JSON.parse(await fs.readFile(output, "utf8")).accepted,
-                        true
-                    );
+                    await persist();
                     assert.deepEqual(
                         await service.sessions.baseline(input),
                         baseline
@@ -516,11 +517,26 @@ describe("review client visible activity", function () {
                         message.attemptId
                     )
                 );
-                await callService({
-                    ...options,
-                    operation: "acknowledgement",
-                    payload: { executionId: generated.executionId }
-                });
+                const { configuredOwner } = require("../fixtures/client-cli");
+                await fs.writeFile(
+                    path.join(options.stateRoot, "request.json"),
+                    JSON.stringify(input)
+                );
+                await fs.writeFile(
+                    path.join(options.stateRoot, "result.json"),
+                    JSON.stringify(generated)
+                );
+                await fs.writeFile(
+                    path.join(options.stateRoot, "publication.json"),
+                    JSON.stringify({ status: "superseded" })
+                );
+                const owner = await configuredOwner(
+                    "persist",
+                    [options.stateRoot],
+                    {},
+                    options
+                );
+                await owner.main();
                 assert.equal(
                     service.sessions.busy(service.sessions.key(input)),
                     false

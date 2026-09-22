@@ -568,9 +568,6 @@ class PublicGitHub {
         return data;
     }
     gathered() {
-        const paths = this.budget.sources.map(
-            (source) => new URL(source.url).pathname
-        );
         const required = [
             `/repos/${this.repository}/pulls/${this.pr}`,
             `/repos/${this.repository}/issues/${this.pr}/comments`,

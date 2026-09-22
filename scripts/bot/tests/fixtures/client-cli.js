@@ -29,4 +29,32 @@ async function runClientCli(argv, env, node) {
     )(localRequire, module, { argv: ["node", filename, ...argv], env });
     return run();
 }
-module.exports = { runClientCli };
+// Run the production owners unchanged, replacing only process/discovery config.
+async function configuredOwner(name, argv, env, options) {
+    const filename = path.resolve(__dirname, `../../${name}.js`);
+    const load = createRequire(filename);
+    const localRequire = (id) => {
+        if (id === "./client")
+            return {
+                ...load(id),
+                callService: (args) =>
+                    load(id).callService({
+                        ...args,
+                        ...options,
+                        dht:
+                            typeof options.dht === "function"
+                                ? options.dht()
+                                : options.dht
+                    })
+            };
+        if (id === "./identity") return { clientSeed: () => clientSeed(env) };
+        return load(id);
+    };
+    const module = { exports: {} };
+    const source = await fs.readFile(filename, "utf8");
+    vm.runInThisContext(`(function(require,module,process){${source}\n})`, {
+        filename
+    })(localRequire, module, { argv: ["node", filename, ...argv], env });
+    return module.exports;
+}
+module.exports = { runClientCli, configuredOwner };

@@ -21,6 +21,237 @@ const {
 } = require("../../../e2e-parallel/distributed/serverArgParser");
 
 describe("integrated worker review service", function () {
+    it("rereads a controller-excluded thread after reopening and publishes revision-bound correction", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        const { resolvedThreads } = require("../../resolved-threads");
+        const { GitHubWriter } = require("../../github-write");
+        const { RecordedGitHub, observation } = require("../fixtures/github");
+        const { Publisher } = require("../../publish");
+        const { sourceRevision } = require("../../reconcile");
+        await executionFixture(async ({ service, connected, input }) => {
+            const comment = {
+                id: 12,
+                user: { id: 7, type: "User" },
+                body: "Explain the retry boundary.",
+                updated_at: "2026-09-22T12:00:00Z"
+            };
+            const thread = {
+                id: "reopened",
+                isResolved: true,
+                comments: {
+                    nodes: [{ id: "node12", databaseId: 12 }],
+                    pageInfo: { hasNextPage: false }
+                }
+            };
+            const snapshot = observation(input).at(-1);
+            const stillResolved = {
+                id: "still-resolved",
+                isResolved: true,
+                comments: {
+                    nodes: [{ id: "node13", databaseId: 13 }],
+                    pageInfo: { hasNextPage: false }
+                }
+            };
+            snapshot.response.data.repository.pullRequest.reviewThreads.nodes =
+                [structuredClone(thread), structuredClone(stillResolved)];
+            const snapshotWire = new RecordedGitHub([snapshot]);
+            input.resolvedThreads = await resolvedThreads(
+                new GitHubWriter(input, {
+                    token: "recorded",
+                    botId: 9,
+                    exchange: snapshotWire.exchange.bind(snapshotWire)
+                })
+            );
+            snapshotWire.done();
+            const originalFetch = global.fetch;
+            global.fetch = (url, options) =>
+                new URL(url).pathname.endsWith(`/pulls/${input.pr}/comments`)
+                    ? Promise.resolve(
+                          new Response(
+                              JSON.stringify([comment, { ...comment, id: 13 }]),
+                              {
+                                  headers: {
+                                      "content-type": "application/json"
+                                  }
+                              }
+                          )
+                      )
+                    : originalFetch(url, options);
+            const connection = await connected;
+            let response = once(connection, "payload");
+            await connection.send("request", "initial", input.attempt, input);
+            const initial = (await response)[0].value;
+            assert.equal(
+                initial.coverage?.complete,
+                true,
+                JSON.stringify(initial)
+            );
+            const active = service.sessions.slots.get(
+                service.sessions.key(input)
+            ).active;
+            assert.equal(active.context.revisions.has("inline:12"), false);
+            thread.isResolved = false;
+            const records = [];
+            for (let i = 0; i < 5; i++) {
+                const observed = observation(input);
+                observed[1].response = [comment, { ...comment, id: 13 }];
+                observed.at(
+                    -1
+                ).response.data.repository.pullRequest.reviewThreads.nodes = [
+                    structuredClone(thread),
+                    structuredClone(stillResolved)
+                ];
+                records.push(...observed);
+            }
+            const wire = new RecordedGitHub(records);
+            const publisher = new Publisher(
+                input,
+                new GitHubWriter(input, {
+                    token: "recorded",
+                    botId: 9,
+                    exchange: wire.exchange.bind(wire)
+                }),
+                { eligible: true, specApproved: false },
+                service.publications
+            );
+            const held = await publisher.publish(initial);
+            assert.equal(held.status, "correction-required");
+            assert.deepEqual(held.correction.ids, ["inline:12"]);
+            const remaining = active.budget.remaining();
+            response = once(connection, "payload");
+            await connection.send("correction", "repair", input.attempt, {
+                request: input,
+                correction: held.correction
+            });
+            const corrected = (await response)[0].value;
+            assert.equal(corrected.revision, 1, JSON.stringify(corrected));
+            assert.equal(
+                corrected.accounting.find(
+                    (item) => item.sourceId === "inline:12"
+                ).sourceRevision,
+                sourceRevision(comment)
+            );
+            assert.ok(active.budget.remaining() <= remaining);
+            assert.equal(corrected.executionId, initial.executionId);
+            assert.equal(active.context.revisions.has("inline:13"), false);
+            assert.equal(
+                (await publisher.publish(corrected)).status,
+                "complete"
+            );
+            wire.done();
+        });
+    });
+    it("finishes one native review for a rerun after the original client disconnects", async function () {
+        const {
+            executionFixture,
+            waitForFile
+        } = require("../fixtures/review-execution");
+        const { callService } = require("../../client");
+        await executionFixture(
+            async ({
+                worker,
+                service,
+                connected,
+                client,
+                input,
+                network,
+                root
+            }) => {
+                service.config.limits.queueMs = 50;
+                service.config.limits.progressMs = 10;
+                await fs.mkdir(service.config.runtimeRoot, { recursive: true });
+                await fs.writeFile(
+                    path.join(service.config.runtimeRoot, "hold"),
+                    ""
+                );
+                const connection = await connected;
+                await connection.send(
+                    "request",
+                    "original",
+                    input.attempt,
+                    input
+                );
+                const started = await waitForFile(
+                    path.join(
+                        service.config.runtimeRoot,
+                        `started-${input.pr}.json`
+                    )
+                );
+                connection.close();
+                await client.close();
+                const seed = clientSeed({
+                    SCP_TEST_ORCHESTRATOR_SEED: "34".repeat(32)
+                });
+                const retry = {
+                    ...input,
+                    attempt: "retry",
+                    caller: keyPairFromSeed(seed).publicKey.toString("hex")
+                };
+                let admitted;
+                const ready = new Promise((resolve) => {
+                    admitted = resolve;
+                });
+                const pending = callService({
+                    request: retry,
+                    seed,
+                    secret: "integrated-review-fixture",
+                    stateRoot: path.join(root, "survivor"),
+                    serverKey: worker.pool.publicKey.toString("hex"),
+                    dht: network.node(),
+                    onProgress: (line) => {
+                        if (line.includes("Worker connected")) admitted();
+                    }
+                });
+                pending.catch(() => {});
+                try {
+                    await ready;
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                    const active = service.sessions.slots.get(
+                        service.sessions.key(input)
+                    ).active;
+                    assert.equal(active.deliveries.length, 2);
+                    assert.equal(service.adapters.size, 1);
+                    await fs.writeFile(
+                        path.join(
+                            service.config.runtimeRoot,
+                            `release-${input.pr}`
+                        ),
+                        ""
+                    );
+                    const output = await pending;
+                    assert.equal(output.executionId, active.id);
+                    assert.equal(output.sessionId, started.threadId);
+                    assert.deepEqual(
+                        output.binding,
+                        require("../../protocol").binding(retry)
+                    );
+                    assert.equal(
+                        (
+                            await waitForFile(
+                                path.join(
+                                    service.config.runtimeRoot,
+                                    `${started.threadId}.json`
+                                )
+                            )
+                        ).turns,
+                        1
+                    );
+                    await service.sessions.acknowledge(
+                        retry,
+                        output.executionId
+                    );
+                    assert.equal(
+                        service.sessions.busy(service.sessions.key(input)),
+                        false
+                    );
+                    assert.equal(service.adapters.size, 0);
+                } finally {
+                    await service.close();
+                    await Promise.allSettled([pending]);
+                }
+            }
+        );
+    });
     it("joins a rerun before evidence gathering and completes beyond the queue deadline", async function () {
         const {
             executionFixture,
@@ -363,13 +594,14 @@ describe("integrated worker review service", function () {
             }
         });
     });
-    it("reconstructs retained finding prose for a fresh reviewer while excluding resolved threads", async function () {
+    it("reconstructs retained prose and restores an excluded finding only when correction requires it", async function () {
         const {
             executionFixture,
             waitForFile
         } = require("../fixtures/review-execution");
         const { digest } = require("../../data");
         await executionFixture(async ({ service, connected, input }) => {
+            service.sessions.limits.modelMs = 2000;
             const finding = {
                 id: "R1FO1",
                 status: "continued",
@@ -398,7 +630,12 @@ describe("integrated worker review service", function () {
                             "\nNot yet published.",
                         evidence: ["unpublished retry evidence"]
                     },
-                    { ...finding, id: "R1FO3", threadId: "resolved-thread" }
+                    {
+                        ...finding,
+                        id: "R1FO3",
+                        body: finding.body.replace("R1FO1", "R1FO3"),
+                        threadId: "resolved-thread"
+                    }
                 ],
                 actions: [
                     {
@@ -454,6 +691,37 @@ describe("integrated worker review service", function () {
                 assert.equal(accounting.sourceRevision, digest(prior));
                 assert.equal(accounting.disposition, "continued");
             }
+            const correctedResponse = once(connection, "payload");
+            await connection.send(
+                "correction",
+                "restore-finding",
+                input.attempt,
+                {
+                    request: input,
+                    correction: {
+                        version: 1,
+                        kind: "missing-accounting",
+                        binding: require("../../protocol").binding(input),
+                        executionId: message.value.executionId,
+                        resultRevision: 0,
+                        effectiveIdentity: message.value.effectiveIdentity,
+                        ids: ["finding:R1FO3"]
+                    }
+                }
+            );
+            const corrected = (await correctedResponse)[0];
+            assert.equal(
+                corrected.operation,
+                "result",
+                JSON.stringify(corrected.value)
+            );
+            assert.equal(corrected.value.findings.length, 3);
+            assert.equal(
+                corrected.value.accounting.find(
+                    (item) => item.sourceId === "finding:R1FO3"
+                ).sourceRevision,
+                digest(state.findings[2])
+            );
             await service.sessions.acknowledge(
                 input,
                 message.value.executionId

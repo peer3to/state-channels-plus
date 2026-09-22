@@ -9,9 +9,10 @@ comment IDs into the review request. The worker omits those comments and replies
 from model input. The publisher checks live resolution again; reopened discussion
 still needs accounting. No GitHub token is sent to the worker.
 
-Assessment refresh excludes resolved findings from the active Markdown and JSON.
-When existing cards are removed, the pre-refresh Markdown (including Human notes)
-is preserved in `assessment.md.backup-<timestamp>` beside the active file.
+Every assessment fetch regenerates the active Markdown and JSON from current
+GitHub findings, excluding resolved findings. Any existing Markdown, including
+Human notes and selections, is preserved verbatim in
+`assessment.md.backup-<timestamp>-<uuid>` rather than merged into the new file.
 
 | Operation | Owner |
 | --- | --- |

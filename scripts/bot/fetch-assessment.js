@@ -166,7 +166,7 @@ function mergeAssessment(previous, findings, request) {
                 ? finding.conversation
                       .map(
                           (comment) =>
-                              `**${comment.author} · ${comment.createdAt}**\n\n${comment.body}`
+                              `**${comment.author} · ${comment.createdAt}**${comment.url ? ` · [Open comment](${comment.url})` : ""}\n\n${comment.body}`
                       )
                       .join("\n\n---\n\n")
                 : safeText(finding.body)
@@ -225,13 +225,14 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
     const relative = `temp/pr-github-reviews/${request.pr}/assessment.md`;
     const filename = await ownedPath(root, relative, true);
     let previous = "";
+    let existed = false;
     try {
         previous = await fs.readFile(filename, "utf8");
+        existed = true;
     } catch (error) {
         if (error.code !== "ENOENT") throw error;
     }
-    const unmanaged = previous && !previous.includes(DOCUMENT);
-    const next = mergeAssessment(unmanaged ? "" : previous, findings, request);
+    const next = mergeAssessment("", findings, request);
     // A concurrent local edit must not be overwritten by this fetch.
     let current = "";
     try {
@@ -240,13 +241,12 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
         if (error.code !== "ENOENT") throw error;
     }
     check(current === previous, "INVALID_REQUEST");
-    if (previous && previous !== next) {
+    if (existed) {
         const backup = `${relative}.backup-${Date.now()}-${randomUUID()}`;
         await writeText(root, backup, previous);
-        if (unmanaged)
-            console.log(
-                `Existing unmanaged assessment preserved: ${path.join(root, backup)}`
-            );
+        console.log(
+            `Previous assessment preserved: ${path.join(root, backup)}`
+        );
     }
     await writeJson(
         root,
@@ -259,7 +259,7 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
 async function main(args) {
     if (args.includes("--help")) {
         console.log(
-            "Usage: yarn review-bot:fetch-assessment <PR number or URL> [--repo owner/repo]\nReads GitHub only. Uses GH_TOKEN/GITHUB_TOKEN or saved gh credentials (including older gh versions). Preserves local assessment edits."
+            "Usage: yarn review-bot:fetch-assessment <PR number or URL> [--repo owner/repo]\nReads GitHub only. Uses GH_TOKEN/GITHUB_TOKEN or saved gh credentials (including older gh versions). Regenerates from current GitHub findings; preserves the previous file in a timestamped backup."
         );
         return;
     }

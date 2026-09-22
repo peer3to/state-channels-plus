@@ -146,14 +146,18 @@ Markdown file in **PR Review Studio** assessment mode. Edit the assessment and
 implementation plan locally; use the extension's explicit preview/reply action
 when ready to publish. Fetching never posts, resolves or invents a Human answer.
 
-Rerunning the command preserves existing cards and all local assessment/reply/fix
-text. Resolved cards already in your file are marked resolved rather than removed;
-newly imported cards exclude addressed/resolved findings, including advisory Human
-decision findings. Changed
-remote findings are flagged for rechecking; local original text stays intact. A
-refresh creates a timestamped backup before replacing a changed assessment. An
-unmanaged existing assessment is refused rather than overwritten; move it aside
-yourself or keep using it separately. Do not edit the file concurrently with fetch.
+Every fetch generates a fresh assessment from current GitHub findings and thread
+resolution state. Resolved findings are excluded, including advisory Human decision
+findings. Existing cards, verdicts, selections and local replies are not merged.
+Before replacement, any existing assessment (managed or unmanaged) is preserved
+verbatim in a timestamp/UUID-suffixed backup beside the file. Recover previous notes
+from that backup. Do not edit the file concurrently with fetch.
+
+If a previously excluded thread reopens before publication, the publisher's missing
+accounting IDs restore that thread's comments in the worker reader and its saved
+finding context in the correction prompt. The same execution and remaining budget
+are retained; comment revisions still come from actual public reads. Other resolved
+threads remain excluded.
 
 The companion extension needs the per-finding identity update in `coding-skills`.
 Cards carry `Finding ID: R1FO1`; APR numbering is only local presentation.
