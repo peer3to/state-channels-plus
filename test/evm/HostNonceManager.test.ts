@@ -98,6 +98,55 @@ describe("HostNonceManager", () => {
         expect(explicit.gasLimit).to.equal(explicitLimit);
     });
 
+    it("records the gas of the transactions it broadcast, named by selector", async () => {
+        const [funder, callee] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        // a manager selector, and one no SDK contract declares
+        const namedSelector = ethers
+            .id("postBlockCalldata((bytes,bytes),uint256)")
+            .slice(0, 10);
+        const unknownSelector = ethers
+            .id("neverDeclaredOnAnySdkContract()")
+            .slice(0, 10);
+
+        for (const data of [namedSelector, namedSelector, unknownSelector]) {
+            const response = await manager.sendTransaction({
+                to: callee.address,
+                data
+            });
+            await response.wait();
+        }
+        await manager.gasUsage.settle();
+
+        const rows = manager.gasUsage.snapshot();
+        expect(rows.length).to.equal(2);
+        const named = rows.find(
+            (row) => row.functionSelector === namedSelector
+        )!;
+        const unknown = rows.find(
+            (row) => row.functionSelector === unknownSelector
+        )!;
+        expect(named.functionName).to.equal("postBlockCalldata");
+        expect(unknown.functionName).to.equal(unknownSelector);
+        expect(named.contractAddress).to.equal(callee.address);
+        expect(named.minedCount).to.equal(2);
+        expect(named.revertedCount).to.equal(0);
+        // two identical calls: the total is twice each bound
+        expect(named.minGasUsed).to.equal(named.maxGasUsed);
+        expect(BigInt(named.totalGasUsed)).to.equal(
+            BigInt(named.minGasUsed) * 2n
+        );
+        expect(BigInt(named.minGasUsed) > 0n).to.equal(true);
+        expect(unknown.minedCount).to.equal(1);
+    });
+
     it("cannot create another nonce owner by reconnecting", async () => {
         const sender = ethers.Wallet.createRandom().connect(ethers.provider);
         const manager = new HostNonceManager(sender);

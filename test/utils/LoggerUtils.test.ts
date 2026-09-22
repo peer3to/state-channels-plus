@@ -112,8 +112,21 @@ describe("LoggerUtils", function () {
         ).to.deep.equal({
             contractAddress,
             functionSelector: encodedData.slice(0, 10),
+            // no SDK contract declares setValue(uint256)
+            functionName: encodedData.slice(0, 10),
             calldataBytes: ethers.dataLength(encodedData)
         });
+    });
+
+    it("names a selector the SDK contract surface declares", function () {
+        // selector of the manager's postBlockCalldata(SignedBlock,uint256)
+        const functionSelector = ethers
+            .id("postBlockCalldata((bytes,bytes),uint256)")
+            .slice(0, 10);
+
+        expect(
+            LoggerUtils.getContractCallMetadata(functionSelector).functionName
+        ).to.equal("postBlockCalldata");
     });
 
     describe("getCustomEvmErrorMetadata", function () {

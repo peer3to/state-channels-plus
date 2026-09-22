@@ -3,6 +3,7 @@ import QueryRpcMethods, {
     type BlockBundle,
     type StateProofVerification
 } from "./QueryRpcMethods";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import Block from "@/models/Block";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -149,6 +150,16 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
             ),
             genesisSnapshotHash: String(genesis.hash)
         };
+    }
+
+    /**
+     * The peer's gas usage table once every receipt wait it already started
+     * has settled, so an assertion never races an observation that is one
+     * microtask away from being recorded.
+     */
+    async settledGasUsage(): Promise<{ gasUsage: GasUsageRow[] }> {
+        await this.sm.signer.gasUsage.settle();
+        return { gasUsage: this.sm.signer.gasUsage.snapshot() };
     }
 
     public createRPCMethods(transport: NetworkTransport): QueryRpcMethods {
