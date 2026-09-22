@@ -24,6 +24,35 @@ function fixture(records) {
     };
 }
 describe("review CI mutation ownership", function () {
+    it("recovers a transient read without retrying a rejected mutation", async function () {
+        const route = `/repos/${input.repository.name}/pulls/6`;
+        const wire = new RecordedGitHub([
+            { path: route, status: 503, response: {} },
+            { path: route, response: { number: 6 } },
+            {
+                path: `/repos/${input.repository.name}/issues/6/comments`,
+                method: "POST",
+                status: 422,
+                response: {}
+            }
+        ]);
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            exchange: wire.exchange.bind(wire),
+            wait: async () => {}
+        });
+        assert.equal((await writer.api("/pulls/6")).number, 6);
+        await assert.rejects(writer.comment("A finding"), (error) => {
+            assert.equal(error.diagnostics.status, 422);
+            assert.equal(
+                error.diagnostics.operation,
+                "POST /issues/6/comments"
+            );
+            return true;
+        });
+        wire.done();
+    });
     it("posts located findings as inline comments and keeps section headings in the review body", async function () {
         const { writer, wire } = fixture([
             {

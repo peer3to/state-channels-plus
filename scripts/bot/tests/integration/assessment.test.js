@@ -178,6 +178,87 @@ function proposed(input, finding, previous) {
     });
 }
 describe("assessment GitHub lifecycle", function () {
+    it("publishes 53 plain-Markdown inline findings across recoverable batches after a lost reply", async function () {
+        await gitFixture(async ({ input, source }) => {
+            const wire = wireFixture();
+            Object.assign(wire.input, {
+                head: input.head,
+                base: input.base,
+                mergeBase: input.mergeBase
+            });
+            wire.pull.head.sha = input.head;
+            wire.comments.splice(0);
+            wire.reviews.splice(0);
+            const markdown =
+                "# Review\n\n## Correctness\n\n" +
+                Array.from({ length: 53 }, (_, index) => {
+                    const id = `FO${index + 1}`;
+                    return `### [${id}] Retry boundary\nStatus: new\nLocation: README.md:1\n\n🟠 **[${id}] — Retry boundary.**\n\nSee https://github.com/${wire.input.repository.name}/blob/${input.head}/README.md#L1\n\n> **Fix ${id}-FIX**\n> Preserve the result before acknowledging.\n\n`;
+                }).join("") +
+                "## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness\nBehaviors: retry\n";
+            const output = result(
+                wire.input,
+                require("../../markdown-result").decodeModelResult(markdown, {
+                    request: wire.input
+                })
+            );
+            output.evidence = {
+                ...result(wire.input).evidence,
+                ...output.evidence
+            };
+            let writes = 0;
+            const writer = new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: async (url, options) => {
+                    const response = await wire.exchange(url, options);
+                    if (
+                        options.method === "POST" &&
+                        new URL(url).pathname.endsWith("/reviews")
+                    ) {
+                        writes++;
+                        if (writes === 2)
+                            throw new TypeError(
+                                "Reply lost after GitHub accepted the batch"
+                            );
+                    }
+                    return response;
+                }
+            });
+            const store = publicationStore();
+            const publisher = new Publisher(
+                wire.input,
+                writer,
+                { eligible: true, specApproved: false, repoRoot: source },
+                store
+            );
+            assert.equal((await publisher.publish(output)).status, "complete");
+            assert.equal(wire.inline.length, 53);
+            assert.equal(writes, 6);
+            assert.equal(wire.reviews.length, 6);
+            assert.ok(
+                wire.calls
+                    .filter((call) => call.body?.comments)
+                    .every((call) => call.body.comments.length <= 10)
+            );
+            assert.equal(
+                (
+                    await new Publisher(
+                        wire.input,
+                        writer,
+                        {
+                            eligible: true,
+                            specApproved: false,
+                            repoRoot: source
+                        },
+                        store
+                    ).publish(output)
+                ).status,
+                "complete"
+            );
+            assert.equal(writes, 6);
+        });
+    });
     it("publishes fifty detailed findings without snapshots and resumes from the private journal", async function () {
         const wire = wireFixture();
         wire.comments.splice(0);

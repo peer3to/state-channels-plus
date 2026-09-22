@@ -1,5 +1,17 @@
 # PR reviews on the existing worker
 
+Automated model output is ordinary Markdown: finding IDs, status/location lines,
+evidence-backed prose and a short completion section. The worker derives editor
+metadata, evidence URLs and discussion revision hashes. The model does not emit
+hidden JSON snapshots or bookkeeping footers. Legacy saved reports remain readable.
+Inline targets are checked before model success, inside the existing session's
+format-repair loop. GitHub receives small, independently marked inline batches;
+completed batches are retained on retry. Transient reads retry automatically,
+and ambiguous publication failures reconcile GitHub markers before retrying writes.
+API failures record the operation and HTTP status without exposing credentials.
+Permanent permission errors or unavailable GitHub service still need recovery;
+they cannot be solved by asking the model to rewrite a valid review.
+
 Start the normal distributed worker with `--review` to offer source-only Codex reviews as well as tests:
 
 ```sh
@@ -39,7 +51,7 @@ the existing conversation ID; older cleared registry IDs can be recovered from
 the last confirmed publication baseline. This does not bypass report validation
 or change the CI result-transfer limit.
 
-`server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. Invalid output is repaired in the same conversation within the remaining cumulative model budget, rather than failing after one repair. Bookkeeping-only repairs may return just the `review-result` footer; the worker preserves the report verbatim and validates the merged result normally. Recovered tool attempts are not unresolved errors. Drafts are retained as `<attempt>-<revision>-draft-<n>.md` before validation. Internal format repairs do not consume CI's discussion-accounting correction, whose output uses the same repair loop. Missing evidence, provider failures and exhausted time still produce honest failures, never a fabricated successful review.
+`server.js` reads the vendored skill files and passes their combined text as `developerInstructions`. This is direct instruction loading, not automatic skill discovery or a slash command. The fixed `skill/references/review-prompt.md` plus controller-bound request JSON is sent through `turn/start`. Invalid output, missing known discussion accounting and invalid inline targets are repaired in the same conversation within the remaining cumulative model budget, rather than failing after one repair. Legacy footer-only repairs remain readable for saved drafts; new output uses plain Markdown. Recovered tool attempts are not unresolved errors. Drafts are retained as `<attempt>-<revision>-draft-<n>.md` before validation. Internal format repairs do not consume CI's discussion-accounting correction, whose output uses the same repair loop. Missing evidence, provider failures and exhausted time still produce honest failures, never a fabricated successful review.
 
 ## CI setup
 
@@ -81,9 +93,10 @@ While temporary acceptance is enabled, the observer blocks ordinary CI if review
 
 ### Cheaper follow-up reviews
 
-Reasoning defaults to `low`. The model writes one Studio Markdown report; the
-deterministic converter derives finding bodies and combines them with compact
-bookkeeping metadata. It does not ask the model to duplicate prose as JSON.
+Reasoning defaults to `low`. The model writes ordinary Markdown without hidden
+metadata. The deterministic converter builds the local Studio document, derives
+evidence links from prose and binds discussion hashes from actual public reads.
+It does not ask the model to duplicate prose or bookkeeping as JSON.
 The automated prompt loads the full PR skill, inherited implementation-review
 skill and example, followed by source-only execution overrides and the output
 contract. All substantive audit sections apply; inherited manual commands do not.

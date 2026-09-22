@@ -2,7 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { configuration, policyDigest } = require("./config");
 const { check, digest, writeJson, writeText, ownedPath } = require("./data");
-const { sanitized } = require("./errors");
+const { sanitized, ReviewError } = require("./errors");
 const protocol = require("./protocol");
 const { Sessions } = require("./sessions");
 const { PublicationStore } = require("./publication-store");
@@ -16,7 +16,7 @@ const {
 const { CodexAdapter } = require("./adapters/codex");
 const { ReviewConnection } = require("./transport");
 const { bundleDigest } = require("./request");
-const { validateReport } = require("./review-format");
+const { validateReport, validateInlineTargets } = require("./review-format");
 const {
     decodeModelResult,
     repairModelResult,
@@ -301,6 +301,7 @@ class ReviewService {
             setupDeadline
         );
         execution.sourceBase = tree.base;
+        execution.repoRoot = tree.checkout;
         const outputRoot = await ownedPath(
             tree.checkout,
             `temp/pr-github-reviews/${input.pr}`,
@@ -451,10 +452,11 @@ class ReviewService {
                 const corrected = await execution.adapter.turn(
                     protocol.correctionPrompt(correction, input) +
                         "\nValidation feedback: " +
-                        (execution.context.gathered()
-                            ? formatFeedback(generated)
-                            : "Controller evidence is incomplete. Read the missing required PR/discussion collections and every next page; recover failed reads before claiming coverage.complete. Rewriting the report cannot repair missing retrieval evidence.") +
-                        "\nRepair the existing draft, not the review analysis. If only bookkeeping changes, return ONLY the single <!-- review-result {...} --> line; the worker will retain the entire report and findings unchanged. Otherwise return the corrected Markdown document. Do not repeat source reads unless needed to resolve an actual missing fact." +
+                        (error.validationFeedback ||
+                            (execution.context.gathered()
+                                ? formatFeedback(generated)
+                                : "Controller evidence is incomplete. Read the missing required PR/discussion collections and every next page; recover failed reads before claiming coverage.complete. Rewriting the report cannot repair missing retrieval evidence.")) +
+                        "\nRepair the existing draft, not the review analysis. Return the corrected Markdown document. Do not repeat source reads unless needed to resolve an actual missing fact." +
                         this.remainingPrompt(execution),
                     execution.budget
                 );
@@ -470,7 +472,39 @@ class ReviewService {
         outputRoot,
         revision = execution.revision
     ) {
-        generated = decodeModelResult(generated);
+        const previous =
+            (await this.publications.load(input)).states.at(-1)?.findings || [];
+        const revisions = new Map(execution.context.revisions || []);
+        for (const finding of previous)
+            revisions.set(`finding:${finding.id}`, digest(finding));
+        generated = decodeModelResult(generated, {
+            request: input,
+            sourceBase: execution.sourceBase || input.base,
+            revisions,
+            previous
+        });
+        const required = [
+            ...(execution.context.requiredDiscussion || []),
+            ...previous
+                .filter(
+                    (finding) =>
+                        !["fixed", "disagreement"].includes(finding.status)
+                )
+                .map((finding) => `finding:${finding.id}`)
+        ];
+        const missing = required.filter(
+            (id) =>
+                !generated?.accounting?.some(
+                    (entry) =>
+                        entry.sourceId === id &&
+                        entry.sourceRevision === revisions.get(id)
+                )
+        );
+        if (missing.length) {
+            const error = new ReviewError("INVALID_RESULT");
+            error.validationFeedback = `The saved review is missing dispositions for: ${missing.join(", ")}. Add the discussion assessment rows or existing finding dispositions. The worker supplies revision hashes; do not generate them.`;
+            throw error;
+        }
         check(
             generated &&
                 typeof generated === "object" &&
@@ -532,6 +566,20 @@ class ReviewService {
                 (execution.sourceBase || input.base),
             "INVALID_RESULT"
         );
+        if (execution.repoRoot) {
+            const parsed = validateReport(generated, input);
+            try {
+                validateInlineTargets(
+                    parsed,
+                    parsed.findings,
+                    execution.repoRoot
+                );
+            } catch (cause) {
+                const error = new ReviewError("INVALID_RESULT");
+                error.validationFeedback = cause.message;
+                throw error;
+            }
+        }
         await writeJson(
             outputRoot,
             `${input.attempt}-${revision}.json`,

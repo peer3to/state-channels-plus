@@ -48,7 +48,7 @@ function markdownResult(markdown) {
         evidence: { errors: control.errors ?? [] }
     };
 }
-function decodeModelResult(generated) {
+function decodeModelResult(generated, context) {
     if (typeof generated !== "string") return generated;
     // Retain compatibility with persisted/in-flight protocol-v1 results.
     if (generated.trimStart().startsWith("{")) {
@@ -58,6 +58,11 @@ function decodeModelResult(generated) {
             check(false, "INVALID_RESULT");
         }
     }
+    if (context && !generated.includes("<!-- pr-review-document"))
+        generated = require("./compact-review").compactReview(
+            generated,
+            context
+        );
     return markdownResult(generated);
 }
 function repairModelResult(previous, reply) {
@@ -75,7 +80,7 @@ function formatFeedback(generated) {
     try {
         value = decodeModelResult(generated);
     } catch {
-        return "The response could not be decoded as the required Markdown document and single review-result footer. Check document/card metadata, matching Human/AI markers and footer JSON.";
+        return "Check the ordinary Markdown contract: each finding needs a ### [ID] heading, Status and Location lines, its visible [ID] and Fix ID-FIX callout. Include the Review completion fields. Discussion table sources must have been read through public tools. Do not generate JSON or hidden bookkeeping.";
     }
     if (
         value?.coverage?.complete &&

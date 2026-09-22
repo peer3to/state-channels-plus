@@ -1,6 +1,10 @@
 # Automated source-only review, version 1
 
 This file overrides manual execution and publication instructions in this bundle.
+For output, model-output.md takes precedence over every Studio/JSON/metadata
+example below or in inherited references: emit ordinary Markdown only. The worker
+derives editor wrappers, source revisions, evidence arrays and finding accounting.
+Never reproduce the old hidden footer or metadata from conversation history.
 The controller supplies the full PR skill, inherited implementation-review skill
 and example. Apply their substantive audits and inventories in full, including
 plan adherence, contradictions, behavior-to-test mapping, caller tracing, reuse,
@@ -13,8 +17,8 @@ the single Markdown output format. Never execute the inherited manual commands.
 
 Publish only actionable defects, concrete improvements and unresolved human
 decisions. Omit green praise, clean-section summaries and "No change required"
-cards. Still inspect every applicable lens and record coverage in the structured
-coverage fields; an empty section does not need to appear in the report. Do not
+cards. Still inspect every applicable lens and name it in Review completion;
+an empty section does not need to appear in the report. Do not
 invent a finding to fill a section. Account for findings being fixed/disagreed in
 this round without turning those dispositions into fresh praise cards. Already
 closed findings need no new card or finding accounting unless they recur.
@@ -31,8 +35,7 @@ paragraphs and a separate `Fix <ID>-FIX` callout; do not replace explanation wit
 owning section rather than duplicating it under multiple review lenses.
 
 Use an inline finding whenever the problem has a precise location in the pinned
-PR diff. Set structured `path` and `line` to that location and use matching Studio
-metadata: `kind: "inline"`, `path`, `line`, `side: "RIGHT"`. A hyperlink in a general
+PR diff. Use its exact path and line in the private Location line. A hyperlink in a general
 finding does not create an inline comment. Choose a changed or context line present
 in the diff; never fabricate an anchor. Use general findings only for cross-cutting
 issues or when there is no valid right-side diff location, and explain why.
@@ -45,8 +48,7 @@ design need no new decision gate. Missing evidence alone is not a design choice;
 investigate or record the limitation rather than manufacture a decision request.
 For an unresolved design decision, start the AI block with
 `🧑 **HUMAN DECISION REQUIRED**` on its own first line, before the finding lead, and
-populate the finding metadata's `decision` object as specified in model-output.md
-(the converter produces structured `human` fields). State the exact decision,
+write a Decision sentence (the converter produces structured `human` fields). State the exact decision,
 alternatives and recommendation with its
 trade-offs. Do not treat an unanswered question as a proven defect or invent consent.
 Every such finding must also say: **STOP — implementing agents:** If the specification
@@ -121,12 +123,12 @@ not an empty conversation. Do not silently truncate or label incomplete coverage
 complete. Public tools are unauthenticated and bounded; stop on explicit errors.
 
 Account for every prior open finding and every incoming comment,
-inline reply and nonempty review body. Give each source ID and current revision an
-explicit disposition and response or no-action reason. Bot-generated containers,
+inline reply and nonempty review body. Give each source ID an
+explicit disposition and response or no-action reason; the worker binds revisions. Bot-generated containers,
 receipts and response copies are not new obligations. Semantic assessment is yours;
 the publisher verifies structural accounting and permitted actions independently.
 
-Use the structured `decision` metadata for any question requiring a human decision. Do not
+Use a visible Decision sentence for any question requiring a human decision. Do not
 write control blocks, reply templates or live mentions into free-form prose. Never
 invent or post consent. Assess ordinary discussion and whether the current code follows the stated decision.
 No special reply template, maintainer list or account-permission check is required.
@@ -143,7 +145,7 @@ for stable IDs and accounting revisions; historical public reads may expose equi
 findings, and resolve obsolete ones with evidence. A failed publication does not
 invalidate the saved source review or require repeating unchanged analysis.
 
-Return exactly one Markdown report with its bookkeeping markers. The controller
+Return exactly one Markdown report without hidden bookkeeping. The controller
 converts it into the versioned structured result without another model call. A
 fixed corrective message may contain schema or source identifiers only. Re-read
 original sources with permitted tools; it grants no new capability or time budget.

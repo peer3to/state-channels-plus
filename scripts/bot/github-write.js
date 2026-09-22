@@ -47,7 +47,17 @@ class GitHubWriter {
     exchange;
     calls = 0;
     maxCalls;
-    constructor(request, { token, botId, exchange = fetch, maxCalls = 200 }) {
+    wait;
+    constructor(
+        request,
+        {
+            token,
+            botId,
+            exchange = fetch,
+            maxCalls = Infinity,
+            wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        }
+    ) {
         check(
             typeof token === "string" &&
                 token.length > 0 &&
@@ -59,6 +69,31 @@ class GitHubWriter {
         this.botId = botId;
         this.exchange = exchange;
         this.maxCalls = maxCalls;
+        this.wait = wait;
+    }
+    async readResponse(url, options) {
+        // Retry reads only. A lost mutation reply must be reconciled by markers
+        // before another write; blindly retrying POST can duplicate findings.
+        const read =
+            options.method === "GET" ||
+            (url.endsWith("/graphql") &&
+                /^\s*query\b/.test(JSON.parse(options.body).query));
+        for (let attempt = 0; ; attempt++) {
+            try {
+                const response = await this.exchange(url, options);
+                if (
+                    !read ||
+                    attempt === 2 ||
+                    ![429, 502, 503, 504].includes(response.status)
+                )
+                    return response;
+                await response.body?.cancel();
+            } catch (error) {
+                if (!read || attempt === 2) throw error;
+            }
+            await this.wait(1000 * 2 ** attempt);
+            options = { ...options, signal: AbortSignal.timeout(30000) };
+        }
     }
     async api(suffix, { method = "GET", body, allowMissing = false } = {}) {
         check(
@@ -76,7 +111,7 @@ class GitHubWriter {
         );
         check(["GET", "POST", "PUT", "PATCH"].includes(method));
         check(++this.calls <= this.maxCalls, "CONTEXT_BUDGET_EXCEEDED");
-        const response = await this.exchange(
+        const response = await this.readResponse(
             `https://api.github.com/repos/${this.request.repository.name}${suffix}`,
             {
                 method,
@@ -95,14 +130,22 @@ class GitHubWriter {
             await response.body?.cancel();
             return null;
         }
-        if (!response.ok)
-            throw new ReviewError(
+        if (!response.ok) {
+            const error = new ReviewError(
                 response.status === 429 ||
                 (response.status === 403 &&
                     response.headers.get("x-ratelimit-remaining") === "0")
                     ? "CONTEXT_RATE_LIMITED"
                     : "CONTEXT_UNAVAILABLE"
             );
+            error.diagnostics = {
+                operation: `${method} ${suffix}`,
+                status: response.status,
+                requestId: response.headers.get("x-github-request-id")
+            };
+            await response.body?.cancel();
+            throw error;
+        }
         return boundedJson(response);
     }
     async pages(suffix) {
@@ -116,19 +159,41 @@ class GitHubWriter {
     }
     async graph(query, variables) {
         check(++this.calls <= this.maxCalls, "CONTEXT_BUDGET_EXCEEDED");
-        const response = await this.exchange("https://api.github.com/graphql", {
-            method: "POST",
-            redirect: "error",
-            signal: AbortSignal.timeout(30000),
-            headers: {
-                Authorization: `Bearer ${this.token}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ query, variables })
-        });
-        check(response.ok, "CONTEXT_UNAVAILABLE");
+        const response = await this.readResponse(
+            "https://api.github.com/graphql",
+            {
+                method: "POST",
+                redirect: "error",
+                signal: AbortSignal.timeout(30000),
+                headers: {
+                    Authorization: `Bearer ${this.token}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ query, variables })
+            }
+        );
+        if (!response.ok) {
+            const error = new ReviewError("CONTEXT_UNAVAILABLE");
+            error.diagnostics = {
+                operation: "POST /graphql",
+                status: response.status,
+                requestId: response.headers.get("x-github-request-id")
+            };
+            await response.body?.cancel();
+            throw error;
+        }
         const parsed = await boundedJson(response);
-        check(!parsed.errors && parsed.data, "CONTEXT_UNAVAILABLE");
+        if (parsed.errors || !parsed.data) {
+            const error = new ReviewError("CONTEXT_UNAVAILABLE");
+            error.diagnostics = {
+                operation: "POST /graphql",
+                status: response.status,
+                types: (parsed.errors || []).map(
+                    (item) => item.type || item.extensions?.code || "unknown"
+                )
+            };
+            throw error;
+        }
         return parsed.data;
     }
     async threads() {

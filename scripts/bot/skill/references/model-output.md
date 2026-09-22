@@ -1,87 +1,65 @@
-# Model output: Markdown once
+# Model output: ordinary Markdown
 
-Return the Markdown document itself, not a JSON result and not a fenced wrapper.
-The controller derives findings from its AI blocks and injects bindings, identity,
-timing and evidence counters. Do not repeat the finding prose in JSON.
+Return the review once, as Markdown. Do not generate JSON, HTML comments,
+document/card metadata, hashes, evidence arrays, Human/AI wrappers, or a
+review-result footer. The worker adds bindings and editor metadata itself.
+This overrides the manual Studio format in inherited skills and publishing.md.
+Keep the substantive audits, detailed explanations, sections and stable IDs.
 
-Start with a title and a single-line document marker using controller-bound SHAs:
+Under each descriptive `##` review section, write findings like this:
 
-    <!-- pr-review-document {"schema":2,"repo":"owner/repo","pr":498,"headSha":"<head>","baseSha":"<base>"} -->
+    ### [FO1] Incorrect retry boundary
+    Status: new
+    Location: scripts/example.js:42
 
-Group findings by descriptive `##` sections. Each card has this shape:
+    🟠 **[FO1] — Incorrect retry boundary.**
 
-    - [ ] **[FO1] General PR comment**
-      <!-- pr-review-finding {"id":"FO1","kind":"general","status":"new","threadId":null,"evidence":["Pinned source URL or concrete evidence"],"decision":null} -->
-      <!-- human:FO1:start -->
-      <!-- human:FO1:end -->
-      <!-- ai:FO1:start -->
-      🟠 **[FO1] — Concrete problem.**
+    Explain the trigger, code path, wrong outcome and impact. Include pinned
+    source links here, once, rather than repeating them in metadata.
 
-      Explain trigger, code path, incorrect behavior and impact in ordinary Markdown.
+    > **Fix FO1-FIX**
+    > Explain the concrete fix and regression scenario with its expected outcome.
 
-      > **Fix FO1-FIX**
-      > Explain the change and a specific regression scenario with its expected result.
-      <!-- ai:FO1:end -->
+`Location` is an exact RIGHT-side PR diff target, or `general`. Routing lines
+are private and are not published. `Status` is new, continued, fixed, recurred or
+disagreement. Reuse published IDs exactly. Existing findings being fixed or
+disagreed still need an evidence-backed disposition; omission is not resolution.
 
-Inline cards use `kind:"inline", "path":"relative/file.js", "line":42,
-"side":"RIGHT"` and `Inline comment` in the heading. Only real PR diff locations
-are valid. Human blocks are empty: never invent a human assessment.
-Keep the card heading, target and source preview outside the AI block. They are
-local routing/display metadata, not published prose. The AI block starts with the
-severity and finding ID, never `Inline comment`, `General PR comment` or `Target:`.
-Findings requiring a human decision instead start their AI block with
-`🧑 **HUMAN DECISION REQUIRED**` on its own first line, followed by the severity
-and finding ID. Include the STOP warning from automation.md telling
-implementing agents to wait for the human's explicit comment. Populate `decision`
-as well so the warning renders consistently. It is advisory, not a resolution gate.
-The publisher normalizes this warning to one leading block from the structured
-decision. Keep the STOP warning in its own paragraph, separate from the evidence
-and proposed fix.
+For unresolved design choices start the finding body with
+`🧑 **HUMAN DECISION REQUIRED**`, before the severity lead, then a `Decision:`
+sentence and the advisory STOP guidance from automation.md. Do not duplicate this
+in structured fields. Specifications and prior human decisions can settle a choice.
 
-Use existing published IDs verbatim on follow-up (for example R1FO1). Status is
-new, continued, fixed, recurred or disagreement. Include fixed/disagreement
-dispositions only for existing findings and provide inspected evidence. Those are
-lifecycle updates, not new praise cards. For new findings, `decision` is null for
-technical fixes and choices already settled by the specification or an explicit
-human decision; cite the settling evidence. An unresolved design choice requires
-{"required":true,"question":"...","reason":"...",
-"revision":1,"authority":"author"} (authority may also be maintainer).
+Account for substantive human discussion in a visible table, once:
 
-End with one single-line control marker. This is bookkeeping, not a second report:
+    | Source | Disposition | Assessment | Finding |
+    | --- | --- | --- | --- |
+    | comment:123 | response | Evidence-backed assessment with a source link. | FO1 |
 
-    <!-- review-result {"coverage":{"complete":true,"missing":[],"files":["relative/file.js"],"lenses":["correctness"],"behaviors":["retry after failure"]},"accounting":[],"recommendation":"comment","errors":[]} -->
+Source IDs use comment, inline or review followed by the numeric GitHub ID.
+Disposition is response, no-action, continued, fixed or disagreement. Use `-`
+when no finding applies. Do not put a literal pipe in the assessment cell.
+Do not account separately for bot notifications or repeat finding prose here.
+The worker derives finding accounting from dispositions and binds discussion
+revisions from actual public reads; never calculate or copy hashes.
 
-Every required source gets an accounting entry with exactly `sourceId`,
-`sourceRevision` (current digest), `disposition`, `response`, `findingId` and
-`humanAssessment`. Disposition is response, no-action, continued, fixed or
-disagreement. Response is a concise explanation; findingId is a report finding ID
-or null; humanAssessment is accepted, insufficient, conflict or null. Do not copy
-whole findings into accounting. Preserve unchanged accounting only when the exact
-source revision still matches. Coverage lists inspected surfaces, never guessed
-ones. Recommendation is comment, or approve only when the existing approval rules
-are satisfied. `coverage.complete` means the source and discussion review is
-complete, not that runtime acceptance has passed. Use `coverage.missing` only for
-unread source, required discussion, or unfinished review surfaces; those make
-complete false. Only unresolved tool failures belong in errors. A failed attempt
-followed by a successful read of the intended source is recovered, not an error
-in the completed review. Keep errors empty when no failures remain unresolved.
-On format repair, follow the worker's specific validation feedback. When it
-accepts a footer-only repair, return just the corrected review-result marker;
-the worker retains the findings without another full report generation.
+Finish with this short private completion section (no per-file inventory):
 
-Put absent, pending or unverified CI/live acceptance evidence in the optional
-`coverage.verificationMissing` string array. This does not make source coverage
-incomplete or count as a tool error: return the actionable review with complete
-true when its source scope is finished, and recommendation comment. The publisher
-keeps these limitations as metadata and blocks approval. Report a concrete test-coverage
-defect as a finding when warranted; do not invent a defect simply because live
-evidence is unavailable. Never run or wait for tests to fill this field.
+    ## Review completion
+    Complete: yes
+    Missing: none
+    Verification missing: tests were not executed; thread resolution is publisher-owned
+    Lenses: correctness; security; races; performance; tests; reuse; documentation
+    Behaviors: retry recovery; publication lifecycle
 
-Unknown GitHub thread-resolution status belongs in `coverage.verificationMissing`
-as well, not in `coverage.missing` or `errors`. It does not block a completed
-source/discussion review; use recommendation comment. Do not infer resolution
-from code fixes or invent human consent. The publisher verifies current thread
-state. Missing comments, replies or source evidence remain blocking.
+Use `Complete: no` and list unfinished source/discussion surfaces in `Missing`
+when applicable. Lists use `; `, or `none`. Only claim lenses and behaviors
+actually inspected. Unknown resolution flags and missing/pending runtime checks
+belong in `Verification missing`, not `Missing`. Never run or wait for tests.
+Recommendation defaults to comment. An optional `Recommendation: approve` is
+allowed only when the existing complete-evidence and resolved-findings policy
+is satisfied; the publisher independently enforces that policy.
+No publishing dashboard or certainty percentages.
 
-No publishing dashboard, manual CLI instructions or certainty percentages are
-needed in this automated report. The controller publishes, not the model.
+On repair, correct the saved document using specific validation feedback.
+Do not repeat source inspection unless evidence is genuinely missing.

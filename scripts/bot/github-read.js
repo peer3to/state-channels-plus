@@ -361,6 +361,10 @@ function decodePage(url, body, contentType, repository, pr, head = null) {
     };
 }
 class PublicGitHub {
+    // Source IDs map to canonical revisions of discussion actually read by this turn.
+    revisions = new Map();
+    // IDs of substantive non-reviewer discussion items actually retrieved.
+    requiredDiscussion = new Set();
     repository;
     repositoryId;
     pr;
@@ -489,8 +493,40 @@ class PublicGitHub {
                     ?.match(/<([^>]+)>;\s*rel="next"/)?.[1] || null;
             if (next) next = this.permitted(next).href;
             this.budget.record(url.href, body, response.headers, data, next);
+            const kind = url.pathname.endsWith(`/issues/${this.pr}/comments`)
+                ? "comment"
+                : url.pathname.endsWith(`/pulls/${this.pr}/comments`)
+                  ? "inline"
+                  : url.pathname.endsWith(`/pulls/${this.pr}/reviews`)
+                    ? "review"
+                    : null;
+            if (kind && Array.isArray(data))
+                for (const item of data) {
+                    this.revisions.set(
+                        `${kind}:${item.id}`,
+                        require("./reconcile").sourceRevision(item)
+                    );
+                    if (
+                        item.body?.trim() &&
+                        !(
+                            item.user?.type === "Bot" &&
+                            item.user?.login === "github-actions[bot]"
+                        )
+                    )
+                        this.requiredDiscussion.add(`${kind}:${item.id}`);
+                    else this.requiredDiscussion.delete(`${kind}:${item.id}`);
+                }
+            const publicData = require("./state").publicContext(data);
+            for (const item of Array.isArray(publicData)
+                ? publicData
+                : [publicData])
+                for (const finding of item?.reviewFindings || [])
+                    this.revisions.set(
+                        finding.sourceId,
+                        finding.sourceRevision
+                    );
             return {
-                data: require("./state").publicContext(data),
+                data: publicData,
                 next,
                 source: this.budget.sources.at(-1),
                 threadResolution: {

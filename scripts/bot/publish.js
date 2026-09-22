@@ -177,6 +177,26 @@ class Publisher {
         return { status: "ready", observations, required };
     }
     async publish(result) {
+        // Retry the whole idempotent publication, not a mutation request. Each
+        // attempt re-reads GitHub markers before writing after an ambiguous reply.
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this.publishAttempt(result);
+            } catch (error) {
+                const status = error.diagnostics?.status;
+                const transient =
+                    [429, 502, 503, 504].includes(status) ||
+                    ["TimeoutError", "AbortError", "TypeError"].includes(
+                        error.name
+                    );
+                if (!transient || attempt === 2) throw error;
+                await new Promise((resolve) =>
+                    setTimeout(resolve, 1000 * 2 ** attempt)
+                );
+            }
+        }
+    }
+    async publishAttempt(result) {
         this.pendingState = null;
         try {
             return await this.apply(result);
@@ -324,14 +344,35 @@ class Publisher {
             }
             // Accounting responses remain in the report; public findings own IDs.
             // An inline review needs a body, but no standalone status prose.
-            if (rendered.some((finding) => finding.path !== null)) {
-                batch = await this.github.batch(
-                    rendered.map((finding) => ({
-                        ...finding,
-                        body: wrapFinding(finding.id, finding.body)
-                    })),
-                    batchMarker
-                );
+            const inline = rendered.filter((finding) => finding.path !== null);
+            // Small independently marked batches keep large reviews recoverable.
+            // Never resend a completed chunk after a later chunk fails.
+            for (let start = 0; start < inline.length; start += 10) {
+                const chunk = inline.slice(start, start + 10);
+                const marker =
+                    inline.length <= 10
+                        ? batchMarker
+                        : actionMarker(this.request, "findings-chunk", {
+                              round: state.round,
+                              ids: chunk.map((finding) => finding.id)
+                          });
+                batch = findAction(beforeBatch, marker, this.github.botId);
+                if (!batch)
+                    batch = await this.github.batch(
+                        chunk.map((finding) => ({
+                            ...finding,
+                            body: wrapFinding(finding.id, finding.body)
+                        })),
+                        marker
+                    );
+                if (!state.actions.some((action) => action.id === batch.id))
+                    state.actions.push({
+                        kind: "review-comment",
+                        id: batch.id,
+                        url: batch.html_url
+                    });
+                state.status = "partial";
+                await this.saveState(state);
             }
         }
         if (batch && !state.actions.some((action) => action.id === batch.id))
@@ -620,6 +661,8 @@ async function main() {
                 }
             );
     } catch (error) {
+        console.error(require("./errors").sanitized(error).message);
+        if (error.diagnostics) console.error(JSON.stringify(error.diagnostics));
         if (error.publication) {
             output = error.publication;
             process.exitCode = 1;
@@ -659,5 +702,6 @@ async function main() {
 if (require.main === module)
     main().catch((error) => {
         console.error(require("./errors").sanitized(error).message);
+        if (error.diagnostics) console.error(JSON.stringify(error.diagnostics));
         process.exitCode = 1;
     });

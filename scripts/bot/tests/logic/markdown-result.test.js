@@ -20,6 +20,29 @@ function markdown(metadata = {}) {
     );
 }
 describe("Markdown review conversion", function () {
+    it("converts plain prose without model-authored hidden metadata", function () {
+        const input = request();
+        const source = `# Review\n\n## Correctness\n\n### [FO1] Retry failure\nStatus: fixed\nLocation: src/a.js:42\n\n🟠 **[FO1] — Retry failure.**\n\nFixed at https://github.com/owner/repo/blob/${input.head}/src/a.js#L42\n\n> **Fix FO1-FIX**\n> Preserve the acknowledgement.\n\n## Discussion\n\n| comment:123 | response | Verified the change. | FO1 |\n\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness; tests\nBehaviors: retry recovery\n`;
+        assert.ok(!source.includes("<!--"));
+        const converted = decodeModelResult(source, {
+            request: input,
+            previous: [{ id: "FO1", threadId: "thread-1" }],
+            revisions: new Map([
+                ["finding:FO1", "a".repeat(64)],
+                ["comment:123", "b".repeat(64)]
+            ])
+        });
+        assert.equal(converted.findings[0].threadId, "thread-1");
+        assert.equal(converted.findings[0].evidence.length, 1);
+        assert.equal(converted.accounting.length, 2);
+        assert.equal(converted.accounting[0].sourceRevision, "b".repeat(64));
+        assert.equal(converted.coverage.complete, true);
+        assert.ok(!converted.findings[0].body.includes("Location:"));
+        validateReport(result(input, converted), input);
+        assert.throws(() => decodeModelResult(source, { request: input }), {
+            code: "INVALID_RESULT"
+        });
+    });
     it("keeps Studio routing outside the published AI prose through conversion", function () {
         const source = markdown({
             kind: "inline",

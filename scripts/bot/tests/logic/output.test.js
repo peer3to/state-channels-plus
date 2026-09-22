@@ -79,6 +79,90 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("repairs missing discussion accounting before handing a completed review to CI", async function () {
+        const completion =
+            "## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness\nBehaviors: retry\n";
+        const draft = "# Review\n\n" + completion;
+        const repaired =
+            "# Review\n\n## Discussion\n| comment:123 | no-action | The specified behavior already matches the implementation. | - |\n\n" +
+            completion;
+        await fixture(
+            [draft, repaired],
+            async ({ service, input, execution, model, root }) => {
+                const wire = new RecordedGitHub([
+                    {
+                        path: `/repos/${input.repository.name}/issues/${input.pr}/comments`,
+                        response: [
+                            {
+                                id: 123,
+                                body: "Please check the retry behavior.",
+                                user: { id: 7, type: "User", login: "author" }
+                            }
+                        ]
+                    }
+                ]);
+                execution.context.exchange = wire.exchange.bind(wire);
+                await execution.context.read(
+                    `https://api.github.com/repos/${input.repository.name}/issues/${input.pr}/comments`
+                );
+                const output = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.equal(model.prompts.length, 2);
+                assert.match(
+                    model.prompts[1],
+                    /missing dispositions for: comment:123/
+                );
+                assert.equal(output.accounting[0].sourceId, "comment:123");
+                assert.equal(
+                    output.accounting[0].sourceRevision,
+                    execution.context.revisions.get("comment:123")
+                );
+                assert.equal(execution.correctionUsed, false);
+                wire.done();
+            }
+        );
+    });
+    it("repairs an invalid inline target on the same session before returning model success", async function () {
+        await require("../fixtures/git").gitFixture(async (tree) => {
+            const draft = (line) =>
+                `# Review\n\n## Correctness\n\n### [FO1] Retry\nStatus: new\nLocation: README.md:${line}\n\n🟠 **[FO1] — Retry defect.**\n\nSee https://github.com/owner/repo/blob/${tree.input.head}/README.md#L1\n\n> **Fix FO1-FIX**\n> Preserve the result.\n\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness\nBehaviors: retry\n`;
+            await fixture(
+                [draft(999), draft(1)],
+                async ({ service, input, execution, model, root }) => {
+                    Object.assign(input, {
+                        head: tree.input.head,
+                        base: tree.input.base,
+                        mergeBase: tree.input.mergeBase
+                    });
+                    execution.repoRoot = tree.source;
+                    execution.sourceBase = input.base;
+                    const output = await service.generate(
+                        input,
+                        execution,
+                        input,
+                        root
+                    );
+                    assert.equal(output.findings[0].line, 1);
+                    assert.equal(model.prompts.length, 2);
+                    assert.match(model.prompts[1], /FO1 targets README.md:999/);
+                    assert.equal(execution.correctionUsed, false);
+                    assert.equal(output.sessionId, "owned-session");
+                    assert.equal(output.revision, 0);
+                    assert.equal(
+                        await fs.readFile(
+                            path.join(root, `${input.attempt}-0-draft-0.md`),
+                            "utf8"
+                        ),
+                        draft(999)
+                    );
+                }
+            );
+        });
+    });
     it("repairs malformed accounting-correction output without advancing beyond revision one", async function () {
         await fixture(
             [result(), "invalid Markdown", result()],
