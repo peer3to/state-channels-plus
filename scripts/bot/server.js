@@ -445,7 +445,13 @@ class ReviewService {
                     revision
                 );
             } catch (error) {
-                if (!["INVALID_RESULT", "INVALID_REQUEST"].includes(error.code))
+                if (
+                    ![
+                        "INVALID_RESULT",
+                        "INVALID_REQUEST",
+                        "REVIEW_INCOMPLETE"
+                    ].includes(error.code)
+                )
                     throw error;
                 // No new revision has been accepted yet. Preserve CI's accounting
                 // correction slot and public result revision during format repair.
@@ -469,7 +475,9 @@ class ReviewService {
                             (execution.context.gathered()
                                 ? formatFeedback(generated)
                                 : "Controller evidence is incomplete. Read the missing required PR/discussion collections and every next page; recover failed reads before claiming coverage.complete. Rewriting the report cannot repair missing retrieval evidence.")) +
-                        "\nRepair the existing draft, not the review analysis. Return the corrected Markdown document. Do not repeat source reads unless needed to resolve an actual missing fact." +
+                        (error.code === "REVIEW_INCOMPLETE"
+                            ? "\nContinue the existing review from its saved draft. Finish the missing source/discussion/lens work using the available tools; retain completed analysis and finding IDs. Controller-confirmed resolved threads are intentionally out of scope, not missing evidence. Tests are not required: record unavailable runtime verification separately. Do not merely change Complete to yes: finish genuinely missing work before returning the complete Markdown review."
+                            : "\nRepair the existing draft, not the review analysis. Return the corrected Markdown document. Do not repeat source reads unless needed to resolve an actual missing fact.") +
                         this.remainingPrompt(execution),
                     execution.budget
                 );
@@ -576,7 +584,17 @@ class ReviewService {
             errors: generated.evidence?.errors || []
         };
         protocol.result(generated, input);
-        protocol.requireCompleteReview(generated);
+        try {
+            protocol.requireCompleteReview(generated);
+        } catch (error) {
+            error.validationFeedback = JSON.stringify({
+                complete: generated.coverage.complete,
+                missing: generated.coverage.missing,
+                errors: generated.evidence.errors,
+                controllerEvidenceComplete: execution.context.gathered()
+            });
+            throw error;
+        }
         check(
             validateReport(generated, input).document.baseSha ===
                 (execution.sourceBase || input.base),

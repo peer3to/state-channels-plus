@@ -13,6 +13,22 @@ adds follow-up scope; it does not replace those audits. This automated override
 controls execution, checkout, deadlines and publication; model-output.md controls
 the single Markdown output format. Never execute the inherited manual commands.
 
+## Automated completion scope — overrides inherited full-discussion requirements
+
+Controller-confirmed resolved threads and their replies are intentionally excluded
+from this review. They require no reading, accounting or completeness claim; do not
+fetch them through another route or label their omission missing evidence. Review
+all remaining required discussion and source. Resolution is not proof of a code fix:
+independently report a defect if current source demonstrates it.
+
+Finish the source review before returning a final report. If work remains, continue
+using the available tools rather than ending with a partial review. On controller
+completeness feedback, resume the saved analysis and finish the missing work without
+restarting completed audits. Tests and live verification are not required for source
+coverage; record their absence only under Verification missing. Never claim coverage
+for genuinely unread required evidence. Infrastructure failures and the controller's
+execution budget remain external limits, not permission to invent completion.
+
 ## Findings and publication — overrides inherited output rules
 
 Publish only actionable defects, concrete improvements and unresolved human

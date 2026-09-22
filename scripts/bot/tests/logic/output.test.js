@@ -10,6 +10,16 @@ const { digest } = require("../../data");
 const { request, result } = require("../fixtures/records");
 const { RecordedGitHub } = require("../fixtures/github");
 const { RecordedModelOutput } = require("../fixtures/model");
+function stallAfterRecordedTurns(model, execution) {
+    model.beforeTurn = async () => {
+        if (model.outputs.length) return;
+        execution.budget = new ModelBudget(5);
+        await execution.budget.run(
+            () => new Promise(() => {}),
+            async () => {}
+        );
+    };
+}
 async function fixture(outputs, body) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-output-"));
     const service = new ReviewService({
@@ -79,6 +89,49 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("finishes missing required discussion through the real reader during continuation", async function () {
+        const incomplete = result(undefined, { recommendation: "comment" });
+        incomplete.coverage.complete = false;
+        incomplete.coverage.missing = ["reviews"];
+        await fixture(
+            [incomplete, result()],
+            async ({ service, input, execution, model, root }) => {
+                execution.context.budget.sources =
+                    execution.context.budget.sources.filter(
+                        (source) => !source.url.endsWith("/reviews")
+                    );
+                const wire = new RecordedGitHub([
+                    {
+                        path: `/repos/${input.repository.name}/pulls/${input.pr}/reviews`,
+                        response: []
+                    }
+                ]);
+                execution.context.exchange = wire.exchange.bind(wire);
+                model.beforeTurn = async () => {
+                    if (model.prompts.length !== 1) return;
+                    assert.equal(execution.context.gathered(), false);
+                    await assert.rejects(
+                        fs.access(path.join(root, `${input.attempt}-0.json`)),
+                        { code: "ENOENT" }
+                    );
+                    await execution.context.read(
+                        `https://api.github.com/repos/${input.repository.name}/pulls/${input.pr}/reviews`
+                    );
+                };
+                const completed = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.equal(completed.coverage.complete, true);
+                assert.equal(execution.context.gathered(), true);
+                assert.equal(model.prompts.length, 2);
+                assert.equal(execution.correctionUsed, false);
+                wire.done();
+            }
+        );
+    });
     it("repairs missing discussion accounting before handing a completed review to CI", async function () {
         const completion =
             "## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests not run\nLenses: correctness\nBehaviors: retry\n";
@@ -332,10 +385,11 @@ Keep the operation until its acknowledgment is persisted.
             " -->";
         await fixture(
             [draft, footer],
-            async ({ service, input, execution, root }) => {
+            async ({ service, input, execution, model, root }) => {
+                stallAfterRecordedTurns(model, execution);
                 await assert.rejects(
                     service.generate(input, execution, input, root),
-                    { code: "REVIEW_INCOMPLETE" }
+                    { code: "REVIEW_TIMEOUT" }
                 );
                 await fs.access(
                     path.join(root, `${input.attempt}-0-draft-0.md`)
@@ -459,19 +513,24 @@ Keep the operation until its acknowledgment is persisted.
             }
         );
     });
-    it("fails an explicitly incomplete model review without a paid format retry", async function () {
+    it("continues an incomplete review on the same owner before accepting completion", async function () {
         const output = result(undefined, { recommendation: "comment" });
         output.coverage.complete = false;
         output.coverage.missing = ["PR discussion and source diff"];
         output.evidence.errors = ["Context retrieval failed"];
         await fixture(
-            [output],
+            [output, result(undefined, { recommendation: "comment" })],
             async ({ service, input, execution, model, root }) => {
-                await assert.rejects(
-                    service.generate(input, execution, input, root),
-                    { code: "REVIEW_INCOMPLETE" }
+                const completed = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
                 );
-                assert.equal(model.prompts.length, 1);
+                assert.equal(completed.coverage.complete, true);
+                assert.equal(model.prompts.length, 2);
+                assert.match(model.prompts[1], /PR discussion and source diff/);
+                assert.match(model.prompts[1], /Continue the existing review/);
                 assert.equal(execution.correctionUsed, false);
             }
         );
@@ -574,8 +633,9 @@ Keep the operation until its acknowledgment is persisted.
                     recommendation: "comment"
                 })
             ],
-            async ({ service, input, execution, root }) => {
+            async ({ service, input, execution, model, root }) => {
                 const route = `/repos/${input.repository.name}/pulls/${input.pr}/files`;
+                stallAfterRecordedTurns(model, execution);
                 const failure = new RecordedGitHub([
                     { path: route, status: 503, response: {} }
                 ]);
@@ -588,7 +648,7 @@ Keep the operation until its acknowledgment is persisted.
                 failure.done();
                 await assert.rejects(
                     service.generate(input, execution, input, root),
-                    { code: "REVIEW_INCOMPLETE" }
+                    { code: "REVIEW_TIMEOUT" }
                 );
                 await assert.rejects(
                     fs.access(path.join(root, `${input.attempt}-1.json`)),
@@ -683,19 +743,28 @@ Keep the operation until its acknowledgment is persisted.
             }
         );
     });
-    it("fails incomplete coverage even when the model reports no tool errors", async function () {
+    it("continues a review that incorrectly counts resolved threads as missing evidence", async function () {
         const generated = result();
         generated.recommendation = "comment";
         generated.coverage.complete = false;
-        generated.coverage.missing.push("thread-resolution");
+        generated.coverage.missing.push(
+            "132 replies in controller-listed resolved threads"
+        );
         await fixture(
-            [generated],
+            [generated, result()],
             async ({ service, input, model, execution, root }) => {
-                await assert.rejects(
-                    service.generate(input, execution, input, root),
-                    { code: "REVIEW_INCOMPLETE" }
+                const completed = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
                 );
-                assert.equal(model.prompts.length, 1);
+                assert.equal(completed.coverage.complete, true);
+                assert.equal(model.prompts.length, 2);
+                assert.match(
+                    model.prompts[1],
+                    /resolved threads are intentionally out of scope/
+                );
             }
         );
     });
@@ -719,9 +788,10 @@ Keep the operation until its acknowledgment is persisted.
                     execution.context.budget.sources.filter(
                         (source) => !source.url.endsWith("/reviews")
                     );
+                stallAfterRecordedTurns(model, execution);
                 await assert.rejects(
                     service.generate(input, execution, input, root),
-                    { code: "REVIEW_INCOMPLETE" }
+                    { code: "REVIEW_TIMEOUT" }
                 );
                 assert.equal(model.prompts.length, 2);
                 await assert.rejects(

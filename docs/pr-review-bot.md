@@ -250,10 +250,14 @@ CI retains the model handoff artifact for one day and relies on GitHub expiratio
 
 A failed model/review remains a failed native CI job. Inspect its sanitized error, worker logs and job summary. `LOGIN_EXPIRED` requires restoring the worker user's login; `SUBSCRIPTION_LIMIT` requires waiting for included usage; `MODEL_UNAVAILABLE` requires the supported CLI/model; context errors require inspecting the missing public evidence. Do not add credential or paid-route fallbacks to hide failures.
 
-An explicit incomplete review is `REVIEW_INCOMPLETE`, not a successful comment-only
-review. It receives no format retry and cannot enter publication bookkeeping or
-publish findings. The existing per-attempt failure notice is the only comment for
-that failed generation; retries of publication reuse it. Previously acknowledged
+An explicit incomplete review triggers continuation in the same conversation,
+with its missing surfaces and evidence errors returned to the agent. The worker
+keeps the draft and asks the agent to finish the remaining source review within
+the existing cumulative model budget; it does not accept an incomplete result or
+publish its findings. Controller-confirmed resolved threads are deliberately out
+of scope, and unavailable runtime tests belong under verification limitations,
+not missing source coverage. Provider/infrastructure failure or budget exhaustion
+can still terminate the attempt without fabricating completion. Previously acknowledged
 incomplete reports do not qualify as incremental review baselines. PR browser-root
 URLs are read through the corresponding public REST PR endpoint, not GitHub's
 changing HTML shell; the discussion collections must still be read separately.

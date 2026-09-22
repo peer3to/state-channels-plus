@@ -43,3 +43,7 @@ Use the provided delta diff for review scope but the full PR diff for inline
 anchors. Keep existing finding IDs stable; omit already closed findings unless
 new evidence reopens them. Do not equate a manually resolved thread with proof of
 a fix or a required human answer.
+
+For automated review, the completion scope in automation.md overrides inherited
+requirements to read resolved-thread history. Controller-filtered resolved threads
+are out of scope, not a coverage gap.
