@@ -73,7 +73,9 @@ async function reviewWorker(body, allowUnlisted = true) {
             client,
             root,
             keyPair,
-            connected: Promise.race([connected, deadline])
+            connected: Promise.race([connected, deadline]),
+            network,
+            keys
         });
     } finally {
         clearTimeout(timer);

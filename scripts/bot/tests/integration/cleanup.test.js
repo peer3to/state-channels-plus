@@ -48,6 +48,31 @@ async function cleanupFixture(body) {
     });
 }
 describe("review owned lifecycle cleanup", function () {
+    it("preserves ownership after native deletion fails and retries successfully", async function () {
+        await cleanupFixture(async ({ cleanup, tree, deleted, wire }) => {
+            const records = structuredClone(wire.records),
+                remove = cleanup.deleteNative;
+            cleanup.deleteNative = async () => {
+                throw new Error("native deletion unavailable");
+            };
+            assert.equal((await cleanup.run()).deleted, 0);
+            await fs.access(tree.checkout);
+            const manifest = JSON.parse(
+                await fs.readFile(
+                    path.join(cleanup.worktrees.root, "pr-1-6.json"),
+                    "utf8"
+                )
+            );
+            assert.notEqual(manifest.nativeDeleted, true);
+            assert.deepEqual(deleted, []);
+            cleanup.deleteNative = remove;
+            wire.records.push(...records);
+            assert.equal((await cleanup.run()).deleted, 1);
+            assert.deepEqual(deleted, ["registered-session"]);
+            await assert.rejects(fs.access(tree.checkout));
+            wire.done();
+        });
+    });
     it("deletes the registered closed PR worktree and exact native session while preserving siblings", async function () {
         await cleanupFixture(async ({ cleanup, tree, deleted, root, wire }) => {
             const sentinel = path.join(root, "unregistered-developer-data");
@@ -79,6 +104,10 @@ describe("review owned lifecycle cleanup", function () {
     });
     it("retains the native deletion ledger when unexpected worktree edits defer cleanup", async function () {
         await cleanupFixture(async ({ cleanup, tree, deleted, wire }) => {
+            const original = await fs.readFile(
+                path.join(tree.checkout, "README.md")
+            );
+            const records = structuredClone(wire.records);
             await fs.writeFile(
                 path.join(tree.checkout, "README.md"),
                 "Unexpected developer edit"
@@ -101,6 +130,20 @@ describe("review owned lifecycle cleanup", function () {
                 ),
                 "Unexpected developer edit"
             );
+            wire.done();
+            await fs.writeFile(path.join(tree.checkout, "README.md"), original);
+            wire.records.push(...records);
+            const restarted = new LifecycleCleanup({
+                worktrees: cleanup.worktrees,
+                sessions: cleanup.sessions,
+                repositories: null,
+                limits: DEFAULTS,
+                exchange: wire.exchange.bind(wire),
+                deleteNative: async (id) => deleted.push(id)
+            });
+            assert.equal((await restarted.run()).deleted, 1);
+            assert.deepEqual(deleted, ["registered-session"]);
+            await assert.rejects(fs.access(tree.checkout));
             wire.done();
         });
     });

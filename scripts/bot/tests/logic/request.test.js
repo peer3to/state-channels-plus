@@ -40,6 +40,7 @@ describe("review CI request setup", function () {
                 GITHUB_EVENT_PATH: event,
                 GITHUB_ACTOR: "maintainer",
                 GITHUB_RUN_ID: "123",
+                GITHUB_REPOSITORY_ID: "873087994",
                 GITHUB_RUN_ATTEMPT: "1",
                 GITHUB_OUTPUT: output,
                 SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32)

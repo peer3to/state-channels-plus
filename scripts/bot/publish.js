@@ -341,11 +341,38 @@ class Publisher {
                             )
                     )
                     .at(-1);
-                if (latest) body = latest.body;
+                if (latest) {
+                    const start = `<!-- peer3-review-finding:v1 ${finding.id}:start -->`;
+                    const end = `<!-- peer3-review-finding:v1 ${finding.id}:end -->`;
+                    const offset = latest.body.indexOf(start);
+                    const finish = latest.body.indexOf(end, offset);
+                    body =
+                        finish >= 0
+                            ? latest.body.slice(offset, finish)
+                            : latest.body;
+                }
             }
+            const rendered = renderFinding(
+                finding,
+                current.pull.user.login
+            ).trim();
+            const visible = stripState(body)
+                .replace(
+                    /<!-- peer3-review-(?:finding|action):v1 [\s\S]*?-->/g,
+                    ""
+                )
+                .trim();
+            const sectioned =
+                finding.path === null
+                    ? renderGeneralSections(
+                          [{ ...finding, body: rendered }],
+                          validateReport(result, this.request),
+                          state.mappings
+                      ).trim()
+                    : rendered;
             publication.set(finding.id, {
                 exists: Boolean(source),
-                matches: body.includes(safeText(finding.body))
+                matches: visible === rendered || visible === sectioned
             });
         }
         const operations = findingActions(

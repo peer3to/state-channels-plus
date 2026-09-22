@@ -39,7 +39,7 @@ describe("review source-tool CI evidence", function () {
                 records.exchange.bind(records),
                 input.head
             );
-            const tools = new SourceTools(source, input, reader, source);
+            const tools = new SourceTools(source, input, reader);
             try {
                 const events = await tools.call("public_github_read", {
                     url: `https://api.github.com${timeline}`

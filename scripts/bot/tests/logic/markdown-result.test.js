@@ -1,5 +1,9 @@
 const assert = require("node:assert/strict");
-const { markdownResult, decodeModelResult } = require("../../markdown-result");
+const {
+    markdownResult,
+    decodeModelResult,
+    repairModelResult
+} = require("../../markdown-result");
 const { result, request } = require("../fixtures/records");
 const { validateReport, renderFinding } = require("../../review-format");
 const control = {
@@ -20,6 +24,29 @@ function markdown(metadata = {}) {
     );
 }
 describe("Markdown review conversion", function () {
+    it("refuses footer-only repair of a footer-free draft until a complete document arrives", function () {
+        const full = markdown(),
+            footer = `<!-- review-result ${JSON.stringify(control)} -->`;
+        const previous = full.replace(footer, "");
+        assert.throws(() =>
+            markdownResult(repairModelResult(previous, footer))
+        );
+        assert.deepEqual(
+            markdownResult(repairModelResult(previous, full)),
+            markdownResult(full)
+        );
+    });
+    it("refuses footer-only repair of an ambiguous two-footer draft", function () {
+        const full = markdown(),
+            footer = `<!-- review-result ${JSON.stringify(control)} -->`;
+        assert.throws(() =>
+            markdownResult(repairModelResult(full + footer, footer))
+        );
+        assert.deepEqual(
+            markdownResult(repairModelResult(full + footer, full)),
+            markdownResult(full)
+        );
+    });
     it("rejects a malformed open finding following a valid fixed finding", function () {
         const source =
             "## Correctness\n### [FO1] Fixed\nStatus: fixed\nLocation: general\n[FO1] Fixed.\n> Fix FO1-FIX\n### [FO-2] Open\nStatus: new\nLocation: general\n[FO-2] Defect.\n> Fix FO-2-FIX\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: none\nLenses: correctness\nBehaviors: retry\n";

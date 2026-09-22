@@ -57,16 +57,10 @@ describe("review concurrent source ownership", function () {
                         number: request.pr,
                         head: { sha: request.head }
                     });
-                    const output = path.join(
-                        tree.checkout,
-                        `temp/pr-github-reviews/${request.pr}`
-                    );
-                    await fs.mkdir(output, { recursive: true });
                     const source = new SourceTools(
                         tree.checkout,
                         request,
-                        null,
-                        output
+                        null
                     );
                     sourceOwners.push(source);
                     entered++;

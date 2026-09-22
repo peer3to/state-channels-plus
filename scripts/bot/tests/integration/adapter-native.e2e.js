@@ -82,12 +82,7 @@ describe("pinned native adapter acceptance", function () {
             const config = configuration({
                 stateRoot: path.join(root, "review")
             });
-            const tools = new SourceTools(
-                source,
-                input,
-                null,
-                path.join(root, "reports")
-            );
+            const tools = new SourceTools(source, input, null);
             const before = await snapshot(source);
             const adapter = new CodexAdapter(config, tools);
             try {

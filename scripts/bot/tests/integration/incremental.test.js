@@ -4,6 +4,70 @@ const path = require("node:path");
 const { SourceTools } = require("../../source-tools");
 const { gitFixture } = require("../fixtures/git");
 describe("incremental source review", function () {
+    it("keeps a baseline-only deleted file inspectable in the incremental delta", async function () {
+        await gitFixture(async ({ source, input, command }) => {
+            await fs.writeFile(
+                path.join(source, "temporary.md"),
+                "baseline-only evidence\n"
+            );
+            command(source, ["add", "temporary.md"]);
+            command(source, ["commit", "-m", "Add temporary source"]);
+            const baseline = command(source, ["rev-parse", "HEAD"]);
+            await fs.unlink(path.join(source, "temporary.md"));
+            command(source, ["commit", "-am", "Remove temporary source"]);
+            const tools = new SourceTools(
+                source,
+                { ...input, head: command(source, ["rev-parse", "HEAD"]) },
+                null
+            );
+            try {
+                assert.ok(
+                    tools
+                        .setBaseline({
+                            head: baseline,
+                            mergeBase: input.mergeBase
+                        })
+                        .changedFiles.includes("temporary.md")
+                );
+                assert.match(
+                    await tools.call("source_diff", { path: "temporary.md" }),
+                    /-baseline-only evidence/
+                );
+            } finally {
+                await tools.close();
+            }
+        });
+    });
+    it("rejects an existing non-ancestral sibling baseline and uses full review scope", async function () {
+        await gitFixture(async ({ source, input, command }) => {
+            const tree = command(source, ["rev-parse", `${input.head}^{tree}`]);
+            const sibling = command(source, [
+                "commit-tree",
+                tree,
+                "-p",
+                input.mergeBase,
+                "-m",
+                "Sibling history"
+            ]);
+            const tools = new SourceTools(source, input, null);
+            try {
+                assert.equal(
+                    tools.setBaseline({
+                        head: sibling,
+                        mergeBase: input.mergeBase
+                    }),
+                    null
+                );
+                assert.ok(
+                    !(
+                        await tools.call("source_diff", { path: "README.md" })
+                    ).includes("Changes since")
+                );
+            } finally {
+                await tools.close();
+            }
+        });
+    });
     it("searches beyond 500 lines and returns more than 200 matches without aborting the review", async function () {
         await gitFixture(async ({ source, input, command }) => {
             const lines = Array.from(
@@ -15,7 +79,7 @@ describe("incremental source review", function () {
                 lines.join("\n")
             );
             command(source, ["commit", "-am", "Long searchable source"]);
-            const tools = new SourceTools(source, input, null, source);
+            const tools = new SourceTools(source, input, null);
             const originalRead = fs.readFile;
             let reads = 0;
             let matches;
@@ -56,7 +120,7 @@ describe("incremental source review", function () {
     });
     it("provides a verified delta and the full PR anchor diff through the existing resumed-session tool", async function () {
         await gitFixture(async ({ source, input }) => {
-            const tools = new SourceTools(source, input, null, source);
+            const tools = new SourceTools(source, input, null);
             assert.equal(
                 tools.setBaseline({
                     head: input.base,
@@ -81,7 +145,7 @@ describe("incremental source review", function () {
     });
     it("rejects missing ancestry and a changed merge-base as incremental baselines", async function () {
         await gitFixture(async ({ source, input }) => {
-            const tools = new SourceTools(source, input, null, source);
+            const tools = new SourceTools(source, input, null);
             assert.equal(
                 tools.setBaseline({
                     head: "f".repeat(40),

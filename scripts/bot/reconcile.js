@@ -98,7 +98,11 @@ function findingActions(
             findingEvidence(finding) !== findingEvidence(old);
         if (changed)
             if (thread) actions.push({ kind: "evidence", finding, thread });
-        if (!old.threadId && (changed || finding.status !== old.status))
+        if (
+            !old.threadId &&
+            (changed ||
+                closed !== ["fixed", "disagreement"].includes(old.status))
+        )
             actions.push({ kind: "general-update", finding });
         if (thread) {
             if (closed && !thread.isResolved)

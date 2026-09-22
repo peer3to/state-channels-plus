@@ -20,6 +20,52 @@ async function violation(send, code = "INVALID_REQUEST") {
     });
 }
 describe("review chunk transfer bounds", function () {
+    it("expires an unfinished transfer while the peer stays connected and clears its buffers", async function () {
+        await serviceFixture(
+            { authorized: true },
+            async ({ server, client }) => {
+                await Promise.all([server.authenticated, client.authenticated]);
+                let delivered = 0;
+                server.connection.on("payload", () => delivered++);
+                const failed = once(server.connection, "failure");
+                await client.connection.peer.send("REVIEW_START", {
+                    ...common,
+                    operation: "request",
+                    byteCount: 2,
+                    sha256: digest("{}")
+                });
+                await client.connection.peer.send(
+                    "REVIEW_CHUNK",
+                    { ...common, sequence: 0 },
+                    Buffer.from("{")
+                );
+                assert.equal((await failed)[0].code, "TRANSFER_TIMEOUT");
+                assert.equal(server.connection.incoming, null);
+                assert.equal(delivered, 0);
+            }
+        );
+    });
+    it("reconstructs a valid exact-limit payload once and releases assembly buffers", async function () {
+        await serviceFixture(
+            { authorized: true },
+            async ({ server, client }) => {
+                await Promise.all([server.authenticated, client.authenticated]);
+                const value = "x".repeat(server.connection.limits.maxBytes - 2);
+                const received = once(server.connection, "payload");
+                let delivered = 0;
+                server.connection.on("payload", () => delivered++);
+                await client.connection.send(
+                    "request",
+                    common.requestId,
+                    common.attemptId,
+                    value
+                );
+                assert.equal((await received)[0].value, value);
+                assert.equal(delivered, 1);
+                assert.equal(server.connection.incoming, null);
+            }
+        );
+    });
     it("rejects a declared body above the configured transfer limit", async function () {
         await violation((peer, server) =>
             peer.send("REVIEW_START", {

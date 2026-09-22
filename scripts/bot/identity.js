@@ -9,9 +9,23 @@ function clientSeed(environment = process.env) {
     if (seed === undefined && environment.GITHUB_ACTIONS !== "true")
         return undefined;
     check(/^[a-f0-9]{64}$/.test(seed || ""), "UNAUTHORIZED");
+    const run = [
+        environment.GITHUB_REPOSITORY_ID,
+        environment.GITHUB_RUN_ID,
+        environment.GITHUB_RUN_ATTEMPT
+    ];
+    if (
+        environment.GITHUB_ACTIONS === "true" ||
+        run.some((value) => value !== undefined)
+    )
+        check(
+            run.every((value) => /^[1-9][0-9]*$/.test(value || "")),
+            "UNAUTHORIZED"
+        );
     return createHash("sha256")
         .update("peer3/review-orchestrator/v1\0")
         .update(Buffer.from(seed, "hex"))
+        .update(JSON.stringify(run))
         .digest("hex");
 }
 function clientPublicKey(environment = process.env) {

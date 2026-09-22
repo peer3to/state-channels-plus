@@ -7,10 +7,8 @@ const { SourceTools } = require("../../source-tools");
 const { request } = require("../fixtures/records");
 async function sourceFixture(body) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-source-"));
-    const checkout = path.join(root, "checkout"),
-        output = path.join(root, "reports");
+    const checkout = path.join(root, "checkout");
     await fs.mkdir(checkout);
-    await fs.mkdir(output);
     await fs.writeFile(
         path.join(root, "credential-canary"),
         "synthetic protected canary"
@@ -50,8 +48,7 @@ async function sourceFixture(body) {
     const owner = new SourceTools(
         checkout,
         request({ head, base: head, mergeBase: head }),
-        null,
-        output
+        null
     );
     try {
         await body(owner, root);

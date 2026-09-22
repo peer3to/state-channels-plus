@@ -8,6 +8,33 @@ const {
     loadOrchestratorKeyPair
 } = require("../../../e2e-parallel/distributed/orchestratorIdentity");
 describe("review CI identity", function () {
+    it("isolates repositories, runs and attempts while retaining reconnect identity", function () {
+        const environment = {
+            SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32),
+            GITHUB_ACTIONS: "true",
+            GITHUB_REPOSITORY_ID: "1",
+            GITHUB_RUN_ID: "2",
+            GITHUB_RUN_ATTEMPT: "1"
+        };
+        const seed = clientSeed(environment);
+        assert.equal(clientSeed({ ...environment }), seed);
+        assert.notEqual(
+            clientSeed({ ...environment, GITHUB_REPOSITORY_ID: "2" }),
+            seed
+        );
+        assert.notEqual(
+            clientSeed({ ...environment, GITHUB_RUN_ID: "3" }),
+            seed
+        );
+        assert.notEqual(
+            clientSeed({ ...environment, GITHUB_RUN_ATTEMPT: "2" }),
+            seed
+        );
+        assert.throws(
+            () => clientSeed({ ...environment, GITHUB_RUN_ID: undefined }),
+            { code: "UNAUTHORIZED" }
+        );
+    });
     it("derives a stable review key distinct from the test orchestrator key", function () {
         const seed = "12".repeat(32);
         const environment = { SCP_TEST_ORCHESTRATOR_SEED: seed };

@@ -26,6 +26,7 @@ class PublicationStore {
                 index === journal.states.length - 1
                     ? state
                     : {
+                          snapshotDigest: state.snapshotDigest || digest(state),
                           version: state.version,
                           repositoryId: state.repositoryId,
                           pr: state.pr,

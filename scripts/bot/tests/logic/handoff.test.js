@@ -53,6 +53,24 @@ async function fixture(body, artifact = {}) {
     }
 }
 describe("review data handoff", function () {
+    it("rejects a correctly hashed typed failure bound to another PR", async function () {
+        await fixture(async (options, input) => {
+            const { failure } = require("../../protocol");
+            const { ReviewError } = require("../../errors");
+            await fs.writeFile(
+                path.join(options.source, "result.json"),
+                JSON.stringify(
+                    failure(new ReviewError("CONTEXT_UNAVAILABLE"), {
+                        ...input,
+                        pr: input.pr + 1
+                    })
+                )
+            );
+            options.expectedDigest = await handoffDigest(options.source);
+            await assert.rejects(validateHandoff(options));
+            await assert.rejects(fs.access(options.destination));
+        });
+    });
     it("rejects an otherwise valid artifact with a different ID", async function () {
         await fixture(
             async (options) => {

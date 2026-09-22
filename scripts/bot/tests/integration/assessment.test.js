@@ -210,7 +210,208 @@ function proposed(input, finding, previous) {
             : []
     });
 }
+function retainedFixture() {
+    const wire = wireFixture(),
+        store = publicationStore();
+    const old = readStates(wire.comments, wire.input, 9)[0];
+    old.findings = [
+        {
+            ...wire.finding,
+            status: "fixed",
+            path: "README.md",
+            line: 1,
+            threadId: "thread-50"
+        }
+    ];
+    wire.comments[0].body = encodeState(old);
+    wire.inline.push({
+        id: 50,
+        user: { id: 9, type: "Bot" },
+        body: "Legacy fixed finding",
+        html_url: `https://github.com/${wire.input.repository.name}/pull/${wire.input.pr}#discussion_r50`
+    });
+    return { wire, store };
+}
+async function failedConfirmation(missing) {
+    const { wire, store } = retainedFixture();
+    let stale = true,
+        confirmationReads = 0;
+    const writer = new GitHubWriter(wire.input, {
+        token: "recorded",
+        botId: 9,
+        exchange: async (url, options) => {
+            const response = await wire.exchange(url, options);
+            if (
+                stale &&
+                wire.resolved.size &&
+                options.body &&
+                JSON.parse(options.body).query?.startsWith("query ") &&
+                ++confirmationReads === 2
+            ) {
+                const body = await response.json();
+                const threads = body.data.repository.pullRequest.reviewThreads;
+                if (missing) threads.nodes = [];
+                else threads.nodes[0].isResolved = false;
+                return new Response(JSON.stringify(body));
+            }
+            return response;
+        }
+    });
+    const publisher = new Publisher(
+        wire.input,
+        writer,
+        { eligible: true },
+        store
+    );
+    const output = result(wire.input);
+    await assert.rejects(publisher.publish(output), {
+        code: "CONTEXT_UNAVAILABLE"
+    });
+    assert.equal(
+        (await store.load(wire.input)).states.at(-1).status,
+        "partial"
+    );
+    stale = false;
+    assert.equal((await publisher.publish(output)).status, "complete");
+    assert.equal(
+        wire.calls.filter((c) => c.body?.query?.startsWith("mutation ")).length,
+        1
+    );
+}
+async function unchangedNextHead(human) {
+    const wire = wireFixture(),
+        store = publicationStore();
+    wire.comments.splice(0);
+    wire.reviews.splice(0);
+    const finding = {
+        ...wire.finding,
+        id: "FO1",
+        status: "new",
+        human,
+        body: human
+            ? "🧑 **HUMAN DECISION REQUIRED**\n\nChoose the specified behavior.\n\n**STOP — implementing agents:** Ask the Human."
+            : wire.finding.body
+    };
+    const owner = () =>
+        new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true },
+            store
+        );
+    assert.equal(
+        (await owner().publish(proposed(wire.input, finding))).status,
+        "complete"
+    );
+    const previous = (await store.load(wire.input)).states.at(-1).findings[0];
+    wire.input.head = "e".repeat(40);
+    wire.pull.head.sha = wire.input.head;
+    const before = wire.calls.length;
+    assert.equal(
+        (
+            await owner().publish(
+                proposed(
+                    wire.input,
+                    { ...previous, status: "continued" },
+                    previous
+                )
+            )
+        ).status,
+        "complete"
+    );
+    assert.equal(
+        wire.calls
+            .slice(before)
+            .filter(
+                (c) =>
+                    c.route !== "/graphql" &&
+                    ["POST", "PUT", "PATCH"].includes(c.method)
+            ).length,
+        0
+    );
+}
 describe("assessment GitHub lifecycle", function () {
+    it("does not edit unchanged ordinary findings on a new head", async function () {
+        await unchangedNextHead(null);
+    });
+    it("does not edit unchanged Human-decision findings after canonical rendering on a new head", async function () {
+        await unchangedNextHead({
+            required: true,
+            question: "Which behavior?",
+            reason: "Design choice",
+            revision: 1,
+            authority: "author"
+        });
+    });
+    it("retains partial state when resolution confirmation is unresolved and recovers without another mutation", async function () {
+        await failedConfirmation(false);
+    });
+    it("retains partial state when resolution confirmation is missing and recovers without another mutation", async function () {
+        await failedConfirmation(true);
+    });
+    it("does not mutate an already resolved retained thread on a new head", async function () {
+        const { wire, store } = retainedFixture();
+        wire.resolved.add("thread-50");
+        const publisher = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true },
+            store
+        );
+        assert.equal(
+            (await publisher.publish(result(wire.input))).status,
+            "complete"
+        );
+        assert.equal(
+            wire.calls.filter((c) => c.body?.query?.startsWith("mutation "))
+                .length,
+            0
+        );
+    });
+    it("defers retained resolution when a human comment arrives at the final observation", async function () {
+        const { wire, store } = retainedFixture();
+        let observations = 0;
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: (url, options) => {
+                if (
+                    new URL(url).pathname.endsWith(`/pulls/${wire.input.pr}`) &&
+                    ++observations === 4
+                )
+                    wire.comments.push({
+                        id: 99,
+                        user: { id: 7, type: "User" },
+                        body: "Please reconsider this resolution.",
+                        updated_at: "2026-09-22T12:00:00Z"
+                    });
+                return wire.exchange(url, options);
+            }
+        });
+        const publisher = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true },
+            store
+        );
+        assert.equal(
+            (await publisher.publish(result(wire.input))).status,
+            "partial"
+        );
+        assert.equal(
+            wire.calls.filter((c) => c.body?.query?.startsWith("mutation "))
+                .length,
+            0
+        );
+    });
     it("confirms retained fixed threads are resolved before completing publication", async function () {
         const wire = wireFixture(),
             store = publicationStore();
@@ -430,7 +631,7 @@ describe("assessment GitHub lifecycle", function () {
         const oldState = readStates(wire.comments, wire.input, 9).at(-1);
         const updated = {
             ...wire.finding,
-            body: "New unpublished analysis from the interrupted round."
+            body: wire.finding.body.split("\n\n")[0]
         };
         const pending = {
             ...oldState,
@@ -459,6 +660,7 @@ describe("assessment GitHub lifecycle", function () {
         assert.equal((await owner.publish(output)).status, "complete");
         assert.equal((await owner.publish(output)).status, "complete");
         assert.ok(wire.reviews[0].body.includes(updated.body));
+        assert.ok(!wire.reviews[0].body.includes("It fails on retry."));
         assert.equal(
             wire.calls.filter(
                 (call) => call.method === "POST" && call.route !== "/graphql"

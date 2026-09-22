@@ -77,7 +77,8 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 110
         permissions:
-            contents: read
+            # GitHub requires repository write access to resolve review threads.
+            contents: write
             pull-requests: write
             issues: write
             actions: read
