@@ -23,7 +23,144 @@ function fixture(records) {
         })
     };
 }
+async function rejectEdit(kind, change, expectedCode) {
+    const item = {
+        id: 30,
+        user: { id: 9, type: "Bot" },
+        body: "Observed text",
+        issue_url: `https://api.github.com/repos/${input.repository.name}/issues/6`
+    };
+    const supplied = { kind, item: structuredClone(item) };
+    const fresh = structuredClone(item);
+    if (change === "observed-author") supplied.item.user.id = 7;
+    if (change === "fresh-author") fresh.user.id = 7;
+    if (change === "body") fresh.body = "Edited meanwhile";
+    const { writer, wire } = fixture(
+        change === "observed-author"
+            ? []
+            : [
+                  {
+                      path: `/repos/${input.repository.name}${kind === "comment" ? "/issues/comments/30" : "/pulls/6/reviews/30"}`,
+                      response: fresh
+                  }
+              ]
+    );
+    await assert.rejects(writer.editGeneral(supplied, "Replacement"), {
+        code: expectedCode
+    });
+    wire.done();
+}
 describe("review CI mutation ownership", function () {
+    it("bounds repeated network exceptions without resetting read retry count", async function () {
+        let calls = 0;
+        const waits = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async (ms) => waits.push(ms),
+            exchange: async () => {
+                calls++;
+                throw new TypeError("network unavailable");
+            }
+        });
+        await assert.rejects(writer.api("/pulls/6"), TypeError);
+        assert.equal(calls, 3);
+        assert.deepEqual(waits, [1000, 2000]);
+    });
+    it("rejects a foreign observed comment author before editing", async function () {
+        await rejectEdit("comment", "observed-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign observed review author before editing", async function () {
+        await rejectEdit("review", "observed-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign freshly fetched comment author", async function () {
+        await rejectEdit("comment", "fresh-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign freshly fetched review author", async function () {
+        await rejectEdit("review", "fresh-author", "UNAUTHORIZED");
+    });
+    it("preserves a comment edited after observation", async function () {
+        await rejectEdit("comment", "body", "CONTEXT_UNAVAILABLE");
+    });
+    it("preserves a review edited after observation", async function () {
+        await rejectEdit("review", "body", "CONTEXT_UNAVAILABLE");
+    });
+    it("retries GraphQL queries but never blindly retries mutations", async function () {
+        const waits = [];
+        const wire = new RecordedGitHub([
+            { path: "/graphql", method: "POST", status: 500, response: {} },
+            {
+                path: "/graphql",
+                method: "POST",
+                response: { data: { ok: true } }
+            },
+            { path: "/graphql", method: "POST", status: 500, response: {} }
+        ]);
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            exchange: wire.exchange.bind(wire),
+            wait: async (ms) => waits.push(ms)
+        });
+        assert.deepEqual(await writer.graph("query { ok }", {}), { ok: true });
+        await assert.rejects(
+            writer.graph("mutation { change }", {}),
+            (error) => error.diagnostics.status === 500
+        );
+        assert.deepEqual(waits, [1000]);
+        wire.done();
+    });
+    it("bounds transient read exhaustion and preserves final diagnostics", async function () {
+        let calls = 0,
+            cancelled = 0;
+        const waits = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async (ms) => waits.push(ms),
+            exchange: async () => {
+                calls++;
+                return {
+                    ok: false,
+                    status: 503,
+                    headers: new Headers({ "x-github-request-id": "last" }),
+                    body: {
+                        cancel: async () => {
+                            cancelled++;
+                        }
+                    }
+                };
+            }
+        });
+        await assert.rejects(
+            writer.api("/pulls/6"),
+            (error) =>
+                error.diagnostics.status === 503 &&
+                error.diagnostics.operation === "GET /pulls/6" &&
+                error.diagnostics.requestId === "last"
+        );
+        assert.equal(calls, 3);
+        assert.equal(cancelled, 3);
+        assert.deepEqual(waits, [1000, 2000]);
+    });
+    it("replaces signals after network errors and does not retry thrown writes", async function () {
+        const signals = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async () => {},
+            exchange: async (_url, options) => {
+                signals.push(options.signal);
+                if (signals.length === 1 || options.method !== "GET")
+                    throw new TypeError("lost connection");
+                return new Response(JSON.stringify({ number: 6 }));
+            }
+        });
+        assert.equal((await writer.api("/pulls/6")).number, 6);
+        assert.notEqual(signals[0], signals[1]);
+        await assert.rejects(writer.comment("finding"), TypeError);
+        assert.equal(signals.length, 3);
+    });
     it("recovers a transient read without retrying a rejected mutation", async function () {
         const route = `/repos/${input.repository.name}/pulls/6`;
         const wire = new RecordedGitHub([

@@ -20,6 +20,73 @@ function markdown(metadata = {}) {
     );
 }
 describe("Markdown review conversion", function () {
+    it("rejects a malformed open finding following a valid fixed finding", function () {
+        const source =
+            "## Correctness\n### [FO1] Fixed\nStatus: fixed\nLocation: general\n[FO1] Fixed.\n> Fix FO1-FIX\n### [FO-2] Open\nStatus: new\nLocation: general\n[FO-2] Defect.\n> Fix FO-2-FIX\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: none\nLenses: correctness\nBehaviors: retry\n";
+        assert.throws(() => decodeModelResult(source, { request: request() }), {
+            code: "INVALID_RESULT"
+        });
+    });
+    it("converts general prose and extracts the visible Human decision", function () {
+        const input = request();
+        const source = `## Correctness\n### [FO1] Policy\nStatus: new\nLocation: general\n🧑 **HUMAN DECISION REQUIRED**\nDecision: Which policy should apply?\n[FO1] Preserve the Human's choice.\nhttps://github.com/owner/repo/blob/${input.head}/README.md#L1\n> Fix FO1-FIX\n> Wait for the Human.\n## Review completion\nComplete: yes\nMissing: none\nVerification missing: tests\nLenses: correctness\nBehaviors: policy\n`;
+        const converted = decodeModelResult(source, { request: input });
+        const finding = converted.findings[0];
+        assert.equal(finding.path, null);
+        assert.equal(finding.line, null);
+        assert.equal(finding.status, "new");
+        assert.equal(finding.evidence.length, 1);
+        assert.equal(finding.human.question, "Which policy should apply?");
+        assert.match(finding.body, /Wait for the Human/);
+        validateReport(result(input, converted), input);
+        assert.throws(
+            () =>
+                decodeModelResult(
+                    source.replace(
+                        "Decision: Which policy should apply?\n",
+                        ""
+                    ),
+                    { request: input }
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
+    it("preserves incomplete coverage and rejects omitted completion fields", function () {
+        const source =
+            "# Review\n## Review completion\nComplete: no\nMissing: discussion; source\nVerification missing: tests\nLenses: correctness\nBehaviors: retry\n";
+        const converted = decodeModelResult(source, { request: request() });
+        assert.deepEqual(converted.coverage.missing, ["discussion", "source"]);
+        assert.equal(converted.coverage.complete, false);
+        require("../../protocol").result(
+            result(request(), {
+                ...converted,
+                evidence: result().evidence,
+                recommendation: "comment"
+            }),
+            request()
+        );
+        assert.throws(
+            () =>
+                require("../../protocol").result(
+                    result(request(), {
+                        ...converted,
+                        evidence: result().evidence,
+                        coverage: { ...converted.coverage, complete: true },
+                        recommendation: "comment"
+                    }),
+                    request()
+                ),
+            { code: "INVALID_RESULT" }
+        );
+        assert.throws(
+            () =>
+                decodeModelResult(
+                    source.replace("Missing: discussion; source\n", ""),
+                    { request: request() }
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
     it("rejects malformed finding-shaped prose instead of declaring a clean review", function () {
         const completion =
             "## Review completion\nComplete: yes\nMissing: none\nVerification missing: none\nLenses: correctness\nBehaviors: review\n";

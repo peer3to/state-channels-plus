@@ -17,7 +17,7 @@ Operational setup, failure recovery and acceptance are in [the operations guide]
 | CI-authenticated GitHub reads and every GitHub mutation | `github-write.js` |
 | Publication policy, private journal, reconciliation and advisory Human labels | `publish.js`, `publication-store.js`, `state.js`, `reconcile.js`, `approval.js` |
 | Report parsing, diff targets and canonical Human rendering | `review-format.js` |
-| Data artifact validation, receipt delivery and exact artifact removal | `handoff.js`, `persist.js`, `artifacts.js` |
+| Result artifact validation and direct receipt delivery | `handoff.js`, `persist.js` |
 | Manifest-bound local lifecycle cleanup | `cleanup.js` |
 
 The service/client/model dependency graph must not reach the CI mutation owner. Shared peer code rejects review frames by default; review connections explicitly opt in. No review flow takes a test lease or changes worker queue semantics.
@@ -44,7 +44,7 @@ Run `yarn review-bot:test --grep '<literal case>'` for a focused check, and `yar
 
 The normal worker owns the pool, peer identity, authentication, authorization store, connection deduplication, heartbeats and shutdown. `--review` initializes the review handler below the worker work root and advertises the review topic pair. Authenticated `REVIEW_*` messages are dispatched before test lease handling. `ReviewService.attach` uses the existing protocol peer; it opens no second pool and performs no second authentication.
 
-CI and local clients use the existing orchestrator identity. Discovery uses the review topic pair and capability negotiation; no review-specific seed, public key, server pin or policy JSON is configured. The fixed Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process. This is source-tool restriction, not separate OS-user isolation.
+CI derives a distinct review identity by SHA-256 hashing the fixed `peer3/review-orchestrator/v1` domain (NUL terminated) and the existing orchestrator seed bytes. No new secret is required. Strict worker allowlists must authorize the derived public key; open authenticated-worker policy is unchanged. Discovery uses the review topic pair and capability negotiation. The fixed Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process. This is source-tool restriction, not separate OS-user isolation.
 
 Publication uses the publisher job's `GITHUB_TOKEN`, with pull requests write and issues write. Credentials remain step-scoped. The model job remains read-only; result artifacts expire after one day without a cleanup job. Receipt delivery runs directly in the publish job. Enable the repository's Actions approval setting. See [first live run](../../docs/pr-review-bot.md#first-live-run).
 

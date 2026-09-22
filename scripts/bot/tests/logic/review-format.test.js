@@ -10,6 +10,49 @@ function report(input, finding) {
     return `<!-- pr-review-document ${JSON.stringify({ schema: 2, repo: input.repository.name, pr: input.pr, headSha: input.head, baseSha: input.base })} -->\n\n- [ ] **[TO1] General PR comment**\n\n  <!-- pr-review-finding {"id":"TO1","kind":"general"} -->\n\n  **Human**\n  <!-- human:TO1:start -->\n  <!-- human:TO1:end -->\n\n  <!-- ai:TO1:start -->\n  ${finding.body}\n  <!-- ai:TO1:end -->\n`;
 }
 describe("review format", function () {
+    it("maps context and additions across separated real diff hunks", async function () {
+        const { gitFixture } = require("../fixtures/git");
+        const fs = require("node:fs/promises");
+        const path = require("node:path");
+        const { lineAppearsInDiff } = require("../../review-format");
+        await gitFixture(async ({ source, command }) => {
+            const lines = Array.from(
+                { length: 40 },
+                (_, index) => `line ${index + 1}`
+            );
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                lines.join("\n")
+            );
+            command(source, ["commit", "-am", "Anchor baseline"]);
+            const baseSha = command(source, ["rev-parse", "HEAD"]);
+            lines[4] = "changed five";
+            lines[29] = "changed thirty";
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                lines.join("\n")
+            );
+            command(source, ["commit", "-am", "Separate hunks"]);
+            const document = {
+                baseSha,
+                headSha: command(source, ["rev-parse", "HEAD"])
+            };
+            const contains = (line) =>
+                lineAppearsInDiff(
+                    document,
+                    { path: "README.md", line, side: "RIGHT" },
+                    source
+                );
+            assert.equal(contains(2), true);
+            assert.equal(contains(5), true);
+            assert.equal(contains(30), true);
+            assert.equal(contains(33), true);
+            assert.equal(contains(1), false);
+            assert.equal(contains(9), false);
+            assert.equal(contains(26), false);
+            assert.equal(contains(34), false);
+        });
+    });
     it("counts added increment and removed decrement lines inside real hunks", async function () {
         const { gitFixture } = require("../fixtures/git");
         const fs = require("node:fs/promises");

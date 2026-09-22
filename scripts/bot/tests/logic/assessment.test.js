@@ -207,21 +207,18 @@ describe("outstanding assessment import", function () {
         const f = fixture();
         const fixed = { ...f.finding, status: "fixed", body: "Fixed at head." };
         assert.equal(
-            findingActions([f.finding], [fixed], f.observations, [])[0].kind,
+            findingActions([f.finding], [fixed], f.observations)[0].kind,
             "general-update"
         );
         assert.equal(
-            findingActions([f.finding], [fixed], f.observations, [
-                f.finding.id
-            ])[0].kind,
+            findingActions([f.finding], [fixed], f.observations)[0].kind,
             "general-update"
         );
         assert.equal(
             findingActions(
                 [fixed],
                 [{ ...f.finding, status: "recurred" }],
-                f.observations,
-                []
+                f.observations
             )[0].kind,
             "general-update"
         );

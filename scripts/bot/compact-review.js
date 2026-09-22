@@ -77,6 +77,12 @@ function compactReview(
         );
         blocks.push(prose);
         for (const part of parts) {
+            check(
+                (part.match(/^### \[/gm) || []).length === 1 &&
+                    (part.match(/^Status:/gm) || []).length === 1 &&
+                    (part.match(/^Location:/gm) || []).length === 1,
+                "INVALID_RESULT"
+            );
             const match = part.match(/^### \[([A-Z0-9]+)\] ([^\n]+)\n/);
             check(match, "INVALID_RESULT");
             const [, id] = match;

@@ -6,6 +6,44 @@ const { digest } = require("../../data");
 const { request } = require("../fixtures/records");
 
 describe("private publication journal", function () {
+    it("transfers only current prose while retaining full historical reports on the worker", async function () {
+        const store = publicationStore(),
+            input = request();
+        let journal = await store.load(input);
+        for (let round = 1; round <= 24; round++) {
+            const state = {
+                ...allocate(input, { comments: [] }, 9),
+                head: round.toString(16).padStart(40, "0"),
+                round,
+                findings: [
+                    {
+                        id: `R${round}FO1`,
+                        body: "Historical analysis. ".repeat(12000)
+                    }
+                ]
+            };
+            journal = await store.save(input, digest(journal), [
+                ...journal.states,
+                state
+            ]);
+        }
+        assert.ok(
+            Buffer.byteLength(JSON.stringify(await store.read(input))) >
+                4 * 1024 * 1024
+        );
+        assert.ok(Buffer.byteLength(JSON.stringify(journal)) < 300000);
+        assert.deepEqual(journal.states[0].findings, [{ id: "R1FO1" }]);
+        assert.match(
+            (await store.read(input)).states[0].findings[0].body,
+            /Historical analysis/
+        );
+        const restarted = new PublicationStore(store.root);
+        assert.deepEqual(await restarted.load(input), journal);
+        assert.deepEqual(
+            await restarted.save(input, digest(journal), journal.states),
+            journal
+        );
+    });
     it("persists a large report across restart without any GitHub carrier", async function () {
         const store = publicationStore(),
             input = request();

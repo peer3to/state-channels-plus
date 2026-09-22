@@ -84,7 +84,7 @@ class GitHubWriter {
                 if (
                     !read ||
                     attempt === 2 ||
-                    ![429, 502, 503, 504].includes(response.status)
+                    ![429, 500, 502, 503, 504].includes(response.status)
                 )
                     return response;
                 await response.body?.cancel();

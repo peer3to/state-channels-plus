@@ -25,8 +25,9 @@ async function fixture(body) {
     const network = await createNetwork(),
         root = await fs.mkdtemp(path.join(os.tmpdir(), "review-client-"));
     const secret = "local-client-fixture",
+        originalSeed = crypto.randomBytes(32).toString("hex"),
         seed = clientSeed({
-            SCP_TEST_ORCHESTRATOR_SEED: crypto.randomBytes(32).toString("hex")
+            SCP_TEST_ORCHESTRATOR_SEED: originalSeed
         }),
         key = keyPairFromSeed(seed);
     const keys = derivePoolKeys(secret);
@@ -38,7 +39,10 @@ async function fixture(body) {
     });
     const input = request({ caller: key.publicKey.toString("hex") });
     const authorization = new AuthorizationStore(root, {
-        authorizedPublicKeys: [input.caller],
+        authorizedPublicKeys: [
+            input.caller,
+            keyPairFromSeed(originalSeed).publicKey.toString("hex")
+        ],
         allowUnlistedOrchestrators: false
     });
     const limits = {
@@ -86,6 +90,7 @@ async function fixture(body) {
             options,
             serve,
             input,
+            originalSeed,
             nextOptions: () => ({ ...options, dht: network.node() })
         });
     } finally {
@@ -97,6 +102,104 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
+    it("keeps simultaneous original and salted orchestrator connections distinct", async function () {
+        await fixture(async ({ options, nextOptions, originalSeed, serve }) => {
+            const seen = new Set();
+            serve(async (connection, message) => {
+                seen.add(connection.authenticatedKey);
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                return connection.send(
+                    "result",
+                    message.requestId,
+                    message.attemptId,
+                    result(message.value)
+                );
+            });
+            const original = {
+                ...nextOptions(),
+                seed: originalSeed,
+                request: {
+                    ...options.request,
+                    caller: keyPairFromSeed(originalSeed).publicKey.toString(
+                        "hex"
+                    )
+                }
+            };
+            const outputs = await Promise.all([
+                callService(options),
+                callService(original)
+            ]);
+            assert.equal(outputs.length, 2);
+            assert.equal(seen.size, 2);
+        });
+    });
+    it("releases a superseded review without publication or advancing its confirmed baseline", async function () {
+        await fixture(async ({ options, input, serve }) => {
+            const { ReviewService } = require("../../server");
+            const { Publisher } = require("../../publish");
+            const { digest } = require("../../data");
+            const service = new ReviewService({
+                stateRoot: path.join(options.stateRoot, "worker")
+            });
+            Object.assign(service, {
+                skillDigest: input.skillDigest,
+                botRevision: input.botRevision,
+                policyDigest: input.policyDigest
+            });
+            await service.sessions.initialize();
+            try {
+                const generated = await service.sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => result(input),
+                    async () => true
+                );
+                const publisher = new Publisher(
+                    input,
+                    {
+                        observe: async () => ({
+                            pull: { head: { sha: "f".repeat(40) } }
+                        })
+                    },
+                    { eligible: true }
+                );
+                assert.deepEqual(await publisher.publish(generated), {
+                    status: "superseded"
+                });
+                serve((connection, message) =>
+                    service.handle(
+                        connection,
+                        message.operation,
+                        message.value,
+                        message.requestId,
+                        message.attemptId
+                    )
+                );
+                await callService({
+                    ...options,
+                    operation: "acknowledgement",
+                    payload: { executionId: generated.executionId }
+                });
+                assert.equal(
+                    service.sessions.busy(service.sessions.key(input)),
+                    false
+                );
+                assert.equal(await service.sessions.baseline(input), null);
+                const restarted = JSON.parse(
+                    await fs.readFile(
+                        path.join(
+                            service.sessions.root,
+                            `${service.sessions.key(input)}.json`
+                        ),
+                        "utf8"
+                    )
+                );
+                assert.equal(restarted.result.report, generated.report);
+            } finally {
+                await service.sessions.close();
+            }
+        });
+    });
     it("shows progress during a real service correction and persists its receipt on the same connection path", async function () {
         await fixture(async ({ options, nextOptions, serve, input }) => {
             const { ReviewService } = require("../../server");
@@ -307,6 +410,43 @@ describe("review client visible activity", function () {
                         service = await makeService();
                         const replay = await send(payload);
                         assert.deepEqual(replay.publication, saved.publication);
+                        let journal = replay.publication;
+                        for (let round = 2; round <= 24; round++) {
+                            const next = {
+                                ...state,
+                                head: round.toString(16).padStart(40, "0"),
+                                round,
+                                findings: [
+                                    {
+                                        id: `R${round}FO1`,
+                                        body: "Private historical analysis. ".repeat(
+                                            9000
+                                        )
+                                    }
+                                ]
+                            };
+                            journal = (
+                                await send({
+                                    executionId: generated.executionId,
+                                    previous: digest(journal),
+                                    states: [...journal.states, next]
+                                })
+                            ).publication;
+                        }
+                        assert.ok(
+                            Buffer.byteLength(JSON.stringify(journal)) < 300000
+                        );
+                        assert.deepEqual(journal.states[1].findings, [
+                            { id: "R2FO1" }
+                        ]);
+                        assert.ok(
+                            Buffer.byteLength(
+                                JSON.stringify(
+                                    await service.publications.read(input)
+                                )
+                            ) >
+                                4 * 1024 * 1024
+                        );
                         await assert.rejects(
                             send({ executionId: "wrong-execution" }),
                             { code: "UNAUTHORIZED" }

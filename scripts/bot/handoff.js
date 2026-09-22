@@ -40,9 +40,7 @@ async function validateHandoff({
     exchange = fetch
 }) {
     check(
-        ["result", "receipt"].includes(kind) &&
-            Number.isSafeInteger(artifactId) &&
-            artifactId > 0
+        kind === "result" && Number.isSafeInteger(artifactId) && artifactId > 0
     );
     const repository = {
         id: event.repository.id,
@@ -61,8 +59,11 @@ async function validateHandoff({
         "UNAUTHORIZED"
     );
     let root = source;
-    if ((await fs.readdir(source)).includes(expectedName))
+    const downloaded = await fs.readdir(source);
+    if (downloaded.includes(expectedName)) {
+        check(downloaded.length === 1, "INVALID_RESULT");
         root = await ownedPath(source, expectedName);
+    }
     check(
         /^[a-f0-9]{64}$/.test(expectedDigest || "") &&
             (await handoffDigest(root)) === expectedDigest,
@@ -103,11 +104,6 @@ async function validateHandoff({
     await fs.mkdir(destination, { recursive: true, mode: 0o700 });
     await writeJson(destination, "request.json", request);
     await writeJson(destination, "result.json", result);
-    if (kind === "receipt") {
-        const publication = await read("publication.json");
-        protocol.receipt(publication.receipt, request);
-        await writeJson(destination, "publication.json", publication);
-    }
 }
 async function main() {
     const [kind, id, source, destination] = process.argv.slice(2);

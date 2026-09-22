@@ -12,7 +12,45 @@ function config(extra = {}) {
         ...extra
     };
 }
+async function stopTree(forceParent) {
+    const child = new NativeProcess(
+        process.execPath,
+        [
+            "-e",
+            `
+        const {spawn}=require('node:child_process');
+        const nested=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)"],{stdio:['ignore','ignore','ignore','ipc']});
+        nested.on('message',()=>process.stdout.write(JSON.stringify({method:'ready',params:{pid:nested.pid}})+'\\n'));
+        process.on('SIGTERM',()=>nested.kill('SIGKILL'));
+        nested.on('exit',()=>{if(!${forceParent})process.exit(0)});
+        setInterval(()=>{},1000);
+    `
+        ],
+        {}
+    );
+    try {
+        const message = await new Promise((resolve, reject) => {
+            child.once("message", resolve);
+            child.once("failure", reject);
+        });
+        await child.stop(3000);
+        assert.throws(() => process.kill(message.params.pid, 0), {
+            code: "ESRCH"
+        });
+        assert.throws(() => process.kill(child.child.pid, 0), {
+            code: "ESRCH"
+        });
+    } finally {
+        await child.stop(3000);
+    }
+}
 describe("review native adapter controls", function () {
+    it("waits for a descendant that ignores graceful termination before releasing its parent", async function () {
+        await stopTree(false);
+    });
+    it("forces an uncooperative parent after its descendant has been reaped", async function () {
+        await stopTree(true);
+    });
     it("rejects pending requests when the native child closes its input pipe", async function () {
         const child = new NativeProcess(
             process.execPath,

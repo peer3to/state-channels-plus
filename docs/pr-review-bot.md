@@ -18,13 +18,13 @@ Start the normal distributed worker with `--review` to offer source-only Codex r
 yarn test:parallel:server --name worker-one --review
 ```
 
-Keep your existing worker flags and environment. The worker uses the same identity, `SCP_TEST_POOL_SECRET`, authentication, authorization policy and connection lifecycle. No separate review server, JSON configuration, identity, allowlist or operating-system user is required. When the worker permits unlisted authenticated orchestrators, the review handler does too. When the worker requires its existing allowlist, that rule applies before either service is reached.
+Keep your existing worker flags and environment. The worker uses the same identity, `SCP_TEST_POOL_SECRET`, authentication, authorization policy and connection lifecycle. No separate review server, JSON configuration, secret or operating-system user is required. Review clients derive a distinct transport identity as described below. When the worker permits unlisted authenticated orchestrators, the review handler does too. Strict allowlists must authorize that derived review key before the service can be reached.
 
 ## Worker prerequisites and storage
 
 Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `low`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
 
-Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution still receives only the approved source/public-read tools and report output tool; application execution, tests and direct publication remain disabled.
+Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution receives only the approved source/public-read tools; the server persists its returned report. Application execution, tests and direct publication remain disabled.
 
 ## Discovery and dispatch
 
@@ -67,7 +67,7 @@ headings. Findings with valid pinned-diff locations publish inline; a source hyp
 alone does not create an inline comment. Human decisions carry
 `🧑 **HUMAN DECISION REQUIRED**` at the beginning and an explicit question. This is advisory guidance, not a separate resolution gate; an existing specification or Human decision can settle it.
 
-CI uses the existing `SCP_TEST_POOL_SECRET` and `SCP_TEST_ORCHESTRATOR_SEED`. Local clients use the normal `temp/distributed-orchestrator` identity when no seed environment value is supplied. Review does not derive or provision a different key.
+CI uses the existing `SCP_TEST_POOL_SECRET` and `SCP_TEST_ORCHESTRATOR_SEED`. Review derives its seed as SHA-256 of the fixed UTF-8 domain `peer3/review-orchestrator/v1` followed by a NUL byte and the original seed bytes. Test identity is unchanged; concurrent test and review clients no longer share a transport key. No new secret is required. Strict worker allowlists must include the derived public key (print it with `node -e 'console.log(require("./scripts/bot/identity").clientPublicKey())'` in the configured environment). The worker's open authenticated-orchestrator policy needs no change. Local clients without an environment seed retain their existing persistent identity.
 
 No review-specific CI variables or secrets are required. Eligible PR pushes request a review automatically; discovery fails visibly if no review worker is available. The worker's `--review` flag controls whether it offers the service. Limits and policy hashing come from the checked-in `config.js`.
 
@@ -195,9 +195,14 @@ publishable and approval is blocked. Passive limitations stay in metadata, not
 public status comments. Concrete coverage defects use ordinary stable finding IDs.
 Publication state is persisted privately by the worker in its per-PR publication
 journal beside the saved reports and conversation records. Authenticated CI reads
-and checkpoints that journal; compare-and-swap rejects stale updates. GitHub stores
+and checkpoints its active projection; compare-and-swap rejects stale updates. Full
+older reports remain on the worker, while older journal entries sent to CI contain
+only identity/origin records, not historical finding bodies. GitHub stores
 only finding text and small finding/action identity markers, never report snapshots.
-Publication retries reuse the saved result and reconcile those markers before writes.
+Publication retries reuse the saved result and reconcile those markers before writes,
+including after HTTP 500 or a lost mutation response. Pending analysis is compared
+with observed public content: an absent open finding is created, an unapplied update
+is applied, and a never-posted closed finding stays private.
 Clean rounds do not create placeholder comments; failures use a deduplicated error
 notice. Historical snapshots are imported into the journal on first publication;
 edited finding bodies lose their legacy snapshots. Untouched historical comments

@@ -3,6 +3,74 @@ const p = require("../../protocol");
 const records = require("../fixtures/records");
 const { digest } = require("../../data");
 describe("review protocol", () => {
+    it("agrees with the published request contract on required unknown and malformed fields", function () {
+        const schema = require("../../schema/review-v1.json");
+        const validate = new (require("ajv"))().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/request"
+        });
+        const input = records.request();
+        const missing = { ...input };
+        delete missing.caller;
+        const corpus = [
+            input,
+            missing,
+            { ...input, unknown: true },
+            { ...input, caller: null },
+            { ...input, caller: "" },
+            { ...input, pr: 0 },
+            { ...input, operations: [] }
+        ];
+        for (const value of corpus) {
+            let accepted = true;
+            try {
+                p.request(value);
+            } catch {
+                accepted = false;
+            }
+            assert.equal(accepted, validate(value), JSON.stringify(value));
+        }
+    });
+    it("matches published evidence string and array boundaries", function () {
+        const Ajv = require("ajv");
+        const schema = require("../../schema/review-v1.json");
+        const validate = new Ajv().compile(
+            schema.$defs.finding.properties.evidence
+        );
+        const accepted = (evidence) => {
+            const output = records.result(undefined, {
+                recommendation: "comment",
+                findings: [
+                    {
+                        id: "FO1",
+                        body: "Evidence boundary",
+                        path: null,
+                        line: null,
+                        threadId: null,
+                        status: "new",
+                        human: null,
+                        evidence
+                    }
+                ]
+            });
+            output.report += `\n## Correctness\n- [ ] **[FO1] General PR comment**\n<!-- pr-review-finding ${JSON.stringify({ id: "FO1", kind: "general", evidence })} -->\n<!-- human:FO1:start -->\n<!-- human:FO1:end -->\n<!-- ai:FO1:start -->\nEvidence boundary\n<!-- ai:FO1:end -->\n`;
+            let runtime = true;
+            try {
+                p.result(output, records.request());
+            } catch {
+                runtime = false;
+            }
+            assert.equal(runtime, validate(evidence));
+            return runtime;
+        };
+        assert.equal(accepted([""]), false);
+        assert.equal(accepted(["x"]), true);
+        assert.equal(accepted(["x".repeat(30000)]), true);
+        assert.equal(accepted(["x".repeat(30001)]), false);
+        assert.equal(accepted(Array(1000).fill("x")), true);
+        assert.equal(accepted(Array(1001).fill("x")), false);
+        assert.equal(accepted([null]), false);
+    });
     it("accepts zero as unlimited retrieval in result and failure evidence", function () {
         const output = records.result();
         output.evidence.limits = { requests: 0, pages: 0, bytes: 0 };

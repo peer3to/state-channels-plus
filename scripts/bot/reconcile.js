@@ -67,7 +67,12 @@ function findingEvidence(finding) {
         human: finding.human
     });
 }
-function findingActions(previous, proposed, observations) {
+function findingActions(
+    previous,
+    proposed,
+    observations,
+    publication = new Map()
+) {
     const actions = [];
     for (const finding of proposed) {
         const old = previous.find((entry) => entry.id === finding.id);
@@ -76,7 +81,8 @@ function findingActions(previous, proposed, observations) {
             continue;
         }
         const closed = ["fixed", "disagreement"].includes(finding.status);
-        if (old.path !== null && !old.threadId) {
+        const applied = publication.get(finding.id);
+        if (applied?.exists === false || (old.path !== null && !old.threadId)) {
             if (!closed) actions.push({ kind: "new", finding });
             continue;
         }
@@ -87,13 +93,12 @@ function findingActions(previous, proposed, observations) {
             old.threadId &&
             observations.threads.find((entry) => entry.id === old.threadId);
         if (old.threadId) check(thread, "CONTEXT_UNAVAILABLE");
-        if (findingEvidence(finding) !== findingEvidence(old))
+        const changed =
+            applied?.matches === false ||
+            findingEvidence(finding) !== findingEvidence(old);
+        if (changed)
             if (thread) actions.push({ kind: "evidence", finding, thread });
-        if (
-            !old.threadId &&
-            (findingEvidence(finding) !== findingEvidence(old) ||
-                finding.status !== old.status)
-        )
+        if (!old.threadId && (changed || finding.status !== old.status))
             actions.push({ kind: "general-update", finding });
         if (thread) {
             if (closed && !thread.isResolved)

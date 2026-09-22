@@ -8,13 +8,18 @@ const {
     loadOrchestratorKeyPair
 } = require("../../../e2e-parallel/distributed/orchestratorIdentity");
 describe("review CI identity", function () {
-    it("uses exactly the existing orchestrator key", function () {
+    it("derives a stable review key distinct from the test orchestrator key", function () {
         const seed = "12".repeat(32);
         const environment = { SCP_TEST_ORCHESTRATOR_SEED: seed };
-        assert.equal(clientSeed(environment), seed);
-        assert.equal(
+        assert.notEqual(clientSeed(environment), seed);
+        assert.equal(clientSeed(environment), clientSeed({ ...environment }));
+        assert.notEqual(
             clientPublicKey(environment),
             keyPairFromSeed(seed).publicKey.toString("hex")
+        );
+        assert.equal(
+            clientPublicKey(environment),
+            keyPairFromSeed(clientSeed(environment)).publicKey.toString("hex")
         );
     });
     it("rejects missing or malformed orchestrator seeds", function () {

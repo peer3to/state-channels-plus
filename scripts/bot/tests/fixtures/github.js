@@ -85,28 +85,3 @@ function observation(request, comments = [], reviews = []) {
     ];
 }
 module.exports = { RecordedGitHub, observation };
-function recordedActions(wire) {
-    const call = async (method, { owner, repo, artifact_id }) => {
-        const response = await wire.exchange(
-            `https://api.github.com/repos/${owner}/${repo}/actions/artifacts/${artifact_id}`,
-            { method }
-        );
-        if (!response.ok) {
-            const error = new Error("Recorded GitHub HTTP failure");
-            error.status = response.status;
-            throw error;
-        }
-        return {
-            data: response.status === 204 ? undefined : await response.json()
-        };
-    };
-    return {
-        rest: {
-            actions: {
-                getArtifact: (params) => call("GET", params),
-                deleteArtifact: (params) => call("DELETE", params)
-            }
-        }
-    };
-}
-module.exports.recordedActions = recordedActions;

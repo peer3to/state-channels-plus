@@ -16,10 +16,22 @@ describe("incremental source review", function () {
             );
             command(source, ["commit", "-am", "Long searchable source"]);
             const tools = new SourceTools(source, input, null, source);
-            const matches = await tools.call("source_search", {
-                paths: ["README.md"],
-                text: "needle"
-            });
+            const originalRead = fs.readFile;
+            let reads = 0;
+            let matches;
+            try {
+                fs.readFile = async function (file, ...args) {
+                    if (file === path.join(source, "README.md")) reads++;
+                    return originalRead.call(this, file, ...args);
+                };
+                matches = await tools.call("source_search", {
+                    paths: ["README.md"],
+                    text: "needle"
+                });
+            } finally {
+                fs.readFile = originalRead;
+            }
+            assert.equal(reads, 1);
             assert.equal(matches.length, 1100);
             assert.deepEqual(matches[500], {
                 path: "README.md",

@@ -5,7 +5,7 @@ const os = require("node:os");
 const { validateHandoff, handoffDigest } = require("../../handoff");
 const { request, result } = require("../fixtures/records");
 const { RecordedGitHub } = require("../fixtures/github");
-async function fixture(body) {
+async function fixture(body, artifact = {}) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-handoff-"));
     const source = path.join(root, "download"),
         destination = path.join(root, "validated");
@@ -25,7 +25,8 @@ async function fixture(body) {
             response: {
                 id: 12,
                 name: "review-1-1-result",
-                workflow_run: { id: 1 }
+                workflow_run: { id: 1 },
+                ...artifact
             }
         }
     ]);
@@ -52,6 +53,87 @@ async function fixture(body) {
     }
 }
 describe("review data handoff", function () {
+    it("rejects an otherwise valid artifact with a different ID", async function () {
+        await fixture(
+            async (options) => {
+                await assert.rejects(validateHandoff(options), {
+                    code: "UNAUTHORIZED"
+                });
+                await assert.rejects(fs.access(options.destination));
+            },
+            { id: 13 }
+        );
+    });
+    it("rejects an otherwise valid artifact from another workflow run", async function () {
+        await fixture(
+            async (options) => {
+                await assert.rejects(validateHandoff(options), {
+                    code: "UNAUTHORIZED"
+                });
+            },
+            { workflow_run: { id: 2 } }
+        );
+    });
+    it("rejects an otherwise valid artifact named for an earlier attempt", async function () {
+        await fixture(
+            async (options) => {
+                await assert.rejects(validateHandoff(options), {
+                    code: "UNAUTHORIZED"
+                });
+            },
+            { name: "review-1-2-result" }
+        );
+    });
+    it("accepts a named extracted directory", async function () {
+        await fixture(async (options) => {
+            const nested = path.join(options.source, "review-1-1-result");
+            await fs.mkdir(nested);
+            await fs.rename(
+                path.join(options.source, "request.json"),
+                path.join(nested, "request.json")
+            );
+            await fs.rename(
+                path.join(options.source, "result.json"),
+                path.join(nested, "result.json")
+            );
+            await validateHandoff(options);
+            await fs.access(path.join(options.destination, "result.json"));
+        });
+    });
+    it("rejects unexpected siblings next to the extracted artifact", async function () {
+        await fixture(async (options) => {
+            await fs.mkdir(path.join(options.source, "review-1-1-result"));
+            await assert.rejects(validateHandoff(options), {
+                code: "INVALID_RESULT"
+            });
+            await assert.rejects(fs.access(options.destination));
+        });
+    });
+    it("preserves a bound typed model failure", async function () {
+        await fixture(async (options, input) => {
+            const { failure } = require("../../protocol");
+            const { ReviewError } = require("../../errors");
+            const output = failure(
+                new ReviewError("CONTEXT_UNAVAILABLE"),
+                input
+            );
+            await fs.writeFile(
+                path.join(options.source, "result.json"),
+                JSON.stringify(output)
+            );
+            options.expectedDigest = await handoffDigest(options.source);
+            await validateHandoff(options);
+            assert.deepEqual(
+                JSON.parse(
+                    await fs.readFile(
+                        path.join(options.destination, "result.json"),
+                        "utf8"
+                    )
+                ),
+                output
+            );
+        });
+    });
     it("copies only validated bound JSON from the exact recorded artifact", async function () {
         await fixture(async (options, input) => {
             await validateHandoff(options);

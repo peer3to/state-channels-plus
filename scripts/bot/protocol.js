@@ -279,8 +279,12 @@ function result(value, expected) {
         );
         check(
             Array.isArray(item.evidence) &&
+                item.evidence.length <= 1000 &&
                 item.evidence.every(
-                    (e) => typeof e === "string" && e.length < 10000
+                    (e) =>
+                        typeof e === "string" &&
+                        e.length >= 1 &&
+                        e.length <= 30000
                 ),
             "INVALID_RESULT"
         );

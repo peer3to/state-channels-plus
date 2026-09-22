@@ -192,9 +192,11 @@ class Publisher {
             try {
                 return await this.publishAttempt(result);
             } catch (error) {
+                if (error.code === "STALE_HEAD")
+                    return { status: "superseded" };
                 const status = error.diagnostics?.status;
                 const transient =
-                    [429, 502, 503, 504].includes(status) ||
+                    [429, 500, 502, 503, 504].includes(status) ||
                     ["TimeoutError", "AbortError", "TypeError"].includes(
                         error.name
                     );
@@ -311,7 +313,47 @@ class Publisher {
         )) {
             state.findings.push(old);
         }
-        const operations = findingActions(recovered, state.findings, current);
+        const publication = new Map();
+        for (const finding of state.findings) {
+            const source = findingSource(
+                this.request,
+                current,
+                this.github.botId,
+                finding
+            );
+            let body = source?.item.body.slice(source.start, source.end) || "";
+            if (source?.kind === "inline") {
+                const thread = current.threads.find((entry) =>
+                    entry.comments.nodes.some(
+                        (node) => node.databaseId === source.item.id
+                    )
+                );
+                const ids = new Set(
+                    thread?.comments.nodes.map((node) => node.databaseId)
+                );
+                const latest = current.inline
+                    .filter(
+                        (item) =>
+                            ids.has(item.id) &&
+                            item.user.id === this.github.botId &&
+                            item.body?.includes(
+                                `<!-- peer3-review-finding:v1 ${finding.id}:start -->`
+                            )
+                    )
+                    .at(-1);
+                if (latest) body = latest.body;
+            }
+            publication.set(finding.id, {
+                exists: Boolean(source),
+                matches: body.includes(safeText(finding.body))
+            });
+        }
+        const operations = findingActions(
+            recovered,
+            state.findings,
+            current,
+            publication
+        );
         this.pendingState = state;
         await this.saveState(state);
         const batchMarker = actionMarker(this.request, "findings", state.round);

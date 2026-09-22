@@ -52,6 +52,41 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("holds a fifth PR until one of four global owners releases", async function () {
+        await fixture(async (sessions) => {
+            sessions.limits.concurrency = 4;
+            const inputs = [6, 7, 8, 9].map((pr) =>
+                request({ pr, attempt: `pr-${pr}` })
+            );
+            const active = await Promise.all(
+                inputs.map((input) =>
+                    sessions.submit(
+                        input,
+                        digest("context"),
+                        async () => result(input),
+                        async () => true
+                    )
+                )
+            );
+            let started = false;
+            const fifth = request({ pr: 10, attempt: "fifth" });
+            const queued = sessions.submit(
+                fifth,
+                digest("context"),
+                async () => {
+                    started = true;
+                    return result(fifth);
+                },
+                async () => true
+            );
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            assert.equal(started, false);
+            await sessions.acknowledge(inputs[0], active[0].executionId);
+            await queued;
+            assert.equal(started, true);
+            assert.equal(sessions.running, 4);
+        });
+    });
     it("recovers late receipt delivery after restart without rerunning or rolling back the baseline", async function () {
         await fixture(async (sessions) => {
             const input = request();

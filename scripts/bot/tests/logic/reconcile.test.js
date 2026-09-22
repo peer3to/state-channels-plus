@@ -42,17 +42,13 @@ describe("review finding reconciliation", function () {
         );
     });
     it("leaves unchanged evidence on the existing thread without another comment", function () {
-        assert.deepEqual(
-            findingActions([previous], [previous], observed, []),
-            []
-        );
+        assert.deepEqual(findingActions([previous], [previous], observed), []);
     });
     it("posts changed evidence on its existing thread", function () {
         const actions = findingActions(
             [previous],
             [{ ...previous, evidence: ["src/input.ts:13"] }],
-            observed,
-            []
+            observed
         );
         assert.equal(actions.length, 1);
         assert.equal(actions[0].kind, "evidence");
@@ -63,8 +59,7 @@ describe("review finding reconciliation", function () {
             findingActions(
                 [previous],
                 [{ ...previous, status: "fixed" }],
-                observed,
-                []
+                observed
             )[0].kind,
             "resolve"
         );
@@ -73,8 +68,7 @@ describe("review finding reconciliation", function () {
                 findingActions(
                     [previous],
                     [{ ...previous, status: "fixed", evidence: [] }],
-                    observed,
-                    []
+                    observed
                 ),
             { code: "INVALID_RESULT" }
         );
@@ -85,8 +79,7 @@ describe("review finding reconciliation", function () {
             findingActions(
                 [previous],
                 [{ ...previous, status: "recurred" }],
-                resolved,
-                []
+                resolved
             )[0].kind,
             "reopen"
         );
@@ -94,15 +87,14 @@ describe("review finding reconciliation", function () {
             findingActions(
                 [previous],
                 [{ ...previous, status: "fixed" }],
-                observed,
-                [previous.id]
+                observed
             )[0].kind,
             "resolve"
         );
     });
     it("requires explicit thread state instead of inferring absence means unresolved", function () {
         assert.throws(
-            () => findingActions([previous], [previous], { threads: [] }, []),
+            () => findingActions([previous], [previous], { threads: [] }),
             { code: "CONTEXT_UNAVAILABLE" }
         );
     });

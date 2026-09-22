@@ -9,7 +9,7 @@ class PublicationStore {
     constructor(root) {
         this.root = root;
     }
-    async load(request) {
+    async read(request) {
         const name = `${request.repository.id}-${request.pr}-publication.json`;
         try {
             return JSON.parse(
@@ -19,6 +19,28 @@ class PublicationStore {
             if (error.code !== "ENOENT") throw error;
             return { states: [] };
         }
+    }
+    project(journal) {
+        return {
+            states: journal.states.map((state, index) =>
+                index === journal.states.length - 1
+                    ? state
+                    : {
+                          version: state.version,
+                          repositoryId: state.repositoryId,
+                          pr: state.pr,
+                          head: state.head,
+                          round: state.round,
+                          status: state.status,
+                          findings: state.findings.map(({ id }) => ({ id })),
+                          mappings: state.mappings || {},
+                          actions: []
+                      }
+            )
+        };
+    }
+    async load(request) {
+        return this.project(await this.read(request));
     }
     save(request, previous, states) {
         const task = this.pending.then(async () => {
@@ -38,14 +60,33 @@ class PublicationStore {
                     "INVALID_RESULT"
                 );
             }
-            const current = await this.load(request);
-            const next = { states };
+            const stored = await this.read(request);
+            const current = this.project(stored);
+            const next = this.project({ states });
             if (digest(current) === digest(next)) return next;
             check(digest(current) === previous, "INVALID_RESULT");
             await writeJson(
                 this.root,
                 `${request.repository.id}-${request.pr}-publication.json`,
-                next
+                {
+                    states: states.map((state, index) => {
+                        const historical = stored.states.find(
+                            (entry) => entry.head === state.head
+                        );
+                        if (index < states.length - 1 && historical) {
+                            check(
+                                digest(
+                                    this.project({
+                                        states: [historical, states.at(-1)]
+                                    }).states[0]
+                                ) === digest(next.states[index]),
+                                "INVALID_RESULT"
+                            );
+                            return historical;
+                        }
+                        return state;
+                    })
+                }
             );
             return next;
         });

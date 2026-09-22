@@ -178,6 +178,175 @@ function proposed(input, finding, previous) {
     });
 }
 describe("assessment GitHub lifecycle", function () {
+    it("preserves accepted actions through exhausted publication retries and a later recovery", async function () {
+        const wire = wireFixture(),
+            store = publicationStore();
+        let rejectUpdates = true,
+            attempts = 0;
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: async (url, options) => {
+                if (rejectUpdates && options.method === "PUT") {
+                    attempts++;
+                    return new Response("{}", { status: 500 });
+                }
+                return wire.exchange(url, options);
+            }
+        });
+        const changed = {
+            ...wire.finding,
+            body: "Updated confirmed analysis."
+        };
+        const output = proposed(wire.input, changed, wire.finding);
+        const additional = {
+            ...wire.finding,
+            id: "FO2",
+            status: "new",
+            body: "Additional defect."
+        };
+        output.findings.push(additional);
+        const extra = proposed(wire.input, additional).report;
+        output.report += extra.slice(extra.indexOf("## Correctness"));
+        const owner = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true },
+            store
+        );
+        await assert.rejects(
+            owner.publish(output),
+            (error) => error.publication?.receipt.complete === false
+        );
+        assert.equal(attempts, 3);
+        assert.equal(
+            wire.comments.filter((item) => item.body.includes(additional.body))
+                .length,
+            1
+        );
+        rejectUpdates = false;
+        assert.equal((await owner.publish(output)).status, "complete");
+        assert.equal(
+            wire.comments.filter((item) => item.body.includes(additional.body))
+                .length,
+            1
+        );
+        assert.ok(wire.reviews[0].body.includes(changed.body));
+    });
+    it("does not retry a permanent publication authorization failure", async function () {
+        const wire = wireFixture();
+        let attempts = 0;
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: async (url, options) => {
+                if (options.method === "PUT") {
+                    attempts++;
+                    return new Response("{}", { status: 403 });
+                }
+                return wire.exchange(url, options);
+            }
+        });
+        const owner = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true },
+            publicationStore()
+        );
+        await assert.rejects(
+            owner.publish(
+                proposed(
+                    wire.input,
+                    { ...wire.finding, body: "Updated analysis" },
+                    wire.finding
+                )
+            )
+        );
+        assert.equal(attempts, 1);
+    });
+    it("creates a never-published general intent once after a head change and lost HTTP 500 reply", async function () {
+        const wire = wireFixture();
+        const store = publicationStore();
+        const pending = readStates(wire.comments, wire.input, 9).at(-1);
+        pending.status = "intent";
+        wire.reviews.splice(0);
+        await store.save(wire.input, digest({ states: [] }), [pending]);
+        let lost = false;
+        const writer = new GitHubWriter(wire.input, {
+            token: "recorded",
+            botId: 9,
+            exchange: async (url, options) => {
+                const response = await wire.exchange(url, options);
+                if (
+                    !lost &&
+                    options.method === "POST" &&
+                    url.includes("/issues/")
+                ) {
+                    lost = true;
+                    return new Response("{}", { status: 500 });
+                }
+                return response;
+            }
+        });
+        const owner = new Publisher(
+            wire.input,
+            writer,
+            { eligible: true },
+            store
+        );
+        const output = proposed(wire.input, wire.finding, wire.finding);
+        assert.equal((await owner.publish(output)).status, "complete");
+        assert.equal((await owner.publish(output)).status, "complete");
+        assert.equal(
+            wire.comments.filter((item) =>
+                item.body.includes(wire.finding.body)
+            ).length,
+            1
+        );
+        assert.equal(
+            wire.calls.filter(
+                (call) =>
+                    call.method === "POST" && call.route.includes("/issues/")
+            ).length,
+            1
+        );
+    });
+    it("does not publish a never-posted finding closed by the next review", async function () {
+        const wire = wireFixture();
+        const store = publicationStore();
+        const pending = readStates(wire.comments, wire.input, 9).at(-1);
+        pending.status = "intent";
+        wire.reviews.splice(0);
+        await store.save(wire.input, digest({ states: [] }), [pending]);
+        const owner = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true },
+            store
+        );
+        assert.equal(
+            (
+                await owner.publish(
+                    proposed(
+                        wire.input,
+                        { ...wire.finding, status: "fixed" },
+                        wire.finding
+                    )
+                )
+            ).status,
+            "complete"
+        );
+        assert.equal(
+            wire.calls.filter(
+                (call) => call.method === "POST" && call.route !== "/graphql"
+            ).length,
+            0
+        );
+    });
     it("accounts for the latest private intent instead of an older completed finding", async function () {
         const wire = wireFixture();
         const store = publicationStore();
@@ -212,6 +381,7 @@ describe("assessment GitHub lifecycle", function () {
         assert.equal((await owner.inspect(output)).status, "ready");
         assert.equal((await owner.publish(output)).status, "complete");
         assert.equal((await owner.publish(output)).status, "complete");
+        assert.ok(wire.reviews[0].body.includes(updated.body));
         assert.equal(
             wire.calls.filter(
                 (call) => call.method === "POST" && call.route !== "/graphql"
