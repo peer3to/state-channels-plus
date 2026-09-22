@@ -21,6 +21,108 @@ const {
 } = require("../../../e2e-parallel/distributed/serverArgParser");
 
 describe("integrated worker review service", function () {
+    it("joins a rerun before evidence gathering and completes beyond the queue deadline", async function () {
+        const {
+            executionFixture,
+            waitForFile
+        } = require("../fixtures/review-execution");
+        const { callService } = require("../../client");
+        await executionFixture(
+            async ({ worker, service, input, network, root }) => {
+                service.config.limits.queueMs = 50;
+                service.config.limits.progressMs = 10;
+                await fs.mkdir(service.config.runtimeRoot, { recursive: true });
+                await fs.writeFile(
+                    path.join(service.config.runtimeRoot, "hold"),
+                    ""
+                );
+                const options = [1, 2].map((attempt) => {
+                    const seed = clientSeed({
+                        SCP_TEST_ORCHESTRATOR_SEED: "12".repeat(32),
+                        GITHUB_ACTIONS: "true",
+                        GITHUB_REPOSITORY_ID: String(input.repository.id),
+                        GITHUB_RUN_ID: "100",
+                        GITHUB_RUN_ATTEMPT: String(attempt)
+                    });
+                    return {
+                        request: {
+                            ...input,
+                            attempt: `100-${attempt}`,
+                            run: { id: 100, attempt },
+                            caller: keyPairFromSeed(seed).publicKey.toString(
+                                "hex"
+                            )
+                        },
+                        seed,
+                        secret: "integrated-review-fixture",
+                        stateRoot: path.join(root, `retry-client-${attempt}`),
+                        serverKey: worker.pool.publicKey.toString("hex"),
+                        dht: network.node()
+                    };
+                });
+                const first = callService(options[0]);
+                first.catch(() => {});
+                let second;
+                try {
+                    const started = await waitForFile(
+                        path.join(
+                            service.config.runtimeRoot,
+                            `started-${input.pr}.json`
+                        )
+                    );
+                    const active = service.sessions.slots.get(
+                        service.sessions.key(input)
+                    ).active;
+                    assert.equal(active.context.gathered(), false);
+                    let admitted;
+                    const progress = new Promise((resolve) => {
+                        admitted = resolve;
+                    });
+                    second = callService({
+                        ...options[1],
+                        onProgress: (line) => {
+                            if (line.includes("Worker connected")) admitted();
+                        }
+                    });
+                    second.catch(() => {});
+                    await progress;
+                    // Time is the oracle: a queued delivery would expire before release.
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                    assert.equal(active.deliveries.length, 2);
+                    assert.equal(service.adapters.size, 1);
+                    await fs.writeFile(
+                        path.join(
+                            service.config.runtimeRoot,
+                            `release-${input.pr}`
+                        ),
+                        ""
+                    );
+                    const [a, b] = await Promise.all([first, second]);
+                    assert.equal(a.executionId, b.executionId);
+                    assert.equal(a.sessionId, started.threadId);
+                    assert.deepEqual(
+                        b.binding,
+                        require("../../protocol").binding(options[1].request)
+                    );
+                    assert.equal(b.coverage.complete, true);
+                    const native = await waitForFile(
+                        path.join(
+                            service.config.runtimeRoot,
+                            `${started.threadId}.json`
+                        )
+                    );
+                    assert.equal(native.turns, 1);
+                    await service.sessions.acknowledge(
+                        options[1].request,
+                        b.executionId
+                    );
+                } finally {
+                    await service.close();
+                    await Promise.allSettled([first, second]);
+                }
+            }
+        );
+    });
     it("completes two authorized run-derived reviews in reverse order without sharing ownership", async function () {
         const {
             executionFixture,

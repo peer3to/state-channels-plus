@@ -91,6 +91,12 @@ Review is independent of ordinary CI. Bot regression tests remain in CI, but no 
 
 Review concurrency is per PR: active work finishes and only the newest pending run is retained. Admission skips a head already superseded before review begins. If the head changes during review, the completed report stays on the server and publication skips it without a failure comment. Acknowledgement releases ownership without advancing the confirmed-publication baseline. The next review resumes that conversation, accounts for current discussion and the latest private findings, and publishes only for the current head.
 
+An equivalent CI rerun joins the ongoing review even during setup or unfinished
+evidence gathering. Cancelling the first CI caller does not cancel that review or
+force its replacement to queue behind it. Each delivery retains its own attempt
+and caller binding. Reuse of an already-completed result still requires matching
+effective inputs and fresh evidence; different heads or policies remain separate.
+
 ## Review policy and bounds
 
 ### Cheaper follow-up reviews

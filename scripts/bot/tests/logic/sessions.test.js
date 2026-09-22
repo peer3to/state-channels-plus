@@ -52,6 +52,61 @@ async function separate(change) {
     });
 }
 describe("review sessions", function () {
+    it("attaches an equivalent retry during setup without a finished evidence snapshot", async function () {
+        await fixture(async (sessions) => {
+            let release, started;
+            const ready = new Promise((resolve) => {
+                started = resolve;
+            });
+            const held = new Promise((resolve) => {
+                release = resolve;
+            });
+            const first = request();
+            const second = request({
+                attempt: "retry",
+                caller: "9".repeat(64),
+                run: { id: 1, attempt: 2 }
+            });
+            let executions = 0;
+            const a = sessions.submit(
+                first,
+                digest("first pending snapshot"),
+                async () => {
+                    executions++;
+                    started();
+                    await held;
+                    return result(first);
+                },
+                async () => true
+            );
+            await ready;
+            const b = sessions.submit(
+                second,
+                digest("retry pending snapshot"),
+                async () => {
+                    throw new Error(
+                        "Equivalent retry must not execute another model"
+                    );
+                },
+                async () => {
+                    throw new Error(
+                        "Unfinished evidence cannot be freshness-tested"
+                    );
+                }
+            );
+            try {
+                const slot = sessions.slots.get(sessions.key(first));
+                assert.equal(slot.active.deliveries.length, 2);
+                assert.equal(slot.pending.length, 0);
+            } finally {
+                release();
+            }
+            const [one, two] = await Promise.all([a, b]);
+            assert.equal(executions, 1);
+            assert.equal(one.executionId, two.executionId);
+            assert.deepEqual(two.binding, binding(second));
+        });
+    });
     it("holds a fifth PR until one of four global owners releases", async function () {
         await fixture(async (sessions) => {
             sessions.limits.concurrency = 4;

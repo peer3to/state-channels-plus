@@ -152,15 +152,24 @@ class Sessions {
         const active = slot.active;
         if (
             active &&
-            active.effective === effective &&
+            (active.result
+                ? active.effective === effective
+                : protocol.effectiveIdentity(
+                      active.deliveries[0].request,
+                      evidenceIdentity
+                  ) === effective) &&
             !active.closed &&
             !active.budget.terminationFailed
         ) {
-            let fresh = false;
-            try {
-                fresh = await isFresh(active);
-            } catch {
-                /* Unknown freshness queues a separate review. */
+            // An unfinished review has no completed evidence snapshot to reuse.
+            // Equivalent deliveries join its work, including during setup.
+            let fresh = !active.result;
+            if (active.result) {
+                try {
+                    fresh = await isFresh(active);
+                } catch {
+                    /* Unknown freshness queues a separate review. */
+                }
             }
             if (fresh && slot.active === active && !active.closed) {
                 active.deliveries.push(delivery);
