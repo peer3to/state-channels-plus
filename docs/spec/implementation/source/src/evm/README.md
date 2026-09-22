@@ -14,6 +14,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [index.ts](./index.ts.md)
 - [browser](./browser/README.md)
 - [contractExecutor](./contractExecutor/README.md)
+- [gasUsage](./gasUsage/README.md)
 - [node](./node/README.md)
 - [p2pRuntime](./p2pRuntime/README.md)
 - [signer](./signer/README.md)

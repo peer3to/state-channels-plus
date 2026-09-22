@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-Host-side nonce management for chain submissions (serializes nonce allocation).
+Host-side nonce management for chain submissions (serializes nonce allocation), and the one point
+where the peer's chain spending is observed.
 
 ## Key design decisions
 
@@ -28,6 +29,13 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
    [`withGasHeadroom`](../../utils/gas.ts.md), and a send without a caller gas limit uses it. Every
    peer's chain transaction passes here, including client-mode sends forwarded by
    [ClientChainSigner](./ClientChainSigner.ts.md), so no caller sets a fixed limit.
+3. **Gas is observed here because every real-chain transaction of the peer passes here.** The
+   worker-side signers reach the chain through the chain-signer runtime service, which sends
+   through this manager, and the host-side manager contract and dispute retries are bound to it
+   too. `sendTransaction` is a thin wrapper that hands the broadcast response to the recorder and
+   returns it unchanged, so nonce handling stays in `sendWithOwnedNonce`.
+4. **The recorder is created with the signer** — it lives exactly as long as the signer whose
+   transactions it counts, and every reader reaches the same instance through it.
 
 ## Inputs, outputs, state, and side effects
 
@@ -43,9 +51,9 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs                                                                            |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) | [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
+| Source file                                                                    | Specification IDs                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) | [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk), [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) — the single producer of gas usage records. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -69,8 +77,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                  | Gap / divergence                                             |
+| -------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) | Partial               | **Here:** the observation point and the owned recorder in [sendTransaction](../../../../../../../src/evm/signer/HostNonceManager.ts#L65). **Other files:** [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md) waits for the receipt, [GasUsageTable.ts](../gasUsage/GasUsageTable.ts.md) aggregates, and [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports the table on disposal. | Exposure to callers is the client signer's, not this file's. |
 
 ## Component test obligations
 
@@ -81,4 +90,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
+- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md), [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md).

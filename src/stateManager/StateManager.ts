@@ -27,6 +27,7 @@ import ADiamondStateMachine from "@/ADiamondStateMachine";
 import DisputeManager from "@/disputeManager";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
+import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import { StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
@@ -64,7 +65,11 @@ class StateManager<
 > {
     diamondStateMachine: ADiamondStateMachine;
     p2pEventHooks: P2pEventHooks;
-    signer: ethers.Signer;
+    /**
+     * The peer's real-chain signer: the owner of its nonce, and the one point
+     * that sees every transaction the runtime sends.
+     */
+    signer: HostNonceManager;
     signerAddress: Address;
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
@@ -114,7 +119,7 @@ class StateManager<
     private stoppingPromise?: Promise<void>;
 
     constructor(
-        signer: ethers.Signer,
+        signer: HostNonceManager,
         signerAddress: Address,
         stateChannelManagerContract: StateChannelManagerInterface,
         diamondStateMachine: ADiamondStateMachine,

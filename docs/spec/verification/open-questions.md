@@ -11,6 +11,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | ID                                             | Question                                                            | Source                 | Affected documents                                            | Status |
 | ---------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
 | [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx) | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
+| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: participant-level evidence for reverted sends and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md) | Open |
 
 <a id="oq-4-jgdcnx"></a>
 
@@ -29,3 +30,16 @@ serialized output state and therefore the successor `forkId`; the empty-timeout 
 last-writer-wins). Candidate directions: canonicalize (sort) the survivor set before reduction,
 or prove and permutation-test independence including kills and slash-application order. See
 [protocol/disputes.md](../specification/disputes/disputes.md) §5 ([`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.md#inv-dis-5-j1qz92)).
+
+<a id="oq-46-ywf8am"></a>
+
+## OQ-46-YWF8AM — Participant-level gas usage evidence
+
+[`REQ-SDK-ARCH-5-NSJYQT` (Chain spending is observable)](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) plans seven permutations; three of them have no
+participant-level evidence. [`REQ-SDK-ARCH-5-NSJYQT.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p1) (a participant that sent nothing),
+[`REQ-SDK-ARCH-5-NSJYQT.T1.P4`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p4) (a mined transaction that reverted) and [`REQ-SDK-ARCH-5-NSJYQT.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p5) (one selector on two
+contract addresses) are each covered as component behaviour on the pure table, but no existing
+fixture drives them through a live participant: a session has no second manager contract, and a
+deliberate on-chain revert from a peer signer would need a scenario whose own subject is a failing
+chain send. The question for the engineer is whether component evidence is sufficient for these
+three, or whether a participant-level fixture should be added and which one.

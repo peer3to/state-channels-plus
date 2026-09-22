@@ -1,3 +1,4 @@
+import GasUsageRecorder from "@/evm/gasUsage/GasUsageRecorder";
 import { Mutex } from "@/utils";
 import { withGasHeadroom } from "@/utils/gas";
 import type { Logger } from "@/utils/logging/Logger";
@@ -14,6 +15,8 @@ import {
 /** Host-bound nonce owner for every real-chain transaction sent by one peer. */
 class HostNonceManager extends AbstractSigner {
     readonly signer: Signer;
+    /** Gas of every real-chain transaction this owner broadcast. */
+    readonly gasUsage: GasUsageRecorder;
 
     private readonly mutex: Mutex;
     private nextNonce: number | null = null;
@@ -22,6 +25,9 @@ class HostNonceManager extends AbstractSigner {
     constructor(signer: Signer, logger?: Logger) {
         super(signer.provider);
         this.signer = signer;
+        this.gasUsage = new GasUsageRecorder(
+            logger?.child({ component: "GasUsage" })
+        );
         this.mutex = new Mutex(
             logger?.child({ component: "HostNonceManager" })
         );
@@ -63,7 +69,19 @@ class HostNonceManager extends AbstractSigner {
         return this.signer.signTypedData(domain, types, value);
     }
 
+    /**
+     * Every real-chain transaction of this peer passes through here, which is
+     * why this is also where its gas usage is observed.
+     */
     async sendTransaction(
+        tx: TransactionRequest
+    ): Promise<TransactionResponse> {
+        const response = await this.sendWithOwnedNonce(tx);
+        this.gasUsage.observe(response);
+        return response;
+    }
+
+    private async sendWithOwnedNonce(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
         await this.mutex.lock({

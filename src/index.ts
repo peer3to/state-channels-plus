@@ -42,6 +42,7 @@ export type {
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,
     EvmNativeCustomPrecompile,
+    GasUsageRow,
     LocalStateMachineDeployer
 } from "@/evm";
 

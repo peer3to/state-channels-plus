@@ -14,6 +14,7 @@ import {
     type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor/createContractExecutor";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { forwardEventHandlerInvocations } from "@/evm/p2pRuntime/host/EventForwarding";
 import {
     createRuntimeChainContext,
@@ -387,6 +388,11 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         await stateManager.p2pManager.localRpc.ready();
     }
 
+    /** Gas used per contract function by this peer's real-chain transactions. */
+    public getGasUsageTable(): GasUsageRow[] {
+        return this.managedSigner.gasUsage.snapshot();
+    }
+
     // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
     public override get isDisposed(): boolean {
         return (
@@ -402,6 +408,14 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 const runtimeHandle = this.runtimeHandle;
                 const provider = this.chainContext?.provider;
                 const ctx = this.context;
+                // What the peer spent on chain, reported once while its logger
+                // is still alive. Observations still waiting for a receipt are
+                // not waited for: disposal must not hang on the chain.
+                if (this.managedSigner)
+                    this.rootLogger.info(
+                        "gas usage",
+                        LoggerUtils.getGasUsageMetadata(this.getGasUsageTable())
+                    );
                 try {
                     try {
                         // Destroy first so ethers marks the provider closed before its
