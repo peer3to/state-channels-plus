@@ -19,8 +19,9 @@
 
 ## Responsibility and observable boundary
 
-The package's public export surface, including the supported deployed-manager ABI helpers and the
-structured contract-size error classes and limits thrown by exported deployment functions.
+The package's public export surface, including the supported deployed-manager ABI helpers, the
+structured contract-size error classes and limits thrown by exported deployment functions, and the
+`GasUsageRow` row type a consumer reads a peer's chain spending as.
 
 ## Key design decisions
 

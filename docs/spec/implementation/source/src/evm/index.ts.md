@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-EVM module re-exports.
+EVM module re-exports. The surface now also carries the `GasUsageRow` type, the shape of one
+aggregated (contract, function) row that `P2pInstance.getGasUsageTable` answers.
 
 ## Key design decisions
 

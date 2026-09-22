@@ -8,10 +8,10 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                             | Question                                                            | Source                 | Affected documents                                            | Status |
-| ---------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
-| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx) | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
-| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: participant-level evidence for reverted sends and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md) | Open |
+| ID                                               | Question                                                                            | Source                  | Affected documents                                            | Status |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------- | ------ |
+| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx)   | Dispute-reduction order-independence: proof and permutation testing                 | Specification analysis  | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
+| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: component-level evidence for an unused participant and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md)             | Open   |
 
 <a id="oq-4-jgdcnx"></a>
 
@@ -33,13 +33,8 @@ or prove and permutation-test independence including kills and slash-application
 
 <a id="oq-46-ywf8am"></a>
 
-## OQ-46-YWF8AM — Participant-level gas usage evidence
+## OQ-46-YWF8AM — Component-level gas usage evidence
 
-[`REQ-SDK-ARCH-5-NSJYQT` (Chain spending is observable)](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) plans seven permutations; three of them have no
-participant-level evidence. [`REQ-SDK-ARCH-5-NSJYQT.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p1) (a participant that sent nothing),
-[`REQ-SDK-ARCH-5-NSJYQT.T1.P4`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p4) (a mined transaction that reverted) and [`REQ-SDK-ARCH-5-NSJYQT.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p5) (one selector on two
-contract addresses) are each covered as component behaviour on the pure table, but no existing
-fixture drives them through a live participant: a session has no second manager contract, and a
-deliberate on-chain revert from a peer signer would need a scenario whose own subject is a failing
-chain send. The question for the engineer is whether component evidence is sufficient for these
-three, or whether a participant-level fixture should be added and which one.
+[`REQ-SDK-ARCH-5-NSJYQT.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p1) (a participant that sent nothing) and [`REQ-SDK-ARCH-5-NSJYQT.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p5) (one selector on
+two contract addresses) keep component-level evidence on the pure table. A session has only one
+manager contract, so no existing fixture can drive either through a live participant.
