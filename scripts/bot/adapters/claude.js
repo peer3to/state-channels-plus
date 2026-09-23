@@ -12,6 +12,7 @@ const {
     setupTimeout,
     stopNative
 } = require("./native");
+const { secretRoots, toolchainRoots } = require("../workspace");
 // The CLI exposes worker-served tools as mcp__<server>__<tool>.
 const SERVER = "review";
 const TOOL_NAMES = TOOLS.map((tool) => `mcp__${SERVER}__${tool.name}`);
@@ -23,6 +24,55 @@ const LISTED_TOOLS = TOOLS.map((tool) => ({
 }));
 const SESSION_ID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The model's own tools. Shell commands run in Claude Code's bubblewrap sandbox;
+// Read/Edit/Write are held to the workspace by permission rules.
+const BUILT_IN = ["Bash", "Edit", "Read", "Write"];
+// Settings for a sandboxed headless review; `//` prefixes an absolute path.
+function sandboxSettings(workspace, stateRoot) {
+    const absolute = (value) => `/${value}`;
+    const readable = [
+        workspace.source,
+        workspace.git,
+        workspace.github,
+        workspace.scratch,
+        ...toolchainRoots()
+    ];
+    return {
+        sandbox: {
+            enabled: true,
+            failIfUnavailable: true,
+            allowUnsandboxedCommands: false,
+            autoAllowBashIfSandboxed: true,
+            // As root the strict mode cannot map its user namespace; the
+            // weaker mode keeps the file and network rules below.
+            enableWeakerNestedSandbox: process.getuid?.() === 0,
+            filesystem: {
+                denyRead: secretRoots(stateRoot).map(absolute),
+                allowRead: readable.map(absolute),
+                allowWrite: [absolute(workspace.scratch)],
+                denyWrite: [
+                    workspace.source,
+                    workspace.git,
+                    workspace.github
+                ].map(absolute)
+            },
+            network: { allowedDomains: [] }
+        },
+        permissions: {
+            blockReadsOutsideWorkingDirectories: true,
+            additionalDirectories: [
+                workspace.source,
+                workspace.git,
+                workspace.github
+            ],
+            allow: [
+                `Write(${absolute(workspace.scratch)}/**)`,
+                `Edit(${absolute(workspace.scratch)}/**)`
+            ],
+            deny: ["WebFetch", "WebSearch"]
+        }
+    };
+}
 function providerFailure(code, status) {
     if (["rate_limit", "billing_error"].includes(code) || status === 429)
         return new ReviewError("SUBSCRIPTION_LIMIT");
@@ -38,6 +88,9 @@ class ClaudeAdapter {
     runtime = null;
     sessionId = null;
     instructionsFile = null;
+    settingsFile = null;
+    // Sandbox folders for model turns; null keeps only the worker tools.
+    workspace;
     stopping = null;
     tools;
     setupDeadline = null;
@@ -49,9 +102,10 @@ class ClaudeAdapter {
         completedItems: 0,
         toolCalls: 0
     };
-    constructor(config, tools) {
+    constructor(config, tools, workspace = null) {
         this.config = config;
         this.tools = tools;
+        this.workspace = workspace;
     }
     environment() {
         // No API key is passed: reviews run on the CLI's claude.ai login only.
@@ -109,6 +163,19 @@ class ClaudeAdapter {
         await fs.writeFile(this.instructionsFile, instructions, {
             mode: 0o600
         });
+        if (this.workspace) {
+            this.settingsFile = path.join(
+                this.config.runtimeRoot,
+                `${crypto.randomUUID()}-settings.json`
+            );
+            await fs.writeFile(
+                this.settingsFile,
+                JSON.stringify(
+                    sandboxSettings(this.workspace, this.config.stateRoot)
+                ),
+                { mode: 0o600 }
+            );
+        }
         const args = [
             "-p",
             "--input-format",
@@ -120,20 +187,24 @@ class ClaudeAdapter {
             this.config.model,
             "--effort",
             this.config.effort,
-            // No built-in tools, settings files, skills, plugins or user MCP
-            // servers: only the worker-served source tools below.
+            // No settings files, skills, plugins or user MCP servers. With a
+            // workspace the model also keeps its sandboxed built-in tools.
             "--tools",
-            "",
+            this.workspace ? BUILT_IN.join(",") : "",
             "--setting-sources",
             "",
+            ...(this.settingsFile ? ["--settings", this.settingsFile] : []),
             "--disable-slash-commands",
             "--strict-mcp-config",
             "--mcp-config",
             JSON.stringify({
                 mcpServers: { [SERVER]: { type: "sdk", name: SERVER } }
             }),
+            // Headless: anything not allowed is denied, never asked about.
             "--permission-mode",
             "dontAsk",
+            "--permission-prompts",
+            "none",
             "--allowedTools",
             ...TOOL_NAMES,
             "--system-prompt-file",
@@ -141,7 +212,7 @@ class ClaudeAdapter {
             ...(existingId ? ["--resume", id] : ["--session-id", id])
         ];
         this.process = new NativeProcess(this.config.claudePath, args, {
-            cwd: this.config.runtimeRoot,
+            cwd: this.workspace?.scratch || this.config.runtimeRoot,
             env: this.environment()
         });
         this.process.on("message", (message) =>
@@ -285,7 +356,12 @@ class ClaudeAdapter {
                             // The session must expose exactly the worker tools.
                             check(
                                 JSON.stringify([...message.tools].sort()) ===
-                                    JSON.stringify([...TOOL_NAMES].sort()),
+                                    JSON.stringify(
+                                        [
+                                            ...(this.workspace ? BUILT_IN : []),
+                                            ...TOOL_NAMES
+                                        ].sort()
+                                    ),
                                 "ISOLATION_UNVERIFIED"
                             );
                             this.activity.phase = "model-event";
@@ -363,10 +439,16 @@ class ClaudeAdapter {
                 this.tools,
                 this.config.limits.terminationMs
             ).finally(async () => {
-                if (this.instructionsFile)
-                    await fs.rm(this.instructionsFile, { force: true });
+                for (const file of [this.instructionsFile, this.settingsFile])
+                    if (file) await fs.rm(file, { force: true });
             });
         return this.stopping;
     }
 }
-module.exports = { ClaudeAdapter, providerFailure, TOOL_NAMES };
+module.exports = {
+    ClaudeAdapter,
+    providerFailure,
+    sandboxSettings,
+    BUILT_IN,
+    TOOL_NAMES
+};

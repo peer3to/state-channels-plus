@@ -7,7 +7,9 @@ Operational setup, failure recovery and acceptance are in [the operations guide]
 CI reads current thread resolution via GraphQL and binds only resolved thread and
 comment IDs into the review request. The worker omits those comments and replies
 from model input. The publisher checks live resolution again; reopened discussion
-still needs accounting. No GitHub token is sent to the worker.
+still needs accounting. CI's GitHub publisher token never reaches the worker; the worker
+may use its own optional read-only `SCP_REVIEW_GITHUB_TOKEN`, sent only to
+`api.github.com` (see [GitHub read token](../../docs/pr-review-bot.md#github-read-token)).
 
 Every assessment fetch regenerates the active Markdown and JSON from current
 GitHub findings, excluding resolved findings. Any existing Markdown, including
@@ -55,7 +57,7 @@ Run `yarn review-bot:test --grep '<literal case>'` for a focused check, and `yar
 
 The normal worker owns the pool, peer identity, authentication, authorization store, connection deduplication, heartbeats and shutdown. `--review-codex` or `--review-claude` initializes the review handler below the worker work root and advertises the review topic pair. Authenticated `REVIEW_*` messages are dispatched before test lease handling. `ReviewService.attach` uses the existing protocol peer; it opens no second pool and performs no second authentication.
 
-CI derives a review identity per run attempt by SHA-256 hashing the fixed `peer3/review-orchestrator/v1` domain (NUL terminated), existing orchestrator seed bytes, and JSON array of repository ID, run ID and attempt strings. Every job and reconnect in that attempt derives the same key; different runs do not displace each other's connections. No new secret is required. The deployment uses shared-secret admission with unlisted orchestrators allowed; strict key allowlisting is not required for this setup. Per-PR conversations remain independent of client keys. Discovery uses the review topic pair and capability negotiation. The Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process; the Claude adapter passes only PATH, HOME and optional CLAUDE_CONFIG_DIR, never an API key. This is source-tool restriction, not separate OS-user isolation.
+CI derives a review identity per run attempt by SHA-256 hashing the fixed `peer3/review-orchestrator/v1` domain (NUL terminated), existing orchestrator seed bytes, and JSON array of repository ID, run ID and attempt strings. Every job and reconnect in that attempt derives the same key; different runs do not displace each other's connections. No new secret is required. The deployment uses shared-secret admission with unlisted orchestrators allowed; strict key allowlisting is not required for this setup. Per-PR conversations remain independent of client keys. Discovery uses the review topic pair and capability negotiation. The Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process; the Claude adapter passes only PATH, HOME and optional CLAUDE_CONFIG_DIR, never an API key. Model commands run in each CLI's sandbox over a per-review workspace; see [the operations guide](../../docs/pr-review-bot.md#headless-sandboxed-workspace). This is not separate OS-user isolation.
 
 Publication uses the publisher job's `GITHUB_TOKEN`, with pull requests write and issues write. Credentials remain step-scoped. The model job remains read-only; result artifacts expire after one day without a cleanup job. Receipt delivery runs directly in the publish job. Enable the repository's Actions approval setting. See [first live run](../../docs/pr-review-bot.md#first-live-run).
 

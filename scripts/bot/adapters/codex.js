@@ -1,5 +1,6 @@
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs/promises");
+const path = require("node:path");
 const { check } = require("../data");
 const { ReviewError } = require("../errors");
 const {
@@ -10,6 +11,9 @@ const {
     toolFailureText,
     runTool
 } = require("./native");
+const { resolveExecutable, toolchainRoots } = require("../workspace");
+// Features that reach outside the review sandbox. The model keeps its own
+// shell, file and image tools, which run inside the sandbox profile below.
 const DISABLED = [
     "apps",
     "browser_use",
@@ -19,10 +23,7 @@ const DISABLED = [
     "hooks",
     "plugins",
     "multi_agent",
-    "shell_tool",
-    "unified_exec",
     "image_generation",
-    "view_image",
     "workspace_dependencies",
     "skill_mcp_dependency_install",
     "skill_search",
@@ -42,6 +43,43 @@ function providerFailure(error) {
     if (info === "unauthorized") return new ReviewError("LOGIN_EXPIRED");
     return new ReviewError("SERVICE_UNAVAILABLE");
 }
+// Codex permission profile: only the listed paths exist inside the sandbox
+// (":minimal" adds system directories), so worker secrets and logins are absent.
+function sandboxArgs(workspace, codexPath) {
+    const toml = (value) => JSON.stringify(value);
+    const installed = resolveExecutable(codexPath);
+    const filesystem = {
+        ":minimal": "read",
+        ...Object.fromEntries(
+            [
+                ...(installed ? [path.dirname(path.dirname(installed))] : []),
+                ...toolchainRoots(),
+                workspace.source,
+                workspace.git,
+                workspace.github
+            ].map((root) => [root, "read"])
+        ),
+        [workspace.scratch]: "write"
+    };
+    return [
+        "-c",
+        'default_permissions="review"',
+        "-c",
+        `permissions.review.filesystem={${Object.entries(filesystem)
+            .map(([key, access]) => `${toml(key)}=${toml(access)}`)
+            .join(",")}}`,
+        "-c",
+        "permissions.review.network.enabled=false",
+        // Commands see only core variables, never the worker's environment.
+        "-c",
+        'shell_environment_policy.inherit="core"',
+        "-c",
+        `shell_environment_policy.set={TMPDIR=${toml(path.join(workspace.scratch, "tmp"))}}`
+    ];
+}
+// Headless: a request for human input is answered, never left waiting.
+const HEADLESS_ANSWER =
+    "No human is available: this review runs headless. Decide yourself and continue; record any open question in the review.";
 function toolFailureResult(error) {
     return {
         success: false,
@@ -56,6 +94,8 @@ class CodexAdapter {
     turnId = null;
     stopping = null;
     tools;
+    // Sandbox folders for model turns; null for native cleanup only.
+    workspace;
     setupDeadline = null;
     activity = {
         phase: "starting",
@@ -63,9 +103,10 @@ class CodexAdapter {
         completedItems: 0,
         toolCalls: 0
     };
-    constructor(config, tools) {
+    constructor(config, tools, workspace = null) {
         this.config = config;
         this.tools = tools;
+        this.workspace = workspace;
     }
     setupTimeout(maximum = 30000) {
         return setupTimeout(this.setupDeadline, maximum);
@@ -103,9 +144,13 @@ class CodexAdapter {
         check(installed, "MODEL_UNAVAILABLE");
         this.runtime = `codex-${installed}`;
         const args = DISABLED.flatMap((name) => ["--disable", name]);
-        // Dynamic source tools use Code Mode; this does not enable shell tools.
+        // Dynamic source tools use Code Mode.
         args.push("--enable", "code_mode_host");
-        args.push("-c", 'web_search="disabled"', "app-server");
+        // Hosted web search runs outside the sandbox's network block.
+        args.push("-c", 'web_search="disabled"');
+        if (this.workspace)
+            args.push(...sandboxArgs(this.workspace, this.config.codexPath));
+        args.push("app-server");
         this.process = new NativeProcess(this.config.codexPath, args, {
             cwd: this.config.runtimeRoot,
             env: {
@@ -142,8 +187,8 @@ class CodexAdapter {
         const params = {
             model: this.config.model,
             approvalPolicy: "never",
-            sandbox: "read-only",
-            cwd: this.config.runtimeRoot,
+            // No sandbox field: it would replace the default_permissions profile.
+            cwd: this.workspace?.scratch || this.config.runtimeRoot,
             developerInstructions: instructions,
             runtimeWorkspaceRoots: []
         };
@@ -155,7 +200,8 @@ class CodexAdapter {
             : await this.setupRequest("thread/start", {
                   ...params,
                   allowProviderModelFallback: false,
-                  environments: [],
+                  // An empty list disables the model's own command environment.
+                  ...(this.workspace ? {} : { environments: [] }),
                   dynamicTools: TOOLS
               });
         check(
@@ -163,6 +209,11 @@ class CodexAdapter {
                 (!existingId || response.thread.id === existingId),
             "INVALID_RESULT"
         );
+        if (this.workspace)
+            check(
+                response.activePermissionProfile?.id === "review",
+                "ISOLATION_UNVERIFIED"
+            );
         this.threadId = response.thread.id;
         return this.threadId;
     }
@@ -236,6 +287,23 @@ class CodexAdapter {
                                     message.params.arguments
                                 )
                             });
+                        } else if (
+                            message.method === "item/tool/requestUserInput" &&
+                            message.id !== undefined
+                        ) {
+                            this.process.write({
+                                id: message.id,
+                                result: {
+                                    answers: Object.fromEntries(
+                                        message.params.questions.map(
+                                            (question) => [
+                                                question.id,
+                                                { answers: [HEADLESS_ANSWER] }
+                                            ]
+                                        )
+                                    )
+                                }
+                            });
                         } else if (message.id !== undefined) {
                             this.process.write({
                                 id: message.id,
@@ -273,7 +341,7 @@ class CodexAdapter {
                         model: this.config.model,
                         effort: this.config.effort,
                         approvalPolicy: "never",
-                        environments: [],
+                        ...(this.workspace ? {} : { environments: [] }),
                         input: [{ type: "text", text: prompt }]
                     });
                     this.turnId = started.turn.id;

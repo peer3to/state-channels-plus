@@ -3,7 +3,11 @@ const { once } = require("node:events");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { ClaudeAdapter, TOOL_NAMES } = require("../../adapters/claude");
+const {
+    BUILT_IN,
+    ClaudeAdapter,
+    TOOL_NAMES
+} = require("../../adapters/claude");
 const { configuration } = require("../../config");
 const { ModelBudget } = require("../../timing");
 const { request: requestRecord } = require("../fixtures/records");
@@ -86,7 +90,7 @@ async function nextReview(service, tree, input, provider) {
 }
 
 describe("Claude review adapter", function () {
-    it("runs the review through the Claude CLI with the configured model and effort and only the worker source tools", async function () {
+    it("runs the review in the sandboxed workspace with the configured model and effort and the model's own tools", async function () {
         await executionFixture(
             async ({ service, connected, input }) => {
                 service.config.effort = "high";
@@ -102,6 +106,52 @@ describe("Claude review adapter", function () {
                 assert.equal(native.model, "claude-opus-5-5");
                 assert.equal(native.effort, "high");
                 assert.deepEqual(native.allowedTools, TOOL_NAMES);
+                // The model keeps its own tools, runs headless in scratch, and
+                // the sandbox hides secrets, blocks network and writes elsewhere.
+                const workspace = path.join(
+                    service.config.stateRoot,
+                    "workspaces",
+                    service.sessions.key(input)
+                );
+                const scratch = path.join(workspace, "scratch");
+                assert.deepEqual(native.builtInTools, BUILT_IN);
+                assert.equal(native.cwd, scratch);
+                assert.equal(native.permissionPrompts, "none");
+                const { sandbox, permissions } = native.settings;
+                assert.equal(sandbox.enabled, true);
+                assert.equal(sandbox.failIfUnavailable, true);
+                assert.equal(sandbox.allowUnsandboxedCommands, false);
+                assert.deepEqual(sandbox.network.allowedDomains, []);
+                assert.ok(
+                    sandbox.filesystem.denyRead.includes(`/${os.homedir()}`)
+                );
+                assert.deepEqual(sandbox.filesystem.allowWrite, [
+                    `/${scratch}`
+                ]);
+                // The worker's own checkout of the PR head stays read-only.
+                assert.ok(
+                    sandbox.filesystem.denyWrite.includes(
+                        `/${path.join(service.config.stateRoot, "worktrees", `pr-${input.repository.id}-${input.pr}`)}`
+                    )
+                );
+                assert.equal(
+                    permissions.blockReadsOutsideWorkingDirectories,
+                    true
+                );
+                assert.deepEqual(permissions.deny, ["WebFetch", "WebSearch"]);
+                // The discussion was fetched once into the read-only snapshot.
+                const snapshot = await fs.readdir(
+                    path.join(workspace, "github")
+                );
+                for (const name of [
+                    `pulls-${input.pr}.json`,
+                    `issues-${input.pr}-comments.json`,
+                    `pulls-${input.pr}-comments.json`,
+                    `pulls-${input.pr}-reviews.json`,
+                    `pulls-${input.pr}-files.json`,
+                    `pulls-${input.pr}-commits.json`
+                ])
+                    assert.ok(snapshot.includes(name), name);
                 assert.equal(native.instructions, service.instructions);
                 // Full tool results up to the worker's own byte limit reach the
                 // model instead of the CLI's 25k-token default.
@@ -125,6 +175,12 @@ describe("Claude review adapter", function () {
                     ).length,
                     0,
                     `instructions file removed after release: ${files}`
+                );
+                assert.equal(
+                    (await fs.readdir(service.config.runtimeRoot)).filter(
+                        (file) => file.endsWith("-settings.json")
+                    ).length,
+                    0
                 );
             },
             { provider: "claude" }
@@ -250,7 +306,7 @@ describe("Claude review adapter", function () {
             { provider: "claude" }
         );
     });
-    it("stops the review when the CLI session exposes a tool beyond the worker source tools", async function () {
+    it("stops the review when the CLI session exposes a tool beyond its sandboxed set", async function () {
         await executionFixture(
             async ({ service, connected, input }) => {
                 service.config.model = "extra-tool-model";

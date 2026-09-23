@@ -4,6 +4,7 @@ const { check, ownedPath, writeJson } = require("./data");
 const { ContextBudget, PublicGitHub } = require("./github-read");
 const { sanitized } = require("./errors");
 const { sessionProviderOf } = require("./sessions");
+const { removeWorkspace } = require("./workspace");
 class LifecycleCleanup {
     worktrees;
     sessions;
@@ -158,6 +159,10 @@ class LifecycleCleanup {
                                 );
                             }
                             await this.worktrees.remove(record, true);
+                            await removeWorkspace(
+                                path.dirname(this.worktrees.root),
+                                key
+                            );
                             await this.sessions.removeRecords(key);
                             await fs.unlink(manifest);
                             return true;

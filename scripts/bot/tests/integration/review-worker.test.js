@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { once } = require("node:events");
 const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 const { reviewWorker } = require("../fixtures/review-worker");
 const { request } = require("../fixtures/records");
@@ -123,7 +124,11 @@ describe("integrated worker review service", function () {
                 input
             );
             const message = (await response)[0];
-            assert.equal(message.operation, "result");
+            assert.equal(
+                message.operation,
+                "result",
+                JSON.stringify(message.value)
+            );
             const threads = [];
             for (const file of await fs.readdir(service.config.runtimeRoot))
                 if (/^[0-9a-f-]{36}\.json$/.test(file))
@@ -137,12 +142,71 @@ describe("integrated worker review service", function () {
                     );
             assert.equal(threads.length, 1);
             assert.equal(threads[0].model, "alternate-review-model");
+            // Sandboxed workspace: scratch is the cwd, the model keeps its own
+            // command environment, and only workspace paths enter the profile.
+            const workspace = path.join(
+                service.config.stateRoot,
+                "workspaces",
+                service.sessions.key(input)
+            );
+            assert.equal(threads[0].cwd, path.join(workspace, "scratch"));
+            assert.equal(threads[0].sandbox, null);
+            assert.equal(threads[0].environments, null);
+            const args = threads[0].permissionArgs;
+            assert.ok(args.includes('default_permissions="review"'));
+            assert.ok(
+                args.includes("permissions.review.network.enabled=false")
+            );
+            assert.ok(args.includes('shell_environment_policy.inherit="core"'));
+            const filesystem = args.find((arg) =>
+                arg.startsWith("permissions.review.filesystem=")
+            );
+            assert.ok(
+                filesystem.includes(
+                    `${JSON.stringify(path.join(workspace, "scratch"))}="write"`
+                )
+            );
+            assert.ok(
+                filesystem.includes(
+                    `${JSON.stringify(path.join(workspace, "github"))}="read"`
+                )
+            );
+            assert.ok(filesystem.includes('":minimal"="read"'));
+            assert.ok(!filesystem.includes(`${JSON.stringify(os.homedir())}=`));
             assert.ok(threads[0].turnSettings.length > 0);
             for (const settings of threads[0].turnSettings)
                 assert.deepEqual(settings, {
                     model: "alternate-review-model",
                     effort: "high"
                 });
+        });
+    });
+    it("answers a Codex request for user input automatically so the headless review continues", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        await executionFixture(async ({ service, connected, input }) => {
+            service.config.model = "ask-user-model";
+            const connection = await connected;
+            const response = once(connection, "payload");
+            await connection.send("request", "ask", input.attempt, input);
+            const message = (await response)[0];
+            assert.equal(
+                message.operation,
+                "result",
+                JSON.stringify(message.value)
+            );
+            const threads = [];
+            for (const file of await fs.readdir(service.config.runtimeRoot))
+                if (/^[0-9a-f-]{36}\.json$/.test(file))
+                    threads.push(
+                        JSON.parse(
+                            await fs.readFile(
+                                path.join(service.config.runtimeRoot, file),
+                                "utf8"
+                            )
+                        )
+                    );
+            const [answer] = threads[0].userAnswer.answers.proceed.answers;
+            assert.match(answer, /No human is available/);
         });
     });
     it("fails the review when Codex does not list the configured model instead of substituting another", async function () {
@@ -394,7 +458,7 @@ describe("integrated worker review service", function () {
             }
         );
     });
-    it("joins a rerun before evidence gathering and completes beyond the queue deadline", async function () {
+    it("joins a rerun after the controller gathered the discussion and completes beyond the queue deadline", async function () {
         const {
             executionFixture,
             waitForFile
@@ -446,7 +510,9 @@ describe("integrated worker review service", function () {
                     const active = service.sessions.slots.get(
                         service.sessions.key(input)
                     ).active;
-                    assert.equal(active.context.gathered(), false);
+                    // The discussion snapshot is gathered before the model
+                    // starts, so the rerun joins through the freshness check.
+                    assert.equal(active.context.gathered(), true);
                     let admitted;
                     const progress = new Promise((resolve) => {
                         admitted = resolve;

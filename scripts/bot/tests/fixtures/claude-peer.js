@@ -24,12 +24,22 @@ if (args[0] === "auth" && args[1] === "status") {
     process.exit(0);
 }
 const send = (frame) => process.stdout.write(JSON.stringify(frame) + "\n");
+// The CLI starts in the review's scratch folder; the fixture keeps its session
+// records in the runtime folder beside the instructions, where tests read them.
+const workingDirectory = process.cwd();
+process.chdir(require("node:path").dirname(option("--system-prompt-file")));
 const resumed = option("--resume");
 const id = resumed || option("--session-id");
 const thread = resumed
     ? JSON.parse(fs.readFileSync(file(id), "utf8"))
     : { id, turns: 0 };
 thread.model = option("--model");
+thread.cwd = workingDirectory;
+thread.builtInTools = (option("--tools") || "").split(",").filter(Boolean);
+thread.permissionPrompts = option("--permission-prompts");
+thread.settings = option("--settings")
+    ? JSON.parse(fs.readFileSync(option("--settings"), "utf8"))
+    : null;
 // Like the real CLI, results over this many tokens (default 25k) never reach
 // the model; one character per token is the fixture's conservative estimate.
 thread.maxMcpOutputTokens = process.env.MAX_MCP_OUTPUT_TOKENS;
@@ -66,9 +76,10 @@ async function turn(prompt) {
         session_id: id,
         model: thread.model,
         tools: [
+            ...thread.builtInTools,
             ...tools.map((tool) => `mcp__review__${tool.name}`),
             // Isolation probes: a built-in tool leaking into the session.
-            ...(thread.model === "extra-tool-model" ? ["Bash"] : [])
+            ...(thread.model === "extra-tool-model" ? ["WebFetch"] : [])
         ]
     });
     if (thread.model === "permission-prompt-model") {

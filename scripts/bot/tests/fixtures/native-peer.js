@@ -32,6 +32,35 @@ function tool(name, args, turn) {
 }
 async function generate(params, turn) {
     const prompt = params.input[0].text;
+    if (thread.model === "ask-user-model") {
+        // Headless probe: the model asks the user before reviewing.
+        const id = `input-${++serial}`;
+        thread.userAnswer = await new Promise((resolve) => {
+            pending.set(id, resolve);
+            send({
+                id,
+                method: "item/tool/requestUserInput",
+                params: {
+                    threadId: thread.id,
+                    turnId: turn,
+                    itemId: "ask",
+                    isBlocking: true,
+                    autoResolutionMs: null,
+                    questions: [
+                        {
+                            id: "proceed",
+                            header: "Proceed?",
+                            question: "Should I continue?",
+                            isOther: false,
+                            isSecret: false,
+                            options: null
+                        }
+                    ]
+                }
+            });
+        });
+        record(file(thread.id), thread);
+    }
     const text = await writeReview(prompt, thread, async (name, args) => {
         const result = await tool(name, args, turn);
         return { success: result.success, text: result.contentItems[0].text };
@@ -64,7 +93,11 @@ require("node:readline")
             result = { account: { type: "chatgpt" } };
         else if (message.method === "model/list")
             result = {
-                data: [{ id: DEFAULT_MODELS.codex }, { model: ALTERNATE_MODEL }]
+                data: [
+                    { id: DEFAULT_MODELS.codex },
+                    { model: ALTERNATE_MODEL },
+                    { model: "ask-user-model" }
+                ]
             };
         else if (["thread/start", "thread/resume"].includes(message.method)) {
             thread =
@@ -75,8 +108,24 @@ require("node:readline")
                       );
             thread.instructions = params.developerInstructions;
             thread.model = params.model;
+            thread.cwd = params.cwd;
+            thread.sandbox = params.sandbox ?? null;
+            thread.environments = params.environments ?? null;
+            // The real app-server reports the -c default_permissions profile.
+            thread.permissionArgs = process.argv.filter((arg) =>
+                /^(default_permissions|permissions\.|shell_environment_policy)/.test(
+                    arg
+                )
+            );
             record(file(thread.id), thread);
-            result = { thread: { id: thread.id } };
+            result = {
+                thread: { id: thread.id },
+                activePermissionProfile: process.argv.includes(
+                    'default_permissions="review"'
+                )
+                    ? { id: "review" }
+                    : null
+            };
         } else if (message.method === "thread/read")
             result = {
                 thread: JSON.parse(

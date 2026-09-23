@@ -405,6 +405,8 @@ class PublicGitHub {
     resolvedComments;
     // Canonical permitted URLs whose latest attempted read has not succeeded.
     unavailable = new Set();
+    // Workspace folder receiving each read API page for the model's own tools.
+    snapshot = null;
     controller = new AbortController();
     constructor(
         repository,
@@ -458,6 +460,12 @@ class PublicGitHub {
         try {
             const page = await this.readWithinBudget(url);
             this.unavailable.delete(url);
+            if (this.snapshot)
+                await require("./workspace").writeSnapshot(
+                    this.snapshot,
+                    url,
+                    page
+                );
             return page;
         } catch (error) {
             this.unavailable.add(url);

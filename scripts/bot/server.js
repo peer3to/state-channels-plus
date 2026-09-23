@@ -14,6 +14,7 @@ const {
     PublicAccounting
 } = require("./github-read");
 const { createAdapter } = require("./adapters");
+const { prepareWorkspace, writeSnapshot } = require("./workspace");
 const { ReviewConnection } = require("./transport");
 const { bundleDigest } = require("./request");
 const { validateReport, validateInlineTargets } = require("./review-format");
@@ -344,8 +345,29 @@ class ReviewService {
             true
         );
         await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
+        const workspace = await prepareWorkspace(
+            this.config.stateRoot,
+            this.sessions.key(input),
+            tree.checkout
+        );
+        execution.workspace = workspace;
+        // Fetch the discussion once into files the model reads with its own
+        // tools as often as it likes; later reads of the same pages are 304s.
+        context.snapshot = workspace.github;
+        const prUrl = `https://api.github.com/repos/${input.repository.name}/pulls/${input.pr}`;
+        await writeSnapshot(workspace.github, prUrl, pr);
+        for (const route of [
+            `issues/${input.pr}/comments`,
+            `pulls/${input.pr}/comments`,
+            `pulls/${input.pr}/reviews`,
+            `pulls/${input.pr}/files`,
+            `pulls/${input.pr}/commits`
+        ])
+            await context.pages(
+                `https://api.github.com/repos/${input.repository.name}/${route}?per_page=100`
+            );
         const tools = new SourceTools(tree.checkout, input, context);
-        const adapter = createAdapter(this.config, tools);
+        const adapter = createAdapter(this.config, tools, workspace);
         this.adapters.set(execution.id, adapter);
         execution.adapter = adapter;
         execution.tools = tools;
@@ -394,6 +416,12 @@ class ReviewService {
                     ...input,
                     base: tree.base,
                     incremental,
+                    // Paths for the model's own read/search/shell tools.
+                    workspace: {
+                        source: workspace.source,
+                        github: workspace.github,
+                        scratch: workspace.scratch
+                    },
                     previousFindings:
                         (await this.publications.load(input)).states
                             .at(-1)
