@@ -25,7 +25,7 @@ Keep your existing worker flags and environment. The worker uses the same identi
 
 ## Worker prerequisites and storage
 
-Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests the configured model and effort (default `gpt-6-astra` at `low`), fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
+Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.156.1`, requests the configured model and effort (default `gpt-6-astra` at `low`), fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
 
 Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution receives only the approved source/public-read tools; the server persists its returned report. Application execution, tests and direct publication remain disabled.
 
@@ -83,7 +83,7 @@ In Settings → Actions → General → Workflow permissions, enable **Allow Git
 ## First live run
 
 1. Commit the implementation. Update the worker's checkout to the same bot revision used by the PR. Install its normal dependencies.
-2. In the worker's normal login environment, check `codex --version` and `codex login status`. The adapter currently expects `codex-cli 0.154.0` and ChatGPT login with Astra access.
+2. In the worker's normal login environment, check `codex --version` and `codex login status`. The adapter currently expects `codex-cli 0.156.1` and ChatGPT login with Astra access.
 3. Restart the existing worker command with `--review-codex` added (optionally a model and `--review-effort`). Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
 4. Enable GitHub Actions approval as described above. Keep the existing CI pool/orchestrator secrets.
 5. Push to the existing same-repository implementation PR. A comment alone does not start review. A manual workflow rerun uses its original event head and skips if that head is now stale.

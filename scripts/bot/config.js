@@ -76,7 +76,7 @@ function configuration(input) {
         ...input,
         runtimeRoot,
         codexPath: input.codexPath || "codex",
-        codexVersion: input.codexVersion || "0.154.0",
+        codexVersion: input.codexVersion || "0.156.1",
         model,
         effort,
         limits

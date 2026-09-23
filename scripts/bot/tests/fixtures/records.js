@@ -15,7 +15,7 @@ function request(overrides = {}) {
         botRevision: "e".repeat(40),
         skillDigest: digest("skill"),
         policyDigest: digest("policy"),
-        runtime: "codex-0.154.0",
+        runtime: "codex-0.156.1",
         operations: ["review", "propose-replies"],
         readScope: ["source", "discussion", "reviews"],
         ...overrides

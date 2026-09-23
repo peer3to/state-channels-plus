@@ -68,7 +68,7 @@ async function main() {
         ),
         skillDigest: await bundleDigest(path.join(__dirname, "skill")),
         policyDigest: policyDigest(),
-        runtime: "codex-0.154.0",
+        runtime: "codex-0.156.1",
         operations: ["review", "propose-replies"],
         readScope: ["source", "discussion", "reviews"]
     });

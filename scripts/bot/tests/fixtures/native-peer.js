@@ -8,7 +8,7 @@ const { DEFAULT_MODEL } = require("../../config");
 // A second listed model lets tests select a non-default worker model.
 const ALTERNATE_MODEL = "alternate-review-model";
 if (process.argv.includes("--version")) {
-    process.stdout.write("codex-cli 0.154.0\n");
+    process.stdout.write("codex-cli 0.156.1\n");
     process.exit(0);
 }
 const pending = new Map();
