@@ -43,9 +43,9 @@ Message signing preserves text versus byte input through the shared tagged messa
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                      | Specification IDs                                                                            |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [ClientChainSigner.ts](../../../../../../../src/evm/signer/ClientChainSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
+| Source file                                                                      | Specification IDs                                                                                                                                                                          |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [ClientChainSigner.ts](../../../../../../../src/evm/signer/ClientChainSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

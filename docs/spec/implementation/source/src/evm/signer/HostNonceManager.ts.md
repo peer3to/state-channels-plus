@@ -43,9 +43,9 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs |
-| ------------------------------------------------------------------------------ | ----------------- |
-| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) |                   |
+| Source file                                                                    | Specification IDs                                                                            |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) | [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

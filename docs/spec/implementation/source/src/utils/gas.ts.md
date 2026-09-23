@@ -43,9 +43,9 @@ Gas headroom for chain transactions: `GAS_ESTIMATE_HEADROOM_PERCENT` and `withGa
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                  | Specification IDs |
-| -------------------------------------------- | ----------------- |
-| [gas.ts](../../../../../../src/utils/gas.ts) |                   |
+| Source file                                  | Specification IDs                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [gas.ts](../../../../../../src/utils/gas.ts) | [`REQ-SDK-ARCH-5-AAM7YK`](../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
