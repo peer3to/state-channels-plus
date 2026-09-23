@@ -64,7 +64,7 @@ claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                                      | Specification IDs                                                                                                                                                       |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [GasUsageRecorder.ts](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts) | [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) — decides what mined and keeps observation free of caller-visible effects. |
+| [GasUsageRecorder.ts](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts) | [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) — decides what mined and keeps observation free of caller-visible effects. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -76,7 +76,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Mined-only counting and effect-free observation per [`REQ-SDK-ARCH-5-NSJYQT` (Chain spending is observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt).
+- Mined-only counting and effect-free observation per [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er).
 
 ## Specification contradictions
 
@@ -94,7 +94,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Gap / divergence                                                                    |
 | -------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) | Partial               | **Here:** receipt resolution, reverted recovery and the bounded wait in [resolveReceipt](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L100), non-rejecting observation in [observe](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L29), and the settled read in [settledSnapshot](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L76). **Other files:** [GasUsageTable.ts](./GasUsageTable.ts.md) aggregates, [HostNonceManager.ts](../signer/HostNonceManager.ts.md) is the single producer, and [LoggerUtils.ts](../../utils/LoggerUtils.ts.md) names the selector. | Exposure and the disposal report belong to the runtime host and the client surface. |
+| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** receipt resolution, reverted recovery and the bounded wait in [resolveReceipt](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L100), non-rejecting observation in [observe](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L29), and the settled read in [settledSnapshot](../../../../../../../src/evm/gasUsage/GasUsageRecorder.ts#L76). **Other files:** [GasUsageTable.ts](./GasUsageTable.ts.md) aggregates, [HostNonceManager.ts](../signer/HostNonceManager.ts.md) is the single producer, and [LoggerUtils.ts](../../utils/LoggerUtils.ts.md) names the selector. | Exposure and the disposal report belong to the runtime host and the client surface. |
 
 ## Component test obligations
 

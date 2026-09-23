@@ -35,4 +35,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                  | Covers                                                                                                |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`E2E: Gas Usage > records the block calldata a peer posted on chain and nothing it never called`](../../../../../../test/e2e/E2E-GasUsage.test.ts#L15) (line 15) | [`REQ-SDK-ARCH-5-NSJYQT.T1.P7`](../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p7) |
+| [`E2E: Gas Usage > records the block calldata a peer posted on chain and nothing it never called`](../../../../../../test/e2e/E2E-GasUsage.test.ts#L15) (line 15) | [`REQ-SDK-ARCH-6-8DE4ER.T1.P7`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p7) |

@@ -54,7 +54,7 @@ claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                                | Specification IDs                                                                                                                                          |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [GasUsageTable.ts](../../../../../../../src/evm/gasUsage/GasUsageTable.ts) | [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) — owns the aggregation and the ordering of the exposed table. |
+| [GasUsageTable.ts](../../../../../../../src/evm/gasUsage/GasUsageTable.ts) | [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) — owns the aggregation and the ordering of the exposed table. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -64,7 +64,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Aggregation, success-only bounds, separate reverted totals, and deterministic ordering per [`REQ-SDK-ARCH-5-NSJYQT` (Chain spending is observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt).
+- Aggregation, success-only bounds, separate reverted totals, and deterministic ordering per [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er).
 
 ## Specification contradictions
 
@@ -82,7 +82,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Gap / divergence                                                                                |
 | -------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [`REQ-SDK-ARCH-5-NSJYQT`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt) | Partial               | **Here:** counting, totals, success-only bounds, separate reverted totals, and snapshot ordering in [record](../../../../../../../src/evm/gasUsage/GasUsageTable.ts#L71) and [snapshot](../../../../../../../src/evm/gasUsage/GasUsageTable.ts#L108). **Other files:** [GasUsageRecorder.ts](./GasUsageRecorder.ts.md) decides what mined, [HostNonceManager.ts](../signer/HostNonceManager.ts.md) is the single producer, [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports it on disposal, and [P2pInstance.ts](../P2pInstance.ts.md) exposes it. | This file never observes a chain, so it cannot establish that only mined transactions reach it. |
+| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** counting, totals, success-only bounds, separate reverted totals, and snapshot ordering in [record](../../../../../../../src/evm/gasUsage/GasUsageTable.ts#L71) and [snapshot](../../../../../../../src/evm/gasUsage/GasUsageTable.ts#L108). **Other files:** [GasUsageRecorder.ts](./GasUsageRecorder.ts.md) decides what mined, [HostNonceManager.ts](../signer/HostNonceManager.ts.md) is the single producer, [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports it on disposal, and [P2pInstance.ts](../P2pInstance.ts.md) exposes it. | This file never observes a chain, so it cannot establish that only mined transactions reach it. |
 
 ## Component test obligations
 

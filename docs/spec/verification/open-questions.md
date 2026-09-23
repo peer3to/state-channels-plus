@@ -35,6 +35,6 @@ or prove and permutation-test independence including kills and slash-application
 
 ## OQ-46-YWF8AM — Component-level gas usage evidence
 
-[`REQ-SDK-ARCH-5-NSJYQT.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p1) (a participant that sent nothing) and [`REQ-SDK-ARCH-5-NSJYQT.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p5) (one selector on
+[`REQ-SDK-ARCH-6-8DE4ER.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p1) (a participant that sent nothing) and [`REQ-SDK-ARCH-6-8DE4ER.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p5) (one selector on
 two contract addresses) keep component-level evidence on the pure table. A session has only one
 manager contract, so no existing fixture can drive either through a live participant.

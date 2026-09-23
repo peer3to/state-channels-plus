@@ -31,4 +31,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                                              | Covers                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`GasUsageDisposal > reports the gas usage aggregate once when the participant is disposed`](../../../../../../test/evm/GasUsageDisposal.test.ts#L9) (line 9) | [`REQ-SDK-ARCH-5-NSJYQT.T1.P8`](../../../../specification/runtime/sdk.md#req-sdk-arch-5-nsjyqt.t1.p8) |
+| [`GasUsageDisposal > reports the gas usage aggregate once when the participant is disposed`](../../../../../../test/evm/GasUsageDisposal.test.ts#L9) (line 9) | [`REQ-SDK-ARCH-6-8DE4ER.T1.P8`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p8) |
