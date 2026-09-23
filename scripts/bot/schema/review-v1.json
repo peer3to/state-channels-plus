@@ -333,7 +333,15 @@
                 "line",
                 "human",
                 "evidence"
-            ]
+            ],
+            "if": {
+                "properties": {
+                    "status": { "enum": ["fixed", "disagreement"] }
+                },
+                "required": ["status"]
+            },
+            "then": { "properties": { "evidence": { "minItems": 1 } } },
+            "$comment": "A fixed or disagreement disposition needs at least one evidence entry (inspected source)."
         },
         "accounting": {
             "type": "object",

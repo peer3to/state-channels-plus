@@ -53,16 +53,23 @@ async function writeReview(prompt, thread, callTool) {
         ...(input.previousFindings || []),
         ...(restored ? JSON.parse(restored[1]) : [])
     ].filter((finding) => !["fixed", "disagreement"].includes(finding.status));
+    // "fix-without-evidence-model" first closes findings without a pinned link,
+    // then adds one when the controller's repair feedback asks for evidence.
+    const fixing = thread.model === "fix-without-evidence-model";
+    const status = fixing ? "fixed" : "continued";
+    const link = /without evidence/.test(prompt)
+        ? `\nFixed at https://github.com/${input.repository.name}/blob/${input.head}/README.md#L1`
+        : "";
     const cards = findings
         .map(
             (finding) =>
-                `### [${finding.id}] Retained finding\nStatus: continued\nLocation: general\n${finding.body ?? `🟠 **[${finding.id}] Retained from this conversation.**`}\n> Fix ${finding.id}-FIX\n> Retain the pending operation.\n`
+                `### [${finding.id}] Retained finding\nStatus: ${status}\nLocation: general\n${finding.body ?? `🟠 **[${finding.id}] Retained from this conversation.**`}${link}\n> Fix ${finding.id}-FIX\n> Retain the pending operation.\n`
         )
         .join("\n");
     const accounting = findings
         .map(
             (finding) =>
-                `| finding:${finding.id} | continued | Still relevant in current source. | ${finding.id} |`
+                `| finding:${finding.id} | ${status} | Still relevant in current source. | ${finding.id} |`
         )
         .concat(discussion)
         .join("\n");

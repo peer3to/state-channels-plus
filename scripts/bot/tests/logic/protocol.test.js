@@ -285,6 +285,48 @@ describe("review protocol", () => {
         assert.equal(accepted(Array(1001).fill("x")), false);
         assert.equal(accepted([null]), false);
     });
+    it("rejects a closed finding without evidence with feedback naming it, in runtime and schema alike", function () {
+        const Ajv = require("ajv");
+        const schema = require("../../schema/review-v1.json");
+        const validate = new Ajv().compile({
+            $defs: schema.$defs,
+            $ref: "#/$defs/finding"
+        });
+        const outcome = (status, evidence) => {
+            const finding = {
+                id: "FO1",
+                body: "Evidence boundary",
+                path: null,
+                line: null,
+                threadId: null,
+                status,
+                human: null,
+                evidence
+            };
+            const output = records.result(undefined, {
+                recommendation: "comment",
+                findings: [finding]
+            });
+            output.report += `\n## Correctness\n- [ ] **[FO1] General PR comment**\n<!-- pr-review-finding ${JSON.stringify({ id: "FO1", kind: "general", evidence })} -->\n<!-- human:FO1:start -->\n<!-- human:FO1:end -->\n<!-- ai:FO1:start -->\nEvidence boundary\n<!-- ai:FO1:end -->\n`;
+            try {
+                p.result(output, records.request());
+                assert.equal(validate(finding), true);
+                return "accepted";
+            } catch (error) {
+                assert.equal(validate(finding), false);
+                return error.validationFeedback || error.code;
+            }
+        };
+        for (const status of ["fixed", "disagreement"]) {
+            assert.match(
+                outcome(status, []),
+                /Findings FO1 are marked fixed or disagreement without evidence/
+            );
+            assert.equal(outcome(status, ["pinned source link"]), "accepted");
+        }
+        for (const status of ["new", "continued", "recurred"])
+            assert.equal(outcome(status, []), "accepted");
+    });
     it("accepts zero as unlimited retrieval in result and failure evidence", function () {
         const output = records.result();
         output.evidence.limits = { requests: 0, pages: 0, bytes: 0 };
