@@ -161,7 +161,10 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    `DisputeConfirmation` with an empty co-signature list.
 
 **Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain upload (gas limit 2.5M). Race reverts are classified:
+without: the plain or calldata upload. Every upload pins the 2.5M gas limit rather than an exact
+estimate: each disputer already in the window adds cost to a late upload, so a concurrent honest
+dispute that lands between estimate and inclusion cannot push a late disputer out of gas (and past
+the evidence window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window

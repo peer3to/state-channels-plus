@@ -93,15 +93,30 @@ async function turn(prompt) {
     }
     if (thread.model.startsWith("probe-")) {
         // Probe: one tool call, recording exactly what the model received.
-        const [name, args] =
-            thread.model === "probe-github-model"
-                ? [
-                      "public_github_read",
-                      {
-                          url: "https://api.github.com/repos/owner/repo/pulls/6/files?per_page=100"
-                      }
-                  ]
-                : ["source_read", { path: "README.md", start: 1, count: 2 }];
+        const probes = {
+            "probe-github-model": [
+                "public_github_read",
+                {
+                    url: "https://api.github.com/repos/owner/repo/pulls/6/files?per_page=100"
+                }
+            ],
+            "probe-github-browser-model": [
+                "public_github_read",
+                { url: "https://github.com/owner/repo/pull/6/files" }
+            ],
+            "probe-github-repositories-model": [
+                "public_github_read",
+                {
+                    url: "https://api.github.com/repositories/1/pulls/6/comments?per_page=100&page=2"
+                }
+            ],
+            "probe-list-model": ["source_list", {}],
+            "probe-search-model": ["source_search", { text: "x", paths: [] }]
+        };
+        const [name, args] = probes[thread.model] || [
+            "source_read",
+            { path: "README.md", start: 1, count: 2 }
+        ];
         const response = await mcp("tools/call", { name, arguments: args });
         const text = response.result.content[0].text;
         thread.probe = {

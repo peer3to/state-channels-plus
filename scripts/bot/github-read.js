@@ -442,7 +442,8 @@ class PublicGitHub {
             );
         return permittedUrl(url.href, this.repository, this.pr, this.head);
     }
-    async read(input) {
+    // The URL a read actually fetches and snapshots for a permitted input.
+    canonical(input) {
         let url = this.permitted(input).href;
         // A PR browser link names the same resource as the structured API route.
         // Do not depend on GitHub's changing HTML shell for this read.
@@ -457,6 +458,10 @@ class PublicGitHub {
             const page = browser.searchParams.get("page");
             if (page) url += `&page=${encodeURIComponent(page)}`;
         }
+        return url;
+    }
+    async read(input) {
+        const url = this.canonical(input);
         try {
             const page = await this.readWithinBudget(url);
             this.unavailable.delete(url);

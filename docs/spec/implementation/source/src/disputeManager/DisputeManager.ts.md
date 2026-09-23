@@ -78,9 +78,10 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    again only if the chain set changed since construction, including a slash already delivered in
    the meantime. Construction keeps the existing participant eligibility filter; a slash is not
    automatically a valid reason.
-8. **Right-sized gas ceiling.** The plain upload pins a 2.5M gas limit — measured ~0.5M in e2e,
-   sized down from 5M to free block gas under concurrency while keeping headroom
-   ([#L45](../../../../../../src/disputeManager/DisputeManager.ts#L45)).
+8. **Right-sized gas ceiling on every upload.** The plain upload, the calldata upload and the
+   fraud-proof multicall all pin a 2.5M gas limit — measured ~0.5M in e2e, sized down from 5M to
+   free block gas under concurrency while keeping headroom
+   ([#L56](../../../../../../src/disputeManager/DisputeManager.ts#L56)). None uses ethers' default exact estimate: honest peers race to dispute the same fraud, and a late disputer's upload costs more for every disputer already in the window (`_hadParticipantPostedEvidence` reads the whole `hasPosted` list). A dispute landing between estimate and inclusion leaves an exact estimate a few thousand gas short; the out-of-gas revert surfaces only as the proxy's "Delegatecall failed", and the retry can land at `evidencePeriodEnd`, refusing an honest disputer's evidence.
 9. **StateManager orders admitted signing before the single dispute marker.**
    Dispute admission waits for the state mutex, sets the marker after admitted signatures and storage
    complete, then releases that mutex before construction and network submission. Callers already

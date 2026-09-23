@@ -27,13 +27,20 @@ const TOOL_NAMES = TOOLS.map((tool) => `mcp__${SERVER}__${tool.name}`);
 // points the model to the file instead; 30,000 characters stays under both caps.
 const MAX_RESULT_CHARS = 30000;
 // Recoverable tool error pointing the model at a smaller read or the file copy.
-function resultTooLarge(name, input, workspace) {
-    const where =
-        name === "public_github_read" && workspace
-            ? `Read the full page from ${workspace.github}/${snapshotName(input.url)} with your own tools, or request a smaller per_page.`
-            : workspace
-              ? `Use a narrower start/count, or read the file directly under ${workspace.source} with your own tools.`
-              : "Use a narrower start/count or a smaller per_page.";
+// `snapshotUrl` is the canonical URL the reader fetched and saved the page under.
+function resultTooLarge(name, workspace, snapshotUrl) {
+    const source = workspace?.source || "the checkout";
+    const guidance = {
+        public_github_read:
+            workspace && snapshotUrl
+                ? `Read the full page from ${workspace.github}/${snapshotName(snapshotUrl)} with your own tools, or request a smaller per_page.`
+                : "Request a smaller per_page.",
+        source_list: `List files with \`git ls-files\` in ${source} using your own tools.`,
+        source_search: `Search with \`git grep\` or \`grep\` in ${source} using your own tools.`,
+        source_read: `Use a narrower start/count, or read the file directly under ${source} with your own tools.`,
+        source_diff: `Use \`git diff\` for that path in ${source} with your own tools.`
+    };
+    const where = guidance[name] || "Request a smaller result.";
     return JSON.stringify({
         error: {
             code: "RESULT_TOO_LARGE",
@@ -329,8 +336,8 @@ class ClaudeAdapter {
                             text: tooLarge
                                 ? resultTooLarge(
                                       rpc.params.name,
-                                      rpc.params.arguments,
-                                      this.workspace
+                                      this.workspace,
+                                      this.snapshotUrl(rpc.params)
                                   )
                                 : outcome.text
                         }
@@ -353,6 +360,15 @@ class ClaudeAdapter {
                 }
             }
         });
+    }
+    // Where the reader saved a public_github_read page; null for other tools.
+    snapshotUrl({ name, arguments: input }) {
+        if (name !== "public_github_read") return null;
+        try {
+            return this.tools.publicGitHub?.canonical(input.url) || null;
+        } catch {
+            return null;
+        }
     }
     async turn(prompt, budget) {
         check(this.sessionId && !this.active, "INVALID_REQUEST");

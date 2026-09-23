@@ -9,6 +9,7 @@ const {
     TOOL_NAMES
 } = require("../../adapters/claude");
 const { configuration } = require("../../config");
+const { ContextBudget, PublicGitHub } = require("../../github-read");
 const { ModelBudget } = require("../../timing");
 const { request: requestRecord } = require("../fixtures/records");
 const { digest } = require("../../data");
@@ -86,9 +87,15 @@ async function probeResult(model, length, withWorkspace = false) {
         await fs.mkdir(directory, { recursive: true });
     // {"v":"…"} serialises to exactly `length` characters.
     const value = { v: "x".repeat(length - 8) };
+    // A real reader supplies the canonical URL the snapshot is saved under.
+    const publicGitHub = new PublicGitHub(
+        { id: 1, name: "owner/repo" },
+        6,
+        new ContextBudget(config.limits)
+    );
     const adapter = new ClaudeAdapter(
         config,
-        { call: async () => value, close: async () => {} },
+        { call: async () => value, close: async () => {}, publicGitHub },
         workspace
     );
     try {
@@ -242,6 +249,38 @@ describe("Claude review adapter", function () {
             probe.text.includes(`${probe.workspace.github}/pulls-6-files.json`),
             probe.text
         );
+    });
+    it("names the saved snapshot file for a browser PR files link and a numeric repository link", async function () {
+        const browser = await probeResult(
+            "probe-github-browser-model",
+            30001,
+            true
+        );
+        assert.ok(
+            browser.text.includes(
+                `${browser.workspace.github}/pulls-6-files.json`
+            ),
+            browser.text
+        );
+        const numeric = await probeResult(
+            "probe-github-repositories-model",
+            30001,
+            true
+        );
+        assert.ok(
+            numeric.text.includes(
+                `${numeric.workspace.github}/pulls-6-comments.page-2.json`
+            ),
+            numeric.text
+        );
+    });
+    it("gives source listing and search results over 30,000 characters their own recovery advice", async function () {
+        const list = await probeResult("probe-list-model", 30001, true);
+        assert.equal(list.isError, true);
+        assert.match(list.text, /git ls-files/);
+        assert.doesNotMatch(list.text, /start\/count/);
+        const search = await probeResult("probe-search-model", 30001, true);
+        assert.match(search.text, /git grep/);
     });
     it("returns a recoverable error pointing at a narrower read for source over 30,000 characters", async function () {
         const probe = await probeResult("probe-source-model", 30001, true);
