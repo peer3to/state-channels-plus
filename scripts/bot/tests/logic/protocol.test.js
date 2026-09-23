@@ -310,6 +310,7 @@ describe("review protocol", () => {
             output.report += `\n## Correctness\n- [ ] **[FO1] General PR comment**\n<!-- pr-review-finding ${JSON.stringify({ id: "FO1", kind: "general", evidence })} -->\n<!-- human:FO1:start -->\n<!-- human:FO1:end -->\n<!-- ai:FO1:start -->\nEvidence boundary\n<!-- ai:FO1:end -->\n`;
             try {
                 p.result(output, records.request());
+                p.requireEvidencedDispositions(output);
                 assert.equal(validate(finding), true);
                 return "accepted";
             } catch (error) {
