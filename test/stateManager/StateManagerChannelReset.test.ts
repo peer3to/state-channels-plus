@@ -5,6 +5,7 @@ import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -355,6 +356,47 @@ describe("StateManager.resetChannel", function () {
         });
     });
 
+    it("refuses an acknowledgement request about another channel without judging the asker", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const service = sm.p2pManager.localRpc.isForkDisputedService;
+                const transport = sm.p2pManager.openConnections[0]!;
+                const asker = String(transport.peerAddress);
+                const methods = service.createRPCMethods(transport);
+                // A peer still on the channel this runtime left asks after it
+                // has already been reset: the local diamond keeps that
+                // channel's state, so only the channel check refuses it.
+                const answer = await methods
+                    .onDisputeAcknowledgmentRequest(
+                        args.otherChannel,
+                        sm.forkId
+                    )
+                    .then(() => "")
+                    .catch((error: unknown) =>
+                        error instanceof Error ? error.message : "thrown"
+                    );
+                return {
+                    answer,
+                    acknowledged: service.didIAcknowledgeDisputedFork(
+                        asker,
+                        sm.forkId
+                    ),
+                    blacklisted: sm.p2pManager.isBlacklisted(asker)
+                };
+            },
+            { otherChannel: ethers.id("another-channel") }
+        );
+
+        expect(result).to.deep.equal({
+            answer: "onDisputeAcknowledgmentRequest - not this runtime's channel",
+            acknowledged: false,
+            blacklisted: false
+        });
+    });
+
     it("does not apply a chain status read for the channel it left to the next one", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
@@ -475,6 +517,56 @@ describe("StateManager.resetChannel", function () {
             persisted: false,
             writesAfterReset: 0
         });
+    });
+
+    it("stops persisting a sync's dispute windows once the channel is left", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(h.getPeer(2), async (sm) => {
+            const spectate = sm.p2pManager.localRpc.spectateService;
+            const diamond = sm.diamondStateMachine.localDiamondContract;
+            const persist = diamond.persistDisputeWindow.bind(diamond);
+            let writes = 0;
+            let parked = false;
+            let release: () => void = () => undefined;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            // The first write parks, and the reset lands while it waits.
+            diamond.persistDisputeWindow = Object.assign(
+                async (...callArgs: Parameters<typeof persist>) => {
+                    writes += 1;
+                    if (writes === 1) {
+                        parked = true;
+                        await held;
+                    }
+                    return persist(...callArgs);
+                },
+                persist
+            );
+            try {
+                // The chain answers with one window per requested fork, so
+                // asking about the fork twice leaves a write after the
+                // parked one.
+                const fetch = spectate.fetchAndPersistOnChainDisputeWindows(
+                    sm.channelId,
+                    [sm.forkId, sm.forkId],
+                    sm.channelGeneration
+                );
+                while (!parked)
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                await sm.resetChannel();
+                release();
+                return {
+                    persisted: (await fetch) !== undefined,
+                    writes
+                };
+            } finally {
+                diamond.persistDisputeWindow = persist;
+            }
+        });
+
+        expect(result).to.deep.equal({ persisted: false, writes: 1 });
     });
 
     it("does not subscribe the reused runtime to the discovery topic of the channel it left", async function () {
@@ -613,29 +705,44 @@ describe("StateManager.resetChannel", function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const writes = await h.execOnHost(h.getPeer(0), async (sm) => {
-            // Monkey-patching typed contract members needs the casts. The
-            // submit is parked on its gas-limit read, its last await before
-            // the chain write, and the reset lands while it waits there.
-            const contract = sm.stateChannelManagerContract as unknown as {
-                getGasLimit: () => Promise<bigint>;
-                multicall: (...args: unknown[]) => unknown;
-            };
-            const gasLimit = contract.getGasLimit.bind(contract);
-            const multicall = contract.multicall.bind(contract);
+            // The submit is parked on its gas-limit read, its last await
+            // before the chain write, and the reset lands while it waits there.
+            const contract = sm.stateChannelManagerContract;
+            const getGasLimit = contract.getGasLimit;
+            const multicall = contract.multicall;
             let writeCount = 0;
             let parked = false;
+            let forwardedRead: Promise<unknown> = Promise.resolve();
             let release: () => void = () => undefined;
-            contract.getGasLimit = () =>
-                new Promise<bigint>((resolve) => {
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            // Each stub inherits its typechain method, so the method's own
+            // members stay reachable and the stub is a drop-in for the typed
+            // contract surface (Object.assign cannot copy the read-only
+            // `name`); both only record and forward.
+            contract.getGasLimit = Object.setPrototypeOf(
+                async (...callArgs: Parameters<typeof getGasLimit>) => {
                     parked = true;
-                    release = () => resolve(1_000_000n);
-                });
-            contract.multicall = (...args: unknown[]) => {
-                writeCount += 1;
-                return multicall(...args);
-            };
+                    await held;
+                    const read = getGasLimit(...callArgs);
+                    forwardedRead = read;
+                    return read;
+                },
+                getGasLimit
+            );
+            contract.multicall = Object.setPrototypeOf(
+                (...callArgs: Parameters<typeof multicall>) => {
+                    writeCount += 1;
+                    return multicall(...callArgs);
+                },
+                multicall
+            );
             try {
                 const executor = sm.reductionManager["reductionExecutor"];
+                // The candidate is read only when a sent transaction fails,
+                // and this submit must send none; host code cannot import the
+                // factories that would build one.
                 executor["submitDetached"](sm.forkId, {} as never, {
                     calldata: []
                 });
@@ -643,13 +750,16 @@ describe("StateManager.resetChannel", function () {
                     await new Promise((resolve) => setTimeout(resolve, 0));
                 await sm.resetChannel();
                 release();
-                // One macrotask drains the microtasks between the resolved gas
-                // limit and the write, so the write has landed by now if the
-                // fence let it through.
+                // One macrotask lets the parked submit forward its real read;
+                // the write follows that read within a few microtasks, so one
+                // more macrotask after it lands the write if the fence let it
+                // through.
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await forwardedRead;
                 await new Promise((resolve) => setTimeout(resolve, 0));
                 return writeCount;
             } finally {
-                contract.getGasLimit = gasLimit;
+                contract.getGasLimit = getGasLimit;
                 contract.multicall = multicall;
             }
         });
@@ -767,37 +877,33 @@ describe("StateManager.resetChannel", function () {
     it("records no verdict while the channel is being released", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        const result = await h.execOnHost(
-            h.getPeer(2),
-            async (sm, args) => {
-                const drain = sm.stateChannelEventListener.drain.bind(
-                    sm.stateChannelEventListener
-                );
-                // Park the reset mid-flight and try to earn a verdict there.
-                let release: () => void = () => undefined;
-                const held = new Promise<void>((resolve) => {
-                    release = resolve;
-                });
-                sm.stateChannelEventListener.drain = async () => {
-                    await held;
-                    return drain();
-                };
-                const reset = sm.resetChannel();
-                await new Promise((resolve) => setTimeout(resolve, 50));
+        const releasing = h.getPeer(2);
+        const peer = h.getPeer(0).address;
+        // Park the reset mid-flight and try to earn a verdict there.
+        const drain = await h.rpcStub.holdEventDrain(releasing.index);
+        await h.execOnHost(releasing, (sm) => {
+            Reflect.set(sm, "heldReset", sm.resetChannel());
+        });
+        await waitFor(async () => (await drain.entered()) === 1);
+        const duringReset = await h.execOnHost(
+            releasing,
+            (sm, args) => {
                 sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(args.peer);
-                const duringReset = sm.p2pManager.isBlacklisted(args.peer);
-                release();
-                await reset;
-                sm.stateChannelEventListener.drain = drain;
-                return {
-                    duringReset,
-                    afterReset: sm.p2pManager.isBlacklisted(args.peer)
-                };
+                return sm.p2pManager.isBlacklisted(args.peer);
             },
-            { peer: h.getPeer(0).address }
+            { peer }
+        );
+        await drain.release();
+        const afterReset = await h.execOnHost(
+            releasing,
+            async (sm, args) => {
+                await Reflect.get(sm, "heldReset");
+                return sm.p2pManager.isBlacklisted(args.peer);
+            },
+            { peer }
         );
 
-        expect(result).to.deep.equal({
+        expect({ duringReset, afterReset }).to.deep.equal({
             duringReset: false,
             afterReset: false
         });
@@ -806,45 +912,86 @@ describe("StateManager.resetChannel", function () {
     it("records no suspension or retry strike while the channel is being released", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        const result = await h.execOnHost(
-            h.getPeer(2),
-            async (sm, args) => {
-                const drain = sm.stateChannelEventListener.drain.bind(
-                    sm.stateChannelEventListener
-                );
-                // Park the reset mid-flight and try to earn a strike and a
-                // suspension there.
-                let release: () => void = () => undefined;
-                const held = new Promise<void>((resolve) => {
-                    release = resolve;
-                });
-                sm.stateChannelEventListener.drain = async () => {
-                    await held;
-                    return drain();
-                };
-                const reset = sm.resetChannel();
-                await new Promise((resolve) => setTimeout(resolve, 50));
+        const releasing = h.getPeer(2);
+        const args = {
+            struck: h.getPeer(0).address,
+            suspended: h.getPeer(1).address,
+            // A bound of two keeps one recorded strike visible as a count.
+            retry: DisconnectPolicy.allowRetry(2),
+            suspend: DisconnectPolicy.SUSPEND
+        };
+        // Park the reset mid-flight and try to earn a strike and a suspension
+        // there. Read while it is parked: the reset forgets both once it runs
+        // on, so a read afterwards could not tell the fence from the release.
+        const drain = await h.rpcStub.holdEventDrain(releasing.index);
+        await h.execOnHost(releasing, (sm) => {
+            Reflect.set(sm, "heldReset", sm.resetChannel());
+        });
+        await waitFor(async () => (await drain.entered()) === 1);
+        const duringReset = await h.execOnHost(
+            releasing,
+            (sm, a) => {
                 const p2p = sm.p2pManager;
-                p2p.disconnectConnection(args.struck, args.retry);
-                p2p.disconnectConnection(args.suspended, args.suspend);
-                release();
-                await reset;
-                sm.stateChannelEventListener.drain = drain;
+                p2p.disconnectConnection(a.struck, a.retry);
+                p2p.disconnectConnection(a.suspended, a.suspend);
                 return {
-                    strikes: p2p.profileManager.getStrikes(args.struck),
-                    suspended: p2p.isSuspended(args.suspended)
+                    strikes: p2p.profileManager.getStrikes(a.struck),
+                    suspended: p2p.isSuspended(a.suspended)
                 };
             },
+            args
+        );
+        await drain.release();
+        await h.execOnHost(releasing, async (sm) => {
+            await Reflect.get(sm, "heldReset");
+        });
+
+        expect(duringReset).to.deep.equal({ strikes: 0, suspended: false });
+    });
+
+    it("forgets strikes and suspensions with the channel it leaves", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const peer = h.getPeer(2);
+        const control = h.control(peer);
+        const struck = h.getPeer(0).address;
+        const suspendedPeer = h.getPeer(1).address;
+        // The suspended peer's discovery handle, read while its profile is
+        // still known: the suspension bans that handle too.
+        const handle = await h.execOnHost(
+            peer,
+            (sm, a) => {
+                const p2p = sm.p2pManager;
+                p2p.disconnectConnection(a.struck, a.retry);
+                const hpAddress = p2p.profileManager
+                    .getProfileByEvmAddress(a.suspended)
+                    ?.getHpAddress();
+                p2p.disconnectConnection(a.suspended, a.suspend);
+                return hpAddress ?? "";
+            },
             {
-                struck: h.getPeer(0).address,
-                suspended: h.getPeer(1).address,
-                // A bound of two keeps one recorded strike visible as a count.
+                struck,
+                suspended: suspendedPeer,
                 retry: DisconnectPolicy.allowRetry(2),
                 suspend: DisconnectPolicy.SUSPEND
             }
         );
+        const read = async () => ({
+            strikes: await control.query.getStrikes(struck).request(),
+            suspended: await control.query.isSuspended(suspendedPeer).request(),
+            handleBanned: await control.query
+                .isPeerHandleBanned(handle)
+                .request()
+        });
+        const before = await read();
+        await h.execOnHost(peer, async (sm) => {
+            await sm.resetChannel();
+        });
 
-        expect(result).to.deep.equal({ strikes: 0, suspended: false });
+        expect({ before, after: await read() }).to.deep.equal({
+            before: { strikes: 1, suspended: true, handleBanned: true },
+            after: { strikes: 0, suspended: false, handleBanned: false }
+        });
     });
 
     it("rejects a channel reset on a disposed runtime", async function () {

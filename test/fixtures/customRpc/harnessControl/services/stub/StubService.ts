@@ -347,6 +347,7 @@ export class StubService extends ANetworkRpcService<
         proofEntries: number;
         proofSources: number;
         chainReads: number;
+        membershipSyncs: number;
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
@@ -647,6 +648,7 @@ export class StubService extends ANetworkRpcService<
         const machine = this.sm.diamondStateMachine;
         const router = this.p2pManager.rpcRouter;
         const read = chain.readPinnedChainMembership.bind(chain);
+        const synchronize = chain.synchronizeChainMembership.bind(chain);
         const participants = machine.getParticipants.bind(machine);
         const broadcast = router.broadcastRpc.bind(router);
         const request = router.sendRpcRequest.bind(router);
@@ -665,6 +667,7 @@ export class StubService extends ANetworkRpcService<
             proofEntries: 0,
             proofSources: 0,
             chainReads: 0,
+            membershipSyncs: 0,
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
@@ -676,6 +679,7 @@ export class StubService extends ANetworkRpcService<
                 spectate.sync = sync;
                 queues.createEntry = createEntry;
                 chain.readPinnedChainMembership = read;
+                chain.synchronizeChainMembership = synchronize;
                 machine.getParticipants = participants;
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
@@ -721,6 +725,10 @@ export class StubService extends ANetworkRpcService<
             await gate;
             return result;
         };
+        chain.synchronizeChainMembership = async (...args) => {
+            observation.membershipSyncs++;
+            return synchronize(...args);
+        };
         machine.getParticipants = async () => {
             observation.localMembershipReads++;
             return participants();
@@ -760,6 +768,7 @@ export class StubService extends ANetworkRpcService<
             proofEntries: observation?.proofEntries ?? 0,
             proofSources: observation?.proofSources ?? 0,
             chainReads: observation?.chainReads ?? 0,
+            membershipSyncs: observation?.membershipSyncs ?? 0,
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,

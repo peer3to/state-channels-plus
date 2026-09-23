@@ -477,10 +477,10 @@ effects that follow them — recording the acknowledgement, and blacklisting an 
 disputed — belong to no channel then. It throws rather than returning `false`, because `false` is the
 truthful answer "not disputed" and the responder has no answer to give; the requester's own fence then
 discards the failure without penalising anyone. And
-[`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md) needed no
-generation at all: the step-11 calldata timer re-reads `isActiveFork(block.forkId)`, the guard the
-participant timeout check already uses, and the reset retires the fork before its first await, so the guard
-is false for the whole release. Timers surviving most of a release is the general hazard here — the task
+[`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md) first used
+`isActiveFork(block.forkId)` for the step-11 calldata timer; a later review round replaced it with the
+channel generation captured when the timer is armed, because the fork guard also dropped the author's
+post on a fork change inside the same channel, which it had not done before channel reuse. Timers surviving most of a release is the general hazard here — the task
 drain is the second-to-last step — and this one would have sent a transaction for the channel left.
 
 The same round made the second reset step that waits for in-flight work report its outcome.
@@ -510,5 +510,7 @@ follows the identity into the next channel; the constructor keeps `maxChannelPar
 queue store. In `SpectateService.runSync` a request that fails outright now takes one `allowRetry` strike,
 skipped when the captured generation has moved, while an apply failure still goes through `rejectSync` with
 that generation; the in-flight dedupe entry became a `{ request, result }` object, and `sync`'s `finally`
-compares that object. Colliding planned and unit test permutations were renumbered on the PR side: its P4 of the penalty-requires-proof planned test is now [`REQ-AUTH-4-JWCF71.T1.P7`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p7), its P5 of the P2P manager peer-registry test is now [`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P16`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p16), and its P14 of the reduction executor attempt test is now [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P15`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p15). The release keeps the strike map untouched, so
-strikes and suspensions taken before a release still apply afterwards; no decision covers that yet.
+compares that object. Colliding planned and unit test permutations were renumbered on the PR side: its P4 of the penalty-requires-proof planned test is now [`REQ-AUTH-4-JWCF71.T1.P7`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p7), its P5 of the P2P manager peer-registry test is now [`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P16`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p16), and its P14 of the reduction executor attempt test is now [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P15`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p15). The engineer
+decided on 2026-09-23 that strikes and suspensions are channel-scoped: `releaseChannelPeers()` now lifts the
+Hyperswarm handle bans suspensions placed and clears the strike map, so only the blacklist verdict follows
+an identity into the next channel.

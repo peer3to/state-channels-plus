@@ -35,6 +35,18 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
             );
         }
 
+        // This runtime answers only for the channel it serves now. A request
+        // about another one, such as the channel it left, is not judged: the
+        // local diamond still holds that channel's state, and neither an
+        // acknowledgement nor a verdict would belong to the current channel.
+        if (
+            String(channelId) !== String(this.p2pManager.stateManager.channelId)
+        ) {
+            throw new Error(
+                "onDisputeAcknowledgmentRequest - not this runtime's channel"
+            );
+        }
+
         // A second request for a fork we already acknowledged to this peer is a
         // protocol violation.
         if (this.service.didIAcknowledgeDisputedFork(peerAddress, forkId)) {

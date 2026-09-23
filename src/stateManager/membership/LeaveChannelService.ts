@@ -82,17 +82,17 @@ export default class LeaveChannelService {
             resolve = resolvePromise;
             reject = rejectPromise;
         });
-        const operation = {
+        const operation: LeaveOperation = {
             promise,
             resolve,
             reject,
+            completion: this.settleAndReset(promise),
             participantCount: 0,
             ingestedBlockCount: 0,
             forkId: this.stateManager.forkId,
             phase: "starting",
             leaveTurnEmitted: false
-        } as LeaveOperation;
-        operation.completion = this.settleAndReset(operation);
+        };
         this.operation = operation;
 
         if (!isCommittedParticipantStatus(this.stateManager.status)) {
@@ -116,8 +116,8 @@ export default class LeaveChannelService {
      * leave did before runtimes were reusable: a half-reset runtime must not
      * serve another channel.
      */
-    private async settleAndReset(operation: LeaveOperation): Promise<void> {
-        await operation.promise;
+    private async settleAndReset(departure: Promise<void>): Promise<void> {
+        await departure;
         try {
             await this.stateManager.resetChannel();
         } catch (error) {

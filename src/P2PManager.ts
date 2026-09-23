@@ -31,8 +31,10 @@ import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
 // The channel is being given up and every peer is going with it; a verdict,
-// suspension or strike recorded now would belong to no channel and, because
-// all three outlive the reset, would follow the peer into the next.
+// suspension or strike recorded now would belong to no channel. A verdict
+// outlives the reset by design, and a suspension or strike recorded after the
+// release has cleared them would too, so either would follow the peer into
+// the next channel.
 const NO_VERDICT_WHILE_RELEASING =
     "Disconnecting peer without a verdict: the channel is being released";
 

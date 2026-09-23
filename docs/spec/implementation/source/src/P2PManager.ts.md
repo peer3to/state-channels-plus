@@ -114,10 +114,12 @@ The network router parses inbound frames once with response-first precedence aft
     reason rather than the caller: every peer of the channel being given up is on its way out, so
     the release itself tears down transports and pending RPCs, and any consequence observed there
     is an artefact of the teardown rather than evidence about the identity. Since the decision of
-    2026-09-19 (PR #494) a verdict is identity-scoped and survives the reset, and strikes and
-    suspensions live on the manager for its lifetime, so one recorded in
+    2026-09-19 (PR #494) a verdict is identity-scoped and survives the reset, so one recorded in
     that window would follow the peer into the next channel while belonging to no channel this
-    runtime served ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)). A generation comparison would not do: during the
+    runtime served. Strikes and suspensions are channel-scoped since the decision of 2026-09-23 and
+    the release clears them ([ProfileManager](./ProfileManager.ts.md)), but a strike or suspension
+    recorded after that clear and before the reset finishes would still survive it, so the window
+    covers them too ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)). A generation comparison would not do: during the
     release the generation has already moved, but what has to be suppressed is the consequence, not a
     write, and the flag is what says the release is still running.
 11. **The initial sync wait is bounded before a request exists.** The one initial sync request carries a

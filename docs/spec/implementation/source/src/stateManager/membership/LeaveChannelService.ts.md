@@ -30,9 +30,10 @@ watchdog and rejects an unfinished operation.
 
 One memo. `operation` is the settled-departure state machine, and it carries the outer promise callers
 receive as `LeaveOperation.completion` ([#L23](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L23)): `settleAndReset` — departure, then
-`stateManager.resetChannel()` ([#L122](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L122)) — assigned when the operation is created
-([#L94](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L94)). Repeated calls return that same `completion`
-([#L76](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L76)), so a caller never starts a second departure and never observes a runtime that is only
+`stateManager.resetChannel()` ([#L122](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L122)) — built into the operation literal itself
+([#L89](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L89)), from the departure promise alone, so the operation is fully typed at construction
+with no cast and no field assigned afterwards. Repeated calls return that same `completion`
+([#L77](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L77)), so a caller never starts a second departure and never observes a runtime that is only
 half-returned. `settleAndReset` clears `operation` only after the reset succeeded
 ([#L133](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L133)), which is what makes the runtime able to leave its _next_ channel. A rejected
 _departure_ deliberately keeps the operation: membership is then indeterminate, so the same failure

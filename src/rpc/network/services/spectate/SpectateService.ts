@@ -293,6 +293,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
 
                 // 2.3) reduce them if they're not already reduced
+                if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+                    return false;
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
                 if (!isReducedAndFinal) {
                     disputeWindowsThatNeedToBeReducedOnChain.push(dw);
@@ -949,6 +951,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return undefined;
 
         for (const dw of disputeWindows) {
+            // Each write is an await the reset can land in; the rest stand down.
+            if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+                return undefined;
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.persistDisputeWindow(
                 channelId,
                 dw
@@ -1252,12 +1257,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private rejectSync(
         peerAddress: string,
         reason: string,
-        generation?: number
+        generation: number
     ): false {
-        if (
-            generation !== undefined &&
-            this.p2pManager.stateManager.isStaleChannelWork(generation)
-        ) {
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation)) {
             this.logger.debug("applySyncResponse - dropping stale sync", {
                 peerAddress,
                 reason

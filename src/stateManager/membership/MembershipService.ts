@@ -134,21 +134,29 @@ export default class MembershipService {
         this.onChainEligibility.clear();
         this.offChainEligibility.clear();
         this.knownSlashes.clear();
+        // A refresh still in flight belongs to the membership just dropped;
+        // the next caller starts its own.
+        this.eligibilityRefresh = undefined;
     }
 
     public async refreshOnChainEligibility(): Promise<boolean> {
         if (this.eligibilityRefresh) return this.eligibilityRefresh;
-        this.eligibilityRefresh = (async () => {
-            const sm = this.stateManager;
+        const sm = this.stateManager;
+        // Captured before the chain read: a refresh the channel reset overtakes
+        // must not write the channel it left into the next one.
+        const channelId = sm.channelId;
+        const generation = sm.channelGeneration;
+        const refresh = (async () => {
             try {
                 const membership =
                     await sm.eventSyncService.readPinnedChainMembership(
-                        sm.channelId
+                        channelId
                     );
+                if (sm.isStaleChannelWork(generation)) return false;
                 for (const participant of membership.slashed)
                     this.observeOnChainSlash(participant);
                 await sm.eventSyncService.synchronizeChainMembership(
-                    sm.channelId,
+                    channelId,
                     membership
                 );
                 return true;
@@ -159,10 +167,12 @@ export default class MembershipService {
                 return false;
             }
         })();
+        this.eligibilityRefresh = refresh;
         try {
-            return await this.eligibilityRefresh;
+            return await refresh;
         } finally {
-            this.eligibilityRefresh = undefined;
+            if (this.eligibilityRefresh === refresh)
+                this.eligibilityRefresh = undefined;
         }
     }
 

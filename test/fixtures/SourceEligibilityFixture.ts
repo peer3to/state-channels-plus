@@ -132,6 +132,43 @@ export async function observeSlashDuringRefresh() {
     }
 }
 
+/**
+ * A refresh parked on its chain read while the runtime leaves the channel:
+ * the read resumes after the reset and must write none of that channel's
+ * membership into the runtime.
+ */
+export async function refreshOvertakenByReset() {
+    const h = MathTestSession.getHarness();
+    await h.lifecycle.start(2, 0);
+    const peer = h.getPeer(0),
+        control = h.control(peer);
+    await control.stub.observeAdmission({ holdMembership: true }).request();
+    const pending = h.execOnHost(peer, (sm) =>
+        sm.membershipService.refreshOnChainEligibility()
+    );
+    try {
+        await waitFor(
+            async () =>
+                (await control.stub.getAdmissionObservation().request())
+                    .chainReads === 1
+        );
+        await h.execOnHost(peer, async (sm) => {
+            await sm.resetChannel();
+        });
+        await control.stub.releaseAdmissionMembership().request();
+        return {
+            refreshed: await pending,
+            membershipSyncs: (
+                await control.stub.getAdmissionObservation().request()
+            ).membershipSyncs
+        };
+    } finally {
+        await control.stub.releaseAdmissionMembership().request();
+        await pending;
+        await control.stub.restoreAdmissionObservation().request();
+    }
+}
+
 export async function eligibilityAppearsDuringRefresh() {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 0, { maxChannelParticipants: 3 });

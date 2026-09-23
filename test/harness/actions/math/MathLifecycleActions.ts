@@ -41,13 +41,27 @@ export class MathLifecycleActions extends LifecycleActions {
     async leaveWithAuthoredExit(leaverIndex: number): Promise<void> {
         const leaver = this.harness.getPeer(leaverIndex);
         let exit: Promise<unknown> | undefined;
-        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
-            exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
-        });
-        const leave = leaver.p2pInstance.leaveChannel();
-        await this.harness.transition.advanceState();
-        await this.harness.event.waitForPeers("onLeaveTurn", [leaverIndex], 1);
-        await exit;
-        await leave;
+        // The runtime outlives the leave, so the listener must not: a later
+        // leave on the same instance would author a second exit.
+        const unsubscribe = leaver.p2pInstance.events.on(
+            "p2pEventHooks",
+            "onLeaveTurn",
+            () => {
+                exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
+            }
+        );
+        try {
+            const leave = leaver.p2pInstance.leaveChannel();
+            await this.harness.transition.advanceState();
+            await this.harness.event.waitForPeers(
+                "onLeaveTurn",
+                [leaverIndex],
+                1
+            );
+            await exit;
+            await leave;
+        } finally {
+            unsubscribe();
+        }
     }
 }

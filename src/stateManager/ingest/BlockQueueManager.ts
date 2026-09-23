@@ -66,6 +66,9 @@ export default class BlockQueueManager {
         blockConfirmation: BlockConfirmationStruct,
         options: IngestBlockConfirmationOptions
     ): Promise<boolean> {
+        // Every await below can span a channel reset; work for the channel left
+        // stands down instead of queueing into, or judging a peer for, the next.
+        const generation = this.stateManager.channelGeneration;
         try {
             if (this.stateManager.isDisposed) return true;
             const strategy =
@@ -124,6 +127,8 @@ export default class BlockQueueManager {
                     await this.stateManager.membershipService.resolveSourceEligibility(
                         options.senderAddress
                     );
+                if (this.stateManager.isStaleChannelWork(generation))
+                    return true;
                 if (eligibility !== SourceEligibility.ELIGIBLE) {
                     if (eligibility === SourceEligibility.ABSENT) {
                         await this.stateManager.p2pManager.localRpc.spectateService.sync(
@@ -132,6 +137,8 @@ export default class BlockQueueManager {
                             block.forkId,
                             block.height
                         );
+                        if (this.stateManager.isStaleChannelWork(generation))
+                            return true;
                         if (
                             this.stateManager.membershipService.getCachedSourceEligibility(
                                 options.senderAddress
@@ -168,6 +175,8 @@ export default class BlockQueueManager {
                     block.channelId
                 )
             ) {
+                if (this.stateManager.isStaleChannelWork(generation))
+                    return true;
                 this.clearFork(block.forkId);
                 this.logger.verbose(
                     "ingestBlockConfirmation - ignoring unstored block on disputed fork",
@@ -181,8 +190,11 @@ export default class BlockQueueManager {
                 return true;
             }
 
+            if (this.stateManager.isStaleChannelWork(generation)) return true;
             if (block.forkId !== this.stateManager.forkId) {
                 await this.maybeScheduleForkRecovery(block.channelId);
+                if (this.stateManager.isStaleChannelWork(generation))
+                    return true;
                 this.logger.warn(
                     "ingestBlockConfirmation - block on non-current fork queued",
                     {

@@ -327,9 +327,9 @@ back into the channel it just left. A dispute-acknowledgement round re-reads it 
 consequence branches, so the reset cutting every transport cannot turn each in-flight request into an
 exclusion, and the responder endpoint captures one before its own dispute reads and throws afterwards, so a
 request that outlived the channel it asks about is neither answered nor recorded nor held against its
-asker. The authored block's calldata timer is the one that needs no generation: it re-reads `isActiveFork`,
-which the reset falsifies before its first await, so a timer still armed through the release sends no
-transaction for the channel left. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
+asker. The authored block's calldata timer captures the generation when it is armed and re-reads it when it
+fires, so a timer still armed through the release sends no transaction for the channel left, while a fork
+change inside the same channel still posts. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
 around the release body (which is why that body is its own private method): while the flag is up the
 P2P manager records no verdict at all and only disconnects, since the peers being dropped are the peers of
 the channel being given up and a verdict now outlives the reset. The scheduled-task step is not silent either: each pending task may carry a cancel
