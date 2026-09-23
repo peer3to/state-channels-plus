@@ -5,6 +5,7 @@ const { gitFixture } = require("../fixtures/git");
 const { RecordedGitHub } = require("../fixtures/github");
 const { Sessions } = require("../../sessions");
 const { LifecycleCleanup } = require("../../cleanup");
+const { prepareWorkspace } = require("../../workspace");
 const { DEFAULTS } = require("../../config");
 function closed(input) {
     return {
@@ -92,11 +93,33 @@ describe("review owned lifecycle cleanup", function () {
             );
             await fs.writeFile(journal, JSON.stringify({ states: [] }));
             await fs.writeFile(sibling, JSON.stringify({ states: [] }));
+            // The closed PR's workspace goes; another PR's scratch notes stay.
+            const stateRoot = path.dirname(cleanup.worktrees.root);
+            const workspace = await prepareWorkspace(
+                stateRoot,
+                "1-6",
+                tree.checkout
+            );
+            await fs.writeFile(path.join(workspace.scratch, "note"), "gone");
+            const siblingNote = path.join(
+                stateRoot,
+                "workspaces",
+                "1-7",
+                "scratch",
+                "note"
+            );
+            await fs.mkdir(path.dirname(siblingNote), { recursive: true });
+            await fs.writeFile(siblingNote, "keep");
             const summary = await cleanup.run();
             assert.equal(summary.deleted, 1);
             assert.deepEqual(deleted, ["registered-session"]);
             await assert.rejects(fs.access(tree.checkout), { code: "ENOENT" });
             assert.equal(await fs.readFile(sentinel, "utf8"), "keep");
+            await assert.rejects(
+                fs.access(path.join(stateRoot, "workspaces", "1-6")),
+                { code: "ENOENT" }
+            );
+            assert.equal(await fs.readFile(siblingNote, "utf8"), "keep");
             await assert.rejects(fs.access(journal), { code: "ENOENT" });
             assert.deepEqual(JSON.parse(await fs.readFile(sibling, "utf8")), {
                 states: []

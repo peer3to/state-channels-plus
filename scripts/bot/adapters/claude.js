@@ -12,16 +12,36 @@ const {
     setupTimeout,
     stopNative
 } = require("./native");
-const { secretRoots, toolchainRoots } = require("../workspace");
+const {
+    checkReadRoots,
+    secretRoots,
+    snapshotName,
+    toolchainRoots
+} = require("../workspace");
 // The CLI exposes worker-served tools as mcp__<server>__<tool>.
 const SERVER = "review";
 const TOOL_NAMES = TOOLS.map((tool) => `mcp__${SERVER}__${tool.name}`);
-// Above the CLI's default size threshold a result is replaced by a 2 KB preview
-// and a saved file the model cannot open; raise it to the CLI's maximum.
-const LISTED_TOOLS = TOOLS.map((tool) => ({
-    ...tool,
-    _meta: { "anthropic/maxResultSizeChars": 500000 }
-}));
+// Claude Code's default caps (25k tokens, about 50 KB) replace a larger result
+// with a preview of a file the model cannot read. Every page and source file is
+// also on disk in the workspace, so results over this size become an error that
+// points the model to the file instead; 30,000 characters stays under both caps.
+const MAX_RESULT_CHARS = 30000;
+// Recoverable tool error pointing the model at a smaller read or the file copy.
+function resultTooLarge(name, input, workspace) {
+    const where =
+        name === "public_github_read" && workspace
+            ? `Read the full page from ${workspace.github}/${snapshotName(input.url)} with your own tools, or request a smaller per_page.`
+            : workspace
+              ? `Use a narrower start/count, or read the file directly under ${workspace.source} with your own tools.`
+              : "Use a narrower start/count or a smaller per_page.";
+    return JSON.stringify({
+        error: {
+            code: "RESULT_TOO_LARGE",
+            message: `The result exceeds the ${MAX_RESULT_CHARS}-character limit for one tool result.`
+        },
+        guidance: where
+    });
+}
 const SESSION_ID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // The model's own tools. Shell commands run in Claude Code's bubblewrap sandbox;
@@ -30,13 +50,16 @@ const BUILT_IN = ["Bash", "Edit", "Read", "Write"];
 // Settings for a sandboxed headless review; `//` prefixes an absolute path.
 function sandboxSettings(workspace, stateRoot) {
     const absolute = (value) => `/${value}`;
-    const readable = [
-        workspace.source,
-        workspace.git,
-        workspace.github,
-        workspace.scratch,
-        ...toolchainRoots()
-    ];
+    const readable = checkReadRoots(
+        [
+            workspace.source,
+            workspace.git,
+            workspace.github,
+            workspace.scratch,
+            ...toolchainRoots()
+        ],
+        secretRoots(stateRoot)
+    );
     return {
         sandbox: {
             enabled: true,
@@ -112,10 +135,6 @@ class ClaudeAdapter {
         return {
             PATH: process.env.PATH,
             HOME: process.env.HOME,
-            // The CLI's default 25k-token MCP result cap rejects full GitHub
-            // pages, and the model then re-pages in tiny requests. The worker's
-            // own maxBytes check is the limit; a token is at least one byte.
-            MAX_MCP_OUTPUT_TOKENS: String(this.config.limits.maxBytes),
             ...(process.env.CLAUDE_CONFIG_DIR
                 ? { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR }
                 : {})
@@ -289,7 +308,7 @@ class ClaudeAdapter {
                 }
             };
         else if (rpc.method === "tools/list")
-            reply = { result: { tools: LISTED_TOOLS } };
+            reply = { result: { tools: TOOLS } };
         else if (rpc.method === "tools/call") {
             check(this.active, "ISOLATION_UNVERIFIED");
             this.activity.toolCalls++;
@@ -301,10 +320,22 @@ class ClaudeAdapter {
                 rpc.params.arguments,
                 this.config.limits.maxBytes
             );
+            const tooLarge = outcome.text.length > MAX_RESULT_CHARS;
             reply = {
                 result: {
-                    content: [{ type: "text", text: outcome.text }],
-                    isError: !outcome.success
+                    content: [
+                        {
+                            type: "text",
+                            text: tooLarge
+                                ? resultTooLarge(
+                                      rpc.params.name,
+                                      rpc.params.arguments,
+                                      this.workspace
+                                  )
+                                : outcome.text
+                        }
+                    ],
+                    isError: tooLarge || !outcome.success
                 }
             };
         } else if (rpc.id === undefined) reply = { result: {} };
@@ -450,5 +481,6 @@ module.exports = {
     providerFailure,
     sandboxSettings,
     BUILT_IN,
+    MAX_RESULT_CHARS,
     TOOL_NAMES
 };

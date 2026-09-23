@@ -96,7 +96,8 @@ require("node:readline")
                 data: [
                     { id: DEFAULT_MODELS.codex },
                     { model: ALTERNATE_MODEL },
-                    { model: "ask-user-model" }
+                    { model: "ask-user-model" },
+                    { model: "no-profile-model" }
                 ]
             };
         else if (["thread/start", "thread/resume"].includes(message.method)) {
@@ -120,11 +121,12 @@ require("node:readline")
             record(file(thread.id), thread);
             result = {
                 thread: { id: thread.id },
-                activePermissionProfile: process.argv.includes(
-                    'default_permissions="review"'
-                )
-                    ? { id: "review" }
-                    : null
+                // "no-profile-model" simulates a CLI that ignored the profile.
+                activePermissionProfile:
+                    process.argv.includes('default_permissions="review"') &&
+                    params.model !== "no-profile-model"
+                        ? { id: "review" }
+                        : null
             };
         } else if (message.method === "thread/read")
             result = {

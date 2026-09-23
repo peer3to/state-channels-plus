@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { ownedPath, writeJson } = require("./data");
+const { check, ownedPath, writeJson } = require("./data");
 const { git } = require("./worktrees");
 // The model-visible review workspace. The models read the pinned source, its git
 // history and the worker's GitHub snapshot, and write only to their scratch folder.
@@ -65,10 +65,27 @@ function resolveExecutable(name) {
 // Paths holding the worker's secrets or logins that sandboxes must never expose.
 function secretRoots(stateRoot) {
     return [
-        os.homedir(),
-        path.resolve(__dirname, "../.."),
-        path.dirname(stateRoot)
+        ...new Set([
+            os.homedir(),
+            path.resolve(__dirname, "../.."),
+            path.dirname(stateRoot),
+            process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
+            process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude")
+        ])
     ];
+}
+// A sandbox read root may sit inside a secret path (e.g. ~/.nvm/...) but must
+// never equal or contain one: node at ~/bin/node would otherwise expose ~.
+function checkReadRoots(roots, secrets) {
+    for (const root of roots)
+        for (const secret of secrets) {
+            const relative = path.relative(root, secret);
+            check(
+                relative.startsWith("..") || path.isAbsolute(relative),
+                "ISOLATION_UNVERIFIED"
+            );
+        }
+    return roots;
 }
 module.exports = {
     prepareWorkspace,
@@ -77,5 +94,6 @@ module.exports = {
     writeSnapshot,
     toolchainRoots,
     resolveExecutable,
-    secretRoots
+    secretRoots,
+    checkReadRoots
 };

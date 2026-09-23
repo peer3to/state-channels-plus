@@ -209,6 +209,34 @@ describe("integrated worker review service", function () {
             assert.match(answer, /No human is available/);
         });
     });
+    it("stops the review before any turn when Codex does not confirm the sandbox profile", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        await executionFixture(async ({ service, connected, input }) => {
+            service.config.model = "no-profile-model";
+            const connection = await connected;
+            const response = once(connection, "payload");
+            await connection.send(
+                "request",
+                "unsandboxed",
+                input.attempt,
+                input
+            );
+            const message = (await response)[0];
+            assert.equal(message.operation, "failure");
+            assert.equal(message.value.code, "ISOLATION_UNVERIFIED");
+            for (const file of await fs.readdir(service.config.runtimeRoot))
+                if (/^[0-9a-f-]{36}\.json$/.test(file)) {
+                    const thread = JSON.parse(
+                        await fs.readFile(
+                            path.join(service.config.runtimeRoot, file),
+                            "utf8"
+                        )
+                    );
+                    assert.equal(thread.turns, 0);
+                    assert.equal(thread.turnSettings, undefined);
+                }
+        });
+    });
     it("fails the review when Codex does not list the configured model instead of substituting another", async function () {
         const { executionFixture } = require("../fixtures/review-execution");
         await executionFixture(async ({ service, connected, input }) => {

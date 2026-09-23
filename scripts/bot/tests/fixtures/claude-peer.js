@@ -41,9 +41,9 @@ thread.settings = option("--settings")
     ? JSON.parse(fs.readFileSync(option("--settings"), "utf8"))
     : null;
 // Like the real CLI, results over this many tokens (default 25k) never reach
-// the model; one character per token is the fixture's conservative estimate.
+// the model. GitHub JSON measured about two characters per token live.
 thread.maxMcpOutputTokens = process.env.MAX_MCP_OUTPUT_TOKENS;
-const outputCap = Number(process.env.MAX_MCP_OUTPUT_TOKENS || 25000);
+const outputCap = Number(process.env.MAX_MCP_OUTPUT_TOKENS || 25000) * 2;
 thread.effort = option("--effort");
 thread.instructions = fs.readFileSync(option("--system-prompt-file"), "utf8");
 thread.allowedTools = args.slice(
@@ -88,6 +88,34 @@ async function turn(prompt) {
             type: "control_request",
             request_id: "permission-1",
             request: { subtype: "can_use_tool", tool_name: "Bash", input: {} }
+        });
+        return;
+    }
+    if (thread.model.startsWith("probe-")) {
+        // Probe: one tool call, recording exactly what the model received.
+        const [name, args] =
+            thread.model === "probe-github-model"
+                ? [
+                      "public_github_read",
+                      {
+                          url: "https://api.github.com/repos/owner/repo/pulls/6/files?per_page=100"
+                      }
+                  ]
+                : ["source_read", { path: "README.md", start: 1, count: 2 }];
+        const response = await mcp("tools/call", { name, arguments: args });
+        const text = response.result.content[0].text;
+        thread.probe = {
+            length: text.length,
+            isError: !!response.result.isError,
+            text: text.slice(0, 1000)
+        };
+        record(file(id), thread);
+        send({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            session_id: id,
+            result: "probed"
         });
         return;
     }

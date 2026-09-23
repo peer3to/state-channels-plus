@@ -11,7 +11,12 @@ const {
     toolFailureText,
     runTool
 } = require("./native");
-const { resolveExecutable, toolchainRoots } = require("../workspace");
+const {
+    checkReadRoots,
+    resolveExecutable,
+    secretRoots,
+    toolchainRoots
+} = require("../workspace");
 // Features that reach outside the review sandbox. The model keeps its own
 // shell, file and image tools, which run inside the sandbox profile below.
 const DISABLED = [
@@ -45,20 +50,23 @@ function providerFailure(error) {
 }
 // Codex permission profile: only the listed paths exist inside the sandbox
 // (":minimal" adds system directories), so worker secrets and logins are absent.
-function sandboxArgs(workspace, codexPath) {
+function sandboxArgs(workspace, codexPath, stateRoot) {
     const toml = (value) => JSON.stringify(value);
     const installed = resolveExecutable(codexPath);
+    const readable = checkReadRoots(
+        [
+            ...(installed ? [path.dirname(path.dirname(installed))] : []),
+            ...toolchainRoots(),
+            workspace.source,
+            workspace.git,
+            workspace.github,
+            workspace.scratch
+        ],
+        secretRoots(stateRoot)
+    );
     const filesystem = {
         ":minimal": "read",
-        ...Object.fromEntries(
-            [
-                ...(installed ? [path.dirname(path.dirname(installed))] : []),
-                ...toolchainRoots(),
-                workspace.source,
-                workspace.git,
-                workspace.github
-            ].map((root) => [root, "read"])
-        ),
+        ...Object.fromEntries(readable.map((root) => [root, "read"])),
         [workspace.scratch]: "write"
     };
     return [
@@ -149,7 +157,13 @@ class CodexAdapter {
         // Hosted web search runs outside the sandbox's network block.
         args.push("-c", 'web_search="disabled"');
         if (this.workspace)
-            args.push(...sandboxArgs(this.workspace, this.config.codexPath));
+            args.push(
+                ...sandboxArgs(
+                    this.workspace,
+                    this.config.codexPath,
+                    this.config.stateRoot
+                )
+            );
         args.push("app-server");
         this.process = new NativeProcess(this.config.codexPath, args, {
             cwd: this.config.runtimeRoot,
@@ -393,4 +407,9 @@ class CodexAdapter {
         return this.stopping;
     }
 }
-module.exports = { CodexAdapter, providerFailure, toolFailureResult };
+module.exports = {
+    CodexAdapter,
+    providerFailure,
+    sandboxArgs,
+    toolFailureResult
+};

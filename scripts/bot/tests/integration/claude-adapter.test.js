@@ -65,6 +65,48 @@ async function startedInput(service, input) {
         )
     ).input;
 }
+// One probe tool call through the real adapter; returns what the model received.
+async function probeResult(model, length, withWorkspace = false) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-cap-"));
+    const config = configuration({
+        stateRoot: path.join(root, "state"),
+        provider: "claude",
+        model,
+        claudePath: path.join(__dirname, "../fixtures/claude-peer.js")
+    });
+    const workspace = withWorkspace
+        ? Object.fromEntries(
+              ["source", "git", "github", "scratch"].map((name) => [
+                  name,
+                  path.join(root, name)
+              ])
+          )
+        : null;
+    for (const directory of Object.values(workspace || {}))
+        await fs.mkdir(directory, { recursive: true });
+    // {"v":"…"} serialises to exactly `length` characters.
+    const value = { v: "x".repeat(length - 8) };
+    const adapter = new ClaudeAdapter(
+        config,
+        { call: async () => value, close: async () => {} },
+        workspace
+    );
+    try {
+        await adapter.open();
+        const id = await adapter.session(null, "Result size probe.");
+        await adapter.turn("Probe.", new ModelBudget(20000));
+        const native = JSON.parse(
+            await fs.readFile(
+                path.join(config.runtimeRoot, `${id}.json`),
+                "utf8"
+            )
+        );
+        return { ...native.probe, workspace };
+    } finally {
+        await adapter.stop();
+        await fs.rm(root, { recursive: true, force: true });
+    }
+}
 // Continue the PR with a restarted worker, as a later review would.
 async function nextReview(service, tree, input, provider) {
     // Drop the first review's marker so the next one is read, not the stale one.
@@ -153,12 +195,8 @@ describe("Claude review adapter", function () {
                 ])
                     assert.ok(snapshot.includes(name), name);
                 assert.equal(native.instructions, service.instructions);
-                // Full tool results up to the worker's own byte limit reach the
-                // model instead of the CLI's 25k-token default.
-                assert.equal(
-                    native.maxMcpOutputTokens,
-                    String(service.config.limits.maxBytes)
-                );
+                // Claude Code keeps its default result caps.
+                assert.equal(native.maxMcpOutputTokens, undefined);
                 assert.equal(native.turns, 1);
                 const active = service.sessions.slots.get(
                     service.sessions.key(input)
@@ -186,34 +224,31 @@ describe("Claude review adapter", function () {
             { provider: "claude" }
         );
     });
-    it("delivers a tool result far above the CLI's default output cap to the model", async function () {
-        const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-cap-"));
-        const config = configuration({
-            stateRoot: root,
-            provider: "claude",
-            claudePath: path.join(__dirname, "../fixtures/claude-peer.js")
-        });
-        // About 100 KB, four times the CLI's 25k-token default.
-        const large = "x".repeat(100000);
-        const adapter = new ClaudeAdapter(config, {
-            call: async (name) =>
-                name === "source_read"
-                    ? { lines: ["Reviewed source.", large] }
-                    : { data: [] },
-            close: async () => {}
-        });
-        try {
-            await adapter.open();
-            await adapter.session(null, "Large result check.");
-            const report = await adapter.turn(
-                "Controller-bound input:\n" + JSON.stringify(requestRecord()),
-                new ModelBudget(20000)
-            );
-            assert.match(report, /## Review completion/);
-        } finally {
-            await adapter.stop();
-            await fs.rm(root, { recursive: true, force: true });
-        }
+    it("delivers a tool result of exactly 30,000 characters unchanged", async function () {
+        const probe = await probeResult("probe-source-model", 30000);
+        assert.equal(probe.isError, false);
+        assert.equal(probe.length, 30000);
+    });
+    it("replaces a result far above the CLI's default caps with the recoverable error, never a preview", async function () {
+        const probe = await probeResult("probe-source-model", 100000);
+        assert.equal(probe.isError, true);
+        assert.match(probe.text, /RESULT_TOO_LARGE/);
+    });
+    it("returns a recoverable error naming the snapshot file for a GitHub page over 30,000 characters", async function () {
+        const probe = await probeResult("probe-github-model", 30001, true);
+        assert.equal(probe.isError, true);
+        assert.match(probe.text, /RESULT_TOO_LARGE/);
+        assert.ok(
+            probe.text.includes(`${probe.workspace.github}/pulls-6-files.json`),
+            probe.text
+        );
+    });
+    it("returns a recoverable error pointing at a narrower read for source over 30,000 characters", async function () {
+        const probe = await probeResult("probe-source-model", 30001, true);
+        assert.equal(probe.isError, true);
+        assert.match(probe.text, /RESULT_TOO_LARGE/);
+        assert.match(probe.text, /narrower start\/count/);
+        assert.ok(probe.text.includes(probe.workspace.source), probe.text);
     });
     it("resumes the same Claude session for the next review of the PR", async function () {
         await executionFixture(
