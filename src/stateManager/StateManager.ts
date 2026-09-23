@@ -55,7 +55,7 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers, ZeroHash } from "ethers";
+import { ZeroHash } from "ethers";
 
 const NULL = ZeroHash;
 
