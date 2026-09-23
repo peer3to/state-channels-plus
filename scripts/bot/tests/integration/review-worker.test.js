@@ -1078,6 +1078,24 @@ describe("integrated worker review service", function () {
             /Use only one of --review-codex and --review-claude/
         );
     });
+    it("keeps the default review model when a short worker flag follows the bare review option", function () {
+        const parse = (...args) =>
+            parseServerArgs(["node", "server", "--name", "worker", ...args]);
+        const workers = parse("--review-codex", "-w", "4");
+        assert.equal(workers.reviewModel, "gpt-6-astra");
+        assert.equal(workers.workers, 4);
+        const tick = parse("--review-codex", "-i", "300");
+        assert.equal(tick.reviewModel, "gpt-6-astra");
+        assert.equal(tick.schedulerTickMs, 300);
+        const claude = parse("--review-claude", "-w", "4", "-i", "300");
+        assert.equal(claude.reviewModel, "claude-opus-5-5");
+        assert.equal(claude.workers, 4);
+        assert.equal(claude.schedulerTickMs, 300);
+        assert.throws(
+            () => parse("--review-codex", "--review-effort", "-w", "4"),
+            /--review-effort requires a value/
+        );
+    });
     it("rejects the retired review flag, effort without Codex review, and malformed settings", function () {
         const parse = (...args) =>
             parseServerArgs(["node", "server", "--name", "worker", ...args]);
@@ -1096,6 +1114,10 @@ describe("integrated worker review service", function () {
         );
         assert.throws(
             () => parse("--review-codex", "--review-effort", "-high"),
+            /--review-effort requires a value/
+        );
+        assert.throws(
+            () => parse("--review-codex", "--review-effort=bad effort"),
             /Invalid review effort/
         );
     });

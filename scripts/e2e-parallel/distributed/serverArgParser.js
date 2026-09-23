@@ -4,18 +4,19 @@ const {
     MAX_SLOTS_FROM_POOL,
     SCHEDULER_TICK_MS
 } = require("../shared/constants");
-const {
-    DEFAULT_EFFORT,
-    DEFAULT_MODELS,
-    validReviewSetting
-} = require("../../bot/config");
 const { validateCidr } = require("./egressPolicy");
+
+// The published package ships scripts/e2e-parallel without scripts/bot, so the
+// review config loads only when a review flag is used (as server.js does).
+function reviewConfig() {
+    return require("../../bot/config");
+}
 
 const DEFAULTS = {
     review: false,
     reviewProvider: undefined,
     reviewModel: undefined,
-    reviewEffort: DEFAULT_EFFORT,
+    reviewEffort: undefined,
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
     maxCompressedBytes: 2 * 1024 ** 3,
@@ -100,9 +101,10 @@ function parseServerArgs(argv, env = process.env) {
             const next = argv[i + 1];
             result.review = true;
             result.reviewProvider = provider;
-            result.reviewModel = DEFAULT_MODELS[provider];
+            result.reviewModel = reviewConfig().DEFAULT_MODELS[provider];
             if (inline !== undefined) result.reviewModel = inline;
-            else if (next !== undefined && !next.startsWith("--")) {
+            // Any "-" argument is a flag (e.g. -w, -i); model names never start with one.
+            else if (next !== undefined && !next.startsWith("-")) {
                 result.reviewModel = next;
                 i++;
             }
@@ -111,7 +113,7 @@ function parseServerArgs(argv, env = process.env) {
         if (arg === "--review-effort" || arg.startsWith("--review-effort=")) {
             const inline = arg.split(/=(.*)/s)[1];
             const raw = inline === undefined ? argv[++i] : inline;
-            if (!raw || raw.startsWith("--"))
+            if (!raw || raw.startsWith("-"))
                 throw new Error("--review-effort requires a value");
             result.reviewEffort = raw;
             reviewEffortProvided = true;
@@ -196,11 +198,15 @@ function parseServerArgs(argv, env = process.env) {
             "--review-effort requires --review-codex or --review-claude"
         );
     }
-    if (result.review && !validReviewSetting(result.reviewModel)) {
-        throw new Error(`Invalid review model ${result.reviewModel}`);
-    }
-    if (!validReviewSetting(result.reviewEffort)) {
-        throw new Error(`Invalid review effort ${result.reviewEffort}`);
+    if (result.review) {
+        const { DEFAULT_EFFORT, validReviewSetting } = reviewConfig();
+        result.reviewEffort ??= DEFAULT_EFFORT;
+        if (!validReviewSetting(result.reviewModel)) {
+            throw new Error(`Invalid review model ${result.reviewModel}`);
+        }
+        if (!validReviewSetting(result.reviewEffort)) {
+            throw new Error(`Invalid review effort ${result.reviewEffort}`);
+        }
     }
     result.deniedPrivateCidrs.forEach(validateCidr);
     return result;
