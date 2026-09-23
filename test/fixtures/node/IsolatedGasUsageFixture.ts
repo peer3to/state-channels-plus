@@ -10,6 +10,7 @@ import {
     type TransactionReceipt,
     Wallet
 } from "ethers";
+import assert from "node:assert/strict";
 
 /**
  * Runtime `PUSH1 0 PUSH1 0 REVERT`: every call reverts, whatever the selector.
@@ -18,6 +19,13 @@ import {
 const ALWAYS_REVERTING_INIT_CODE = "0x600580600b6000396000f360006000fd";
 /** Enough for the intrinsic cost of a call with a selector, and no estimate. */
 const EXPLICIT_GAS_LIMIT = 100_000n;
+/** The bound of the read that gives up on a pending receipt; time is the input. */
+const BOUNDED_READ_MS = 500;
+/**
+ * Node arms a timer against the event loop's cached clock, so it can fire a
+ * few ms before a wall-clock span measured in the same turn reaches the bound.
+ */
+const TIMER_CLOCK_SLACK_MS = 20;
 /** A nonce no send will ever reach, so the node queues and never mines it. */
 const UNREACHABLE_NONCE = 50;
 /** How long the node gets to answer with a receipt it has already mined. */
@@ -308,5 +316,117 @@ export async function assertIsolatedSettleIgnoresLaterObservation(): Promise<voi
         const rows = recorder.snapshot();
         expect(rows.length).to.equal(1);
         expect(rows[0].functionSelector).to.equal(minedSelector);
+    });
+}
+
+export async function assertIsolatedBoundedReadCountsLaterReceipt(): Promise<void> {
+    await withIsolatedHardhatNode(async (provider) => {
+        provider.pollingInterval = 100;
+        const sender = await fundedWallet(provider);
+        const manager = new HostNonceManager(sender);
+        const callee = Wallet.createRandom().address;
+        const selector = ethers.id("minedAfterTheBoundedRead()").slice(0, 10);
+
+        // Nothing mines while automine is off, so only the bound can end the
+        // first read.
+        await provider.send("evm_setAutomine", [false]);
+        const response = await manager.sendTransaction({
+            to: callee,
+            data: selector,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        });
+        const startedAt = Date.now();
+        const boundedRows =
+            await manager.gasUsage.settledSnapshot(BOUNDED_READ_MS);
+        const boundedReadMs = Date.now() - startedAt;
+        const { receipt, rows } = await withBackgroundMining(
+            provider,
+            async () => {
+                const mined = await minedReceiptOf(provider, response.hash);
+                return {
+                    receipt: mined,
+                    rows: await manager.gasUsage.settledSnapshot()
+                };
+            }
+        );
+
+        expect(
+            boundedRows,
+            "the pending receipt is not in the bounded read"
+        ).to.deep.equal([]);
+        expect(
+            boundedReadMs >= BOUNDED_READ_MS - TIMER_CLOCK_SLACK_MS,
+            "the bounded read waited for its bound"
+        ).to.equal(true);
+        expect(rows.length).to.equal(1);
+        expect(rows[0].contractAddress).to.equal(callee);
+        expect(rows[0].functionSelector).to.equal(selector);
+        expect(rows[0].successCount).to.equal(1);
+        expect(rows[0].successGasUsed).to.equal(receipt.gasUsed.toString());
+    });
+}
+
+export async function assertIsolatedRecoveredBroadcastRecorded(): Promise<void> {
+    await withIsolatedHardhatNode(async (provider) => {
+        provider.pollingInterval = 100;
+        const sender = await fundedWallet(provider);
+        const manager = new HostNonceManager(sender);
+        const gasPrice = (await provider.getFeeData()).gasPrice!;
+        const callee = Wallet.createRandom().address;
+        // Legacy fields, a fixed price and an explicit limit: the manager and
+        // the wallet below sign the same bytes for the same nonce.
+        const heldCall = {
+            type: 0,
+            to: callee,
+            data: ethers.id("heldByTheNodeBeforeItsBroadcast()").slice(0, 10),
+            gasPrice,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        };
+        // One send through the manager, so it owns the next nonce.
+        const first = await manager.sendTransaction({
+            to: callee,
+            data: ethers.id("sentBeforeTheHeldCall()").slice(0, 10),
+            gasLimit: EXPLICIT_GAS_LIMIT
+        });
+        await first.wait();
+
+        await provider.send("evm_setAutomine", [false]);
+        // The node already holds the manager's next transaction, as after a
+        // broadcast whose answer was lost, so the manager's own broadcast of
+        // the same bytes fails and it recovers the transaction from the node.
+        const heldTransaction = await sender.signTransaction(
+            await sender.populateTransaction({
+                ...heldCall,
+                nonce: first.nonce + 1
+            })
+        );
+        const held = await provider.broadcastTransaction(heldTransaction);
+        const recovered = await manager.sendTransaction(heldCall);
+        // The node refuses the same bytes a second time, so the manager's
+        // answer can only have come from its recovery.
+        await assert.rejects(provider.broadcastTransaction(heldTransaction));
+        const { receipt, rows } = await withBackgroundMining(
+            provider,
+            async () => {
+                const mined = await minedReceiptOf(provider, recovered.hash);
+                return {
+                    receipt: mined,
+                    rows: await manager.gasUsage.settledSnapshot()
+                };
+            }
+        );
+
+        expect(
+            recovered.hash,
+            "the manager answers with the transaction the node held"
+        ).to.equal(held.hash);
+        expect(rows.length).to.equal(2);
+        const heldRow = rows.find(
+            (row) => row.functionSelector === heldCall.data
+        );
+        expect(heldRow, "the recovered transaction is recorded").to.not.be
+            .undefined;
+        expect(heldRow!.successCount).to.equal(1);
+        expect(heldRow!.successGasUsed).to.equal(receipt.gasUsed.toString());
     });
 }

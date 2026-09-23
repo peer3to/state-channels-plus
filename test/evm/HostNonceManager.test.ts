@@ -1,7 +1,9 @@
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { withGasHeadroom } from "@/utils/gas";
 import {
+    assertIsolatedBoundedReadCountsLaterReceipt,
     assertIsolatedDisposalEndsClosedProviderWait,
+    assertIsolatedRecoveredBroadcastRecorded,
     assertIsolatedReplacedTransactionAbsent,
     assertIsolatedRevertedGasRecorded,
     assertIsolatedSettleIgnoresLaterObservation
@@ -11,6 +13,9 @@ import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
 import assert from "node:assert/strict";
 import sinon from "sinon";
+
+/** Init code that deploys the one-byte runtime `STOP` (`0x00`). */
+const STOP_RUNTIME_INIT_CODE = "0x6001600c60003960016000f300";
 
 describe("HostNonceManager", () => {
     it("reuses a failed middle nonce without colliding with concurrent sends", async () => {
@@ -167,6 +172,87 @@ describe("HostNonceManager", () => {
 
     it("settles the observations started before the call, not the later ones", async () => {
         await assertIsolatedSettleIgnoresLaterObservation();
+    });
+
+    it("leaves a pending receipt out of a bounded read and counts it once it mines", async () => {
+        await assertIsolatedBoundedReadCountsLaterReceipt();
+    });
+
+    it("records a transaction the node already held when its broadcast failed", async () => {
+        await assertIsolatedRecoveredBroadcastRecorded();
+    });
+
+    it("records nothing for a broadcast the node rejected", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+
+        // More than the wallet holds, and an explicit limit so nothing is
+        // estimated: the node refuses the broadcast and never holds it.
+        await assert.rejects(
+            manager.sendTransaction({
+                to: recipient.address,
+                value: ethers.parseEther("2"),
+                gasLimit: 21_000n
+            }),
+            /enough funds/
+        );
+
+        expect(await manager.gasUsage.settledSnapshot()).to.deep.equal([]);
+    });
+
+    it("leaves a deployment out of the table", async () => {
+        const [funder] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+
+        const deployment = await manager.sendTransaction({
+            data: STOP_RUNTIME_INIT_CODE
+        });
+        const receipt = await deployment.wait();
+
+        expect(
+            await ethers.provider.getCode(receipt!.contractAddress!),
+            "the deployment mined and created its contract"
+        ).to.equal("0x00");
+        expect(
+            await manager.gasUsage.settledSnapshot(),
+            "a deployment has no callee to key a row on"
+        ).to.deep.equal([]);
+    });
+
+    it("records nothing it observes after its recorder was disposed", async () => {
+        const [funder, callee] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+
+        manager.gasUsage.dispose();
+        const response = await manager.sendTransaction({
+            to: callee.address,
+            data: ethers.id("sentAfterTheRecorderWasDisposed()").slice(0, 10)
+        });
+        const receipt = await response.wait();
+
+        expect(receipt!.status, "the send itself is unaffected").to.equal(1);
+        expect(await manager.gasUsage.settledSnapshot()).to.deep.equal([]);
     });
 
     it("cannot create another nonce owner by reconnecting", async () => {
