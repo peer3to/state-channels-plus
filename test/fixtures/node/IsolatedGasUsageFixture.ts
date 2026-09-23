@@ -430,3 +430,87 @@ export async function assertIsolatedRecoveredBroadcastRecorded(): Promise<void> 
         expect(heldRow!.successGasUsed).to.equal(receipt.gasUsed.toString());
     });
 }
+
+export async function assertIsolatedRecoveredReplacementDetected(): Promise<void> {
+    await withIsolatedHardhatNode(async (provider) => {
+        provider.pollingInterval = 100;
+        const sender = await fundedWallet(provider);
+        const manager = new HostNonceManager(sender);
+        const gasPrice = (await provider.getFeeData()).gasPrice!;
+        const callee = Wallet.createRandom().address;
+        const firstSelector = ethers
+            .id("sentBeforeTheReplacedHeldCall()")
+            .slice(0, 10);
+        // Legacy fields, a fixed price and an explicit limit: the manager and
+        // the wallet below sign the same bytes for the same nonce.
+        const heldCall = {
+            type: 0,
+            to: callee,
+            data: ethers.id("heldThenReplacedBeforeItMined()").slice(0, 10),
+            gasPrice,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        };
+        // One send through the manager, so it owns the next nonce.
+        const first = await manager.sendTransaction({
+            to: callee,
+            data: firstSelector,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        });
+        await first.wait();
+
+        await provider.send("evm_setAutomine", [false]);
+        // As in the recovered-broadcast case, the manager's broadcast fails on
+        // bytes the node already holds, and it answers from its recovery.
+        const heldTransaction = await sender.signTransaction(
+            await sender.populateTransaction({
+                ...heldCall,
+                nonce: first.nonce + 1
+            })
+        );
+        const held = await provider.broadcastTransaction(heldTransaction);
+        const recovered = await manager.sendTransaction(heldCall);
+        await assert.rejects(provider.broadcastTransaction(heldTransaction));
+        // The same nonce at twice the price, signed by the same wallet, so the
+        // recovered transaction can never mine.
+        const replacement = await sender.sendTransaction({
+            type: 0,
+            to: callee,
+            data: ethers.id("replacedTheRecoveredCall()").slice(0, 10),
+            nonce: recovered.nonce,
+            gasPrice: gasPrice * 2n,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        });
+        // Neither the caller's wait nor the unbounded read ends unless the
+        // recovered response detects its replacement; without that, the test
+        // timeout fails the case.
+        const { replacementReceipt, rows } = await withBackgroundMining(
+            provider,
+            async () => {
+                const [mined, settledRows] = await Promise.all([
+                    minedReceiptOf(provider, replacement.hash),
+                    manager.gasUsage.settledSnapshot(),
+                    assert.rejects(
+                        recovered.wait(),
+                        (error) =>
+                            ethers.isError(error, "TRANSACTION_REPLACED") &&
+                            error.hash === replacement.hash
+                    )
+                ]);
+                return { replacementReceipt: mined, rows: settledRows };
+            }
+        );
+
+        expect(
+            recovered.hash,
+            "the manager answers with the transaction the node held"
+        ).to.equal(held.hash);
+        expect(
+            replacementReceipt.status,
+            "the replacement mined in the recovered transaction's place"
+        ).to.equal(1);
+        expect(
+            rows.map((row) => row.functionSelector),
+            "only the first send is counted: the replaced one never mined, and its replacement is not counted under its selector"
+        ).to.deep.equal([firstSelector]);
+    });
+}

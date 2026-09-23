@@ -112,6 +112,11 @@ class HostNonceManager extends AbstractSigner {
             });
             const encodedTransaction =
                 await this.signer.signTransaction(populated);
+            // Where a recovered response starts scanning for a replacement.
+            // Read before the broadcast: the scan only walks forward, so a
+            // later read could start past a replacement that already mined.
+            // An ethers provider's broadcast reuses it from its short cache.
+            const replacementScanStartBlock = await provider.getBlockNumber();
             try {
                 const response =
                     await provider.broadcastTransaction(encodedTransaction);
@@ -121,6 +126,7 @@ class HostNonceManager extends AbstractSigner {
                 return await this.reconcileBroadcastFailure(
                     encodedTransaction,
                     nonce,
+                    replacementScanStartBlock,
                     error
                 );
             }
@@ -132,6 +138,7 @@ class HostNonceManager extends AbstractSigner {
     private async reconcileBroadcastFailure(
         encodedTransaction: string,
         nonce: number,
+        replacementScanStartBlock: number,
         broadcastError: unknown
     ): Promise<TransactionResponse> {
         const provider = this.provider!;
@@ -153,7 +160,11 @@ class HostNonceManager extends AbstractSigner {
 
         if (observedTransaction) {
             this.nextNonce = Math.max(nonce + 1, pendingNonce);
-            return observedTransaction;
+            // Like a broadcast's response, its wait() ends if a replacement
+            // mines; the plain node answer would wait for it forever.
+            return observedTransaction.replaceableTransaction(
+                replacementScanStartBlock
+            );
         }
 
         this.nextNonce = pendingNonce > nonce ? pendingNonce : nonce;

@@ -4,6 +4,7 @@ import {
     assertIsolatedBoundedReadCountsLaterReceipt,
     assertIsolatedDisposalEndsClosedProviderWait,
     assertIsolatedRecoveredBroadcastRecorded,
+    assertIsolatedRecoveredReplacementDetected,
     assertIsolatedReplacedTransactionAbsent,
     assertIsolatedRevertedGasRecorded,
     assertIsolatedSettleIgnoresLaterObservation
@@ -180,6 +181,10 @@ describe("HostNonceManager", () => {
 
     it("records a transaction the node already held when its broadcast failed", async () => {
         await assertIsolatedRecoveredBroadcastRecorded();
+    });
+
+    it("settles and leaves out a recovered transaction once its replacement mines", async () => {
+        await assertIsolatedRecoveredReplacementDetected();
     });
 
     it("records nothing for a broadcast the node rejected", async () => {
