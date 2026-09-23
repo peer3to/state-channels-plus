@@ -7,11 +7,54 @@ on:
             - synchronize
             - reopened
 
-concurrency:
-    group: distributed-test-pool
-    cancel-in-progress: false
+permissions:
+    contents: read
 
 jobs:
+    approve:
+        needs: [review-bot-tests, spec, test, browser]
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        concurrency:
+            group: review-approval-${{ github.event.pull_request.number }}
+            cancel-in-progress: false
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            pull-requests: write
+            issues: read
+            actions: read
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - name: Approve only confirmed resolved reviews with successful CI
+              run: node scripts/bot/final-approval.js
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-approval
+
+    review-bot-tests:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - run: yarn review-bot:test
+
     spec:
         runs-on: ubuntu-latest
         timeout-minutes: 10
@@ -38,6 +81,10 @@ jobs:
               run: yarn spec:impact --base origin/${{ github.base_ref }}
 
     test:
+        concurrency:
+            group: state-channels-plus-distributed-tests
+            queue: max
+            cancel-in-progress: false
         runs-on: ubuntu-latest
         timeout-minutes: 45
 

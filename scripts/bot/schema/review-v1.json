@@ -1,0 +1,932 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "urn:peer3:review:v1",
+    "title": "Review automation protocol version 1",
+    "$defs": {
+        "failureCode": {
+            "enum": [
+                "SUBSCRIPTION_LIMIT",
+                "LOGIN_EXPIRED",
+                "MODEL_UNAVAILABLE",
+                "SERVICE_UNAVAILABLE",
+                "DISK_FULL",
+                "TRANSFER_TIMEOUT",
+                "QUEUE_TIMEOUT",
+                "SETUP_TIMEOUT",
+                "REVIEW_TIMEOUT",
+                "CONTEXT_BUDGET_EXCEEDED",
+                "CONTEXT_RATE_LIMITED",
+                "CONTEXT_UNAVAILABLE",
+                "REVIEW_INCOMPLETE",
+                "ACCOUNTING_INCOMPLETE",
+                "INVALID_REQUEST",
+                "INVALID_RESULT",
+                "UNAUTHORIZED",
+                "STALE_HEAD",
+                "BUSY",
+                "VALIDATION_EXPIRED",
+                "ISOLATION_UNVERIFIED",
+                "BILLING_UNVERIFIED"
+            ]
+        },
+        "run": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "attempt": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "required": ["id", "attempt"]
+        },
+        "repository": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+                }
+            },
+            "required": ["id", "name"]
+        },
+        "binding": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "repositoryId": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "pr": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "head": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                },
+                "attempt": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "run": {
+                    "$ref": "#/$defs/run"
+                },
+                "caller": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                }
+            },
+            "required": [
+                "repositoryId",
+                "pr",
+                "head",
+                "attempt",
+                "run",
+                "caller"
+            ]
+        },
+        "sourceId": {
+            "type": "string",
+            "pattern": "^(finding:R[1-9][0-9]*[A-Z][A-Z0-9]*|comment:[1-9][0-9]*|review:[1-9][0-9]*|inline:[1-9][0-9]*)$"
+        },
+        "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "resolvedThreads": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "$comment": "Thread IDs must also be unique across entries with different comment arrays; the runtime enforces that semantic constraint.",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "comments"],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                            },
+                            "comments": {
+                                "type": "array",
+                                "uniqueItems": true,
+                                "items": { "type": "integer", "minimum": 1 }
+                            }
+                        }
+                    }
+                },
+                "version": {
+                    "const": 1
+                },
+                "repository": {
+                    "$ref": "#/$defs/repository"
+                },
+                "pr": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "head": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                },
+                "base": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                },
+                "mergeBase": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                },
+                "attempt": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "run": {
+                    "$ref": "#/$defs/run"
+                },
+                "caller": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "mode": {
+                    "enum": ["local", "ci"]
+                },
+                "botRevision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                },
+                "skillDigest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "policyDigest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "runtime": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.,-]{0,127}$"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "enum": ["review", "propose-replies"]
+                    },
+                    "maxItems": 2,
+                    "minItems": 1,
+                    "uniqueItems": true
+                },
+                "readScope": {
+                    "type": "array",
+                    "items": {
+                        "enum": ["source", "discussion", "reviews"]
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            },
+            "required": [
+                "version",
+                "repository",
+                "pr",
+                "head",
+                "base",
+                "mergeBase",
+                "attempt",
+                "run",
+                "caller",
+                "mode",
+                "botRevision",
+                "skillDigest",
+                "policyDigest",
+                "runtime",
+                "operations",
+                "readScope"
+            ]
+        },
+        "human": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "required": {
+                    "const": true
+                },
+                "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "authority": {
+                    "enum": ["author", "maintainer"]
+                }
+            },
+            "required": [
+                "required",
+                "question",
+                "reason",
+                "revision",
+                "authority"
+            ]
+        },
+        "finding": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9]{0,127}$"
+                },
+                "threadId": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "status": {
+                    "enum": [
+                        "new",
+                        "continued",
+                        "fixed",
+                        "recurred",
+                        "disagreement"
+                    ]
+                },
+                "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                },
+                "path": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 30000
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "line": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "human": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/human"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "evidence": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 30000
+                    },
+                    "maxItems": 1000
+                }
+            },
+            "required": [
+                "id",
+                "threadId",
+                "status",
+                "body",
+                "path",
+                "line",
+                "human",
+                "evidence"
+            ]
+        },
+        "accounting": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "sourceId": {
+                    "$ref": "#/$defs/sourceId"
+                },
+                "sourceRevision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "disposition": {
+                    "enum": [
+                        "response",
+                        "no-action",
+                        "continued",
+                        "fixed",
+                        "disagreement"
+                    ]
+                },
+                "response": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                },
+                "findingId": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "humanAssessment": {
+                    "anyOf": [
+                        {
+                            "enum": ["accepted", "insufficient", "conflict"]
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "sourceId",
+                "sourceRevision",
+                "disposition",
+                "response",
+                "findingId",
+                "humanAssessment"
+            ]
+        },
+        "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "url": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "etag": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "modified": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "contextRevision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "page": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "next": {
+                    "type": ["string", "null"]
+                },
+                "loaded": {
+                    "enum": ["data", "unknown"]
+                }
+            },
+            "required": [
+                "url",
+                "revision",
+                "etag",
+                "modified",
+                "contextRevision",
+                "page",
+                "next",
+                "loaded"
+            ]
+        },
+        "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "identity": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/source"
+                    },
+                    "maxItems": 10000
+                },
+                "requests": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "pages": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "durations": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "modelMs": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 3600000
+                        },
+                        "validationMs": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "turns": {
+                            "type": "array",
+                            "items": {
+                                "type": "number",
+                                "minimum": 0
+                            },
+                            "maxItems": 2
+                        },
+                        "gatheringMs": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "assessmentMs": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "correctionMs": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    },
+                    "required": [
+                        "modelMs",
+                        "validationMs",
+                        "turns",
+                        "gatheringMs",
+                        "assessmentMs",
+                        "correctionMs"
+                    ]
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "maxItems": 10000
+                },
+                "limits": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "requests": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "pages": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "bytes": {
+                            "type": "integer",
+                            "minimum": 0
+                        },
+                        "elapsedMs": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    },
+                    "required": ["requests", "pages", "bytes"]
+                },
+                "cacheHits": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            },
+            "required": [
+                "identity",
+                "sources",
+                "requests",
+                "pages",
+                "bytes",
+                "durations",
+                "errors",
+                "limits",
+                "cacheHits"
+            ]
+        },
+        "result": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "version": {
+                    "const": 1
+                },
+                "binding": {
+                    "$ref": "#/$defs/binding"
+                },
+                "executionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "revision": {
+                    "enum": [0, 1]
+                },
+                "effectiveIdentity": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "sessionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "runtime": {
+                    "type": "string"
+                },
+                "report": {
+                    "type": "string",
+                    "maxLength": 1048576
+                },
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/finding"
+                    },
+                    "maxItems": 1000
+                },
+                "accounting": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/accounting"
+                    },
+                    "maxItems": 10000
+                },
+                "coverage": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "complete": {
+                            "type": "boolean"
+                        },
+                        "verificationMissing": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "maxItems": 10000
+                        },
+                        "missing": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "maxItems": 10000
+                        },
+                        "files": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "maxItems": 10000
+                        },
+                        "lenses": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "maxItems": 10000
+                        },
+                        "behaviors": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "maxItems": 10000
+                        }
+                    },
+                    "required": [
+                        "complete",
+                        "missing",
+                        "files",
+                        "lenses",
+                        "behaviors"
+                    ]
+                },
+                "evidence": {
+                    "$ref": "#/$defs/evidence"
+                },
+                "recommendation": {
+                    "enum": ["approve", "comment"]
+                }
+            },
+            "required": [
+                "version",
+                "binding",
+                "executionId",
+                "revision",
+                "effectiveIdentity",
+                "sessionId",
+                "runtime",
+                "report",
+                "findings",
+                "accounting",
+                "coverage",
+                "evidence",
+                "recommendation"
+            ]
+        },
+        "correction": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "version": {
+                    "const": 1
+                },
+                "kind": {
+                    "enum": ["missing-accounting", "invalid-format"]
+                },
+                "binding": {
+                    "$ref": "#/$defs/binding"
+                },
+                "executionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+                },
+                "resultRevision": {
+                    "enum": [0, 1]
+                },
+                "effectiveIdentity": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                },
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/$defs/sourceId"
+                            },
+                            {
+                                "enum": ["schema:result", "schema:report"]
+                            }
+                        ]
+                    },
+                    "maxItems": 1000,
+                    "minItems": 1,
+                    "uniqueItems": true
+                }
+            },
+            "required": [
+                "version",
+                "kind",
+                "binding",
+                "executionId",
+                "resultRevision",
+                "effectiveIdentity",
+                "ids"
+            ]
+        },
+        "failure": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "version": {
+                    "const": 1
+                },
+                "binding": {
+                    "$ref": "#/$defs/binding"
+                },
+                "code": {
+                    "$ref": "#/$defs/failureCode"
+                },
+                "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000
+                },
+                "diagnostics": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "requests": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "pages": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "bytes": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "modelMs": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "validationMs": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "limits": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "requests": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "pages": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "bytes": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                },
+                                "elapsedMs": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                }
+                            },
+                            "required": ["requests", "pages", "bytes"]
+                        },
+                        "sources": {
+                            "type": "array",
+                            "maxItems": 10000,
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "required": [
+                        "requests",
+                        "pages",
+                        "bytes",
+                        "modelMs",
+                        "validationMs",
+                        "limits",
+                        "sources"
+                    ]
+                }
+            },
+            "required": ["version", "binding", "code", "message"]
+        },
+        "receipt": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "version": {
+                    "const": 1
+                },
+                "binding": {
+                    "$ref": "#/$defs/binding"
+                },
+                "kind": {
+                    "enum": ["review", "notice-only"]
+                },
+                "complete": {
+                    "type": "boolean"
+                },
+                "round": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "code": {
+                    "$ref": "#/$defs/failureCode"
+                },
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "kind": {
+                                "enum": [
+                                    "notice",
+                                    "review-comment",
+                                    "approve",
+                                    "resolve",
+                                    "reopen",
+                                    "dismiss"
+                                ]
+                            },
+                            "id": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "url": {
+                                "type": "string"
+                            }
+                        },
+                        "required": ["kind", "id", "url"]
+                    },
+                    "maxItems": 10000
+                },
+                "mappings": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^R[1-9][0-9]*[A-Z][A-Z0-9]*$"
+                    }
+                },
+                "state": {
+                    "enum": ["complete", "partial"]
+                },
+                "dispositions": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "findingId": {
+                                "type": "string",
+                                "pattern": "^R[1-9][0-9]*[A-Z][A-Z0-9]*$"
+                            },
+                            "status": {
+                                "enum": [
+                                    "new",
+                                    "continued",
+                                    "fixed",
+                                    "recurred",
+                                    "disagreement"
+                                ]
+                            },
+                            "threadId": {
+                                "type": ["string", "null"]
+                            }
+                        },
+                        "required": ["findingId", "status", "threadId"]
+                    }
+                }
+            },
+            "required": ["version", "binding", "kind", "complete", "actions"]
+        }
+    },
+    "oneOf": [
+        {
+            "$ref": "#/$defs/request"
+        },
+        {
+            "$ref": "#/$defs/result"
+        },
+        {
+            "$ref": "#/$defs/correction"
+        },
+        {
+            "$ref": "#/$defs/failure"
+        },
+        {
+            "$ref": "#/$defs/receipt"
+        }
+    ]
+}

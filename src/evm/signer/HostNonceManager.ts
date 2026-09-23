@@ -1,4 +1,5 @@
 import { Mutex } from "@/utils";
+import { withGasHeadroom } from "@/utils/gas";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     AbstractSigner,
@@ -44,6 +45,12 @@ class HostNonceManager extends AbstractSigner {
         return this.signer.signTransaction(tx);
     }
 
+    // Overrides AbstractSigner.estimateGas: the wrapped wallet's estimate plus
+    // withGasHeadroom, so a concurrent transaction cannot push ours out of gas.
+    override async estimateGas(tx: TransactionRequest): Promise<bigint> {
+        return withGasHeadroom(await this.signer.estimateGas(tx));
+    }
+
     signMessage(message: string | Uint8Array): Promise<string> {
         return this.signer.signMessage(message);
     }
@@ -76,9 +83,12 @@ class HostNonceManager extends AbstractSigner {
             }
             const nonce =
                 this.nextNonce ?? (await this.signer.getNonce("pending"));
+            const request = { ...tx, nonce };
             const populated = await this.signer.populateTransaction({
-                ...tx,
-                nonce
+                ...request,
+                // Without a caller limit, use our estimate with headroom
+                // rather than the wallet's bare estimate.
+                gasLimit: tx.gasLimit ?? (await this.estimateGas(request))
             });
             const encodedTransaction =
                 await this.signer.signTransaction(populated);

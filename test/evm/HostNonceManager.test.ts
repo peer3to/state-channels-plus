@@ -1,4 +1,5 @@
 import HostNonceManager from "@/evm/signer/HostNonceManager";
+import { withGasHeadroom } from "@/utils/gas";
 import { expect } from "chai";
 import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
@@ -66,6 +67,35 @@ describe("HostNonceManager", () => {
                 .concat(subsequentResponse)
                 .map((response) => response.nonce)
         ).to.deep.equal([pendingNonce, pendingNonce + 1, pendingNonce + 2]);
+    });
+
+    it("sends without a caller limit using its estimate plus headroom and keeps an explicit limit", async () => {
+        const [funder, recipient] = await ethers.getSigners();
+        const sender = ethers.Wallet.createRandom().connect(ethers.provider);
+        await (
+            await funder.sendTransaction({
+                to: sender.address,
+                value: ethers.parseEther("1")
+            })
+        ).wait();
+        const manager = new HostNonceManager(sender);
+        const request = { to: recipient.address, value: 1n, data: "0x1234" };
+        const estimate = await sender.estimateGas(request);
+
+        expect(await manager.estimateGas(request)).to.equal(
+            withGasHeadroom(estimate)
+        );
+        const estimated = await manager.sendTransaction(request);
+        await estimated.wait();
+        expect(estimated.gasLimit).to.equal(withGasHeadroom(estimate));
+
+        const explicitLimit = estimate + 1n;
+        const explicit = await manager.sendTransaction({
+            ...request,
+            gasLimit: explicitLimit
+        });
+        await explicit.wait();
+        expect(explicit.gasLimit).to.equal(explicitLimit);
     });
 
     it("cannot create another nonce owner by reconnecting", async () => {

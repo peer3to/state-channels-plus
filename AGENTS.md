@@ -14,6 +14,14 @@
 
 These are project rules to follow (and persist any future "remember this" instructions here).
 
+### Questions must wait for a reply
+
+- When asking a Human a question, ask in ordinary chat and end the turn. Do not use
+  timed or asynchronous question prompts, select a default, or continue working
+  while waiting for their answer.
+- Wait until a Human explicitly replies. Elapsed time, silence, a dismissed prompt,
+  or a preselected option is never an answer or permission to proceed.
+
 ### Design authority
 
 - Follow the human engineer's plan and the specification. The human engineer owns design decisions; agents implement them. No AI agent may make these design decisions.
@@ -360,3 +368,13 @@ limit, so it implements only what needs its own storage and composition (`open`,
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
 - Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
+
+### Required Human review decisions
+
+- When an automated review flags an unresolved design choice, implementing agents
+  must ask their human unless the specification or an existing human decision
+  already settles it. Never invent or post consent on the human's behalf.
+  The label is advisory to humans and implementing agents, not a special bot
+  resolution gate. Reviewers reassess and resolve these findings using the same
+  code, specification and discussion evidence as any other finding; no mandatory
+  human reply or separate consent tracking is required.

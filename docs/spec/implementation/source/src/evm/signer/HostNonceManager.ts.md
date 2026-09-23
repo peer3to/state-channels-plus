@@ -24,6 +24,10 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
 ## Key design decisions
 
 1. **Nonce allocation is host-owned** so concurrent submitters cannot race nonces.
+2. **Gas headroom on every estimate.** `estimateGas` returns the wrapped wallet's estimate plus
+   [`withGasHeadroom`](../../utils/gas.ts.md), and a send without a caller gas limit uses it. Every
+   peer's chain transaction passes here, including client-mode sends forwarded by
+   [ClientChainSigner](./ClientChainSigner.ts.md), so no caller sets a fixed limit.
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +43,9 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs |
-| ------------------------------------------------------------------------------ | ----------------- |
-| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) |                   |
+| Source file                                                                    | Specification IDs                                                                            |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) | [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

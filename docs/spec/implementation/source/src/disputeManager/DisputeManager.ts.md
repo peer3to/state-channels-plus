@@ -78,9 +78,14 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    again only if the chain set changed since construction, including a slash already delivered in
    the meantime. Construction keeps the existing participant eligibility filter; a slash is not
    automatically a valid reason.
-8. **Right-sized gas ceiling.** The plain upload pins a 2.5M gas limit — measured ~0.5M in e2e,
-   sized down from 5M to free block gas under concurrency while keeping headroom
-   ([#L45](../../../../../../src/disputeManager/DisputeManager.ts#L45)).
+8. **Gas from the chain signer, never a fixed limit.** The plain upload, the calldata upload and the
+   fraud-proof multicall pass no gas limit; the chain signer sends each with its estimate plus
+   [`withGasHeadroom`](../../utils/gas.ts.md). Honest peers race to dispute the same fraud, and a late
+   disputer's upload costs more for every disputer already in the window
+   (`_hadParticipantPostedEvidence` reads the whole `hasPosted` list). A dispute landing between
+   estimate and inclusion would leave a bare estimate short; the out-of-gas revert surfaces only as
+   the proxy's "Delegatecall failed", and the retry can land at `evidencePeriodEnd`, refusing an
+   honest disputer's evidence.
 9. **StateManager orders admitted signing before the single dispute marker.**
    Dispute admission waits for the state mutex, sets the marker after admitted signatures and storage
    complete, then releases that mutex before construction and network submission. Callers already
@@ -139,10 +144,10 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission order
   the decisions above (eager kill recording; on-chain re-checks by the contract itself). Wrong-kill
   safety does not rest here — the auditor preflights proof validity before storing.
 - **Ordering/concurrency:** `dispute()` is mutex-serialized per instance; `killDispute` is
-  intentionally unserialized (decision 6). Transaction nonce/fee management is the signer's.
-- **Limits:** one dispute per fork per instance lifetime (until rollback); 2.5M gas ceiling on the
-  plain upload; auditing-data size bounded by the stream ranges between genesis, latest, and
-  finalized snapshots.
+  intentionally unserialized (decision 6). Transaction nonce, fee and gas management is the
+  signer's (estimate plus headroom, decision 8).
+- **Limits:** one dispute per fork per instance lifetime (until rollback); auditing-data size bounded
+  by the stream ranges between genesis, latest, and finalized snapshots.
 
 ## Specification adherence
 

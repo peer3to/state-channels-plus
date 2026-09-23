@@ -154,7 +154,13 @@
     "lint:fix-only": "eslint src/**/*.ts test/**/*.ts --fix --quiet || true",
     "prepare": "husky install",
     "lint:imports": "eslint --config eslint.import-order.config.mjs src test",
-    "lint:imports:fix": "eslint --config eslint.import-order.config.mjs --fix"
+    "lint:imports:fix": "eslint --config eslint.import-order.config.mjs --fix",
+    "review-bot:test": "mocha --no-config --no-package --timeout 60000 \"scripts/bot/tests/logic/**/*.test.js\" \"scripts/bot/tests/integration/**/*.test.js\"",
+    "review-bot:test:e2e": "mocha --no-config --no-package --timeout 60000 \"scripts/bot/tests/**/*.e2e.js\"",
+    "review-bot:review": "node scripts/bot/client.js",
+    "review-bot:fetch-assessment": "node scripts/bot/fetch-assessment.js",
+    "review-bot:publish": "node scripts/bot/publish.js",
+    "review-bot:cleanup": "node scripts/bot/cleanup.js"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs}": [
