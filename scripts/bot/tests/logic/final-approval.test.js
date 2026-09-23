@@ -4,59 +4,7 @@ const { GitHubWriter } = require("../../github-write");
 const { RecordedGitHub, observation } = require("../fixtures/github");
 const { request } = require("../fixtures/records");
 
-function runRecords(input, options = {}) {
-    const prefix = "/repos/" + input.repository.name;
-    const records = [];
-    for (const [workflow, names, id] of [
-        ["ci.yml", ["review-bot-tests", "spec", "test", "browser"], 10],
-        ["review.yml", ["review-model", "review-publish"], input.run.id]
-    ]) {
-        const run = {
-            id,
-            run_attempt: 2,
-            head_sha: input.head,
-            head_repository: input.repository,
-            pull_requests: [{ number: input.pr }]
-        };
-        records.push({
-            path:
-                prefix +
-                "/actions/workflows/" +
-                workflow +
-                "/runs?event=pull_request&head_sha=" +
-                input.head +
-                "&per_page=100&page=1",
-            response: { workflow_runs: [run, { ...run, id: id - 1 }] }
-        });
-        const jobs = names.map((name, index) => ({
-            id: id * 100 + index,
-            name,
-            run_attempt: 1,
-            status: "completed",
-            conclusion: "success"
-        }));
-        jobs.push({
-            id: id * 100 + 10,
-            name: "approve",
-            run_attempt: 2,
-            status: "in_progress",
-            conclusion: null
-        });
-        if (workflow === "ci.yml" && options.bad)
-            jobs[2].conclusion = options.bad;
-        if (workflow === "ci.yml" && options.absent) jobs.splice(2, 1);
-        records.push({
-            path:
-                prefix +
-                "/actions/runs/" +
-                id +
-                "/jobs?filter=latest&per_page=100&page=1",
-            response: { jobs }
-        });
-        if (options.bad || options.absent) break;
-    }
-    return records;
-}
+const { runRecords } = require("../fixtures/actions");
 function writer(input, records) {
     const wire = new RecordedGitHub(records);
     return {
@@ -69,6 +17,149 @@ function writer(input, records) {
     };
 }
 describe("final cross-workflow approval", function () {
+    it("consumes full run and job pages including an empty continuation after an exactly full page", async function () {
+        const input = request();
+        const records = runRecords(input);
+        const runs = records[0],
+            jobs = records[1];
+        const eligible = runs.response.workflow_runs[0];
+        runs.response.workflow_runs = Array.from(
+            { length: 100 },
+            (_, index) => ({
+                ...eligible,
+                id: 1000 + index,
+                head_sha: "f".repeat(40)
+            })
+        );
+        const runContinuation = {
+            path: runs.path.replace(/&page=1$/, "&page=2"),
+            response: { workflow_runs: [eligible] }
+        };
+        const required = jobs.response.jobs;
+        jobs.response.jobs = Array.from({ length: 100 }, (_, index) => ({
+            ...required[0],
+            id: 2000 + index,
+            name: "extra-" + index
+        }));
+        const jobContinuation = {
+            path: jobs.path.replace(/&page=1$/, "&page=2"),
+            response: {
+                jobs: [...required, ...jobs.response.jobs.slice(0, 95)]
+            }
+        };
+        records.splice(1, 0, runContinuation);
+        records.splice(3, 0, jobContinuation, {
+            path: jobs.path.replace(/&page=1$/, "&page=3"),
+            response: { jobs: [] }
+        });
+        const { wire, github } = writer(input, records);
+        assert.equal(
+            (await completedInputs(github, input))["ci.yml"].id,
+            eligible.id
+        );
+        wire.done();
+    });
+    it("rejects failing or unavailable job continuation pages", async function () {
+        for (const unavailable of [false, true]) {
+            const input = request(),
+                records = runRecords(input).slice(0, 2);
+            const jobs = records[1];
+            jobs.response.jobs = [
+                ...jobs.response.jobs,
+                ...Array.from({ length: 95 }, (_, index) => ({
+                    id: index,
+                    name: "approve",
+                    run_attempt: 2,
+                    status: "completed",
+                    conclusion: "success"
+                }))
+            ];
+            records.push({
+                path: jobs.path.replace(/&page=1$/, "&page=2"),
+                response: unavailable
+                    ? {}
+                    : {
+                          jobs: [
+                              {
+                                  id: 101,
+                                  name: "test",
+                                  run_attempt: 2,
+                                  status: "completed",
+                                  conclusion: "failure"
+                              }
+                          ]
+                      }
+            });
+            const { wire, github } = writer(input, records);
+            if (unavailable)
+                await assert.rejects(completedInputs(github, input), {
+                    code: "CONTEXT_UNAVAILABLE"
+                });
+            else assert.equal(await completedInputs(github, input), null);
+            wire.done();
+        }
+    });
+    it("selects only runs belonging to the requested head repository and PR", async function () {
+        const input = request(),
+            records = runRecords(input);
+        const run = records[0].response.workflow_runs[0];
+        records[0].response.workflow_runs.unshift(
+            { ...run, id: 900, head_sha: "f".repeat(40) },
+            { ...run, id: 901, head_repository: { id: 999 } },
+            { ...run, id: 902, pull_requests: [{ number: 999 }] }
+        );
+        const { wire, github } = writer(input, records);
+        assert.equal(
+            (await completedInputs(github, input))["ci.yml"].id,
+            run.id
+        );
+        wire.done();
+    });
+    it("defers empty or wholly ineligible run listings without loading jobs", async function () {
+        for (const empty of [false, true]) {
+            const input = request(),
+                records = runRecords(input).slice(0, 1);
+            records[0].response.workflow_runs = empty
+                ? []
+                : records[0].response.workflow_runs.map((run) => ({
+                      ...run,
+                      head_sha: "f".repeat(40)
+                  }));
+            const { wire, github } = writer(input, records);
+            assert.equal(await completedInputs(github, input), null);
+            wire.done();
+        }
+    });
+    it("defers stale job listings until the current rerun attempt becomes visible", async function () {
+        const input = request(),
+            stale = runRecords(input).slice(0, 2);
+        stale[1].response.jobs.forEach((job) => {
+            job.run_attempt = 1;
+        });
+        const { wire, github } = writer(input, [
+            ...stale,
+            ...runRecords(input)
+        ]);
+        assert.equal(await completedInputs(github, input), null);
+        assert.equal(
+            (await completedInputs(github, input))["ci.yml"].attempt,
+            2
+        );
+        wire.done();
+    });
+    it("defers queued and running substantive jobs even while the approval job is ignored", async function () {
+        for (const status of ["queued", "in_progress"]) {
+            const input = request(),
+                records = runRecords(input).slice(0, 2);
+            Object.assign(records[1].response.jobs[2], {
+                status,
+                conclusion: null
+            });
+            const { wire, github } = writer(input, records);
+            assert.equal(await completedInputs(github, input), null);
+            wire.done();
+        }
+    });
     it("joins the latest substantive jobs across partial reruns without waiting for its own jobs", async function () {
         const input = request(),
             { wire, github } = writer(input, runRecords(input));

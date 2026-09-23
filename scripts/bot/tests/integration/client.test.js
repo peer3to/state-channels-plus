@@ -104,18 +104,19 @@ async function fixture(body, identityRun = {}) {
     }
 }
 describe("review client visible activity", function () {
-    it("runs the final approval CLI from a different CI run using the artifact producer identity and durable worker receipt", async function () {
+    it("publishes successive same-head executions and approves only after both workflows finish using the original producer attempt", async function () {
         await fixture(
             async ({ options, serve, input, originalSeed, network }) => {
                 await options.dht.destroy({ force: true });
                 const { ReviewService } = require("../../server");
+                const { Publisher } = require("../../publish");
+                const { GitHubWriter } = require("../../github-write");
                 const { digest } = require("../../data");
-                const { binding } = require("../../protocol");
+                const { sourceRevision } = require("../../reconcile");
                 const { runApprovalCli } = require("../fixtures/client-cli");
                 const {
-                    RecordedGitHub,
-                    observation
-                } = require("../fixtures/github");
+                    wireFixture
+                } = require("../fixtures/assessment-github");
                 const service = new ReviewService({
                     stateRoot: path.join(options.stateRoot, "worker")
                 });
@@ -125,192 +126,277 @@ describe("review client visible activity", function () {
                     policyDigest: input.policyDigest
                 });
                 await service.sessions.initialize();
+                const wire = wireFixture(input);
+                wire.comments.splice(0);
+                wire.reviews.splice(0);
                 let executions = 0,
-                    statusReads = 0;
-                const generated = await service.sessions.submit(
-                    input,
-                    digest("context"),
-                    async () => {
-                        executions++;
-                        return result(input);
-                    },
-                    async () => true
-                );
-                await service.publications.save(input, digest({ states: [] }), [
-                    {
-                        version: 1,
-                        repositoryId: input.repository.id,
-                        pr: input.pr,
-                        head: input.head,
-                        round: 1,
-                        status: "complete",
-                        findings: [],
-                        actions: [],
-                        approvalEvidence: {
-                            executionId: generated.executionId,
-                            complete: true,
-                            accounted: true,
-                            threadsResolved: true,
-                            accounting: []
-                        }
-                    }
-                ]);
-                await service.sessions.acknowledge(
-                    input,
-                    generated.executionId,
-                    {
-                        version: 1,
-                        binding: binding(input),
-                        kind: "review",
-                        complete: true,
-                        round: 1,
-                        actions: []
-                    }
-                );
-                serve((connection, message) => {
-                    assert.equal(message.operation, "publication");
-                    statusReads++;
-                    return service.handle(
-                        connection,
-                        message.operation,
-                        message.value,
-                        message.requestId,
-                        message.attemptId
-                    );
+                    statusReads = 0,
+                    downloads = 0,
+                    ready = false;
+                const github = new GitHubWriter(input, {
+                    botId: 9,
+                    token: "recorded",
+                    exchange: wire.exchange
                 });
-                const prefix = "/repos/" + input.repository.name;
-                const runs = [];
-                for (const [workflow, names, id] of [
-                    [
-                        "ci.yml",
-                        ["review-bot-tests", "spec", "test", "browser"],
-                        99
-                    ],
-                    [
-                        "review.yml",
-                        ["review-model", "review-publish"],
-                        input.run.id
-                    ]
-                ]) {
-                    runs.push(
-                        {
-                            path:
-                                prefix +
-                                "/actions/workflows/" +
-                                workflow +
-                                "/runs?event=pull_request&head_sha=" +
-                                input.head +
-                                "&per_page=100&page=1",
-                            response: {
-                                workflow_runs: [
+                const publish = (request, output) =>
+                    new Publisher(
+                        request,
+                        github,
+                        { eligible: true },
+                        service.publications
+                    ).publish(output);
+                try {
+                    const first = await service.sessions.submit(
+                        input,
+                        digest("context"),
+                        async () => {
+                            executions++;
+                            return result(input);
+                        },
+                        async () => true
+                    );
+                    const initial = await publish(input, first);
+                    assert.equal(initial.status, "complete");
+                    await service.sessions.acknowledge(
+                        input,
+                        first.executionId,
+                        initial.receipt
+                    );
+                    const firstRequest = structuredClone(input);
+                    const comment = {
+                        id: 50,
+                        user: { id: 7, type: "User" },
+                        body: "Verify the recovery branch",
+                        html_url:
+                            "https://github.com/" +
+                            input.repository.name +
+                            "/pull/6#discussion_r50"
+                    };
+                    wire.inline.push(comment);
+                    input.attempt = "attempt-2";
+                    const generated = await service.sessions.submit(
+                        input,
+                        digest("context"),
+                        async () => {
+                            executions++;
+                            return result(input, {
+                                accounting: [
                                     {
-                                        id,
-                                        run_attempt: 1,
-                                        head_sha: input.head,
-                                        head_repository: input.repository,
-                                        pull_requests: [{ number: input.pr }]
+                                        sourceId: "inline:50",
+                                        sourceRevision: sourceRevision(comment),
+                                        disposition: "fixed",
+                                        response:
+                                            "Verified the recovery implementation",
+                                        findingId: null,
+                                        humanAssessment: null
                                     }
                                 ]
-                            }
+                            });
                         },
-                        {
-                            path:
-                                prefix +
-                                "/actions/runs/" +
-                                id +
-                                "/jobs?filter=latest&per_page=100&page=1",
-                            response: {
-                                jobs: names.map((name, index) => ({
-                                    id: id * 100 + index,
-                                    name,
-                                    status: "completed",
-                                    conclusion: "success",
-                                    run_attempt: 1
-                                }))
-                            }
-                        }
+                        async () => true
                     );
-                }
-                const wire = new RecordedGitHub([
-                    {
-                        path: "/users/github-actions%5Bbot%5D",
-                        response: {
-                            id: 9,
-                            login: "github-actions[bot]",
-                            type: "Bot"
+                    assert.notEqual(generated.executionId, first.executionId);
+                    const published = await publish(input, generated);
+                    assert.equal(published.status, "complete");
+                    assert.ok(published.receipt.round > initial.receipt.round);
+                    assert.equal(wire.resolved.has("thread-50"), true);
+                    await service.sessions.acknowledge(
+                        input,
+                        generated.executionId,
+                        published.receipt
+                    );
+                    const state = (
+                        await service.publications.load(input)
+                    ).states.at(-1);
+                    assert.equal(
+                        state.approvalEvidence.executionId,
+                        generated.executionId
+                    );
+                    assert.deepEqual(
+                        state.approvalEvidence.accounting,
+                        generated.accounting
+                    );
+                    const writes = () =>
+                        wire.calls.filter(
+                            (call) =>
+                                call.body?.query?.startsWith("mutation ") ||
+                                (call.route !== "/graphql" &&
+                                    call.method !== "GET")
+                        ).length;
+                    const beforeReplay = writes();
+                    assert.deepEqual(
+                        (await publish(firstRequest, first)).receipt,
+                        initial.receipt
+                    );
+                    assert.deepEqual(
+                        (await publish(input, generated)).receipt,
+                        published.receipt
+                    );
+                    assert.equal(writes(), beforeReplay);
+                    serve((connection, message) => {
+                        assert.equal(message.operation, "publication");
+                        statusReads++;
+                        return service.handle(
+                            connection,
+                            message.operation,
+                            message.value,
+                            message.requestId,
+                            message.attemptId
+                        );
+                    });
+                    const exchange = async (endpoint, options) => {
+                        const route = new URL(endpoint).pathname;
+                        if (route.includes("/actions/workflows/")) {
+                            const id = route.includes("/ci.yml/")
+                                ? 99
+                                : input.run.id;
+                            return new Response(
+                                JSON.stringify({
+                                    workflow_runs: [
+                                        {
+                                            id,
+                                            run_attempt: 2,
+                                            head_sha: input.head,
+                                            head_repository: input.repository,
+                                            pull_requests: [
+                                                { number: input.pr }
+                                            ]
+                                        }
+                                    ]
+                                })
+                            );
                         }
-                    },
-                    ...runs,
-                    ...structuredClone(runs),
-                    ...observation(input),
-                    {
-                        path: prefix + "/pulls/" + input.pr + "/reviews",
-                        method: "POST",
-                        inspect: (body) => assert.equal(body.event, "APPROVE"),
-                        response: { id: 80 }
-                    }
-                ]);
-                const eventPath = path.join(options.stateRoot, "event.json");
-                await fs.writeFile(
-                    eventPath,
-                    JSON.stringify({
-                        repository: {
-                            id: input.repository.id,
-                            full_name: input.repository.name
-                        },
-                        pull_request: {
-                            number: input.pr,
-                            head: {
-                                sha: input.head,
-                                repo: { id: input.repository.id }
+                        if (route.includes("/actions/runs/")) {
+                            const ci = route.includes("/runs/99/");
+                            const names = ci
+                                ? [
+                                      "review-bot-tests",
+                                      "spec",
+                                      "test",
+                                      "browser"
+                                  ]
+                                : ["review-model", "review-publish"];
+                            return new Response(
+                                JSON.stringify({
+                                    jobs: [
+                                        ...names.map((name, index) => ({
+                                            id: (ci ? 9900 : 100) + index,
+                                            name,
+                                            run_attempt: 1,
+                                            status:
+                                                !ready && ci && name === "test"
+                                                    ? "in_progress"
+                                                    : "completed",
+                                            conclusion:
+                                                !ready && ci && name === "test"
+                                                    ? null
+                                                    : "success"
+                                        })),
+                                        {
+                                            id: ci ? 9999 : 199,
+                                            name: "approve",
+                                            run_attempt: 2,
+                                            status: "in_progress",
+                                            conclusion: null
+                                        }
+                                    ]
+                                })
+                            );
+                        }
+                        const response = await wire.exchange(endpoint, options);
+                        // GitHub returns the approval state and commit on later observations.
+                        if (
+                            options.method === "POST" &&
+                            route.endsWith("/reviews")
+                        ) {
+                            Object.assign(wire.reviews.at(-1), {
+                                state: "APPROVED",
+                                commit_id: input.head
+                            });
+                        }
+                        return response;
+                    };
+                    const eventPath = path.join(
+                        options.stateRoot,
+                        "event.json"
+                    );
+                    await fs.writeFile(
+                        eventPath,
+                        JSON.stringify({
+                            repository: {
+                                id: input.repository.id,
+                                full_name: input.repository.name
+                            },
+                            pull_request: {
+                                number: input.pr,
+                                head: {
+                                    sha: input.head,
+                                    repo: { id: input.repository.id }
+                                }
                             }
+                        })
+                    );
+                    const env = {
+                        GITHUB_EVENT_PATH: eventPath,
+                        GITHUB_TOKEN: "recorded",
+                        GITHUB_ACTIONS: "true",
+                        GITHUB_RUN_ID: String(input.run.id),
+                        GITHUB_RUN_ATTEMPT: "2",
+                        GITHUB_REPOSITORY_ID: String(input.repository.id),
+                        SCP_TEST_POOL_SECRET: options.secret,
+                        SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
+                        SCP_REVIEW_CLIENT_STATE: path.join(
+                            options.stateRoot,
+                            "approval"
+                        )
+                    };
+                    const boundary = {
+                        network,
+                        serverKey: options.serverKey,
+                        exchange,
+                        download(command, args) {
+                            downloads++;
+                            assert.equal(command, "gh");
+                            assert.equal(args[2], String(input.run.id));
+                            assert.equal(
+                                args[args.indexOf("--name") + 1],
+                                "review-1-1-result"
+                            );
+                            const directory = args[args.indexOf("--dir") + 1];
+                            const syncFs = require("node:fs");
+                            syncFs.writeFileSync(
+                                path.join(directory, "request.json"),
+                                JSON.stringify(input)
+                            );
+                            syncFs.writeFileSync(
+                                path.join(directory, "result.json"),
+                                JSON.stringify(generated)
+                            );
                         }
-                    })
-                );
-                try {
+                    };
+                    await runApprovalCli(env, boundary);
+                    assert.equal(downloads, 0);
+                    assert.equal(statusReads, 0);
+                    assert.equal(wire.reviews.length, 0);
+                    ready = true;
                     await runApprovalCli(
-                        {
-                            GITHUB_EVENT_PATH: eventPath,
-                            GITHUB_TOKEN: "recorded",
-                            GITHUB_ACTIONS: "true",
-                            GITHUB_RUN_ID: "99",
-                            GITHUB_RUN_ATTEMPT: "1",
-                            GITHUB_REPOSITORY_ID: String(input.repository.id),
-                            SCP_TEST_POOL_SECRET: options.secret,
-                            SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
-                            SCP_REVIEW_CLIENT_STATE: path.join(
-                                options.stateRoot,
-                                "approval"
-                            )
-                        },
-                        {
-                            network,
-                            serverKey: options.serverKey,
-                            exchange: wire.exchange.bind(wire),
-                            download(command, args) {
-                                assert.equal(command, "gh");
-                                assert.equal(args[2], String(input.run.id));
-                                assert.equal(
-                                    args[args.indexOf("--name") + 1],
-                                    "review-1-1-result"
-                                );
-                                const directory =
-                                    args[args.indexOf("--dir") + 1];
-                                const syncFs = require("node:fs");
-                                syncFs.writeFileSync(
-                                    path.join(directory, "request.json"),
-                                    JSON.stringify(input)
-                                );
-                                syncFs.writeFileSync(
-                                    path.join(directory, "result.json"),
-                                    JSON.stringify(generated)
-                                );
-                            }
-                        }
+                        { ...env, GITHUB_RUN_ID: "99" },
+                        boundary
                     );
-                    assert.equal(executions, 1);
-                    assert.equal(statusReads, 2);
-                    wire.done();
+                    await runApprovalCli(env, boundary);
+                    assert.equal(downloads, 2);
+                    assert.equal(statusReads, 4);
+                    assert.equal(
+                        executions,
+                        2,
+                        "approval never starts another review"
+                    );
+                    assert.equal(
+                        wire.reviews.length,
+                        1,
+                        "approval replay does not duplicate the write"
+                    );
+                    assert.equal(wire.reviews[0].state, "APPROVED");
                 } finally {
                     await service.sessions.close();
                 }

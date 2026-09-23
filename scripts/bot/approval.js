@@ -3,6 +3,9 @@ const { closed, settledDecision } = require("./review-decisions");
 const { accountingSet, missingAccounting } = require("./reconcile");
 function reviewStatus(request, executionId, state, receipt) {
     const evidence = state?.approvalEvidence;
+    const findings = (state?.findings || []).filter(
+        (finding) => !evidence?.excludedFindingIds?.includes(finding.id)
+    );
     const everythingResolved = !!(
         state?.head === request.head &&
         state.status === "complete" &&
@@ -13,7 +16,7 @@ function reviewStatus(request, executionId, state, receipt) {
         evidence.complete &&
         evidence.accounted &&
         evidence.threadsResolved &&
-        state.findings.every(closed) &&
+        findings.every(closed) &&
         evidence.accounting
             .filter((entry) => /^(comment|review):/.test(entry.sourceId))
             .every((entry) => settledDecision(entry, state.findings))
@@ -26,7 +29,7 @@ function reviewStatus(request, executionId, state, receipt) {
         executionId,
         round: state?.round,
         everythingResolved,
-        findings: state?.findings || [],
+        findings,
         accounting: evidence?.accounting || [],
         snapshot: digest({ state: state || null, receipt: receipt || null })
     };

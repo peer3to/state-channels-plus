@@ -20,26 +20,17 @@ const { findingSource, wrapFinding } = require("./finding-source");
 const {
     stripState,
     readStates,
+    resultDigest,
+    receiptContents,
+    matchesResult,
     allocate,
     actionMarker,
     findAction
 } = require("./state");
 function reviewReceipt(request, state, complete, code) {
     return {
-        version: 1,
-        binding: protocol.binding(request),
-        kind: "review",
-        complete,
-        round: state.round,
-        actions: state.actions,
-        mappings: state.mappings || {},
-        state: complete ? "complete" : "partial",
-        dispositions: state.findings.map((finding) => ({
-            findingId: finding.id,
-            status: finding.status,
-            threadId: finding.threadId
-        })),
-        ...(code ? { code } : {})
+        ...receiptContents(state, complete, code),
+        binding: protocol.binding(request)
     };
 }
 function accountingFailure(ids, phase) {
@@ -149,19 +140,31 @@ class Publisher {
             );
         }
         const observations = await this.observe();
-        const sameHead = readStates(
+        const states = readStates(
             observations,
             this.request,
             this.github.botId
-        )
-            .filter((state) => state.head === this.request.head)
-            .at(-1);
-        if (sameHead?.status === "complete")
+        );
+        const completed = states.find(
+            (state) =>
+                state.head === this.request.head &&
+                state.status === "complete" &&
+                matchesResult(state, result)
+        );
+        if (completed)
             return {
                 status: "complete",
-                receipt: reviewReceipt(this.request, sameHead, true)
+                receipt: completed.receipt
+                    ? {
+                          ...completed.receipt,
+                          binding: protocol.binding(this.request)
+                      }
+                    : reviewReceipt(this.request, completed, true)
             };
-        if (sameHead?.resultDigest === digest(result))
+        const sameHead = states
+            .filter((state) => state.head === this.request.head)
+            .at(-1);
+        if (matchesResult(sameHead, result))
             observations.findings =
                 sameHead.previousFindings ||
                 observations.findings.filter((finding) =>
@@ -234,7 +237,7 @@ class Publisher {
     async saveState(state) {
         state.sequence = (state.sequence || 0) + 1;
         const states = this.journal.states.filter(
-            (entry) => entry.head !== state.head
+            (entry) => entry.round !== state.round
         );
         states.push(structuredClone(state));
         this.journal = await this.store.save(
@@ -268,13 +271,19 @@ class Publisher {
             if (missing.length)
                 throw accountingFailure(missing, "before-publication");
         }
-        const state = allocate(this.request, current, this.github.botId);
+        const state = allocate(
+            this.request,
+            current,
+            this.github.botId,
+            result
+        );
         if (state.status === "complete")
             return {
                 status: "complete",
                 receipt: reviewReceipt(this.request, state, true)
             };
-        state.resultDigest = digest(result);
+        state.resultDigest = resultDigest(result);
+        state.executionId = result.executionId;
         state.previousFindings = structuredClone(current.findings);
         state.previousFindingIds = current.findings.map(
             (finding) => finding.id
@@ -300,6 +309,11 @@ class Publisher {
             return { ...finding, threadId: thread.id };
         });
         const canonical = canonicalFindings(recovered, result.findings);
+        const retainedResolved = (finding, observations) =>
+            !canonical.some((entry) => entry.id === finding.id) &&
+            observations.threads.some(
+                (thread) => thread.id === finding.threadId && thread.isResolved
+            );
         const used = new Set(current.findings.map((finding) => finding.id));
         state.mappings = state.mappings || {};
         state.findings = canonical.map((finding) => {
@@ -389,7 +403,9 @@ class Publisher {
         }
         const operations = findingActions(
             recovered,
-            state.findings,
+            state.findings.filter(
+                (finding) => !retainedResolved(finding, current)
+            ),
             current,
             publication
         );
@@ -775,7 +791,13 @@ class Publisher {
             findingId: state.mappings[entry.findingId] || entry.findingId
         }));
         // Approval is exclusively owned by the final cross-workflow gate.
+        // Retain source dispositions as history; GitHub resolution is not a
+        // fabricated "fixed" assessment. Only explicit reassessment can reopen.
+        state.approvalEvidence.excludedFindingIds = state.findings
+            .filter((finding) => retainedResolved(finding, beforeApproval))
+            .map((finding) => finding.id);
         state.status = "complete";
+        state.receipt = reviewReceipt(this.request, state, true);
         await this.saveState(state);
         return {
             status: "complete",

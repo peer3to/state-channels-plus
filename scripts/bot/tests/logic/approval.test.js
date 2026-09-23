@@ -41,6 +41,63 @@ function fixture() {
     return { input, report, observations, state, receipt, status, allowed };
 }
 describe("deterministic review approval", function () {
+    it("requires a REST observation and a current settled decision for every GraphQL reply", function () {
+        const f = fixture();
+        const comments = [
+            { id: 20, user: { id: 7 }, body: "Concern" },
+            { id: 21, user: { id: 8 }, body: "Reply concern" }
+        ];
+        const thread = {
+            comments: {
+                nodes: comments.map((item) => ({ databaseId: item.id }))
+            }
+        };
+        const decision = (item) => ({
+            sourceId: "inline:" + item.id,
+            sourceRevision: sourceRevision(item),
+            disposition: "fixed",
+            response: "Verified in source",
+            findingId: null
+        });
+        f.observations.inline.push(comments[0]);
+        f.report.accounting.push(decision(comments[0]));
+        assert.equal(threadSettled(thread, f.observations, f.report, 9), false);
+        f.observations.inline.push(comments[1]);
+        assert.equal(threadSettled(thread, f.observations, f.report, 9), false);
+        f.report.accounting.push(decision(comments[1]));
+        assert.equal(threadSettled(thread, f.observations, f.report, 9), true);
+    });
+    it("settled third-party decisions authorize closure but never reopening", async function () {
+        const { GitHubWriter } = require("../../github-write");
+        const { RecordedGitHub } = require("../fixtures/github");
+        const f = fixture();
+        const comment = { id: 20, user: { id: 7 }, body: "Concern" };
+        const thread = {
+            id: "thread-20",
+            isResolved: true,
+            comments: { nodes: [{ databaseId: 20 }] }
+        };
+        f.observations.inline.push(comment);
+        f.observations.threads.push(thread);
+        f.report.accounting.push({
+            sourceId: "inline:20",
+            sourceRevision: sourceRevision(comment),
+            disposition: "fixed",
+            response: "Verified in source",
+            findingId: null
+        });
+        const wire = new RecordedGitHub([]);
+        const github = new GitHubWriter(f.input, {
+            botId: 9,
+            token: "recorded",
+            exchange: wire.exchange.bind(wire)
+        });
+        await assert.rejects(
+            github.setResolved(thread, false, f.observations, f.report),
+            { code: "UNAUTHORIZED" }
+        );
+        wire.done();
+    });
     it("approves a confirmed clean source review without model approval or runtime verification", function () {
         const f = fixture();
         assert.equal(f.allowed(), true);

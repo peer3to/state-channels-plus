@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const { check, digest, ownedPath, writeJson } = require("./data");
+const { receiptContents } = require("./state");
 
 // Private worker journal. A compare-and-swap prevents stale CI deliveries from
 // replacing a newer publication; identical retries are safe after lost replies.
@@ -33,6 +34,15 @@ class PublicationStore {
                           head: state.head,
                           round: state.round,
                           status: state.status,
+                          executionId: state.executionId,
+                          resultDigest: state.resultDigest,
+                          // Upgrade old completed entries before dropping their
+                          // full findings from the transferred projection.
+                          receipt:
+                              state.receipt ||
+                              (state.status === "complete"
+                                  ? receiptContents(state, true)
+                                  : undefined),
                           findings: state.findings.map(({ id }) => ({ id })),
                           mappings: state.mappings || {},
                           actions: []

@@ -12,208 +12,7 @@ const { digest } = require("../../data");
 const { request, result } = require("../fixtures/records");
 const { gitFixture } = require("../fixtures/git");
 
-// Stateful recorded HTTP boundary: real publisher/reader operate on GitHub-shaped
-// objects. No network, user token, model call or actual GitHub mutation occurs.
-function wireFixture() {
-    const input = request();
-    const bot = { id: 9, type: "Bot", login: "github-actions[bot]" };
-    const finding = {
-        id: "R1FO1",
-        body: "🟠 **[FO1] — Original defect.**\n\nIt fails on retry.",
-        path: null,
-        line: null,
-        threadId: null,
-        status: "continued",
-        human: null,
-        evidence: ["original source"]
-    };
-    const old = { ...input, head: "f".repeat(40) };
-    const state = {
-        version: 1,
-        repositoryId: input.repository.id,
-        pr: input.pr,
-        head: old.head,
-        round: 1,
-        status: "complete",
-        findings: [finding],
-        actions: [],
-        mappings: { FO1: finding.id }
-    };
-    const prefix = `/repos/${input.repository.name}`;
-    const url = `https://github.com/${input.repository.name}/pull/${input.pr}`;
-    const pull = {
-        number: input.pr,
-        base: {
-            repo: { id: input.repository.id, full_name: input.repository.name }
-        },
-        head: { sha: input.head },
-        state: "open",
-        draft: false,
-        user: { id: 7, login: "author" }
-    };
-    const reviews = [
-        {
-            id: 2,
-            user: bot,
-            html_url: `${url}#pullrequestreview-2`,
-            body:
-                finding.body +
-                "\n\n" +
-                actionMarker(old, "finding", finding.id) +
-                "\n\n---\n\nSibling stays visible."
-        }
-    ];
-    const comments = [
-        {
-            id: 1,
-            user: bot,
-            body: encodeState(state),
-            html_url: `${url}#issuecomment-1`
-        }
-    ];
-    const calls = [];
-    const inline = [];
-    const resolved = new Set();
-    let nextId = 10;
-    async function exchange(endpoint, options) {
-        const route = new URL(endpoint).pathname;
-        const body = options.body && JSON.parse(options.body);
-        calls.push({ route, method: options.method, body });
-        let response;
-        if (route === "/users/github-actions%5Bbot%5D") response = bot;
-        else if (route === "/graphql") {
-            if (body.query.startsWith("mutation ")) {
-                const operation = body.query.includes("unresolveReviewThread")
-                    ? "unresolveReviewThread"
-                    : "resolveReviewThread";
-                if (operation === "resolveReviewThread")
-                    resolved.add(body.variables.id);
-                else resolved.delete(body.variables.id);
-                return new Response(
-                    JSON.stringify({
-                        data: {
-                            [operation]: {
-                                thread: {
-                                    id: body.variables.id,
-                                    isResolved: resolved.has(body.variables.id)
-                                }
-                            }
-                        }
-                    })
-                );
-            }
-            assert.match(body.query, /^query /);
-            response = {
-                data: {
-                    repository: {
-                        databaseId: input.repository.id,
-                        pullRequest: {
-                            number: input.pr,
-                            reviewThreads: {
-                                nodes: inline
-                                    .filter((item) => !item.in_reply_to_id)
-                                    .map((item) => ({
-                                        id: `thread-${item.id}`,
-                                        isResolved: resolved.has(
-                                            `thread-${item.id}`
-                                        ),
-                                        comments: {
-                                            nodes: inline
-                                                .filter(
-                                                    (comment) =>
-                                                        comment.id ===
-                                                            item.id ||
-                                                        comment.in_reply_to_id ===
-                                                            item.id
-                                                )
-                                                .map((comment) => ({
-                                                    databaseId: comment.id
-                                                })),
-                                            pageInfo: { hasNextPage: false }
-                                        }
-                                    })),
-                                pageInfo: { hasNextPage: false }
-                            }
-                        }
-                    }
-                }
-            };
-        } else if (route === `${prefix}/pulls/${input.pr}`) response = pull;
-        else if (route === `${prefix}/pulls/${input.pr}/comments`)
-            response = inline;
-        else if (/\/pulls\/\d+\/comments\/\d+\/replies$/.test(route)) {
-            assert.equal(options.method, "POST");
-            const parent = Number(route.split("/").at(-2));
-            assert.ok(
-                inline.some(
-                    (item) => item.id === parent && !item.in_reply_to_id
-                )
-            );
-            response = {
-                id: nextId++,
-                user: bot,
-                in_reply_to_id: parent,
-                body: body.body,
-                html_url: `${url}#discussion_r${nextId - 1}`
-            };
-            inline.push(response);
-        } else if (/\/issues\/comments\/[0-9]+$/.test(route)) {
-            const item = comments.find(
-                (comment) => comment.id === Number(route.split("/").at(-1))
-            );
-            assert.ok(item);
-            if (options.method === "PATCH") item.body = body.body;
-            response = item;
-        } else if (/\/reviews\/[0-9]+$/.test(route)) {
-            const item = reviews.find(
-                (entry) => entry.id === Number(route.split("/").at(-1))
-            );
-            assert.ok(item);
-            if (options.method === "PUT") item.body = body.body;
-            response = item;
-        } else if (
-            route === `${prefix}/issues/${input.pr}/comments` ||
-            route === `${prefix}/pulls/${input.pr}/reviews`
-        ) {
-            const collection = route.includes("/issues/") ? comments : reviews;
-            if (options.method === "POST") {
-                const id = nextId++;
-                const item = {
-                    id,
-                    user: bot,
-                    body: body.body,
-                    html_url: `${url}#${collection === comments ? "issuecomment-" : "pullrequestreview-"}${id}`,
-                    issue_url: `https://api.github.com${prefix}/issues/${input.pr}`
-                };
-                collection.push(item);
-                for (const finding of body.comments || [])
-                    inline.push({
-                        ...finding,
-                        id: nextId++,
-                        user: bot,
-                        pull_request_review_id: id,
-                        html_url: `${url}#discussion_r${nextId - 1}`
-                    });
-                response = item;
-            } else response = collection;
-        } else
-            throw new Error(
-                `Unexpected recorded route ${options.method} ${route}`
-            );
-        return new Response(JSON.stringify(response), { status: 200 });
-    }
-    return {
-        input,
-        finding,
-        reviews,
-        comments,
-        inline,
-        calls,
-        exchange,
-        pull,
-        resolved
-    };
-}
+const { wireFixture } = require("../fixtures/assessment-github");
 function proposed(input, finding, previous) {
     return result(input, {
         report:
@@ -404,6 +203,250 @@ async function unchangedNextHead(human, tree) {
     );
 }
 describe("assessment GitHub lifecycle", function () {
+    it("publishes new same-head findings while replaying exact and joined deliveries without duplicate writes", async function () {
+        const { binding } = require("../../protocol");
+        const wire = wireFixture(),
+            store = publicationStore();
+        wire.comments.splice(0);
+        wire.reviews.splice(0);
+        const publish = (input, output) =>
+            new Publisher(
+                input,
+                new GitHubWriter(input, {
+                    botId: 9,
+                    token: "recorded",
+                    exchange: wire.exchange
+                }),
+                { eligible: true },
+                store
+            ).publish(output);
+        const first = result(wire.input);
+        const initial = await publish(wire.input, first);
+        // Preserve exact replay when upgrading the pre-receipt journal format.
+        const legacy = await store.load(wire.input);
+        const previousDigest = digest(legacy);
+        delete legacy.states[0].receipt;
+        delete legacy.states[0].executionId;
+        legacy.states[0].resultDigest = digest(first);
+        await store.save(wire.input, previousDigest, legacy.states);
+        const next = proposed(wire.input, {
+            ...wire.finding,
+            id: "FO2",
+            status: "new"
+        });
+        next.executionId = "execution-new-finding";
+        const published = await publish(wire.input, next);
+        assert.equal(published.status, "complete");
+        assert.equal(published.receipt.round, initial.receipt.round + 1);
+        assert.equal(wire.comments.length, 1);
+        assert.match(wire.comments[0].body, /R2FO2/);
+        const journal = await store.load(wire.input);
+        assert.equal(
+            journal.states.at(-1).approvalEvidence.executionId,
+            next.executionId
+        );
+        const writes = wire.calls.filter(
+            (call) => call.method !== "GET" && call.route !== "/graphql"
+        ).length;
+        assert.deepEqual(
+            (await publish(wire.input, first)).receipt,
+            initial.receipt
+        );
+        assert.deepEqual(
+            (await publish(wire.input, next)).receipt,
+            published.receipt
+        );
+        const joined = {
+            ...wire.input,
+            attempt: "joined-delivery",
+            run: { id: 2, attempt: 1 }
+        };
+        const rebound = { ...next, binding: binding(joined) };
+        assert.deepEqual((await publish(joined, rebound)).receipt, {
+            ...published.receipt,
+            binding: binding(joined)
+        });
+        assert.equal(
+            wire.calls.filter(
+                (call) => call.method !== "GET" && call.route !== "/graphql"
+            ).length,
+            writes
+        );
+        assert.deepEqual(await store.load(wire.input), journal);
+    });
+    it("keeps externally resolved continued history excluded and allows an explicit recurrence", async function () {
+        const { reviewStatus, canApprove } = require("../../approval");
+        await gitFixture(async (tree) => {
+            const { wire, store } = retainedFixture();
+            Object.assign(wire.input, {
+                head: tree.input.head,
+                base: tree.input.base,
+                mergeBase: tree.input.mergeBase
+            });
+            wire.pull.head.sha = wire.input.head;
+            const old = readStates(wire.comments, wire.input, 9)[0];
+            old.findings[0].status = "continued";
+            wire.comments[0].body = encodeState(old);
+
+            const github = new GitHubWriter(wire.input, {
+                botId: 9,
+                token: "recorded",
+                exchange: wire.exchange
+            });
+            const publish = (output) =>
+                new Publisher(
+                    wire.input,
+                    github,
+                    { eligible: true, repoRoot: tree.source },
+                    store
+                ).publish(output);
+            const inlineOutput = (finding, previous) => {
+                const value = proposed(wire.input, finding, previous);
+                value.report = value.report.replace(
+                    '"kind":"general"',
+                    '"kind":"inline","path":"README.md","line":1,"side":"RIGHT"'
+                );
+                return value;
+            };
+            const continued = inlineOutput(old.findings[0], old.findings[0]);
+            assert.equal((await publish(continued)).status, "complete");
+            assert.equal(
+                (await store.load(wire.input)).states.at(-1).findings[0].status,
+                "continued"
+            );
+            wire.resolved.add("thread-50");
+            wire.input.resolvedThreads = [{ id: "thread-50", comments: [50] }];
+            // A later review omits the controller-excluded finding.
+            const output = result(wire.input, {
+                executionId: "execution-excluded"
+            });
+            const published = await publish(output);
+            assert.equal(published.status, "complete");
+            const state = (await store.load(wire.input)).states.at(-1);
+            assert.equal(state.findings[0].status, "continued");
+            assert.deepEqual(state.approvalEvidence.excludedFindingIds, [
+                old.findings[0].id
+            ]);
+            assert.equal(
+                wire.calls.filter((call) =>
+                    call.body?.query?.startsWith("mutation ")
+                ).length,
+                0
+            );
+            const status = reviewStatus(
+                wire.input,
+                output.executionId,
+                state,
+                published.receipt
+            );
+            assert.equal(status.everythingResolved, true);
+            assert.equal(
+                canApprove({
+                    status,
+                    observations: await github.observe(),
+                    head: wire.input.head,
+                    botId: 9,
+                    ciPassed: true
+                }),
+                true
+            );
+            wire.resolved.delete("thread-50");
+            assert.equal(
+                canApprove({
+                    status,
+                    observations: await github.observe(),
+                    head: wire.input.head,
+                    botId: 9,
+                    ciPassed: true
+                }),
+                false
+            );
+            wire.resolved.add("thread-50");
+            // A current explicit source assessment, unlike omission, may reopen it.
+            const recurrence = inlineOutput(
+                {
+                    ...state.findings[0],
+                    status: "recurred"
+                },
+                state.findings[0]
+            );
+            recurrence.executionId = "execution-recurrence";
+            assert.equal((await publish(recurrence)).status, "complete");
+            assert.equal(wire.resolved.has("thread-50"), false);
+            assert.equal(
+                (await store.load(wire.input)).states.at(-1).findings[0].status,
+                "recurred"
+            );
+        });
+    });
+    it("recovers an accepted third-party resolution after its response is lost without resolving twice", async function () {
+        const { sourceRevision } = require("../../reconcile");
+        const { reviewStatus } = require("../../approval");
+        const wire = wireFixture();
+        wire.comments.splice(0);
+        wire.reviews.splice(0);
+        const comment = {
+            id: 50,
+            user: { id: 7, type: "User" },
+            body: "Recovery concern",
+            html_url:
+                "https://github.com/peer3to/state-channels-plus/pull/6#discussion_r50"
+        };
+        wire.inline.push(comment);
+        const output = result(wire.input, {
+            accounting: [
+                {
+                    sourceId: "inline:50",
+                    sourceRevision: sourceRevision(comment),
+                    disposition: "fixed",
+                    response: "Verified recovery in source",
+                    findingId: null,
+                    humanAssessment: null
+                }
+            ]
+        });
+        let lost = false;
+        const github = new GitHubWriter(wire.input, {
+            botId: 9,
+            token: "recorded",
+            exchange: async (endpoint, options) => {
+                const response = await wire.exchange(endpoint, options);
+                if (
+                    !lost &&
+                    options.body?.includes("mutation ReviewResolution")
+                ) {
+                    lost = true;
+                    throw new TypeError("Lost accepted resolution response");
+                }
+                return response;
+            }
+        });
+        const store = publicationStore();
+        const published = await new Publisher(
+            wire.input,
+            github,
+            { eligible: true },
+            store
+        ).publish(output);
+        assert.equal(lost, true);
+        assert.equal(published.status, "complete");
+        assert.equal(
+            wire.calls.filter((call) =>
+                call.body?.query?.startsWith("mutation ")
+            ).length,
+            1
+        );
+        assert.equal(wire.resolved.has("thread-50"), true);
+        assert.equal(
+            reviewStatus(
+                wire.input,
+                output.executionId,
+                (await store.load(wire.input)).states.at(-1),
+                published.receipt
+            ).everythingResolved,
+            true
+        );
+    });
     it("resolves third-party discussion from the saved decisions and confirms it without approving", async function () {
         const { sourceRevision } = require("../../reconcile");
         const { reviewStatus } = require("../../approval");

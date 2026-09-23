@@ -231,6 +231,15 @@ Publication retries reuse the saved result and reconcile those markers before wr
 including after HTTP 500 or a lost mutation response. Pending analysis is compared
 with observed public content: an absent open finding is created, an unapplied update
 is applied, and a never-posted closed finding stays private.
+Completed-result replay returns its saved receipt without repeating writes. A new
+review execution on the same head gets a new publication round, reconciles current
+discussion, and saves its own findings, approval evidence and receipt. Historical
+receipt identities remain available without transferring historical report bodies.
+Omitted findings whose threads are already resolved remain history with their
+original source dispositions; omission cannot reopen them or fabricate a fixed
+assessment. The approval evidence excludes that resolved history from the active
+finding set. Explicit current reassessment can reopen a recurrence, and the final
+gate still checks current GitHub thread state before approving.
 Clean rounds do not create placeholder comments; failures use a deduplicated error
 notice. Historical snapshots are imported into the journal on first publication;
 edited finding bodies lose their legacy snapshots. Untouched historical comments

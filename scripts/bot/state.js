@@ -119,12 +119,48 @@ function readStates(comments, request, botId) {
             a.commentId - b.commentId
     );
 }
-function allocate(request, observations, botId) {
+function resultDigest(result) {
+    // Joined callers receive the same execution with different delivery bindings.
+    const { binding, ...review } = result;
+    return digest(review);
+}
+function receiptContents(state, complete, code) {
+    return {
+        version: 1,
+        kind: "review",
+        complete,
+        round: state.round,
+        actions: state.actions,
+        mappings: state.mappings || {},
+        state: complete ? "complete" : "partial",
+        dispositions: state.findings.map((finding) => ({
+            findingId: finding.id,
+            status: finding.status,
+            threadId: finding.threadId
+        })),
+        ...(code ? { code } : {})
+    };
+}
+function matchesResult(state, result) {
+    return (
+        state?.resultDigest === resultDigest(result) ||
+        state?.resultDigest === digest(result)
+    ); // Pre-upgrade journal identity.
+}
+function allocate(request, observations, botId, result) {
     const states = readStates(observations, request, botId);
     const sameHead = states
         .filter((state) => state.head === request.head)
         .at(-1);
-    if (sameHead) return sameHead;
+    if (
+        sameHead &&
+        (!result ||
+            matchesResult(sameHead, result) ||
+            (sameHead.status !== "complete" &&
+                (!sameHead.executionId ||
+                    sameHead.executionId === result.executionId)))
+    )
+        return sameHead;
     return {
         version: 1,
         repositoryId: request.repository.id,
@@ -161,6 +197,9 @@ module.exports = {
     attachState,
     encodeState,
     readStates,
+    resultDigest,
+    receiptContents,
+    matchesResult,
     allocate,
     actionMarker,
     findAction
