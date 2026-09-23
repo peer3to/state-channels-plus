@@ -10,6 +10,7 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { config } from "@/utils/config";
 
 /**
  * Read-only peer-state queries exposed to the test harness. Accessors live here
@@ -152,9 +153,16 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         };
     }
 
-    /** The peer's gas usage table, settled by its one owner in `src`. */
+    /**
+     * The peer's gas usage table, settled by its one owner in `src` under the
+     * same bound as the public read.
+     */
     async settledGasUsage(): Promise<{ gasUsage: GasUsageRow[] }> {
-        return { gasUsage: await this.sm.signer.gasUsage.settledSnapshot() };
+        return {
+            gasUsage: await this.sm.signer.gasUsage.settledSnapshot(
+                config.GAS_USAGE_SETTLE_MS
+            )
+        };
     }
 
     public createRPCMethods(transport: NetworkTransport): QueryRpcMethods {

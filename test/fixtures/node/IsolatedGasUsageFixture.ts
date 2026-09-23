@@ -18,8 +18,6 @@ import {
 const ALWAYS_REVERTING_INIT_CODE = "0x600580600b6000396000f360006000fd";
 /** Enough for the intrinsic cost of a call with a selector, and no estimate. */
 const EXPLICIT_GAS_LIMIT = 100_000n;
-/** Short receipt bound, so the destroyed-provider case ends in a second. */
-const RECEIPT_WAIT_BUDGET_MS = 1_000;
 /** A nonce no send will ever reach, so the node queues and never mines it. */
 const UNREACHABLE_NONCE = 50;
 /** How long the node gets to answer with a receipt it has already mined. */
@@ -237,47 +235,44 @@ export async function assertIsolatedReplacedTransactionAbsent(): Promise<void> {
     });
 }
 
-export async function assertIsolatedDestroyedProviderSettles(): Promise<void> {
+export async function assertIsolatedDisposalEndsClosedProviderWait(): Promise<void> {
     await withIsolatedHardhatNode(async (provider) => {
         provider.pollingInterval = 100;
         const sender = await fundedWallet(provider);
-        const recorder = new GasUsageRecorder(
-            undefined,
-            RECEIPT_WAIT_BUDGET_MS
-        );
+        const manager = new HostNonceManager(sender);
 
         // The node is this call's own and is killed with it, so automine stays
         // off: the transaction must still be unmined when the provider closes.
         await provider.send("evm_setAutomine", [false]);
-        recorder.observe(
-            await sender.sendTransaction({
-                to: Wallet.createRandom().address,
-                value: 1n
-            })
-        );
-        // Only the wait's own bound may end it, so let it subscribe first.
+        await manager.sendTransaction({
+            to: Wallet.createRandom().address,
+            value: 1n,
+            gasLimit: EXPLICIT_GAS_LIMIT
+        });
+        // Let the receipt wait subscribe first: a closed provider then never
+        // ends it, and only disposal can.
         await awaitReceiptSubscription(provider);
         provider.destroy();
+        manager.gasUsage.dispose();
 
-        const startedAt = Date.now();
+        // Disposal ends the wait without a timer or a chain read, so the
+        // settle completes before the event loop runs anything else.
+        const nextTurn = new Promise<"still waiting">((resolve) =>
+            setImmediate(() => resolve("still waiting"))
+        );
         expect(
-            await recorder.settledSnapshot(),
-            "a transaction that never mined is not counted"
+            await Promise.race([manager.gasUsage.settledSnapshot(), nextTurn]),
+            "disposal settles the outstanding wait at once, and a transaction that never mined is not counted"
         ).to.deep.equal([]);
-        expect(
-            Date.now() - startedAt >= RECEIPT_WAIT_BUDGET_MS,
-            "the receipt bound is what ended the wait"
-        ).to.equal(true);
     });
 }
 
 export async function assertIsolatedSettleIgnoresLaterObservation(): Promise<void> {
     await withIsolatedHardhatNode(async (provider) => {
         provider.pollingInterval = 100;
-        // The default receipt bound, not a short one: the recorder holds one
-        // bound for every observation, so a short bound would also cap the
-        // transaction that must mine, and would end a `settle()` that re-read
-        // the set inside the test timeout instead of failing it.
+        // Receipt waits have no bound of their own, so a `settle()` that
+        // re-read the set would wait for the unmineable observation below
+        // until the test timeout fails it.
         const recorder = new GasUsageRecorder();
         const mining = await fundedWallet(provider);
         const queued = await fundedWallet(provider);

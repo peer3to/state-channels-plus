@@ -1,7 +1,7 @@
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { withGasHeadroom } from "@/utils/gas";
 import {
-    assertIsolatedDestroyedProviderSettles,
+    assertIsolatedDisposalEndsClosedProviderWait,
     assertIsolatedReplacedTransactionAbsent,
     assertIsolatedRevertedGasRecorded,
     assertIsolatedSettleIgnoresLaterObservation
@@ -161,8 +161,8 @@ describe("HostNonceManager", () => {
         await assertIsolatedReplacedTransactionAbsent();
     });
 
-    it("settles an observation whose provider closed under its receipt wait", async () => {
-        await assertIsolatedDestroyedProviderSettles();
+    it("settles an observation whose provider closed under its receipt wait once disposed", async () => {
+        await assertIsolatedDisposalEndsClosedProviderWait();
     });
 
     it("settles the observations started before the call, not the later ones", async () => {

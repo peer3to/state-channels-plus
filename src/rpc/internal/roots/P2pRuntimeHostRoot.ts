@@ -14,7 +14,6 @@ import {
     type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor/createContractExecutor";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
-import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { forwardEventHandlerInvocations } from "@/evm/p2pRuntime/host/EventForwarding";
 import {
     createRuntimeChainContext,
@@ -388,11 +387,6 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         await stateManager.p2pManager.localRpc.ready();
     }
 
-    /** Gas used per contract function by this peer's real-chain transactions. */
-    public getGasUsageTable(): Promise<GasUsageRow[]> {
-        return this.managedSigner.gasUsage.settledSnapshot();
-    }
-
     // Overrides AInternalRpcRoot.isDisposed to include domain abort before root cleanup starts.
     public override get isDisposed(): boolean {
         return (
@@ -410,15 +404,19 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 const ctx = this.context;
                 // Reported before the provider closes; the settle is bounded
                 // so disposal never hangs on the chain.
-                if (this.managedSigner)
+                if (this.managedSigner) {
                     this.rootLogger.info(
                         "gas usage",
                         LoggerUtils.getGasUsageMetadata(
                             await this.managedSigner.gasUsage.settledSnapshot(
-                                config.GAS_USAGE_DISPOSAL_SETTLE_MS
+                                config.GAS_USAGE_SETTLE_MS
                             )
                         )
                     );
+                    // The report is out; end the receipt waits still running
+                    // before the provider that would never end them closes.
+                    this.managedSigner.gasUsage.dispose();
+                }
                 try {
                     try {
                         // Destroy first so ethers marks the provider closed before its

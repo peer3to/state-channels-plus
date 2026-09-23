@@ -73,7 +73,9 @@ class HostNonceManager extends AbstractSigner {
      * Every real-chain transaction of this peer passes through here, which is
      * why this is also where its gas usage is observed.
      */
-    async sendTransaction(
+    // Overrides AbstractSigner.sendTransaction: broadcasts with the owned
+    // nonce, then hands the response to the gas usage recorder.
+    override async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
         const response = await this.sendWithOwnedNonce(tx);

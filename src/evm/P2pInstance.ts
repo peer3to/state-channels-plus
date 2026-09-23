@@ -89,7 +89,9 @@ export default class P2pInstance<
     /**
      * Gas used per contract function by the transactions the SDK runtime sent
      * for this peer. Transactions the application sends with its own signer
-     * are not included.
+     * are not included. The host waits a bounded time for outstanding
+     * receipts; a receipt still pending when the bound expires shows up on a
+     * later read.
      */
     public getGasUsageTable(): Promise<GasUsageRow[]> {
         return this.chainSigner.getGasUsageTable();
