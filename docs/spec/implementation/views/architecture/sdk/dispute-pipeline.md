@@ -238,7 +238,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L211)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L295)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,

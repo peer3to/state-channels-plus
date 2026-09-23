@@ -51,8 +51,6 @@ export type ConstructDisputeResult = {
 // anyone's fraud. named so callers can tell it from a real construction failure
 export class PartialAuditingDataError extends Error {}
 
-// Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
-// generous headroom for larger disputes while freeing block gas under concurrency.
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
