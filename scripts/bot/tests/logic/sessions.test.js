@@ -403,6 +403,8 @@ describe("review sessions", function () {
                 head: input.head,
                 mergeBase: input.mergeBase,
                 sessionId: "same-chat",
+                // The confirmed result's runtime names the session's provider.
+                sessionProvider: "codex",
                 round: 1
             });
             await sessions.removeRecords(sessions.key(input));

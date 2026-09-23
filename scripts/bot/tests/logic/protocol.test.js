@@ -516,4 +516,37 @@ describe("review protocol", () => {
         error.diagnostics.sources = ["file:///private/credential"];
         assert.throws(() => p.failure(error, input));
     });
+    it("accepts results from providers the request lists, including legacy single-version requests", function () {
+        const request = (runtime) => ({ ...records.request(), runtime });
+        assert.equal(
+            p.acceptsRuntime(request("codex,claude"), "claude-2.1.280"),
+            true
+        );
+        assert.equal(
+            p.acceptsRuntime(request("codex,claude"), "codex-0.156.1"),
+            true
+        );
+        assert.equal(
+            p.acceptsRuntime(request("codex"), "claude-2.1.280"),
+            false
+        );
+        // Saved requests from before provider lists named one Codex version.
+        assert.equal(
+            p.acceptsRuntime(request("codex-0.154.0"), "codex-0.154.0"),
+            true
+        );
+        assert.equal(
+            p.acceptsRuntime(request("codex-0.154.0"), "claude-2.1.280"),
+            false
+        );
+        const input = request("codex");
+        assert.throws(
+            () =>
+                p.result(
+                    { ...records.result(input), runtime: "claude-2.1.280" },
+                    input
+                ),
+            { code: "INVALID_RESULT" }
+        );
+    });
 });

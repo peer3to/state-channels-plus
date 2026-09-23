@@ -1052,6 +1052,32 @@ describe("integrated worker review service", function () {
         assert.equal(inline.reviewModel, "gpt-6.1-astra");
         assert.equal(inline.reviewEffort, "medium");
     });
+    it("enables Claude review with claude-opus-5-5 by default or a named model, sharing the effort flag", function () {
+        const parse = (...args) =>
+            parseServerArgs(["node", "server", "--name", "worker", ...args]);
+        const defaults = parse("--review-claude");
+        assert.equal(defaults.review, true);
+        assert.equal(defaults.reviewProvider, "claude");
+        assert.equal(defaults.reviewModel, "claude-opus-5-5");
+        assert.equal(defaults.reviewEffort, "low");
+        const named = parse(
+            "--review-claude",
+            "claude-sonnet-5",
+            "--review-effort",
+            "max"
+        );
+        assert.equal(named.reviewModel, "claude-sonnet-5");
+        assert.equal(named.reviewEffort, "max");
+        assert.equal(
+            parse("--review-claude=claude-opus-5-5").reviewModel,
+            "claude-opus-5-5"
+        );
+        assert.equal(parse("--review-codex").reviewProvider, "codex");
+        assert.throws(
+            () => parse("--review-codex", "--review-claude"),
+            /Use only one of --review-codex and --review-claude/
+        );
+    });
     it("rejects the retired review flag, effort without Codex review, and malformed settings", function () {
         const parse = (...args) =>
             parseServerArgs(["node", "server", "--name", "worker", ...args]);

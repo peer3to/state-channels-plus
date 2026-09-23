@@ -59,7 +59,8 @@ function request(value) {
     for (const key of ["skillDigest", "policyDigest", "caller"])
         string(value[key], /^[a-f0-9]{64}$/);
     string(value.attempt);
-    string(value.runtime, /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/);
+    // Comma-separated accepted providers; legacy requests named one version.
+    string(value.runtime, /^[A-Za-z0-9][A-Za-z0-9_.,-]{0,127}$/);
     exact(value.run, ["id", "attempt"]);
     check(
         Number.isSafeInteger(value.run.id) &&
@@ -86,6 +87,19 @@ function request(value) {
             )
     );
     return value;
+}
+// "claude-2.1.280" -> "claude". Versions are informational, never enforced.
+function runtimeProvider(runtime) {
+    return runtime.split("-")[0];
+}
+function acceptsRuntime(request, runtime) {
+    return (
+        typeof runtime === "string" &&
+        request.runtime
+            .split(",")
+            .map(runtimeProvider)
+            .includes(runtimeProvider(runtime))
+    );
 }
 function effectiveIdentity(value, evidenceIdentity) {
     request(value);
@@ -199,7 +213,7 @@ function result(value, expected) {
         "INVALID_RESULT"
     );
     check(
-        value.runtime === expected.runtime &&
+        acceptsRuntime(expected, value.runtime) &&
             typeof value.report === "string" &&
             Buffer.byteLength(value.report) <= 1024 * 1024,
         "INVALID_RESULT"
@@ -733,6 +747,8 @@ module.exports = {
     binding,
     assertBinding,
     effectiveIdentity,
+    runtimeProvider,
+    acceptsRuntime,
     correction,
     correctionPrompt,
     sourceId,

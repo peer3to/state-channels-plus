@@ -2,7 +2,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const os = require("node:os");
-const { NativeProcess, providerFailure } = require("../../adapters/codex");
+const { providerFailure } = require("../../adapters/codex");
+const { NativeProcess } = require("../../adapters/native");
 const { ModelBudget } = require("../../timing");
 const { configuration } = require("../../config");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -234,6 +235,56 @@ describe("review native adapter controls", function () {
         );
         assert.equal(selected.model, "gpt-7-nova");
         assert.equal(selected.effort, "high");
+    });
+    it("defaults Claude reviews to claude-opus-5-5 at low effort and rejects unknown providers", function () {
+        const claude = configuration(config({ provider: "claude" }));
+        assert.equal(claude.model, "claude-opus-5-5");
+        assert.equal(claude.effort, "low");
+        assert.equal(claude.claudePath, "claude");
+        assert.equal(configuration(config()).provider, "codex");
+        assert.throws(() => configuration(config({ provider: "gemini" })), {
+            code: "INVALID_REQUEST"
+        });
+    });
+    it("maps Claude CLI errors to typed review failures", function () {
+        const {
+            providerFailure: claudeFailure
+        } = require("../../adapters/claude");
+        for (const [code, status, expected] of [
+            ["rate_limit", undefined, "SUBSCRIPTION_LIMIT"],
+            ["billing_error", undefined, "SUBSCRIPTION_LIMIT"],
+            [null, 429, "SUBSCRIPTION_LIMIT"],
+            ["authentication_failed", undefined, "LOGIN_EXPIRED"],
+            [null, 401, "LOGIN_EXPIRED"],
+            ["model_not_found", 404, "MODEL_UNAVAILABLE"],
+            ["server_error", 500, "SERVICE_UNAVAILABLE"],
+            [null, undefined, "SERVICE_UNAVAILABLE"]
+        ])
+            assert.equal(claudeFailure(code, status).code, expected);
+    });
+    it("deletes only the named Claude session transcript", async function () {
+        const { ClaudeAdapter } = require("../../adapters/claude");
+        const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-cfg-"));
+        const previous = process.env.CLAUDE_CONFIG_DIR;
+        process.env.CLAUDE_CONFIG_DIR = root;
+        const target = "0f0e6b0c-2d5e-4a8f-9c11-111111111111";
+        const other = "0f0e6b0c-2d5e-4a8f-9c11-222222222222";
+        const project = path.join(root, "projects", "-review-runtime");
+        try {
+            await fs.mkdir(path.join(project, target), { recursive: true });
+            await fs.writeFile(path.join(project, `${target}.jsonl`), "{}");
+            await fs.writeFile(path.join(project, `${other}.jsonl`), "{}");
+            const adapter = new ClaudeAdapter(configuration(config()), {});
+            await adapter.delete(target);
+            assert.deepEqual(await fs.readdir(project), [`${other}.jsonl`]);
+            await assert.rejects(adapter.delete("../escape"), {
+                code: "INVALID_REQUEST"
+            });
+        } finally {
+            if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+            else process.env.CLAUDE_CONFIG_DIR = previous;
+            await fs.rm(root, { recursive: true, force: true });
+        }
     });
     it("rejects malformed model and effort settings", function () {
         for (const setting of [

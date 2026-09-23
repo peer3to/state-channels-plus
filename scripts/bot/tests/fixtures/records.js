@@ -15,7 +15,7 @@ function request(overrides = {}) {
         botRevision: "e".repeat(40),
         skillDigest: digest("skill"),
         policyDigest: digest("policy"),
-        runtime: "codex-0.156.1",
+        runtime: "codex,claude",
         operations: ["review", "propose-replies"],
         readScope: ["source", "discussion", "reviews"],
         ...overrides
@@ -29,7 +29,7 @@ function result(input = request(), overrides = {}) {
         revision: 0,
         effectiveIdentity: effectiveIdentity(input, digest("context")),
         sessionId: "session-1",
-        runtime: input.runtime,
+        runtime: "codex-0.156.1",
         report: `<!-- pr-review-document ${JSON.stringify({ schema: 2, repo: input.repository.name, pr: input.pr, headSha: input.head, baseSha: input.base })} -->\n\nNo actionable findings.`,
         findings: [],
         accounting: [],

@@ -1,7 +1,12 @@
 const path = require("node:path");
 const { exact, check, digest } = require("./data");
-// Worker defaults; `--review-codex <model>` and `--review-effort` override them.
-const DEFAULT_MODEL = "gpt-6-astra";
+// Worker defaults; `--review-codex <model>`, `--review-claude <model>` and
+// `--review-effort` override them.
+const PROVIDERS = ["codex", "claude"];
+const DEFAULT_MODELS = Object.freeze({
+    codex: "gpt-6-astra",
+    claude: "claude-opus-5-5"
+});
 const DEFAULT_EFFORT = "low";
 const MAX_MODEL_MS = 60 * 60 * 1000;
 // Initial operational defaults, not user-selected policy or measured capacity claims.
@@ -33,15 +38,18 @@ function validReviewSetting(value) {
 function configuration(input) {
     exact(input, [
         "stateRoot",
+        "provider",
         "model",
         "effort",
         "runtimeRoot",
         "codexPath",
-        "codexVersion",
+        "claudePath",
         "limits"
     ]);
     check(path.isAbsolute(input.stateRoot || ""));
-    const model = input.model ?? DEFAULT_MODEL;
+    const provider = input.provider ?? "codex";
+    check(PROVIDERS.includes(provider));
+    const model = input.model ?? DEFAULT_MODELS[provider];
     const effort = input.effort ?? DEFAULT_EFFORT;
     check(validReviewSetting(model) && validReviewSetting(effort));
     const runtimeRoot =
@@ -76,7 +84,8 @@ function configuration(input) {
         ...input,
         runtimeRoot,
         codexPath: input.codexPath || "codex",
-        codexVersion: input.codexVersion || "0.156.1",
+        claudePath: input.claudePath || "claude",
+        provider,
         model,
         effort,
         limits
@@ -91,7 +100,8 @@ module.exports = {
     policyDigest,
     validReviewSetting,
     DEFAULTS,
-    DEFAULT_MODEL,
+    PROVIDERS,
+    DEFAULT_MODELS,
     DEFAULT_EFFORT,
     MAX_MODEL_MS
 };

@@ -131,6 +131,60 @@ describe("pinned native adapter acceptance", function () {
             });
         });
     });
+    it("reads tracked source through the Claude CLI with only the worker tools, resumes the session and deletes its transcript", async function () {
+        assert.equal(process.env.REVIEW_NATIVE_ACCEPTANCE, "1");
+        const { ClaudeAdapter } = require("../../adapters/claude");
+        await gitFixture(async ({ root, source, input }) => {
+            const config = configuration({
+                stateRoot: path.join(root, "review"),
+                provider: "claude"
+            });
+            const before = await snapshot(source);
+            const read = async (sessionId) => {
+                const tools = new SourceTools(source, input, null);
+                const adapter = new ClaudeAdapter(config, tools);
+                try {
+                    await adapter.open();
+                    assert.match(adapter.runtime, /^claude-\d/);
+                    const id = await adapter.session(
+                        sessionId,
+                        "Authorized source-only tool integration check. Use only source_read. Do not run shell commands, access credentials, or change files."
+                    );
+                    const answer = await adapter.turn(
+                        "Call source_read with path README.md, start 1, count 1. Return exactly the line you read, with no formatting or explanation.",
+                        new ModelBudget(90000)
+                    );
+                    assert.ok(
+                        tools.gatheringMs > 0,
+                        "The real source tool must run."
+                    );
+                    assert.equal(answer.trim(), "Reviewed source.");
+                    return { id, adapter };
+                } finally {
+                    await adapter.stop();
+                    assert.equal(tools.closed, true);
+                    assert.throws(
+                        () => process.kill(-adapter.process.child.pid, 0),
+                        { code: "ESRCH" }
+                    );
+                }
+            };
+            const first = await read(null);
+            const again = await read(first.id);
+            assert.equal(again.id, first.id);
+            assert.deepEqual(await snapshot(source), before);
+            await first.adapter.delete(first.id);
+            const projects = path.join(
+                process.env.CLAUDE_CONFIG_DIR ||
+                    path.join(require("node:os").homedir(), ".claude"),
+                "projects"
+            );
+            for (const project of await fs.readdir(projects))
+                await assert.rejects(
+                    fs.access(path.join(projects, project, `${first.id}.jsonl`))
+                );
+        });
+    });
     it("expires a shortened native turn and verifies process exit before reuse", async function () {
         assert.equal(
             process.env.REVIEW_NATIVE_ACCEPTANCE,

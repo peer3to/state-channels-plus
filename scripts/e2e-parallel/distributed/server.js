@@ -201,6 +201,7 @@ async function main(options = {}) {
         const { ReviewService } = require("../../bot/server");
         review = new ReviewService({
             stateRoot: path.join(config.workRoot, "review"),
+            provider: config.reviewProvider,
             model: config.reviewModel,
             effort: config.reviewEffort
         });
@@ -215,7 +216,7 @@ async function main(options = {}) {
     console.log(`Starting worker ${config.name}; announcing availability`);
     if (review)
         console.log(
-            `Offering Codex reviews with ${review.config.model} at ${review.config.effort} effort`
+            `Offering ${review.config.provider} reviews with ${review.config.model} at ${review.config.effort} effort`
         );
     let pool;
     try {

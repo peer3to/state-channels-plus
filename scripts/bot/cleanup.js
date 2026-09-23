@@ -3,6 +3,7 @@ const path = require("node:path");
 const { check, ownedPath, writeJson } = require("./data");
 const { ContextBudget, PublicGitHub } = require("./github-read");
 const { sanitized } = require("./errors");
+const { sessionProviderOf } = require("./sessions");
 class LifecycleCleanup {
     worktrees;
     sessions;
@@ -145,7 +146,10 @@ class LifecycleCleanup {
                             );
                             const previous = this.sessions.previous.get(key);
                             if (previous?.sessionId && !record.nativeDeleted) {
-                                await this.deleteNative(previous.sessionId);
+                                await this.deleteNative(
+                                    previous.sessionId,
+                                    sessionProviderOf(previous)
+                                );
                                 record.nativeDeleted = true;
                                 await writeJson(
                                     this.worktrees.root,
@@ -184,7 +188,7 @@ async function main() {
     const { configuration } = require("./config");
     const { Sessions } = require("./sessions");
     const { Worktrees } = require("./worktrees");
-    const { CodexAdapter } = require("./adapters/codex");
+    const { createAdapter } = require("./adapters");
     const {
         acquireOsFileLock
     } = require("../e2e-parallel/distributed/hostLock");
@@ -208,10 +212,11 @@ async function main() {
             worktrees,
             repositories: null,
             limits: config.limits,
-            deleteNative: async (id) => {
-                const adapter = new CodexAdapter(config, {
-                    close: async () => {}
-                });
+            deleteNative: async (id, provider) => {
+                const adapter = createAdapter(
+                    { ...config, provider },
+                    { close: async () => {} }
+                );
                 try {
                     await adapter.open({ modelAccess: false });
                     await adapter.delete(id);

@@ -15,12 +15,15 @@ function closed(input) {
         }
     };
 }
-async function cleanupFixture(body) {
+async function cleanupFixture(
+    body,
+    previous = { sessionId: "registered-session" }
+) {
     await gitFixture(async ({ owner, input, pull, root }) => {
         const tree = await owner.prepare(input, pull);
         const sessions = new Sessions(path.join(root, "sessions"), DEFAULTS);
         await sessions.initialize();
-        sessions.previous.set("1-6", { sessionId: "registered-session" });
+        sessions.previous.set("1-6", previous);
         const prefix = `/repos/${input.repository.name}`;
         const wire = new RecordedGitHub([
             {
@@ -36,12 +39,14 @@ async function cleanupFixture(body) {
             repositories: null,
             limits: DEFAULTS,
             exchange: wire.exchange.bind(wire),
-            deleteNative: async (id) => {
+            deleteNative: async (id, provider) => {
                 deleted.push(id);
+                providers.push(provider);
             }
         });
+        const providers = [];
         try {
-            await body({ cleanup, tree, deleted, root, wire });
+            await body({ cleanup, tree, deleted, providers, root, wire });
         } finally {
             await sessions.close();
         }
@@ -145,6 +150,21 @@ describe("review owned lifecycle cleanup", function () {
             assert.deepEqual(deleted, ["registered-session"]);
             await assert.rejects(fs.access(tree.checkout));
             wire.done();
+        });
+    });
+    it("deletes each closed PR's native session with the provider that created it", async function () {
+        await cleanupFixture(
+            async ({ cleanup, deleted, providers }) => {
+                assert.equal((await cleanup.run()).deleted, 1);
+                assert.deepEqual(deleted, ["claude-session"]);
+                assert.deepEqual(providers, ["claude"]);
+            },
+            { sessionId: "claude-session", sessionProvider: "claude" }
+        );
+        await cleanupFixture(async ({ cleanup, providers }) => {
+            assert.equal((await cleanup.run()).deleted, 1);
+            // Records saved before provider selection hold Codex sessions.
+            assert.deepEqual(providers, ["codex"]);
         });
     });
 });

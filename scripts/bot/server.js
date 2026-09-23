@@ -4,7 +4,7 @@ const { configuration, policyDigest } = require("./config");
 const { check, digest, writeJson, writeText, ownedPath } = require("./data");
 const { sanitized, ReviewError } = require("./errors");
 const protocol = require("./protocol");
-const { Sessions } = require("./sessions");
+const { Sessions, sessionProviderOf } = require("./sessions");
 const { PublicationStore } = require("./publication-store");
 const { Worktrees, git } = require("./worktrees");
 const { SourceTools } = require("./source-tools");
@@ -13,7 +13,7 @@ const {
     ContextBudget,
     PublicAccounting
 } = require("./github-read");
-const { CodexAdapter } = require("./adapters/codex");
+const { createAdapter } = require("./adapters");
 const { ReviewConnection } = require("./transport");
 const { bundleDigest } = require("./request");
 const { validateReport, validateInlineTargets } = require("./review-format");
@@ -138,7 +138,7 @@ class ReviewService {
         );
         check(input.policyDigest === this.policyDigest, "UNAUTHORIZED");
         check(
-            input.runtime === `codex-${this.config.codexVersion}`,
+            protocol.acceptsRuntime(input, this.config.provider),
             "MODEL_UNAVAILABLE"
         );
     }
@@ -340,7 +340,7 @@ class ReviewService {
         );
         await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
         const tools = new SourceTools(tree.checkout, input, context);
-        const adapter = new CodexAdapter(this.config, tools);
+        const adapter = createAdapter(this.config, tools);
         this.adapters.set(execution.id, adapter);
         execution.adapter = adapter;
         execution.tools = tools;
@@ -355,8 +355,16 @@ class ReviewService {
             );
             const baseline = await this.sessions.baseline(input);
             // Recover older workers' cleared registry IDs from confirmed history.
-            execution.sessionId =
-                previous?.sessionId || baseline?.sessionId || null;
+            // A conversation held by another provider cannot be resumed; start
+            // fresh and seed it with the saved findings instead.
+            const own = (record) =>
+                record?.sessionId &&
+                sessionProviderOf(record) === this.config.provider
+                    ? record.sessionId
+                    : null;
+            execution.sessionId = own(previous) || own(baseline);
+            const resumed = !!execution.sessionId;
+            execution.sessionProvider = this.config.provider;
             execution.sessionId = await adapter.session(
                 execution.sessionId,
                 this.instructions
@@ -395,7 +403,7 @@ class ReviewService {
                                 id: finding.id,
                                 status: finding.status,
                                 threadId: finding.threadId,
-                                ...(previous?.sessionId
+                                ...(resumed
                                     ? {}
                                     : {
                                           body: finding.body,
@@ -581,7 +589,7 @@ class ReviewService {
             revision,
             effectiveIdentity: execution.effective,
             sessionId: execution.sessionId,
-            runtime: input.runtime
+            runtime: execution.adapter.runtime
         });
         generated.evidence = {
             identity: budget.identity(),
@@ -734,10 +742,11 @@ class ReviewService {
             repositories: null,
             limits: this.config.limits,
             accounting: this.publicAccounting,
-            deleteNative: async (threadId) => {
-                const adapter = new CodexAdapter(this.config, {
-                    close: async () => {}
-                });
+            deleteNative: async (threadId, provider) => {
+                const adapter = createAdapter(
+                    { ...this.config, provider },
+                    { close: async () => {} }
+                );
                 try {
                     await adapter.open({ modelAccess: false });
                     await adapter.delete(threadId);

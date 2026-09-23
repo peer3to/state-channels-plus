@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 const { gitFixture } = require("./git");
+const { DEFAULT_MODELS } = require("../../config");
 const { reviewWorker } = require("./review-worker");
 
 async function waitForFile(file) {
@@ -17,11 +18,17 @@ async function waitForFile(file) {
         await new Promise((resolve) => setTimeout(resolve, 10));
     }
 }
-async function executionFixture(body) {
+async function executionFixture(body, { provider = "codex" } = {}) {
     await gitFixture(async (tree) => {
         await reviewWorker(async (fixture) => {
             const service = fixture.worker.review;
             service.config.codexPath = path.join(__dirname, "native-peer.js");
+            service.config.claudePath = path.join(__dirname, "claude-peer.js");
+            if (provider === "claude")
+                Object.assign(service.config, {
+                    provider,
+                    model: DEFAULT_MODELS.claude
+                });
             service.worktrees.origins = tree.owner.origins;
             const input = {
                 ...tree.input,

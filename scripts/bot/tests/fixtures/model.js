@@ -2,6 +2,8 @@
 // The controller, validator and model budget remain the production owners.
 class RecordedModelOutput {
     outputs;
+    // The CLI runtime an adapter reports after open().
+    runtime = "codex-0.156.1";
     prompts = [];
     beforeTurn;
     turnMs = 0;

@@ -6,14 +6,15 @@ const {
 } = require("../shared/constants");
 const {
     DEFAULT_EFFORT,
-    DEFAULT_MODEL,
+    DEFAULT_MODELS,
     validReviewSetting
 } = require("../../bot/config");
 const { validateCidr } = require("./egressPolicy");
 
 const DEFAULTS = {
     review: false,
-    reviewModel: DEFAULT_MODEL,
+    reviewProvider: undefined,
+    reviewModel: undefined,
     reviewEffort: DEFAULT_EFFORT,
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
@@ -87,11 +88,19 @@ function parseServerArgs(argv, env = process.env) {
     let reviewEffortProvided = false;
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
-        // Codex reviews; the model name is optional and defaults to DEFAULT_MODEL.
-        if (arg === "--review-codex" || arg.startsWith("--review-codex=")) {
+        // One review provider per worker; the model name is optional and
+        // defaults to that provider's DEFAULT_MODELS entry.
+        const provider = /^--review-(codex|claude)(?:=|$)/.exec(arg)?.[1];
+        if (provider) {
+            if (result.review)
+                throw new Error(
+                    "Use only one of --review-codex and --review-claude"
+                );
             const inline = arg.split(/=(.*)/s)[1];
             const next = argv[i + 1];
             result.review = true;
+            result.reviewProvider = provider;
+            result.reviewModel = DEFAULT_MODELS[provider];
             if (inline !== undefined) result.reviewModel = inline;
             else if (next !== undefined && !next.startsWith("--")) {
                 result.reviewModel = next;
@@ -183,9 +192,11 @@ function parseServerArgs(argv, env = process.env) {
         );
     }
     if (reviewEffortProvided && !result.review) {
-        throw new Error("--review-effort requires --review-codex");
+        throw new Error(
+            "--review-effort requires --review-codex or --review-claude"
+        );
     }
-    if (!validReviewSetting(result.reviewModel)) {
+    if (result.review && !validReviewSetting(result.reviewModel)) {
         throw new Error(`Invalid review model ${result.reviewModel}`);
     }
     if (!validReviewSetting(result.reviewEffort)) {

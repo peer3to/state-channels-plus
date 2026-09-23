@@ -6,6 +6,13 @@ const { ModelBudget } = require("./timing");
 const { check, digest, writeJson, ownedPath } = require("./data");
 const { ReviewError, sanitized } = require("./errors");
 const protocol = require("./protocol");
+// Records predating provider selection hold Codex sessions.
+function sessionProviderOf(record) {
+    if (record?.sessionProvider) return record.sessionProvider;
+    if (record?.result?.runtime)
+        return protocol.runtimeProvider(record.result.runtime);
+    return "codex";
+}
 class Sessions {
     root;
     limits;
@@ -221,6 +228,7 @@ class Sessions {
             result: null,
             // Setup failures must not discard the PR's existing conversation.
             sessionId: this.previous.get(key)?.sessionId || null,
+            sessionProvider: sessionProviderOf(this.previous.get(key)),
             closed: false,
             timer: null,
             validationStarted: null,
@@ -303,6 +311,7 @@ class Sessions {
             request: execution.request,
             nativeProcessPid: execution.nativeProcessPid,
             sessionId: execution.sessionId,
+            sessionProvider: execution.sessionProvider,
             revision: execution.revision,
             correctionUsed: execution.correctionUsed,
             modelMs: execution.budget.consumed,
@@ -363,6 +372,7 @@ class Sessions {
             head: previous.request.head,
             mergeBase: previous.request.mergeBase,
             sessionId: previous.sessionId,
+            sessionProvider: sessionProviderOf(previous),
             round: receipt.round
         };
         await writeJson(this.root, `${key}-baseline.json`, baseline);
@@ -509,6 +519,7 @@ class Sessions {
                 head: request.head,
                 mergeBase: request.mergeBase,
                 sessionId,
+                sessionProvider: protocol.runtimeProvider(generated.runtime),
                 round: receipt.round
             });
         }
@@ -540,6 +551,7 @@ class Sessions {
             await this.persist(key, execution);
             this.previous.set(key, {
                 sessionId: execution.sessionId,
+                sessionProvider: execution.sessionProvider,
                 result: execution.result
             });
             slot.active = null;
@@ -620,4 +632,4 @@ class Sessions {
         }
     }
 }
-module.exports = { Sessions };
+module.exports = { Sessions, sessionProviderOf };

@@ -12,22 +12,31 @@ API failures record the operation and HTTP status without exposing credentials.
 Permanent permission errors or unavailable GitHub service still need recovery;
 they cannot be solved by asking the model to rewrite a valid review.
 
-Start the normal distributed worker with `--review-codex` to offer source-only Codex reviews as well as tests:
+Start the normal distributed worker with `--review-codex` or `--review-claude` to offer source-only reviews as well as tests:
 
 ```sh
 yarn test:parallel:server --name worker-one --review-codex
 yarn test:parallel:server --name worker-one --review-codex gpt-6-astra --review-effort medium
+yarn test:parallel:server --name worker-one --review-claude
+yarn test:parallel:server --name worker-one --review-claude claude-opus-5-5 --review-effort high
 ```
 
-`--review-codex [model]` selects the Codex model (default `gpt-6-astra`); `--review-effort <effort>` is passed to Codex as the reasoning effort (default `low`) and requires `--review-codex`. Both are worker settings: change them by restarting the worker, not by pushing. CI requests do not carry or check them.
+`--review-codex [model]` reviews with Codex (default model `gpt-6-astra`); `--review-claude [model]` reviews with Claude Code (default model `claude-opus-5-5`). A worker offers one provider. `--review-effort <effort>` is passed to the selected CLI as its reasoning effort (default `low`; Claude accepts `low`, `medium`, `high`, `xhigh` and `max`). These are worker settings: change them by restarting the worker, not by pushing. CI accepts either provider and does not check the model or effort.
+
+Both providers get the same skills, instructions, source tools, validation and publication. Only the model behind the review differs. A PR's saved conversation continues only with the provider that created it; after a provider switch the next review starts a new conversation seeded with the saved findings.
 
 Keep your existing worker flags and environment. The worker uses the same identity, `SCP_TEST_POOL_SECRET`, authentication, authorization policy and connection lifecycle. No separate review server, JSON configuration, secret or operating-system user is required. Review clients derive a distinct transport identity as described below. When the worker permits unlisted authenticated orchestrators, the review handler does too. Strict allowlists must authorize that derived review key before the service can be reached.
 
 ## Worker prerequisites and storage
 
-Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.156.1`, requests the configured model and effort (default `gpt-6-astra` at `low`), fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
+Run the worker as the user whose review CLI is installed and logged in. CLI versions are recorded in each result's `runtime` (for example `codex-0.156.1` or `claude-2.1.280`), not enforced; the adapters were last tested with Codex CLI `0.156.1` and Claude Code `2.1.280`.
 
-Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution receives only the approved source/public-read tools; the server persists its returned report. Application execution, tests and direct publication remain disabled.
+- **Codex:** `codex` must be on `PATH`. The adapter requests the configured model and effort, fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. The worker passes only `PATH`, `HOME` and optional `CODEX_HOME`.
+- **Claude:** `claude` must be on `PATH` and logged in with a claude.ai subscription (`claude auth status` shows `authMethod: claude.ai`). The worker passes only `PATH`, `HOME` and optional `CLAUDE_CONFIG_DIR`, never an API key. Each review runs `claude -p` with no built-in tools, no settings files, skills, plugins or user MCP servers, and only the worker source tools, served in-band over the CLI's stream-JSON protocol. A session exposing any other tool, or any CLI permission request, stops the review. An unknown model fails at the first turn.
+
+Missing CLI, unavailable model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback.
+
+Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native session files remain in the CLI's own home (Codex home, or `~/.claude/projects` for Claude); the registry records the exact native session IDs it owns and which provider owns each. This uses the worker's operating-system identity, not a separate security boundary. Model execution receives only the approved source/public-read tools; the server persists its returned report. Application execution, tests and direct publication remain disabled.
 
 ## Discovery and dispatch
 
@@ -83,8 +92,8 @@ In Settings → Actions → General → Workflow permissions, enable **Allow Git
 ## First live run
 
 1. Commit the implementation. Update the worker's checkout to the same bot revision used by the PR. Install its normal dependencies.
-2. In the worker's normal login environment, check `codex --version` and `codex login status`. The adapter currently expects `codex-cli 0.156.1` and ChatGPT login with Astra access.
-3. Restart the existing worker command with `--review-codex` added (optionally a model and `--review-effort`). Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
+2. In the worker's normal login environment, check `codex --version` and `codex login status` (ChatGPT login), or `claude --version` and `claude auth status` (claude.ai login).
+3. Restart the existing worker command with `--review-codex` or `--review-claude` added (optionally a model and `--review-effort`). Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
 4. Enable GitHub Actions approval as described above. Keep the existing CI pool/orchestrator secrets.
 5. Push to the existing same-repository implementation PR. A comment alone does not start review. A manual workflow rerun uses its original event head and skips if that head is now stale.
 6. Inspect `review-model` and `review-publish` in the separate PR Review Bot workflow. Confirm publication for the latest SHA and the service's confirmed receipt. Fix a finding and push again to exercise continued review and resolution.
