@@ -43,6 +43,15 @@ Do not account separately for bot notifications or repeat finding prose here.
 The worker derives finding accounting from dispositions and binds discussion
 revisions from actual public reads; never calculate or copy hashes.
 
+Decide third-party threads from the code and the entire current conversation,
+just like bot findings. Give every substantive reply a disposition. Use fixed,
+disagreement or no-action with an evidence-backed reason when nothing remains;
+use continued and link a finding when work remains. A response alone does not
+mean resolved: link its finding, or choose an explicit settled disposition.
+The publisher may resolve a third-party thread only when all current replies
+have settled decisions. General comments stay on GitHub; their dispositions
+and linked findings track whether anything remains actionable.
+
 Finish with this short private completion section (no per-file inventory):
 
     ## Review completion
@@ -56,9 +65,9 @@ Use `Complete: no` and list unfinished source/discussion surfaces in `Missing`
 when applicable. Lists use `; `, or `none`. Only claim lenses and behaviors
 actually inspected. Unknown resolution flags and missing/pending runtime checks
 belong in `Verification missing`, not `Missing`. Never run or wait for tests.
-Recommendation defaults to comment. An optional `Recommendation: approve` is
-allowed only when the existing complete-evidence and resolved-findings policy
-is satisfied; the publisher independently enforces that policy.
+Do not decide PR approval. Recommendation defaults to comment; legacy
+recommendations are ignored for approval. Final CI jobs deterministically check
+confirmed resolution, fresh discussion, the current head and successful CI.
 No publishing dashboard or certainty percentages.
 
 On repair, correct the saved document using specific validation feedback.

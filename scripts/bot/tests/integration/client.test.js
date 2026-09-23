@@ -21,13 +21,14 @@ const { callService } = require("../../client");
 const { clientSeed } = require("../../identity");
 const { DEFAULTS } = require("../../config");
 const { request, result } = require("../fixtures/records");
-async function fixture(body) {
+async function fixture(body, identityRun = {}) {
     const network = await createNetwork(),
         root = await fs.mkdtemp(path.join(os.tmpdir(), "review-client-"));
     const secret = "local-client-fixture",
         originalSeed = crypto.randomBytes(32).toString("hex"),
         seed = clientSeed({
-            SCP_TEST_ORCHESTRATOR_SEED: originalSeed
+            SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
+            ...identityRun
         }),
         key = keyPairFromSeed(seed);
     const keys = derivePoolKeys(secret);
@@ -103,6 +104,224 @@ async function fixture(body) {
     }
 }
 describe("review client visible activity", function () {
+    it("runs the final approval CLI from a different CI run using the artifact producer identity and durable worker receipt", async function () {
+        await fixture(
+            async ({ options, serve, input, originalSeed, network }) => {
+                await options.dht.destroy({ force: true });
+                const { ReviewService } = require("../../server");
+                const { digest } = require("../../data");
+                const { binding } = require("../../protocol");
+                const { runApprovalCli } = require("../fixtures/client-cli");
+                const {
+                    RecordedGitHub,
+                    observation
+                } = require("../fixtures/github");
+                const service = new ReviewService({
+                    stateRoot: path.join(options.stateRoot, "worker")
+                });
+                Object.assign(service, {
+                    skillDigest: input.skillDigest,
+                    botRevision: input.botRevision,
+                    policyDigest: input.policyDigest
+                });
+                await service.sessions.initialize();
+                let executions = 0,
+                    statusReads = 0;
+                const generated = await service.sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => {
+                        executions++;
+                        return result(input);
+                    },
+                    async () => true
+                );
+                await service.publications.save(input, digest({ states: [] }), [
+                    {
+                        version: 1,
+                        repositoryId: input.repository.id,
+                        pr: input.pr,
+                        head: input.head,
+                        round: 1,
+                        status: "complete",
+                        findings: [],
+                        actions: [],
+                        approvalEvidence: {
+                            executionId: generated.executionId,
+                            complete: true,
+                            accounted: true,
+                            threadsResolved: true,
+                            accounting: []
+                        }
+                    }
+                ]);
+                await service.sessions.acknowledge(
+                    input,
+                    generated.executionId,
+                    {
+                        version: 1,
+                        binding: binding(input),
+                        kind: "review",
+                        complete: true,
+                        round: 1,
+                        actions: []
+                    }
+                );
+                serve((connection, message) => {
+                    assert.equal(message.operation, "publication");
+                    statusReads++;
+                    return service.handle(
+                        connection,
+                        message.operation,
+                        message.value,
+                        message.requestId,
+                        message.attemptId
+                    );
+                });
+                const prefix = "/repos/" + input.repository.name;
+                const runs = [];
+                for (const [workflow, names, id] of [
+                    [
+                        "ci.yml",
+                        ["review-bot-tests", "spec", "test", "browser"],
+                        99
+                    ],
+                    [
+                        "review.yml",
+                        ["review-model", "review-publish"],
+                        input.run.id
+                    ]
+                ]) {
+                    runs.push(
+                        {
+                            path:
+                                prefix +
+                                "/actions/workflows/" +
+                                workflow +
+                                "/runs?event=pull_request&head_sha=" +
+                                input.head +
+                                "&per_page=100&page=1",
+                            response: {
+                                workflow_runs: [
+                                    {
+                                        id,
+                                        run_attempt: 1,
+                                        head_sha: input.head,
+                                        head_repository: input.repository,
+                                        pull_requests: [{ number: input.pr }]
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            path:
+                                prefix +
+                                "/actions/runs/" +
+                                id +
+                                "/jobs?filter=latest&per_page=100&page=1",
+                            response: {
+                                jobs: names.map((name, index) => ({
+                                    id: id * 100 + index,
+                                    name,
+                                    status: "completed",
+                                    conclusion: "success",
+                                    run_attempt: 1
+                                }))
+                            }
+                        }
+                    );
+                }
+                const wire = new RecordedGitHub([
+                    {
+                        path: "/users/github-actions%5Bbot%5D",
+                        response: {
+                            id: 9,
+                            login: "github-actions[bot]",
+                            type: "Bot"
+                        }
+                    },
+                    ...runs,
+                    ...structuredClone(runs),
+                    ...observation(input),
+                    {
+                        path: prefix + "/pulls/" + input.pr + "/reviews",
+                        method: "POST",
+                        inspect: (body) => assert.equal(body.event, "APPROVE"),
+                        response: { id: 80 }
+                    }
+                ]);
+                const eventPath = path.join(options.stateRoot, "event.json");
+                await fs.writeFile(
+                    eventPath,
+                    JSON.stringify({
+                        repository: {
+                            id: input.repository.id,
+                            full_name: input.repository.name
+                        },
+                        pull_request: {
+                            number: input.pr,
+                            head: {
+                                sha: input.head,
+                                repo: { id: input.repository.id }
+                            }
+                        }
+                    })
+                );
+                try {
+                    await runApprovalCli(
+                        {
+                            GITHUB_EVENT_PATH: eventPath,
+                            GITHUB_TOKEN: "recorded",
+                            GITHUB_ACTIONS: "true",
+                            GITHUB_RUN_ID: "99",
+                            GITHUB_RUN_ATTEMPT: "1",
+                            GITHUB_REPOSITORY_ID: String(input.repository.id),
+                            SCP_TEST_POOL_SECRET: options.secret,
+                            SCP_TEST_ORCHESTRATOR_SEED: originalSeed,
+                            SCP_REVIEW_CLIENT_STATE: path.join(
+                                options.stateRoot,
+                                "approval"
+                            )
+                        },
+                        {
+                            network,
+                            serverKey: options.serverKey,
+                            exchange: wire.exchange.bind(wire),
+                            download(command, args) {
+                                assert.equal(command, "gh");
+                                assert.equal(args[2], String(input.run.id));
+                                assert.equal(
+                                    args[args.indexOf("--name") + 1],
+                                    "review-1-1-result"
+                                );
+                                const directory =
+                                    args[args.indexOf("--dir") + 1];
+                                const syncFs = require("node:fs");
+                                syncFs.writeFileSync(
+                                    path.join(directory, "request.json"),
+                                    JSON.stringify(input)
+                                );
+                                syncFs.writeFileSync(
+                                    path.join(directory, "result.json"),
+                                    JSON.stringify(generated)
+                                );
+                            }
+                        }
+                    );
+                    assert.equal(executions, 1);
+                    assert.equal(statusReads, 2);
+                    wire.done();
+                } finally {
+                    await service.sessions.close();
+                }
+            },
+            {
+                GITHUB_REPOSITORY_ID: "1",
+                GITHUB_RUN_ID: "1",
+                GITHUB_RUN_ATTEMPT: "1"
+            }
+        );
+    });
     it("replays the interactive publication save after a lost acknowledgement without appending another round", async function () {
         await fixture(async ({ options, serve, input }) => {
             const { ReviewService } = require("../../server");

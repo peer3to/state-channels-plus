@@ -97,9 +97,16 @@ class GitHubWriter {
     }
     async api(suffix, { method = "GET", body, allowMissing = false } = {}) {
         check(
-            /^\/(?:pulls|issues)\/[1-9][0-9]*(?:\/(?:comments|reviews)(?:\/[1-9][0-9]*(?:\/(?:dismissals|replies))?)?)?(?:\?per_page=100&page=[1-9][0-9]*)?$/.test(
-                suffix
-            ) ||
+            (method === "GET" &&
+                (/^\/actions\/workflows\/(?:ci|review)\.yml\/runs\?event=pull_request&head_sha=[a-f0-9]{40}&per_page=100&page=[1-9][0-9]*$/.test(
+                    suffix
+                ) ||
+                    /^\/actions\/runs\/[1-9][0-9]*\/jobs\?filter=latest&per_page=100&page=[1-9][0-9]*$/.test(
+                        suffix
+                    ))) ||
+                /^\/(?:pulls|issues)\/[1-9][0-9]*(?:\/(?:comments|reviews)(?:\/[1-9][0-9]*(?:\/(?:dismissals|replies))?)?)?(?:\?per_page=100&page=[1-9][0-9]*)?$/.test(
+                    suffix
+                ) ||
                 /^\/issues\/comments\/[1-9][0-9]*$/.test(suffix) ||
                 /^\/collaborators\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/permission$/.test(
                     suffix
@@ -262,18 +269,26 @@ class GitHubWriter {
         } while (cursor);
         return threads;
     }
-    async setResolved(thread, resolved, observations) {
+    async setResolved(thread, resolved, observations, decisions) {
         const known = observations.threads.find(
             (item) => item.id === thread.id
         );
         check(
             known &&
-                observations.inline.some(
+                (observations.inline.some(
                     (comment) =>
                         comment.user?.id === this.botId &&
                         comment.user.type === "Bot" &&
                         known.comments.nodes[0]?.databaseId === comment.id
-                ),
+                ) ||
+                    (resolved &&
+                        decisions &&
+                        require("./review-decisions").threadSettled(
+                            known,
+                            observations,
+                            decisions,
+                            this.botId
+                        ))),
             "UNAUTHORIZED"
         );
         if (known.isResolved === resolved)

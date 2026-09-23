@@ -58,3 +58,44 @@ async function configuredOwner(name, argv, env, options) {
     return module.exports;
 }
 module.exports = { runClientCli, configuredOwner };
+
+// Real approval CLI with only GitHub/download and discovery boundaries recorded.
+async function runApprovalCli(env, { exchange, download, network, serverKey }) {
+    const filename = path.resolve(__dirname, "../../final-approval.js");
+    const load = createRequire(filename);
+    const localRequire = (name) => {
+        if (name === "node:child_process")
+            return { ...load(name), execFileSync: download };
+        if (name === "./github-write") {
+            const owner = load(name);
+            return {
+                ...owner,
+                actionsBotId: (token) => owner.actionsBotId(token, exchange),
+                GitHubWriter: class extends owner.GitHubWriter {
+                    constructor(input, options) {
+                        super(input, { ...options, exchange });
+                    }
+                }
+            };
+        }
+        if (name === "./client")
+            return {
+                ...load(name),
+                callService: (args) =>
+                    load(name).callService({
+                        ...args,
+                        serverKey,
+                        dht: network.node()
+                    })
+            };
+        return load(name);
+    };
+    const module = { exports: {} };
+    const source = await fs.readFile(filename, "utf8");
+    vm.runInThisContext(
+        "(function(require,module,process){" + source + "\n})",
+        { filename }
+    )(localRequire, module, { env });
+    return module.exports.main();
+}
+module.exports.runApprovalCli = runApprovalCli;

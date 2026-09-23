@@ -11,6 +11,33 @@ const source = read("review.yml");
 const review = YAML.parse(source);
 const ci = YAML.parse(read("ci.yml"));
 describe("review CI workflow", function () {
+    it("runs the same serialized approval gate after both independent workflows without a default-branch trigger", function () {
+        assert.deepEqual(ci.jobs.approve.needs, [
+            "review-bot-tests",
+            "spec",
+            "test",
+            "browser"
+        ]);
+        assert.deepEqual(review.jobs.approve.needs, [
+            "review-model",
+            "review-publish"
+        ]);
+        assert.deepEqual(
+            ci.jobs.approve.concurrency,
+            review.jobs.approve.concurrency
+        );
+        for (const workflow of [ci, review]) {
+            assert.equal(workflow.on.workflow_run, undefined);
+            assert.equal(
+                workflow.jobs.approve.steps.at(-1).run,
+                "node scripts/bot/final-approval.js"
+            );
+            assert.equal(
+                workflow.jobs.approve.permissions["pull-requests"],
+                "write"
+            );
+        }
+    });
     it("runs ordinary gates independently and serializes only distributed tests", function () {
         assert.equal(ci.concurrency, undefined);
         for (const name of ["spec", "test", "browser", "review-bot-tests"]) {
@@ -37,6 +64,7 @@ describe("review CI workflow", function () {
             "reopened"
         ]);
         assert.deepEqual(Object.keys(review.jobs), [
+            "approve",
             "review-model",
             "review-publish"
         ]);
@@ -105,7 +133,7 @@ describe("review CI workflow", function () {
             assert.equal(job.env, undefined);
             assert.equal(
                 job.permissions["pull-requests"] === "write",
-                name === "review-publish"
+                name === "review-publish" || name === "approve"
             );
             assert.equal(
                 job.permissions.issues === "write",

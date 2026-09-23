@@ -185,7 +185,24 @@ sibling findings stay visible. Recurrence restores the finding in place. Ambiguo
 ownership/boundaries fail closed. Human-decision labels are advisory and follow the
 same evidence-based reassessment and resolution rules as other findings.
 
-The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval has a metadata-only body; it requires complete evidence and resolved findings, not merely green CI. A comment alone starts no run.
+The reviewer inspects source and current discussion and decides which findings
+remain and which are resolved. That includes third-party threads: evidence from
+code and replies is sufficient; no special consent gate applies. The publisher
+resolves such a thread only when all its current substantive replies have settled,
+revision-bound decisions. General comments are retained, with their dispositions
+and linked findings recorded privately on the server.
+
+Both `ci.yml` and `review.yml` end with an `approve` job using the same
+deterministic gate. This works on PR branches without a workflow on `master`.
+The first finisher defers if the other workflow is still running. The last
+finisher checks successful substantive jobs in both workflows, ignoring the
+approval jobs themselves. A shared per-PR concurrency group prevents duplicate
+approval writes. The gate reads the server's confirmed publication receipt and
+`everythingResolved` state, then rechecks current GitHub discussion and head.
+New or edited discussion, an open thread, an open finding, incomplete publication,
+or unsuccessful CI prevents approval. It never calls the model. Approval has a
+metadata-only body; the bot never merges. A comment alone starts no run, so new
+discussion requires another review before approval.
 
 Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Review retrieval has no cumulative request, page or byte cap; zero in those configured limits means unlimited. Counters remain recorded. Progress and reconnect do not reset the model timeout. Missing evidence prevents approval.
 
@@ -201,7 +218,8 @@ replace the controller policy.
 
 Source-review completion is separate from runtime verification. Missing live
 acceptance or CI evidence goes in `coverage.verificationMissing`: findings remain
-publishable and approval is blocked. Passive limitations stay in metadata, not
+publishable; the final gate relies on actual CI results, not model verification
+claims or recommendations. Passive limitations stay in metadata, not
 public status comments. Concrete coverage defects use ordinary stable finding IDs.
 Publication state is persisted privately by the worker in its per-PR publication
 journal beside the saved reports and conversation records. Authenticated CI reads

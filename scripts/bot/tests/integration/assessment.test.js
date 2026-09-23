@@ -404,6 +404,141 @@ async function unchangedNextHead(human, tree) {
     );
 }
 describe("assessment GitHub lifecycle", function () {
+    it("resolves third-party discussion from the saved decisions and confirms it without approving", async function () {
+        const { sourceRevision } = require("../../reconcile");
+        const { reviewStatus } = require("../../approval");
+        const wire = wireFixture();
+        wire.comments.splice(0);
+        wire.reviews.splice(0);
+        wire.inline.push(
+            {
+                id: 50,
+                user: { id: 7, type: "User" },
+                body: "Please verify recovery.",
+                html_url:
+                    "https://github.com/" +
+                    wire.input.repository.name +
+                    "/pull/6#discussion_r50"
+            },
+            {
+                id: 51,
+                in_reply_to_id: 50,
+                user: { id: 8, type: "User" },
+                body: "And deadline preservation.",
+                html_url:
+                    "https://github.com/" +
+                    wire.input.repository.name +
+                    "/pull/6#discussion_r51"
+            }
+        );
+        const output = result(wire.input, {
+            accounting: wire.inline.map((item) => ({
+                sourceId: "inline:" + item.id,
+                sourceRevision: sourceRevision(item),
+                disposition: "fixed",
+                response: "Verified the implementation and regression.",
+                findingId: null,
+                humanAssessment: null
+            }))
+        });
+        const store = publicationStore();
+        const publisher = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: wire.exchange
+            }),
+            { eligible: true },
+            store
+        );
+        const published = await publisher.publish(output);
+        assert.equal(published.status, "complete");
+        assert.equal(wire.resolved.has("thread-50"), true);
+        assert.ok(
+            published.receipt.actions.some(
+                (action) => action.kind === "resolve" && action.id === 50
+            )
+        );
+        const state = (await store.load(wire.input)).states.at(-1);
+        assert.equal(
+            reviewStatus(
+                wire.input,
+                output.executionId,
+                state,
+                published.receipt
+            ).everythingResolved,
+            true
+        );
+        assert.equal(wire.reviews.length, 0);
+        await publisher.publish(output);
+        assert.equal(
+            wire.calls.filter((call) =>
+                call.body?.query?.startsWith("mutation ")
+            ).length,
+            1
+        );
+    });
+    it("does not resolve a third-party thread when a reply arrives immediately before resolution", async function () {
+        const { sourceRevision } = require("../../reconcile");
+        const wire = wireFixture();
+        wire.comments.splice(0);
+        wire.reviews.splice(0);
+        const comment = {
+            id: 50,
+            user: { id: 7, type: "User" },
+            body: "Concern",
+            html_url:
+                "https://github.com/" +
+                wire.input.repository.name +
+                "/pull/6#discussion_r50"
+        };
+        wire.inline.push(comment);
+        const output = result(wire.input, {
+            accounting: [
+                {
+                    sourceId: "inline:50",
+                    sourceRevision: sourceRevision(comment),
+                    disposition: "fixed",
+                    response: "Verified source.",
+                    findingId: null,
+                    humanAssessment: null
+                }
+            ]
+        });
+        let observations = 0;
+        const store = publicationStore();
+        const publisher = new Publisher(
+            wire.input,
+            new GitHubWriter(wire.input, {
+                token: "recorded",
+                botId: 9,
+                exchange: async (url, options) => {
+                    if (
+                        new URL(url).pathname.endsWith("/pulls/6") &&
+                        ++observations === 5
+                    )
+                        wire.inline.push({
+                            ...comment,
+                            id: 51,
+                            in_reply_to_id: 50,
+                            body: "New concern"
+                        });
+                    return wire.exchange(url, options);
+                }
+            }),
+            { eligible: true },
+            store
+        );
+        await publisher.publish(output);
+        assert.ok(observations >= 5);
+        assert.equal(wire.resolved.size, 0);
+        assert.equal(
+            (await store.load(wire.input)).states.at(-1).approvalEvidence
+                .threadsResolved,
+            false
+        );
+    });
     it("keeps retained threads unresolved after deferring an operation even if final accounting becomes complete", async function () {
         const { wire, store } = retainedFixture();
         const old = readStates(wire.comments, wire.input, 9)[0];
@@ -1287,7 +1422,7 @@ describe("assessment GitHub lifecycle", function () {
             "complete"
         );
     });
-    it("stores clean approval state in the actual approval review without notification comments", async function () {
+    it("stores clean review evidence without publishing approval or notification comments", async function () {
         const wire = wireFixture();
         wire.comments.splice(0);
         wire.reviews.splice(0);
@@ -1306,18 +1441,18 @@ describe("assessment GitHub lifecycle", function () {
             "complete"
         );
         assert.equal(wire.comments.length, 0);
-        assert.equal(wire.reviews.length, 1);
-        assert.equal(
-            wire.reviews[0].body.replace(/<!--[\s\S]*?-->/g, "").trim(),
-            ""
-        );
+        assert.equal(wire.reviews.length, 0);
         assert.equal(
             (await publisher.store.load(wire.input)).states.at(-1).status,
             "complete"
         );
-        assert.ok(!wire.reviews[0].body.includes("peer3-review-state"));
+        assert.equal(
+            (await publisher.store.load(wire.input)).states.at(-1)
+                .approvalEvidence.complete,
+            true
+        );
         await publisher.publish(result(wire.input));
-        assert.equal(wire.reviews.length, 1);
+        assert.equal(wire.reviews.length, 0);
     });
     it("backs up an unmanaged assessment before creating a managed assessment", async function () {
         const root = await fs.mkdtemp(

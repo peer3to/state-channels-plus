@@ -21,6 +21,94 @@ const {
 } = require("../../../e2e-parallel/distributed/serverArgParser");
 
 describe("integrated worker review service", function () {
+    it("returns authenticated durable resolution status only after confirmed receipt without another model turn", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        const { digest } = require("../../data");
+        const { binding } = require("../../protocol");
+        const { Sessions } = require("../../sessions");
+        await executionFixture(async ({ service, connected, input }) => {
+            const connection = await connected;
+            const send = async (operation, value) => {
+                const response = once(connection, "payload");
+                await connection.send(
+                    operation,
+                    operation + "-status",
+                    input.attempt,
+                    value
+                );
+                const message = (await response)[0];
+                assert.notEqual(
+                    message.operation,
+                    "failure",
+                    JSON.stringify(message.value)
+                );
+                return message.value;
+            };
+            const generated = await send("request", input);
+            const state = {
+                version: 1,
+                repositoryId: input.repository.id,
+                pr: input.pr,
+                head: input.head,
+                round: 1,
+                status: "complete",
+                findings: [],
+                actions: [],
+                approvalEvidence: {
+                    executionId: generated.executionId,
+                    complete: true,
+                    accounted: true,
+                    threadsResolved: true,
+                    accounting: []
+                }
+            };
+            await send("publication", {
+                request: input,
+                executionId: generated.executionId,
+                previous: digest({ states: [] }),
+                states: [state]
+            });
+            const query = () =>
+                send("publication", {
+                    request: input,
+                    executionId: generated.executionId
+                });
+            assert.equal((await query()).approval.everythingResolved, false);
+            const receipt = {
+                version: 1,
+                binding: binding(input),
+                kind: "review",
+                complete: true,
+                round: 1,
+                actions: [],
+                dispositions: [],
+                mappings: {},
+                state: "complete"
+            };
+            await send("receipt", {
+                request: input,
+                executionId: generated.executionId,
+                receipt
+            });
+            const confirmed = (await query()).approval;
+            assert.equal(confirmed.everythingResolved, true);
+            assert.deepEqual(confirmed.run, input.run);
+            const previous = service.sessions;
+            service.sessions = new Sessions(previous.root, previous.limits);
+            await service.sessions.initialize();
+            try {
+                assert.deepEqual((await query()).approval, confirmed);
+                const files = await fs.readdir(service.config.runtimeRoot);
+                assert.equal(
+                    files.filter((file) => file.startsWith("started-")).length,
+                    1
+                );
+            } finally {
+                await service.sessions.close();
+                service.sessions = previous;
+            }
+        });
+    });
     it("rereads a controller-excluded thread after reopening and publishes revision-bound correction", async function () {
         const { executionFixture } = require("../fixtures/review-execution");
         const { resolvedThreads } = require("../../resolved-threads");

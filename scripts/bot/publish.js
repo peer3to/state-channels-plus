@@ -15,7 +15,7 @@ const {
     renderGeneralSections,
     safeText
 } = require("./review-format");
-const { canApprove } = require("./approval");
+const { threadSettled, resolutionEvidence } = require("./review-decisions");
 const { findingSource, wrapFinding } = require("./finding-source");
 const {
     stripState,
@@ -731,30 +731,50 @@ class Publisher {
                 };
             }
         }
-        if (
-            canApprove({
-                result: { ...result, findings: state.findings },
-                pull: beforeApproval.pull,
-                head: this.request.head,
-                botId: this.github.botId,
-                uncertain: false,
-                specApproved: this.policy.specApproved
-            })
-        ) {
-            const approveMarker = actionMarker(
-                this.request,
-                "approve",
-                state.round
-            );
-            const approval =
-                findAction(beforeApproval, approveMarker, this.github.botId) ||
-                (await this.github.approve(approveMarker));
-            state.actions.push({
-                kind: "approve",
-                id: approval.id,
-                url: approval.html_url
-            });
+        // Third-party closure uses the same revision-bound review decisions.
+        let resolvedExternal = false;
+        for (const thread of beforeApproval.threads.filter(
+            (item) =>
+                !item.isResolved &&
+                threadSettled(item, beforeApproval, result, this.github.botId)
+        )) {
+            const fresh = await this.observe();
+            fresh.findings = current.findings;
+            const latest = fresh.threads.find((item) => item.id === thread.id);
+            if (
+                !latest ||
+                latest.isResolved ||
+                missingAccounting(
+                    accountingSet(fresh, this.github.botId),
+                    result
+                ).length
+            )
+                continue;
+            if (threadSettled(latest, fresh, result, this.github.botId)) {
+                await this.github.setResolved(latest, true, fresh, result);
+                const root = fresh.inline.find(
+                    (item) => item.id === latest.comments.nodes[0].databaseId
+                );
+                state.actions.push({
+                    kind: "resolve",
+                    id: root.id,
+                    url: root.html_url
+                });
+                resolvedExternal = true;
+            }
         }
+        if (resolvedExternal) beforeApproval = await this.observe();
+        beforeApproval.findings = current.findings;
+        state.approvalEvidence = resolutionEvidence(
+            result,
+            beforeApproval,
+            this.github.botId
+        );
+        state.approvalEvidence.accounting = result.accounting.map((entry) => ({
+            ...entry,
+            findingId: state.mappings[entry.findingId] || entry.findingId
+        }));
+        // Approval is exclusively owned by the final cross-workflow gate.
         state.status = "complete";
         await this.saveState(state);
         return {
@@ -795,17 +815,12 @@ async function main() {
         token: process.env.GITHUB_TOKEN,
         botId: await actionsBotId(process.env.GITHUB_TOKEN)
     });
-    const {
-        generateAuditSummary
-    } = require("../../docs/spec/tools/generate-audit-summary");
-    const specApproved = generateAuditSummary().issueCount === 0;
     const { withPublicationStore } = require("./publication-store");
     const owner = new Publisher(
         request,
         github,
         {
             eligible: process.env.REVIEW_ELIGIBLE === "true",
-            specApproved,
             repoRoot: process.cwd()
         },
         undefined,

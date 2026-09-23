@@ -242,7 +242,31 @@ class ReviewService {
                           );
                 await connection.send("acknowledgement", requestId, attemptId, {
                     accepted: true,
-                    publication
+                    publication,
+                    ...(value.states === undefined
+                        ? {
+                              approval: require("./approval").reviewStatus(
+                                  input,
+                                  generated.executionId,
+                                  publication.states.at(-1),
+                                  await fs
+                                      .readFile(
+                                          await ownedPath(
+                                              this.sessions.root,
+                                              `${input.repository.id}-${input.pr}-receipt-${input.attempt}.json`,
+                                              true
+                                          ),
+                                          "utf8"
+                                      )
+                                      .then(JSON.parse)
+                                      .catch((error) => {
+                                          if (error.code === "ENOENT")
+                                              return null;
+                                          throw error;
+                                      })
+                              )
+                          }
+                        : {})
                 });
             } else if (operation === "correction") {
                 const result = await this.sessions.correct(

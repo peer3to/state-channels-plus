@@ -1,74 +1,160 @@
 const assert = require("node:assert/strict");
-const { canApprove } = require("../../approval");
+const { canApprove, reviewStatus } = require("../../approval");
+const { resolutionEvidence, threadSettled } = require("../../review-decisions");
+const { sourceRevision } = require("../../reconcile");
 const { request, result } = require("../fixtures/records");
-function state(overrides = {}) {
+function fixture() {
     const input = request();
-    return {
-        result: result(input),
+    const report = result(input, { recommendation: "comment" });
+    report.coverage.verificationMissing = ["Tests are CI-owned"];
+    const observations = {
         pull: {
             state: "open",
             draft: false,
             head: { sha: input.head },
             user: { id: 7 }
         },
-        head: input.head,
-        botId: 9,
-        uncertain: false,
-        specApproved: true,
-        ...overrides
+        findings: [],
+        threads: [],
+        inline: [],
+        comments: [],
+        reviews: []
     };
+    const state = {
+        head: input.head,
+        round: 1,
+        status: "complete",
+        findings: [],
+        approvalEvidence: resolutionEvidence(report, observations, 9)
+    };
+    const receipt = { complete: true, kind: "review", round: 1 };
+    const status = () =>
+        reviewStatus(input, report.executionId, state, receipt);
+    const allowed = () =>
+        canApprove({
+            status: status(),
+            observations,
+            head: input.head,
+            botId: 9,
+            ciPassed: true
+        });
+    return { input, report, observations, state, receipt, status, allowed };
 }
-describe("review advisory approval", function () {
-    it("blocks approval for a complete source review with runtime verification gaps", function () {
-        const input = state();
-        input.result.coverage.verificationMissing = [
-            "Live acceptance not observed"
-        ];
-        assert.equal(canApprove(input), false);
-        input.result.coverage.verificationMissing = [];
-        assert.equal(canApprove(input), true);
+describe("deterministic review approval", function () {
+    it("approves a confirmed clean source review without model approval or runtime verification", function () {
+        const f = fixture();
+        assert.equal(f.allowed(), true);
+        assert.equal(
+            canApprove({
+                status: f.status(),
+                observations: f.observations,
+                head: f.input.head,
+                botId: 9,
+                ciPassed: false
+            }),
+            false
+        );
     });
-    it("permits a complete agent approval with current code and no open findings", function () {
-        assert.equal(canApprove(state()), true);
+    it("requires confirmed receipt, matching round and execution, complete evidence and closed findings", function () {
+        const f = fixture();
+        for (const [target, field, value] of [
+            [f.receipt, "complete", false],
+            [f.receipt, "round", 2],
+            [f.receipt, "kind", "notice"],
+            [f.state, "status", "partial"],
+            [f.state, "head", "b".repeat(40)],
+            [f.state.approvalEvidence, "executionId", "other"],
+            [f.state.approvalEvidence, "complete", false],
+            [f.state.approvalEvidence, "accounted", false],
+            [f.state.approvalEvidence, "threadsResolved", false]
+        ]) {
+            const old = target[field];
+            target[field] = value;
+            assert.equal(f.allowed(), false, field);
+            target[field] = old;
+        }
+        f.state.findings.push({
+            id: "F1",
+            status: "continued",
+            human: { required: true }
+        });
+        assert.equal(f.allowed(), false);
+        f.state.findings[0].status = "fixed";
+        assert.equal(f.allowed(), true);
     });
-    it("blocks missing spec approval", function () {
-        assert.equal(canApprove(state({ specApproved: false })), false);
+    it("blocks fresh or edited general discussion until its revision has a settled decision", function () {
+        const f = fixture();
+        const comment = { id: 20, user: { id: 7 }, body: "Is the race fixed?" };
+        f.observations.comments.push(comment);
+        assert.equal(f.allowed(), false);
+        const decision = {
+            sourceId: "comment:20",
+            sourceRevision: sourceRevision(comment),
+            disposition: "no-action",
+            response: "Yes, verified in source.",
+            findingId: null
+        };
+        f.state.approvalEvidence.accounting.push(decision);
+        assert.equal(f.allowed(), true);
+        decision.disposition = "response";
+        assert.equal(f.allowed(), false);
+        decision.findingId = "F1";
+        f.state.findings.push({ id: "F1", status: "fixed" });
+        assert.equal(f.allowed(), true);
+        comment.body += " A new concern.";
+        assert.equal(f.allowed(), false);
     });
-    it("treats advisory Human labels like ordinary findings and still blocks uncertain actions", function () {
-        const input = state();
-        input.result.findings = [
-            { status: "fixed", human: { required: true } }
-        ];
-        assert.equal(canApprove(input), true);
-        input.result.findings[0].status = "continued";
-        assert.equal(canApprove(input), false);
-        assert.equal(canApprove(state({ uncertain: true })), false);
+    it("blocks reopened threads, stale heads, drafts, closed PRs and self approval", function () {
+        const f = fixture();
+        f.observations.threads.push({
+            isResolved: false,
+            comments: { nodes: [] }
+        });
+        assert.equal(f.allowed(), false);
+        f.observations.threads[0].isResolved = true;
+        assert.equal(f.allowed(), true);
+        for (const [target, field, value] of [
+            [f.observations.pull, "draft", true],
+            [f.observations.pull, "state", "closed"],
+            [f.observations.pull.head, "sha", "b".repeat(40)],
+            [f.observations.pull.user, "id", 9]
+        ]) {
+            const old = target[field];
+            target[field] = value;
+            assert.equal(f.allowed(), false);
+            target[field] = old;
+        }
     });
-    it("blocks incomplete context and retrieval failures", function () {
-        const input = state();
-        input.result.coverage.complete = false;
-        assert.equal(canApprove(input), false);
-        input.result.coverage.complete = true;
-        input.result.evidence.errors.push("unavailable");
-        assert.equal(canApprove(input), false);
-    });
-    it("blocks stale heads, drafts, closed PRs and the bot's own PR", function () {
-        const input = state();
-        input.pull.head.sha = "b".repeat(40);
-        assert.equal(canApprove(input), false);
-        input.pull.head.sha = input.head;
-        input.pull.draft = true;
-        assert.equal(canApprove(input), false);
-        input.pull.draft = false;
-        input.pull.state = "closed";
-        assert.equal(canApprove(input), false);
-        input.pull.state = "open";
-        input.pull.user.id = input.botId;
-        assert.equal(canApprove(input), false);
-    });
-    it("blocks actionable findings even when the model recommends approval", function () {
-        const input = state();
-        input.result.findings.push({ status: "continued" });
-        assert.equal(canApprove(input), false);
+    it("resolves third-party threads only with settled revision-bound decisions for every reply", function () {
+        const f = fixture();
+        const comment = { id: 20, user: { id: 7 }, body: "Concern" };
+        const reply = { id: 21, user: { id: 8 }, body: "Another concern" };
+        f.observations.inline.push(comment, reply);
+        const thread = {
+            comments: { nodes: [{ databaseId: 20 }, { databaseId: 21 }] }
+        };
+        const settled = () =>
+            threadSettled(thread, f.observations, f.report, 9);
+        for (const item of [comment, reply])
+            f.report.accounting.push({
+                sourceId: "inline:" + item.id,
+                sourceRevision: sourceRevision(item),
+                disposition: "fixed",
+                response: "Verified fix in source",
+                findingId: null
+            });
+        assert.equal(settled(), true);
+        f.report.accounting[1].disposition = "continued";
+        assert.equal(settled(), false);
+        f.report.accounting[1].disposition = "fixed";
+        reply.body += " edit";
+        assert.equal(settled(), false);
+        reply.body = "Another concern";
+        comment.user.id = 9;
+        assert.equal(
+            settled(),
+            false,
+            "bot-owned finding lifecycle remains authoritative"
+        );
     });
 });

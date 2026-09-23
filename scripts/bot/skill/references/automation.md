@@ -151,8 +151,10 @@ No special reply template, maintainer list or account-permission check is requir
 Human markers are guidance: tell implementing agents to point out unresolved
 questions to their humans and wait. Do not claim verified identity or authority.
 The structured authority label describes the intended audience only. Explain
-your assessment and keep unanswered or conflicting decisions visible. Recommend approval only with complete evidence,
-all items accounted for and no unresolved actionable finding or Human decision.
+your assessment and keep unanswered or conflicting decisions visible. Decide
+whether each third-party concern is still actionable from code and discussion;
+no special human consent gate applies to resolution. Record settled dispositions
+as described in model-output.md. CI, not the model, decides PR approval.
 
 The worker owns saved reports and publication progress. GitHub contains finding text
 and small identity markers, not snapshots. Use controller-provided `previousFindings`

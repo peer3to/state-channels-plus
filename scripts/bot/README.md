@@ -25,7 +25,8 @@ Human notes and selections, is preserved verbatim in
 | Source-only tools and public context | `source-tools.js`, `github-read.js` |
 | Pinned native session/process operations | `adapters/codex.js` |
 | CI-authenticated GitHub reads and every GitHub mutation | `github-write.js` |
-| Publication policy, private journal, reconciliation and advisory Human labels | `publish.js`, `publication-store.js`, `state.js`, `reconcile.js`, `approval.js` |
+| Publication policy, private journal, reconciliation and advisory Human labels | `publish.js`, `publication-store.js`, `state.js`, `reconcile.js`, `review-decisions.js` |
+| Confirmed resolution status and final cross-workflow approval | `approval.js`, `final-approval.js` |
 | Report parsing, diff targets and canonical Human rendering | `review-format.js` |
 | Result artifact validation and direct receipt delivery | `handoff.js`, `persist.js` |
 | Manifest-bound local lifecycle cleanup | `cleanup.js` |
@@ -36,7 +37,7 @@ The service/client/model dependency graph must not reach the CI mutation owner. 
 
 `repository` and `pr` select the configured public origin, PR owner and publication target. `head` pins Git preparation, native review and publication. `mergeBase` pins source comparison; `base` is provenance. `attempt`, `run`, `caller` and `mode` bind authenticated delivery, durable replay, CI-only correction and publication. `botRevision`, `skillDigest`, `policyDigest` and `runtime` must match the deployed service. `operations` and `readScope` limit review intent/tools and participate in the effective identity. The protocol rejects additional fields, including removed prior-state hints, arbitrary prompts, credentials, commands, URLs and paths.
 
-The service policy digest binds the checked-in review limits. Repository identity is bound separately in every request. Specification generators are excluded; current specification approval remains a separate CI publisher check.
+The service policy digest binds the checked-in review limits. Repository identity is bound separately in every request. Specification generators are excluded; the final approval gate requires the ordinary specification CI job to succeed.
 
 Source evidence retains raw response revision hashes and semantic context hashes. Only PR target-base SHA is removed from the latter. Evidence includes actual request/page/byte counts, configured limits, zero cache hits when no cache is used, pagination links, loaded-content availability and phase durations. A source marked unknown or an unfetched next page cannot support complete coverage. Evidence identity uses the latest observed revision per URL; it is not an atomic GitHub snapshot.
 
