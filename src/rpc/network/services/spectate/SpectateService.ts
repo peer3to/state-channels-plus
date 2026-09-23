@@ -1,4 +1,5 @@
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -29,7 +30,7 @@ export interface SyncRequest {
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        Promise<boolean>
+        { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
 
     constructor(p2pManager: P2PManager) {
@@ -72,12 +73,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         });
         const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
-        if (this.inFlightByPeerAddress.has(normalizedPeerAddress)) {
-            this.logger.debug(
-                "spectateSync - sync already in-flight; ignoring",
-                { peerAddress: normalizedPeerAddress }
-            );
-            return false;
+        let inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
+        while (inFlight) {
+            const request = inFlight.request;
+            const coversRequest =
+                request.channelId === channelId &&
+                request.forkId === forkId &&
+                (request.blockHeight === blockHeight ||
+                    (request.blockHeight !== undefined &&
+                        blockHeight !== undefined &&
+                        request.blockHeight >= blockHeight));
+            const synced = await inFlight.result;
+            if (!synced || coversRequest) return synced;
+            inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
         const attempt = this.runSync(
@@ -85,47 +93,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             syncRequest,
             timeoutMs
         );
-        this.inFlightByPeerAddress.set(normalizedPeerAddress, attempt);
+        const entry = { request: syncRequest, result: attempt };
+        this.inFlightByPeerAddress.set(normalizedPeerAddress, entry);
         try {
             return await attempt;
         } finally {
             // A channel reset clears this map, and the next channel may have
             // registered its own sync to the same peer since: leave that one.
-            if (
-                this.inFlightByPeerAddress.get(normalizedPeerAddress) ===
-                attempt
-            )
+            if (this.inFlightByPeerAddress.get(normalizedPeerAddress) === entry)
                 this.inFlightByPeerAddress.delete(normalizedPeerAddress);
         }
-    }
-
-    /**
-     * Run one sync toward the peer after any sync already in flight toward it
-     * has settled. `sync` answers an in-flight collision with `false` without
-     * cutting the peer; a caller that must know the peer was cut on `false`
-     * (the block queue's expiry probe) waits here instead of taking that
-     * answer, because the in-flight request need not cover its block.
-     */
-    public async syncAfterInFlight(
-        peerAddress: Address,
-        channelId: ChannelId,
-        forkId?: ForkId,
-        blockHeight?: number,
-        timeoutMs?: number
-    ): Promise<boolean> {
-        const normalizedPeerAddress = getChecksumAddress(peerAddress);
-        let inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
-        while (inFlight) {
-            await inFlight.catch(() => false);
-            inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
-        }
-        return await this.sync(
-            peerAddress,
-            channelId,
-            forkId,
-            blockHeight,
-            timeoutMs
-        );
     }
 
     private async runSync(
@@ -136,25 +113,45 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         // Captured before the request: a response applied after the runtime
         // left this channel must not write into the next one.
         const generation = this.p2pManager.stateManager.channelGeneration;
+        let response: { encodedSyncPayload: Bytes };
         try {
-            const { encodedSyncPayload } = await this.remoteRpc.spectateService
+            response = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
                 .request(normalizedPeerAddress, { timeoutMs });
-
+        } catch (error) {
+            // Silence, a refusal, or a lost transport is not proven
+            // misbehaviour: it spends the peer's shared retry bound.
+            this.logger.debug("spectateSync - request failed", {
+                peerAddress: normalizedPeerAddress,
+                error: errorMessage(error)
+            });
+            // A request for a channel the runtime has since left says nothing
+            // about the peer in the current one.
+            if (this.p2pManager.stateManager.isStaleChannelWork(generation)) {
+                return false;
+            }
+            this.p2pManager.disconnectConnection(
+                normalizedPeerAddress,
+                DisconnectPolicy.allowRetry()
+            );
+            return false;
+        }
+        try {
             return await this.applySyncResponse(
                 normalizedPeerAddress,
                 syncRequest,
-                encodedSyncPayload,
+                response.encodedSyncPayload,
                 generation
             );
         } catch (error) {
+            // A payload that cannot even be applied is Byzantine evidence.
             this.logger.debug("spectateSync - failed", {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
             return this.rejectSync(
                 normalizedPeerAddress,
-                "sync request failed",
+                "failed to apply",
                 generation
             );
         }
@@ -1271,7 +1268,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             reason
         });
-        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            peerAddress,
+            `sync payload rejected: ${reason}`
+        );
         return false;
     }
 }

@@ -5,6 +5,7 @@ import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import {
     deployFacets,
     type LocalStateMachineDeployer
@@ -77,6 +78,9 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { setImmediate } from "node:timers";
 import * as sinon from "sinon";
+
+// Peers booted together per batch in `setup` (see the comment there).
+export const DEFAULT_PEER_SETUP_CONCURRENCY = 1;
 
 // Matches hardhat.config.ts accounts.mnemonic so account N derives the same
 // address whether the chain is in-process, a slot node, or a harness-started one.
@@ -277,6 +281,9 @@ export class PeerTestHarness<
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
             initialBalance: options?.initialBalance || 500,
             stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
+            maxChannelParticipants:
+                options?.maxChannelParticipants ??
+                DEFAULT_MAX_CHANNEL_PARTICIPANTS,
             disputeExecutionGasLimit:
                 options?.disputeExecutionGasLimit ??
                 DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
@@ -308,11 +315,13 @@ export class PeerTestHarness<
         await this.deployContracts();
         const deployMs = Date.now() - deployStart;
 
-        // Peers are independent, so all boot in parallel by default. Consumers
-        // whose SDK peers each start CPU-heavy child workers can bound this to
-        // avoid starving the SDK event loops during simultaneous initialization.
+        // Peers are independent, but each one boots two worker threads that
+        // spend about a second of CPU loading the SDK, so booting every peer
+        // at once demands more cores than a shared farm host has and starves
+        // the SDK event loops during initialization. Two at a time spreads
+        // that burst; a test can raise or lower it through its options.
         const peerSetupConcurrency =
-            this.options.peerSetupConcurrency ?? numPeers;
+            this.options.peerSetupConcurrency ?? DEFAULT_PEER_SETUP_CONCURRENCY;
         if (
             !Number.isInteger(peerSetupConcurrency) ||
             peerSetupConcurrency < 1
@@ -427,6 +436,9 @@ export class PeerTestHarness<
         return async (signer) => {
             const deployedAddress = await deployLocalStateMachine({
                 signer,
+                maxChannelParticipants:
+                    this.options.maxChannelParticipants ??
+                    DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                 stateMachineGasLimit: this.options.stateMachineGasLimit!,
                 disputeExecutionGasLimit:
                     this.options.disputeExecutionGasLimit!,
@@ -467,6 +479,9 @@ export class PeerTestHarness<
                     tc: sortedTc,
                     sm: String(stateMachineGasLimit),
                     de: String(disputeExecutionGasLimit),
+                    maximum:
+                        this.options.maxChannelParticipants ??
+                        DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                     // Consumer-side identity (e.g. poker's maxPlayers): a
                     // stack built with different parameters must never be
                     // served from this cache.
@@ -518,6 +533,9 @@ export class PeerTestHarness<
                 const deployedAddress = await deployment.deployOnChainContracts(
                     {
                         signer: deployerSigner,
+                        maxChannelParticipants:
+                            this.options.maxChannelParticipants ??
+                            DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                         stateMachineGasLimit:
                             this.options.stateMachineGasLimit!,
                         disputeExecutionGasLimit:

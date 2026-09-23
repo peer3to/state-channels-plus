@@ -1,3 +1,4 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type StateManager from "@/stateManager";
 import { Status } from "@/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -746,6 +747,7 @@ describe("StateManager.resetChannel", function () {
                     await new Promise((resolve) => setTimeout(resolve, 0));
                     return {
                         bans,
+                        strikes: p2p.profileManager.getStrikes(args.peer),
                         blacklisted: p2p.isBlacklisted(args.peer)
                     };
                 } finally {
@@ -755,7 +757,11 @@ describe("StateManager.resetChannel", function () {
             { forkId: ethers.id("ack-fork"), peer: h.getPeer(0).address }
         );
 
-        expect(result).to.deep.equal({ bans: 0, blacklisted: false });
+        expect(result).to.deep.equal({
+            bans: 0,
+            strikes: 0,
+            blacklisted: false
+        });
     });
 
     it("records no verdict while the channel is being released", async function () {
@@ -795,6 +801,50 @@ describe("StateManager.resetChannel", function () {
             duringReset: false,
             afterReset: false
         });
+    });
+
+    it("records no suspension or retry strike while the channel is being released", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const drain = sm.stateChannelEventListener.drain.bind(
+                    sm.stateChannelEventListener
+                );
+                // Park the reset mid-flight and try to earn a strike and a
+                // suspension there.
+                let release: () => void = () => undefined;
+                const held = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                sm.stateChannelEventListener.drain = async () => {
+                    await held;
+                    return drain();
+                };
+                const reset = sm.resetChannel();
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                const p2p = sm.p2pManager;
+                p2p.disconnectConnection(args.struck, args.retry);
+                p2p.disconnectConnection(args.suspended, args.suspend);
+                release();
+                await reset;
+                sm.stateChannelEventListener.drain = drain;
+                return {
+                    strikes: p2p.profileManager.getStrikes(args.struck),
+                    suspended: p2p.isSuspended(args.suspended)
+                };
+            },
+            {
+                struck: h.getPeer(0).address,
+                suspended: h.getPeer(1).address,
+                // A bound of two keeps one recorded strike visible as a count.
+                retry: DisconnectPolicy.allowRetry(2),
+                suspend: DisconnectPolicy.SUSPEND
+            }
+        );
+
+        expect(result).to.deep.equal({ strikes: 0, suspended: false });
     });
 
     it("rejects a channel reset on a disposed runtime", async function () {

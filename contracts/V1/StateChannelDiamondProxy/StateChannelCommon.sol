@@ -249,6 +249,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return evidenceTime;
     }
 
+    function _getMaxChannelParticipants() internal view virtual returns (uint256) {
+        return maxChannelParticipants;
+    }
+
     function _getGasLimit() internal view virtual returns (uint256) {
         return gasLimit;
     }

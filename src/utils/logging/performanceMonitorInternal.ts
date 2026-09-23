@@ -18,6 +18,14 @@ export type EventLoopDelayDetails = {
     longTaskCount?: number;
     longTaskMean?: number;
     longTaskMax?: number;
+    /** Thread CPU time and run-queue wait over the interval (Linux only). */
+    cpuMs?: number;
+    runQueueWaitMs?: number;
+    /** Host-level stall counters over the interval (Linux main thread only). */
+    hostBusy?: number;
+    hostSteal?: number;
+    hostCpuPressureMs?: number;
+    cgroupThrottledMs?: number;
     delayErrorThresholdMs: number;
 };
 
@@ -36,6 +44,27 @@ export type PerformanceSample = {
     longTaskCount?: number;
     longTaskMean?: number;
     longTaskMax?: number;
+    /**
+     * Thread scheduler time over the interval, read from the kernel on Linux:
+     * CPU time actually consumed and time spent runnable but waiting for a
+     * CPU. Together with the delay they separate the thread's own work from
+     * host contention and from blocking waits.
+     */
+    cpuMs?: number;
+    runQueueWaitMs?: number;
+    /**
+     * Host-level view over the same interval, read once per process by the
+     * main thread on Linux: the share of all CPU time that was busy and the
+     * share stolen by a hypervisor (from /proc/stat), the kernel's CPU
+     * pressure-stall time (some task runnable but waiting, from
+     * /proc/pressure/cpu) and this cgroup's quota throttling. Together they
+     * say whether a run-queue wait came from a burst, from steal or from a
+     * quota, none of which a utilization average can show.
+     */
+    hostBusy?: number;
+    hostSteal?: number;
+    hostCpuPressureMs?: number;
+    cgroupThrottledMs?: number;
 };
 
 /**
@@ -68,7 +97,20 @@ export function reportPerformanceSample(
     options: LoggerPerformanceMonitorOptions,
     runtime: "node" | "browser"
 ): EventLoopDelayDetails | undefined {
-    const { dMean, d50, d90, d99, dMax, utilization } = sample;
+    const {
+        dMean,
+        d50,
+        d90,
+        d99,
+        dMax,
+        utilization,
+        cpuMs,
+        runQueueWaitMs,
+        hostBusy,
+        hostSteal,
+        hostCpuPressureMs,
+        cgroupThrottledMs
+    } = sample;
     const longTaskMax = sample.longTaskMax ?? 0;
     const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
     const utilizationWarnThreshold = options.utilizationWarnThreshold ?? 0.8;
@@ -94,7 +136,15 @@ export function reportPerformanceSample(
                   longTaskCount: sample.longTaskCount ?? 0,
                   longTaskMean: sample.longTaskMean ?? 0,
                   longTaskMax
-              })
+              }),
+        ...(cpuMs !== undefined && runQueueWaitMs !== undefined
+            ? { cpuMs, runQueueWaitMs }
+            : {}),
+        ...(hostBusy !== undefined && hostSteal !== undefined
+            ? { hostBusy, hostSteal }
+            : {}),
+        ...(hostCpuPressureMs !== undefined ? { hostCpuPressureMs } : {}),
+        ...(cgroupThrottledMs !== undefined ? { cgroupThrottledMs } : {})
     };
     const logFn = shouldWarn
         ? logger.warn.bind(logger)

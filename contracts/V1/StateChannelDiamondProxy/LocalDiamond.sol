@@ -46,7 +46,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
         uint256 _evidenceTime,
-        uint256 _disputeExecutionGasLimit
+        uint256 _disputeExecutionGasLimit,
+        uint256 _maxChannelParticipants
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -63,7 +64,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _agreementTime,
             _chainFallbackTime,
             _evidenceTime,
-            _disputeExecutionGasLimit
+            _disputeExecutionGasLimit,
+            _maxChannelParticipants
         )
     {}
 

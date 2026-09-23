@@ -6,6 +6,7 @@ import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import Storage from "@/storage";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import {
@@ -96,6 +97,10 @@ export class EventHandler {
             { taskName: "onChannelOpened.setGenesisState" }
         );
 
+        this.stateManager.membershipService.publishOnChainSnapshot(
+            stateSnapshot
+        );
+
         // This remains the single ethers-backed channel-event intake. After
         // this handler finishes mirror/state updates, the runtime publishes
         // the completed invocation on its typed event bus. Protocol services
@@ -122,6 +127,9 @@ export class EventHandler {
             coordinate.logIndex
         );
 
+        this.stateManager.membershipService.publishOnChainSnapshot(
+            stateSnapshot
+        );
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
     }
 
@@ -322,6 +330,7 @@ export class EventHandler {
         await this.stateManager.blockQueueManager.ingestBlockConfirmation(
             blockConfirmation,
             {
+                origin: BlockOrigin.CALLDATA,
                 onChainTimestamp: Number(timestamp),
                 validationStrategy: new CalldataCommittedStrategy(
                     this.stateManager.disputeManager,
@@ -736,6 +745,7 @@ export class EventHandler {
         participant: Address,
         timestamp: Timestamp
     ): Promise<void> {
+        this.stateManager.membershipService.observeOnChainSlash(participant);
         await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
             participant,
@@ -879,6 +889,7 @@ export class EventHandler {
             coordinate.blockNumber,
             coordinate.logIndex
         );
+        this.stateManager.membershipService.resetEligibility();
     }
 
     async onDisputeKilled(
@@ -888,6 +899,7 @@ export class EventHandler {
         disputeHash: Hash,
         blockTimestamp: Timestamp
     ): Promise<void> {
+        this.stateManager.membershipService.observeOnChainSlash(disputer);
         await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
             disputer,
@@ -965,7 +977,10 @@ export class EventHandler {
             coordinate.logIndex
         );
 
-        // Additional join-channel-specific handling can be placed here if required
+        // A delivered join event publishes eligibility before later gossip.
+        this.stateManager.membershipService.observeInboundMembership(
+            messageBlock
+        );
     }
 
     private async validateDisputeReductionAndChallenge(

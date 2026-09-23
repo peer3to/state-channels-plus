@@ -160,7 +160,25 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         channelId: Bytes,
         options: ConnectToChannelOptions | null = {}
     ): Promise<boolean> {
-        options ??= {};
+        try {
+            return await this.runConnectToChannel(channelId, options ?? {});
+        } catch (error) {
+            // An abort or disposal during the connect is the connect's
+            // outcome: the runtime is gone, so the answer is `false`, not the
+            // error a torn-down dependency raised on the way out.
+            if (!this.p2pManager.stateManager.isDisposed) throw error;
+            this.logger.debug("connectToChannel ended by runtime disposal", {
+                channelId: ethers.hexlify(channelId),
+                error: errorMessage(error)
+            });
+            return false;
+        }
+    }
+
+    private async runConnectToChannel(
+        channelId: Bytes,
+        options: ConnectToChannelOptions
+    ): Promise<boolean> {
         const normalizedChannelId = ethers.hexlify(channelId);
         if (!ethers.isHexString(normalizedChannelId, 32))
             throw new Error("Channel ID must be exactly 32 bytes");

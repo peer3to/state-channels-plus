@@ -2,6 +2,7 @@ import * as factory from "../factory";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { ForkId } from "@/types/types";
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -95,7 +96,7 @@ describe("Storage.clear", () => {
 
     it("drops queued blocks and their coordinate index", () => {
         const block = blockOnFork();
-        storage.queues.queueBlock(block);
+        storage.queues.queueBlock(block, { origin: BlockOrigin.CALLDATA });
         const queuedBefore = storage.queues.isBlockQueued(block);
 
         storage.clear();
@@ -281,6 +282,26 @@ describe("Storage.clear", () => {
             latestInboundHash: undefined,
             latestOutboundHash: undefined
         });
+    });
+
+    it("keeps recorded blacklist verdicts", () => {
+        const address = ethers.Wallet.createRandom().address;
+        storage.blacklist.record(address, "proven fault");
+
+        storage.clear();
+
+        expect(storage.blacklist.get(address)).to.deep.equal({
+            address,
+            reason: "proven fault"
+        });
+    });
+
+    it("rebuilds the queue with the contract's participant bound", () => {
+        const bounded = new Storage(2);
+
+        bounded.clear();
+
+        expect(bounded.queues.maxChannelParticipants).to.equal(2);
     });
 
     it("stays empty when cleared twice", () => {

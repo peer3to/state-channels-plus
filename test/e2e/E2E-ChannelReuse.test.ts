@@ -166,13 +166,20 @@ describe("E2E: Channel reuse", function () {
                 const isResponder = (address: unknown) =>
                     String(address).toLowerCase() ===
                     args.responder.toLowerCase();
-                p2p.disconnectConnection = (transport) => {
-                    if (isResponder(transport.peerAddress)) probe.cuts += 1;
-                    return cut(transport);
-                };
-                p2p.disconnectAndBlacklistPeerByEvmAddress = (address) => {
+                p2p.disconnectConnection = (peer, ...rest) => {
+                    const address =
+                        typeof peer === "object" && "peerAddress" in peer
+                            ? peer.peerAddress
+                            : peer;
                     if (isResponder(address)) probe.cuts += 1;
-                    return ban(address);
+                    return cut(peer, ...rest);
+                };
+                p2p.disconnectAndBlacklistPeerByEvmAddress = (
+                    address,
+                    reason
+                ) => {
+                    if (isResponder(address)) probe.cuts += 1;
+                    return ban(address, reason);
                 };
             },
             { responder }

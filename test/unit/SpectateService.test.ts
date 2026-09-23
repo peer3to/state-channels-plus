@@ -4,6 +4,7 @@ import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertConcurrentSyncWindowOverwrite,
+    assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
@@ -16,6 +17,25 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
+    it("concurrent identical sync requests share the completed result", async () => {
+        await assertConcurrentPinnedRequests(TestSession.getHarness(), "same");
+    });
+    it("a higher in-flight sync satisfies a lower requested height", async () => {
+        await assertConcurrentPinnedRequests(TestSession.getHarness(), "lower");
+    });
+    it("a higher requested height waits then runs its own pinned sync", async () => {
+        await assertConcurrentPinnedRequests(
+            TestSession.getHarness(),
+            "higher"
+        );
+    });
+    it("concurrent sync callers both receive a completed proof failure", async () => {
+        await assertConcurrentPinnedRequests(
+            TestSession.getHarness(),
+            "failure"
+        );
+    });
+
     it("a sync outcome from an earlier channel generation does not cut its responder", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
@@ -57,9 +77,10 @@ describe("Unit: SpectateService", function () {
             h.getPeer(2),
             async (sm, args) => {
                 const spectate = sm.p2pManager.localRpc.spectateService;
-                const inFlight: Map<string, Promise<boolean>> = spectate[
-                    "inFlightByPeerAddress"
-                ];
+                const inFlight: Map<
+                    string,
+                    { request: SyncRequest; result: Promise<boolean> }
+                > = spectate["inFlightByPeerAddress"];
                 const runSync = spectate["runSync"];
                 // Single-use hold: the old sync stays in flight until released.
                 let release!: () => void;
@@ -74,7 +95,10 @@ describe("Unit: SpectateService", function () {
                     const oldSync = spectate.sync(args.responder, sm.channelId);
                     // What a channel reset does, then a newer sync registers.
                     spectate.reset();
-                    const newer = Promise.resolve(true);
+                    const newer = {
+                        request: { channelId: sm.channelId },
+                        result: Promise.resolve(true)
+                    };
                     inFlight.set(args.responder, newer);
                     release();
                     await oldSync;

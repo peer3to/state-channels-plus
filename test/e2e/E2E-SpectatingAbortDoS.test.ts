@@ -171,7 +171,7 @@ describe("E2E: spectating strategy junk-block handling", function () {
     // supplier != author. every other case here has the attacker author the
     // block it sends, so they cannot tell "cut the supplier" from "cut the
     // author" - this one separates them and asserts that both are cut.
-    it("cuts both the relayer and the author when an outsider-authored block arrives via a different peer", async function () {
+    it("cuts both an eligible relayer and the outsider author while the victim keeps spectating", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
@@ -191,18 +191,13 @@ describe("E2E: spectating strategy junk-block handling", function () {
             maximumBlocks: 20,
             waitForSynced: false
         });
-        const { peer: relayer } = await h.join.addSpectatorAuthoring({
-            authoringPeerIndices: [0, 1, 2],
-            minimumBlocks: 0,
-            maximumBlocks: 20,
-            waitForSynced: false
-        });
+        const relayer = h.getPeer(1);
         await h.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, victim.index]
         });
 
-        // two distinct non-participants: one signs the block, the other hands it
-        // to the victim. neither is in the channel.
+        // An eligible transport reaches author validation; an outsider transport
+        // would be dropped earlier by source admission.
         await h.connectionBarrier.waitFor(
             async () =>
                 (await h

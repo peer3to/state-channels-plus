@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 //Channel Open
 error ErrorInvalidJoinChannel();
 error ErrorAtLeastTwoParticipantsRequired(uint256 participantCount);
+error ErrorTooManyParticipants(uint256 requested, uint256 maximum);
 error ErrorDuplicateParticipant(address participant);
 
 //Calldata errors

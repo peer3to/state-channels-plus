@@ -10,10 +10,19 @@ import { RuntimeLifecycleService } from "@/rpc/internal/services/lifecycle/Runti
 import { LoggerService } from "@/rpc/internal/services/logger/LoggerService";
 import InternalTransport from "@/transport/InternalTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
+
 import { config } from "@/utils/config";
+import { DetachedPromises } from "@/utils/DetachedPromises";
+import { errorMessage } from "@/utils/errorMessage";
 import type { Logger } from "@/utils/logging/Logger";
 import { runCleanup } from "@/utils/runCleanup";
 import { createLogger } from "@platform/createLogger";
+
+// A handler still running when its root disposes usually finishes as soon as
+// domain cleanup releases what it waited on. One stuck on something cleanup
+// does not release holds the disposal open only this long; its request then
+// still ends in the parent's disposed rejection.
+const IN_FLIGHT_REPLY_DRAIN_MS = 5_000;
 
 type RootRpcServices<T extends AInternalRpcRoot> = {
     [K in keyof T as T[K] extends AInternalRpcService<any>
@@ -133,6 +142,12 @@ export abstract class AInternalRpcRoot<
     ): Promise<void> {
         return (this.disposal ??= Promise.resolve().then(async () => {
             await runCleanup(
+                // Work that was already failing when disposal began (an
+                // abort's own cause) rejects within this turn; it is the
+                // reason for the disposal and surfaces as before. What is
+                // still in flight after the turn is adopted below.
+                () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+                () => this.adoptDetachedWork(),
                 () => prepare?.(),
                 async () => {
                     const children = await Promise.allSettled(
@@ -151,6 +166,17 @@ export abstract class AInternalRpcRoot<
                         this.logger.attachedLogger.stopPerformanceMonitoring();
                 },
                 cleanup,
+                // A request the parent is still waiting on (a connect that an
+                // abort interrupted, for example) replies here, while logging
+                // is still alive and ahead of the disposal notification that
+                // makes the parent close this connection and reject whatever
+                // is still pending on it.
+                () =>
+                    this.parent?.drainInFlightHandlers(
+                        IN_FLIGHT_REPLY_DRAIN_MS
+                    ),
+                // Work the cleanup itself started settles the same way.
+                () => this.adoptDetachedWork(),
                 // Release logging last, even when domain cleanup fails.
                 () => this.rootLogger.dispose({ cascadeChildren: true }),
                 () => this.logger.dispose(),
@@ -161,6 +187,29 @@ export abstract class AInternalRpcRoot<
 
     public get isDisposing(): boolean {
         return this.disposal !== undefined;
+    }
+
+    /**
+     * Work still in flight at disposal settles as the disposal's outcome: a
+     * later failure (a destroyed provider, a released logger) is noted on
+     * the root logger while it lives and never surfaces as a runtime error.
+     * The adopted origins are logged here, since nothing can log once the
+     * logger is released. Roots sharing one realm share the registry, so a
+     * sibling's in-flight work at this moment settles the same way.
+     */
+    private adoptDetachedWork(): void {
+        const origins = DetachedPromises.adoptPending((error, collectedAt) => {
+            if (this.rootLogger.isDisposed) return;
+            this.rootLogger.debug("Detached work ended by disposal", {
+                error: errorMessage(error),
+                collectedAt
+            });
+        });
+        if (origins.length > 0)
+            this.rootLogger.debug("Detached work still in flight at disposal", {
+                count: origins.length,
+                origins
+            });
     }
 
     public reportError(error: unknown): void {

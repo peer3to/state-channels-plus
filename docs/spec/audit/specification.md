@@ -89,7 +89,7 @@ which now says an exclusion is scoped to the excluded identity rather than to th
 the fault, with the rejected channel-scoped alternative and its consequences recorded beside it. The
 [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 sentence that used to release "peer-derived reputation" wholesale is corrected to match, and
-[`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4) is
+[`REQ-AUTH-4-JWCF71.T1.P7`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p7) is
 appended as its black-box obligation. Two things stay open by design and are named in the decision rather
 than silently absorbed: durability across a restart
 ([`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2)) and any reevaluation rule

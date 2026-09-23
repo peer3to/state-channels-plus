@@ -1,4 +1,5 @@
 import * as factory from "../factory";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -57,6 +58,66 @@ async function encodeLinkedNextBlock(
 }
 
 describe("Unit: BlockIngestService", function () {
+    it("fresh signer validation reads the resulting participant union before persisting the snapshot", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const { observer, authored } =
+            await h.transition.authorNextBlockOffWireWait();
+        const result = await h.execOnHost(
+            observer,
+            async (sm, args) => {
+                const union = sm.storage.getParticipantsUnionFromSnapshots.bind(
+                    sm.storage
+                );
+                const observed: {
+                    resultStored: boolean;
+                    participants: string[];
+                }[] = [];
+                sm.storage.getParticipantsUnionFromSnapshots = (
+                    previous,
+                    resulting
+                ) => {
+                    const participants = union(previous, resulting);
+                    if (resulting?.hash === args.snapshotHash)
+                        observed.push({
+                            resultStored:
+                                sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                    resulting.hash
+                                ) !== undefined,
+                            participants: participants.map(String)
+                        });
+                    return participants;
+                };
+                try {
+                    const run =
+                        await sm.p2pManager.localRpc.validation.runBlockIngest(
+                            args.encodedBlockConfirmation
+                        );
+                    return { run, observed };
+                } finally {
+                    sm.storage.getParticipantsUnionFromSnapshots = union;
+                }
+            },
+            {
+                encodedBlockConfirmation: authored.encodedBlockConfirmation,
+                snapshotHash: Codec.decode(
+                    Codec.decode(
+                        authored.encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    ).signedBlock.encodedBlock,
+                    Type.Block
+                ).stateSnapshotHash
+            }
+        );
+        expect(result.run.keepConnection).to.equal(true);
+        expect(result.observed.some((entry) => !entry.resultStored)).to.equal(
+            true
+        );
+        expect(result.observed[0].participants).to.have.members(
+            h.peers.map((peer) => peer.address)
+        );
+    });
+
     describe("isKnownStaleFork", function () {
         it("current fork, zero hash and an invented fork → all not stale", async function () {
             const h = TestSession.getHarness();
@@ -222,7 +283,11 @@ describe("Unit: BlockIngestService", function () {
             const accepted = await h
                 .control(observer)
                 .transition.ingestBlockConfirmation(
-                    stored!.encodedBlockConfirmation
+                    stored!.encodedBlockConfirmation,
+                    {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: h.getPeer(0).address
+                    }
                 )
                 .request();
             await h.event.waitForBlockConfirmationProcessed({
@@ -272,7 +337,7 @@ describe("Unit: BlockIngestService", function () {
                 .control(observer)
                 .transition.ingestBlockConfirmation(
                     stored!.encodedBlockConfirmation,
-                    { onChainTimestamp }
+                    { origin: BlockOrigin.CALLDATA, onChainTimestamp }
                 )
                 .request();
             await h.event.waitForBlockConfirmationProcessed({

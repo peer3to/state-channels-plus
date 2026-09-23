@@ -1,5 +1,10 @@
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    assertStoredCopyQuota,
+    assertStoredMalformedNetworkCopy
+} from "@test/fixtures/QueueNetworkRetentionFixture";
+import { assertSpectatorStoredMerge } from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -18,6 +23,21 @@ const MERGE_TIME_CONFIG = {
 };
 
 describe("Unit: StoredBlockMergeService", function () {
+    it("a real synced spectator persists late signatures without an outgoing confirmation", async () => {
+        await assertSpectatorStoredMerge();
+    });
+
+    it("a pending joiner persists late signatures without relaying before participant promotion", async () => {
+        await assertSpectatorStoredMerge(true);
+    });
+
+    it("each stored copy is bounded before ordinary signature validation", async () => {
+        await assertStoredCopyQuota(false);
+    });
+    it("unrecoverable confirmations are removed while the stored block remains committed", async () => {
+        await assertStoredMalformedNetworkCopy();
+    });
+
     it("a block this peer never stored → undefined, nothing persisted", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
@@ -222,13 +242,12 @@ describe("Unit: StoredBlockMergeService", function () {
         expect(r.persistedSignatures).to.not.include(straySignature);
     });
 
-    it("under SpectatingValidationStrategy a genuine new signature → BROADCAST and persisted", async function () {
+    it("a committed participant using SpectatingValidationStrategy broadcasts genuine signature growth", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
         const forkId = h.activeForkId!;
 
-        // same staging as the live-strategy case; the spectating strategy also
-        // re-gossips merged signatures so spectators keep relaying
+        // A committed participant delegates sync-replay growth to live gossip.
         const writer = await h.query.getNextPeerToWrite();
         const silenced = h.peers.find((p) => p.index !== writer.index)!;
         const heightBefore = await h
@@ -258,6 +277,7 @@ describe("Unit: StoredBlockMergeService", function () {
         );
         expect(newSignatures.length).to.be.greaterThan(0);
 
+        await h.control(writer).stub.observeAdmission().request();
         const r = await h.transition.runStoredBlockMerge({
             peerIndex: writer.index,
             confirmation: {
@@ -269,6 +289,11 @@ describe("Unit: StoredBlockMergeService", function () {
             },
             strategy: "spectating"
         });
+        expect(
+            (await h.control(writer).stub.getAdmissionObservation().request())
+                .broadcasts
+        ).to.be.greaterThan(0);
+        await h.control(writer).stub.restoreAdmissionObservation().request();
         expect(r.result).to.equal(BlockValidationResult.BROADCAST);
         expect(r.persistedSignatures).to.include.members(newSignatures);
     });

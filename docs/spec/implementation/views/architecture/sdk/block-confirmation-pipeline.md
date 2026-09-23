@@ -28,9 +28,7 @@ Guarantees:
   mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x), [`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv)).
 - The live state machine is never left holding the effects of a block that was
   not committed ([`INV-BCP-2-BVPQF4`](block-confirmation-pipeline.md#inv-bcp-2-bvpqf4)).
-- Signature merging is monotone and attributable: duplicate copies only add
-  signatures, and every stray signature can be traced to the transports that
-  supplied it ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
+- Admitted source contributions grow monotonically within each source allowance. Validation may strip bad live confirmations without refunding the source. Copies below their allowances converge with exact supplier attribution ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
 
 Non-guarantees: no persistence across process restart (storage is in-memory);
 no gossip rate limiting (**Open question** in
@@ -38,12 +36,14 @@ no gossip rate limiting (**Open question** in
 delivery guarantee — a parked block that never becomes executable is dropped
 after its queue window and re-fetched by sync if needed.
 
+Source admission delegates to [MembershipService](../../../source/src/stateManager/membership/MembershipService.ts.md) for the inclusive-OR caches and slash precedence. [BlockQueueManager](../../../source/src/stateManager/ingest/BlockQueueManager.ts.md) awaits ordinary sync through unchanged [SpectateService](../../../source/src/rpc/network/services/spectate/SpectateService.ts.md). Intake returns after sync without inserting the triggering copy. [ValidationService](../../../source/src/stateManager/ingest/ValidationService.ts.md) catches recovery failure per confirmation and invokes the owning strategy. Participating peers relay accepted growth; pending peers and spectators persist it silently until promotion.
+
 ## 2. Input paths
 
 Every path converges on
-[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/BlockQueueManager.ts#L56)
+[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L61)
 or on the validation entry
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L505)
+[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L493)
 directly:
 
 1. **Peer RPC gossip.**
@@ -54,8 +54,8 @@ directly:
    source attribution (§4).
 2. **Block-calldata chain events.**
    [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L8) →
-   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/EventSyncService.ts#L107) →
-   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L242):
+   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L107) →
+   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L287):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires
    `onPostedCalldata`, then calls `ingestBlockConfirmation` with
@@ -65,11 +65,11 @@ directly:
    `EventSyncService.tryRecoverBlockCalldataAndScheduleValidation` (timeout
    checks and time validation query the chain for missed calldata).
 3. **Local authoring.**
-   [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L505)
+   [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L493)
    executes the author's own transaction under the mutex and enters the success
    path (§7) directly — no queue, no validation strategy.
 4. **Replay adapters.** Dispute state-proof replay and spectate sync call
-   [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L505),
+   [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L493),
    which wraps the confirmation into a **sourceless** entry (no transport to
    punish) and may inject an explicit strategy
    ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)).
@@ -115,37 +115,24 @@ pipeline splits into two regimes:
   single-threaded runtime), bounded per-entry resources, and deterministic merge rules.
 - **Inside the mutex — total-order state mutation.** The mutex is reserved for operations that
   can mutate the live state machine. Verified acquisition sites:
-  [`onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L505) (apply the next eligible
-  block), [`playTransaction`](../../../../../../src/stateManager/StateManager.ts#L505) (local authoring),
-  and [`setLatestState`](../../../../../../src/stateManager/StateManager.ts#L505) (fork transition).
+  [`onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L493) (apply the next eligible
+  block), [`playTransaction`](../../../../../../src/stateManager/StateManager.ts#L493) (local authoring),
+  and [`setLatestState`](../../../../../../src/stateManager/StateManager.ts#L493) (fork transition).
   Dequeue-and-execute is a total-order operation by `(forkId, height)`: only the lowest eligible
   height on the current fork is scheduled, and at most one block is in state-machine execution
   at a time ([`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz), enforced by the mutex plus the ordering stage §5).
 
-**Queue key and body-conflict model.** The primary key is the **block hash**
-([`QueueStorage`](../../../../../../src/storage/QueueStorage.ts#L27) `queuedBlocks: Map<Hash, entry>`),
+**Queue key and body-conflict model.** The network entry key includes the **block hash**
+([`QueueStorage`](../../../../../../src/storage/QueueStorage.ts#L27) queued entries keyed by block hash),
 with a secondary coordinate index `(forkId, height) → Set<Hash>`. Two competing block bodies at
 the same coordinate therefore coexist as distinct entries; the queue never picks between them.
 Conflicts are resolved downstream by the defined validation paths — the conflict predicate over
 stored blocks, the double-sign fraud proof, or a drop — never hidden by queue arrival order
 ([`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz)). Each entry accumulates its own confirmations independently until eligibility.
 
-**Merge algebra (per entry).** Grow-only and idempotent: the signature set is a set union of
-every copy seen (`expandSignatures`; re-delivering known signatures is a no-op — the stored-merge
-path computes `incoming − existing` and treats empty as `DUPLICATE`); `firstSeenAt` keeps the
-earliest copy's clock; an on-chain post timestamp merges in when a calldata copy arrives; source
-attribution maps each signature to exactly the senders whose copies carried it. Structural caps
-(at most 128 tracked sources per entry) bound memory against a signature-flood on one hash —
-overflow sets a marker used for attribution only and never rejects a later valid copy
-([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
+**Merge and attribution.** [QueueStorage](../../../source/src/storage/QueueStorage.ts.md) owns at most N source identities and N supplied values per network source, author first. The source map records admitted contributions; reverse lookup derives actual suppliers from it. Storage applies the count budget; signature checks belong to ValidationService. Rejected values remain charged. The supplied union is at most N² for one queued network entry; this is not an aggregate memory or CPU claim.
 
-**Lifetime (normative).** An entry's lifetime is fixed at `firstSeenAt + agreementTime` and MUST
-NOT be extended by duplicate copies or restores (§4.2 defines what the timeout does). The
-128-source cap, by contrast, is a non-normative tuning constant — the requirement is only that
-per-entry resources are bounded and that overflow never rejects a later valid copy. _(Decided
-2026-08-10.)_ `restoreQueuedEntry` is the only sanctioned re-insertion path and MAY run while the
-caller holds the mutex, which is why it only mutates storage or schedules tasks — it never runs
-timeout logic inline.
+**Queue processing.** Dequeue removes the entry and passes its attribution to normal validation. Later copies follow normal intake. Restore merges queued copies under the source limits and preserves the earliest `firstSeenAt + agreementTime` deadline. Standalone proof processing uses no queue record. Chain timestamps use Block.mergeFrom.
 
 **Same-coordinate rule (normative).** Among competing bodies at one `(forkId, height)`, the
 first body to pass validation wins locally — the node signs and builds on it — while the
@@ -166,7 +153,7 @@ ingest/queue work run without the mutex; per-entry caps exist; the RPC rate limi
 
 ## 4. Stage: intake, authentication, deduplication, queueing
 
-[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/BlockQueueManager.ts#L56),
+[`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L61),
 in order:
 
 1. **Authenticity.** `isBlockConfirmationAuthentic` →
@@ -181,11 +168,9 @@ in order:
       (two TODOs in
       [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15));
       the required proof type and escalation context are unresolved.
-2. **Deduplication.** If the block hash is already in
-   [`BlockStorage`](../../../../../../src/storage/BlockStorage.ts#L15), schedule a
-   stored-confirmation merge (§4.1) and return `true`.
-3. **Channel gate.** Wrong `channelId` → warn; keep the connection only when
-   there is no attributable sender (`return !senderAddress`).
+2. **Channel gate.** A wrong channel is rejected before source admission or stored merging.
+3. **Source admission and stored duplicate.** Network copies require an authenticated transport source
+   accepted by MembershipService. Sources still absent after refresh trigger ordinary sync and end intake. Eligible sources may schedule a stored confirmation merge (§4.1).
 4. **Disputed-fork gate.** If the block's fork is disputed (local `didIDispute`
    flag OR the `LocalDiamond` mirror), clear that fork's queue and ignore the
    block — blocks for a dead fork are recovered from the dispute path, not
@@ -196,35 +181,24 @@ in order:
    kill-period check (a junk-fork flood costs O(1) chain reads per window).
    Recovery MUST run detached — ingest can already hold the `StateManager`
    mutex via dispute re-ingest paths, and reduction takes that mutex.
-6. **Queue.** [`QueueStorage.queueBlock`](../../../../../../src/storage/QueueStorage.ts#L54)
-   creates or merges a `QueuedBlockEntry`:
-    - `block` (signature set is a grow-only merge of every copy seen),
-    - `firstSeenAt` (Clock seconds; kept at the **earliest** copy),
-    - `sourcePeers` and per-signature `signatureSources` (attribution: each copy
-      contributes only the signatures _it carried_ to _its_ sender),
-    - structural caps: at most 128 tracked sources per entry; overflow sets a
-      marker but never rejects a later valid copy ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
-      Then a **queue timeout** is armed for the remainder of the entry's fixed
-      lifetime `firstSeenAt + agreementTime` (duplicates and restores never extend
-      it), and queue execution is scheduled for the current fork.
+6. **Queue.** Source admission precedes both stored merging and queueing. An authenticated network copy uses the per-source map carried by the entry. The manager schedules the remaining fixed window and eligible fork work. Sources still absent after chain refresh await ordinary sync and end intake ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)). Explicit proof/calldata origins keep objective evidence separate.
 
 ### 4.1 Stored-block merge (duplicate confirmations)
 
-[`StateManager.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L505):
-compute `newSignatures = incoming − existing`; empty → `DUPLICATE`. Otherwise
+[`StateManager.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L493):
+normalize confirmations through ValidationService and the strategy malformed-signature hook, then compute `newSignatures = incoming − existing`; empty → `DUPLICATE`. Otherwise
 recover each new signer and require it to be inside the block's **participant
 union** (previous snapshot ∪ resulting snapshot, from storage). Strays go to
 `strategy.notAllSingersAreParticipants`, which disconnects the transports that
-supplied exactly those signatures (via `signatureSources`) and either strips
+supplied exactly those signatures (via `sourcesToSignatures`) and either strips
 the strays (continue) or rejects the block. Valid new signatures are merged
 into storage (`BlockStorage.storeBlock` merges signatures for an equal block
 and refuses a conflicting body), the `onBlockFinalized` notification fires if
-the threshold is now met, and — except under `DisputeValidationStrategy` — the
-updated confirmation is re-broadcast (`BROADCAST`).
+the threshold is now met, and a participating peer using live or spectating validation re-broadcasts the updated confirmation (`BROADCAST`). Synced spectators and pending joiners persist it without relaying; dispute replay remains silent.
 
-### 4.2 Queue timeout (the only sync probe)
+### 4.2 Queue timeout for admitted sources
 
-After `agreementTime`, [`queueTimeout`](../../../../../../src/stateManager/BlockQueueManager.ts#L285)
+After `agreementTime`, [`queueTimeout`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L413)
 dequeues the entry first (it owns what it sees; later copies pool into a fresh
 entry) and then decides:
 
@@ -234,9 +208,7 @@ entry) and then decides:
   — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L505)) → drop
   silently (we are ahead; probing would blacklist honest stragglers);
 - **unknown fork** → request spectate sync once from each source peer and the
-  author (`spectateService.sync`); a failed sync punishes them. This is the
-  sole sync-probe site — arrival-time syncing was removed because it punished
-  honest peers before the convergence window;
+  author (`spectateService.sync`); a failed sync punishes them. This is the admitted-source expiry probe. A still-unknown sender after refresh triggers ordinary sync and ends intake without retention;
 - height ≤ next expected → schedule execution;
 - still in the future → discard and request sync (junk must not accumulate; a
   block posted as calldata can always be re-read from the chain).
@@ -249,7 +221,7 @@ immediate task.
 
 ## 5. Stage: ordering
 
-[`tryExecuteFromQueue`](../../../../../../src/stateManager/BlockQueueManager.ts#L244) runs
+[`tryExecuteFromQueue`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L214) runs
 as a scheduled task after every ingest, after every mutex release of
 `onBlockConfirmation`, and after every fork transition (`setLatestState`). It:
 
@@ -267,7 +239,7 @@ restores it to the queue).
 
 ## 6. Stage: serialized validation
 
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L505)
+[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L493)
 takes the `StateManager` mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x)) and selects the strategy: an
 explicit override (dispute replay, calldata) or by status —
 committed status (`PENDING_PARTICIPANT`, `PARTICIPATING`) → `BlockValidationStrategy`, otherwise →
@@ -285,7 +257,7 @@ Pre-checks under the mutex:
 - **Authenticity** re-checked (same predicate as intake; replay adapters enter
   here without intake).
 
-Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ValidationService.ts#L45)
+Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ingest/ValidationService.ts#L45)
 runs the ordered predicate chain. Each failure routes to a strategy hook that
 returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 
@@ -303,7 +275,7 @@ returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 
 ### 6.1 Time validation
 
-[`validateTimeLogic`](../../../../../../src/stateManager/ValidationService.ts#L168); the
+[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L168); the
 protocol time model is specified in [../protocol/time.md](../../../../specification/protocol-model/time.md).
 `previousTimestamp` is the predecessor block's _relevant_ timestamp for this
 author (block timestamp if the author signed the predecessor, otherwise
@@ -353,7 +325,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 5. **Inbound application.** Each carried inbound message runs through
    `processInboundMessage`; `totalDeposits` accumulates via the state machine's
    balance algebra. Failure throws (restores VM).
-6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L505)
+6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L493)
    derives the committed `SnapshotData` from the previous snapshot: state hash
    = `keccak(stateAfterInbound)`, participants = post-transition set, inbound
    tip/height and `totalDeposits` advanced by the carried inbound blocks,
@@ -372,7 +344,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 
 ## 8. Stage: success — persistence, signing, agreement, side effects
 
-[`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L505), in code
+[`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L493), in code
 order:
 
 1. **Status promotion.** `SYNCED`/`PENDING_PARTICIPANT` → `PARTICIPATING` when
@@ -384,7 +356,7 @@ order:
 2. **Persist snapshot + state first** — `shouldSignBlock` reads the resulting
    participants from storage.
 3. **Sign if appropriate** (never under `DisputeValidationStrategy`):
-   [`shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L505) requires:
+   [`shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L493) requires:
    author not blacklisted; status `PARTICIPATING`; we are in the block's
    participant union; and NOT (block posted on-chain AND we are next to write)
    — signing a calldata-posted block when we are next would forfeit the extra
@@ -406,7 +378,7 @@ order:
 7. `successCallback()` publishes contract events on the bus; `onTurn` fires for
    the next author.
 8. **Data availability.** The block **author** schedules
-   [`maybePostBlockOnChain`](../../../../../../src/stateManager/block/BlockCommitService.ts#L158)
+   [`maybePostBlockOnChain`](../../../../../../src/stateManager/block/BlockCommitService.ts#L171)
    after `agreementTime`: if the stored copy still lacks a full signature set,
    post `postBlockCalldata(signedBlock, maxTimestamp)` with
    `maxTimestamp = previousRelevantTimestamp + p2pTime + agreementTime + chainFallbackTime + grace`;
@@ -447,7 +419,7 @@ as impossible (throws).
 
 | Strategy                                                                                                                    | Active when                                                      | Distinctive behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L31) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`. |
+| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L23)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L31) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`. |
 | [`SpectatingValidationStrategy`](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21) | Uncommitted live arrivals and every synchronization proof replay | Historical subjective timestamps are accepted. Committed peers delegate fraud and disputed-fork reactions to the live strategy. An uncommitted spectator cannot dispute: **provable participant fraud → `stateManager.abort()`** and stop following (fail-closed spectate; see [`OQ-10-04YNC4`](../../../../specification/open-questions.md#oq-10-04ync4)); junk with nobody to slash → drop sender and keep spectating (the DoS vector must never force an abort).                                                                                                                |
 | [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15)       | Block entered from a `BlockCalldataPosted` event                 | Delegates everything to `BlockValidationStrategy`; only authenticity failure differs (`DISPUTE`, open question §4.1). Confirmation carries only the author's signature; hooks that presuppose extra signers throw as unreachable.                                                                                                                                                                                                                                                                                                                                                  |
 | [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)       | Injected per replayed block of a dispute's state proof           | `enforcesLiveForkAndOrderingGates = false` (audits a fixed proof, out of live order, on a disputed fork). Deviations become **dispute fraud proofs** that kill the dispute (see [dispute-pipeline.md](./dispute-pipeline.md) §5); observations that only reflect missing local baselines return `SUCCESS` to continue replay. Double signs found during replay store an ordinary fraud proof but do **not** abort the replay (the dispute may still be honest).                                                                                                                    |
@@ -481,10 +453,10 @@ as impossible (throws).
 - **[`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv)** — On a live strategy, blocks execute in fork order at the next
   expected height; future blocks are parked, never executed early.
 
-- **[`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)** — Queued-entry merging is monotone (signatures only grow, the
-  fixed lifetime never extends) and attributed (each signature maps to the
-  transports that supplied it); retention caps mark overflow but never cause
-  rejection of a later valid copy.
+- **[`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)** — Queued-entry merging is monotone below the retention cap
+  (signatures only grow, the fixed lifetime never extends) and attributed (each
+  signature maps to the transports that supplied it). Retention caps mark
+  each source independently; excess new sources or values are ignored without punishment, and rejected values do not refund source slots.
 
 - **[`INV-BCP-5-NGASJJ`](block-confirmation-pipeline.md#inv-bcp-5-ngasjj)** — A confirmation is persisted locally before it is gossiped,
   so echoes merge as duplicates instead of re-entering validation.
@@ -537,16 +509,16 @@ _Non-normative._
 
 ## Implementation traceability
 
-| Requirement / invariant                                               | Statement                                                                                                                                                                                                                                                                                                      | Implementation status | Implementation evidence                                                                                                                                                                                                                                                        | Gap / divergence |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x) | Validation/execution serialized under the StateManager mutex.                                                                                                                                                                                                                                                  | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`onBlockConfirmation`, `playTransaction`, `withMutex`)                                                                                                                              | None.            |
-| [`INV-BCP-2-BVPQF4`](block-confirmation-pipeline.md#inv-bcp-2-bvpqf4) | Failed validation restores the VM to its pre-transition state.                                                                                                                                                                                                                                                 | Covered               | `onBlockConfirmation` finally-block + `restoreStateAfterFailedValidation`                                                                                                                                                                                                      | None.            |
-| [`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv) | In-order execution; future blocks parked.                                                                                                                                                                                                                                                                      | Covered               | [src/stateManager/BlockQueueManager.ts](../../../../../../src/stateManager/BlockQueueManager.ts#L48) (`tryDequeuePriority`), [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) gate #6                                      | None.            |
-| [`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n) | Monotone, attributed, capped signature/source merging; fixed entry lifetime.                                                                                                                                                                                                                                   | Covered               | [src/storage/QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L1), [BlockQueueManager.scheduleQueueTimeout](../../../../../../src/stateManager/BlockQueueManager.ts#L153)                                                                                        | None.            |
-| [`INV-BCP-5-NGASJJ`](block-confirmation-pipeline.md#inv-bcp-5-ngasjj) | Persist before gossip.                                                                                                                                                                                                                                                                                         | Covered               | `success()` step order, `tryMergeStoredBlockConfirmation`                                                                                                                                                                                                                      | None.            |
-| [`INV-BCP-6-1E943Z`](block-confirmation-pipeline.md#inv-bcp-6-1e943z) | Every live `DISPUTE` outcome stores a fraud proof before disputing.                                                                                                                                                                                                                                            | Covered               | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1), [src/stateManager/utils/FraudProofService.ts](../../../../../../src/stateManager/utils/FraudProofService.ts#L5)         | None.            |
-| [`INV-BCP-7-ZDZ5WB`](block-confirmation-pipeline.md#inv-bcp-7-zdz5wb) | Subjective lateness never produces a proof or slash.                                                                                                                                                                                                                                                           | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`NOT_ENOUGH_TIME` path)                                                                                                                                                  | None.            |
-| [`REQ-BCP-1-X3J4KY`](block-confirmation-pipeline.md#req-bcp-1-x3j4ky) | Both input paths (peer RPC and chain calldata) converge on one ingest with source attribution / on-chain timestamp respectively.                                                                                                                                                                               | Covered               | [src/rpc/network/services/stateTransition](../../../../../../src/rpc/network/services/stateTransition), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`onBlockCalldataPosted`)                                                  | None.            |
-| [`REQ-BCP-2-1K3HN9`](block-confirmation-pipeline.md#req-bcp-2-1k3hn9) | Objective timestamp rule is evaluated by the canonical Solidity predicate over the exact proof struct.                                                                                                                                                                                                         | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`hasInvalidTimestamp.staticCall`)                                                                                                                                        | None.            |
-| [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9) | Non-state-mutating intake and merge (older/future/duplicate blocks, late signatures) never require the state-transition mutex; merge rules are deterministic, idempotent, and resource-capped per entry.                                                                                                       | Covered               | [BlockQueueManager](../../../../../../src/stateManager/BlockQueueManager.ts#L31) (scheduled tasks), [QueueStorage](../../../../../../src/storage/QueueStorage.ts#L27), [StateManager.tryMergeStoredBlockConfirmation](../../../../../../src/stateManager/StateManager.ts#L505) | None.            |
-| [`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz) | State application is total-order by `(forkId, height)` — at most one block in execution; same-coordinate competing bodies coexist in the queue, the first validated body wins locally (decided 2026-08-10), and the conflict is surfaced via validation/fraud-proof/drop paths, never hidden by arrival order. | Covered               | mutex sites in [StateManager](../../../../../../src/stateManager/StateManager.ts#L100) (`onBlockConfirmation`, `playTransaction`, `setLatestState`); ordering in [BlockQueueManager.tryExecuteFromQueue](../../../../../../src/stateManager/BlockQueueManager.ts#L244)         | None.            |
+| Requirement / invariant                                               | Statement                                                                                                                                                                                                                                                                                                      | Implementation status | Implementation evidence                                                                                                                                                                                                                                                               | Gap / divergence |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x) | Validation/execution serialized under the StateManager mutex.                                                                                                                                                                                                                                                  | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`onBlockConfirmation`, `playTransaction`, `withMutex`)                                                                                                                                     | None.            |
+| [`INV-BCP-2-BVPQF4`](block-confirmation-pipeline.md#inv-bcp-2-bvpqf4) | Failed validation restores the VM to its pre-transition state.                                                                                                                                                                                                                                                 | Covered               | `onBlockConfirmation` finally-block + `restoreStateAfterFailedValidation`                                                                                                                                                                                                             | None.            |
+| [`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv) | In-order execution; future blocks parked.                                                                                                                                                                                                                                                                      | Covered               | [src/stateManager/ingest/BlockQueueManager.ts](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L48) (`tryDequeuePriority`), [src/stateManager/ingest/ValidationService.ts](../../../../../../src/stateManager/ingest/ValidationService.ts#L15) gate #6                 | None.            |
+| [`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n) | Monotone, attributed, capped signature/source merging; fixed entry lifetime.                                                                                                                                                                                                                                   | Covered               | [src/storage/QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L1), [BlockQueueManager.scheduleQueueTimeout](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L508)                                                                                        | None.            |
+| [`INV-BCP-5-NGASJJ`](block-confirmation-pipeline.md#inv-bcp-5-ngasjj) | Persist before gossip.                                                                                                                                                                                                                                                                                         | Covered               | `success()` step order, `tryMergeStoredBlockConfirmation`                                                                                                                                                                                                                             | None.            |
+| [`INV-BCP-6-1E943Z`](block-confirmation-pipeline.md#inv-bcp-6-1e943z) | Every live `DISPUTE` outcome stores a fraud proof before disputing.                                                                                                                                                                                                                                            | Covered               | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1), [src/stateManager/utils/FraudProofService.ts](../../../../../../src/stateManager/utils/FraudProofService.ts#L5)                | None.            |
+| [`INV-BCP-7-ZDZ5WB`](block-confirmation-pipeline.md#inv-bcp-7-zdz5wb) | Subjective lateness never produces a proof or slash.                                                                                                                                                                                                                                                           | Covered               | [src/stateManager/ingest/ValidationService.ts](../../../../../../src/stateManager/ingest/ValidationService.ts#L15) (`NOT_ENOUGH_TIME` path)                                                                                                                                           | None.            |
+| [`REQ-BCP-1-X3J4KY`](block-confirmation-pipeline.md#req-bcp-1-x3j4ky) | Both input paths (peer RPC and chain calldata) converge on one ingest with source attribution / on-chain timestamp respectively.                                                                                                                                                                               | Covered               | [src/rpc/network/services/stateTransition](../../../../../../src/rpc/network/services/stateTransition), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`onBlockCalldataPosted`)                                                         | None.            |
+| [`REQ-BCP-2-1K3HN9`](block-confirmation-pipeline.md#req-bcp-2-1k3hn9) | Objective timestamp rule is evaluated by the canonical Solidity predicate over the exact proof struct.                                                                                                                                                                                                         | Covered               | [src/stateManager/ingest/ValidationService.ts](../../../../../../src/stateManager/ingest/ValidationService.ts#L15) (`hasInvalidTimestamp.staticCall`)                                                                                                                                 | None.            |
+| [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9) | Non-state-mutating intake and merge (older/future/duplicate blocks, late signatures) never require the state-transition mutex; merge rules are deterministic, idempotent, and resource-capped per entry.                                                                                                       | Covered               | [BlockQueueManager](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L31) (scheduled tasks), [QueueStorage](../../../../../../src/storage/QueueStorage.ts#L27), [StateManager.tryMergeStoredBlockConfirmation](../../../../../../src/stateManager/StateManager.ts#L493) | None.            |
+| [`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz) | State application is total-order by `(forkId, height)` — at most one block in execution; same-coordinate competing bodies coexist in the queue, the first validated body wins locally (decided 2026-08-10), and the conflict is surfaced via validation/fraud-proof/drop paths, never hidden by arrival order. | Covered               | mutex sites in [StateManager](../../../../../../src/stateManager/StateManager.ts#L94) (`onBlockConfirmation`, `playTransaction`, `setLatestState`); ordering in [BlockQueueManager.tryExecuteFromQueue](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L214)          | None.            |

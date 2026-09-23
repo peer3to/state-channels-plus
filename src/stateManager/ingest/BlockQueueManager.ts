@@ -2,8 +2,13 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
 import { Block } from "@/models";
+import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
-    sourcePeersAndAuthor,
+    BlockOrigin,
+    getSourcePeersAndAuthor,
+    getSourcePeers,
+    getSignatureSuppliers,
+    type QueueBlockOptions,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, TimeConfig } from "@/types";
@@ -23,11 +28,14 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-export type IngestBlockConfirmationOptions = {
-    onChainTimestamp?: Timestamp;
-    validationStrategy?: AValidationStrategy;
-    senderAddress?: Address;
-};
+export type IngestBlockConfirmationOptions = (
+    | (Extract<QueueBlockOptions, { senderAddress: Address }> & {
+          onChainTimestamp?: never;
+      })
+    | (Exclude<QueueBlockOptions, { senderAddress: Address }> & {
+          onChainTimestamp?: Timestamp;
+      })
+) & { validationStrategy?: AValidationStrategy };
 
 export default class BlockQueueManager {
     private readonly timeoutHandles: Map<Hash, ReturnType<typeof setTimeout>> =
@@ -56,11 +64,12 @@ export default class BlockQueueManager {
 
     public async ingestBlockConfirmation(
         blockConfirmation: BlockConfirmationStruct,
-        options?: IngestBlockConfirmationOptions
+        options: IngestBlockConfirmationOptions
     ): Promise<boolean> {
         try {
+            if (this.stateManager.isDisposed) return true;
             const strategy =
-                options?.validationStrategy ||
+                options.validationStrategy ||
                 this.stateManager.getActiveValidationStrategy();
 
             const isAuthentic =
@@ -89,30 +98,68 @@ export default class BlockQueueManager {
 
             const block = Block.fromBlockConfirmation(
                 blockConfirmation,
-                options?.onChainTimestamp
+                options.origin === BlockOrigin.NETWORK
+                    ? undefined
+                    : options.onChainTimestamp
             );
-
-            if (this.isBlockStored(block)) {
-                this.scheduleStoredBlockConfirmationMerge(
-                    this.stateManager.storage.queues.createEntry(block, {
-                        senderAddress: options?.senderAddress
-                    }),
-                    strategy
-                );
-                return true;
-            }
 
             if (!this.isBlockForThisChannel(block)) {
                 this.logger.warn("ingestBlockConfirmation - wrong channel", {
                     expectedChannelId: String(this.stateManager.channelId),
                     blockChannelId: String(block.channelId),
-                    senderAddress: options?.senderAddress,
+                    senderAddress:
+                        options.origin === BlockOrigin.NETWORK
+                            ? options.senderAddress
+                            : undefined,
                     block: LoggerUtils.getBlockMetadata(
                         block,
                         this.stateManager.storage
                     )
                 });
-                return !options?.senderAddress;
+                return options.origin !== BlockOrigin.NETWORK;
+            }
+
+            if (options.origin === BlockOrigin.NETWORK) {
+                const eligibility =
+                    await this.stateManager.membershipService.resolveSourceEligibility(
+                        options.senderAddress
+                    );
+                if (eligibility !== SourceEligibility.ELIGIBLE) {
+                    if (eligibility === SourceEligibility.ABSENT) {
+                        await this.stateManager.p2pManager.localRpc.spectateService.sync(
+                            options.senderAddress,
+                            block.channelId,
+                            block.forkId,
+                            block.height
+                        );
+                        if (
+                            this.stateManager.membershipService.getCachedSourceEligibility(
+                                options.senderAddress
+                            ) !== SourceEligibility.ELIGIBLE
+                        ) {
+                            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                                options.senderAddress
+                            );
+                        }
+                    }
+                    return true;
+                }
+            }
+            // Storage clones its arguments. Keep service objects out of that boundary.
+            const queueOptions: QueueBlockOptions =
+                options.origin === BlockOrigin.NETWORK
+                    ? {
+                          origin: BlockOrigin.NETWORK,
+                          senderAddress: options.senderAddress
+                      }
+                    : { origin: options.origin };
+            if (this.isBlockStored(block)) {
+                const entry = this.stateManager.storage.queues.createEntry(
+                    block,
+                    queueOptions
+                );
+                this.scheduleStoredBlockConfirmationMerge(entry, strategy);
+                return true;
             }
 
             if (
@@ -148,9 +195,11 @@ export default class BlockQueueManager {
                 );
             }
 
-            const hash = this.stateManager.storage.queues.queueBlock(block, {
-                senderAddress: options?.senderAddress
-            });
+            const hash = this.stateManager.storage.queues.queueBlock(
+                block,
+                queueOptions
+            );
+            if (hash === undefined) return true;
             this.scheduleQueueTimeout(hash);
             this.scheduleQueueExecution(block.forkId);
 
@@ -234,17 +283,11 @@ export default class BlockQueueManager {
         entry: QueuedBlockEntry,
         signatures: Set<Signature>
     ): void {
-        const disconnectedPeers = new Set<Address>();
-        for (const signature of signatures) {
-            const peers = entry.signatureSources.get(signature);
-            if (!peers) continue;
-            for (const peer of peers) {
-                if (disconnectedPeers.has(peer)) continue;
-                disconnectedPeers.add(peer);
-                this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peer
-                );
-            }
+        const disconnectedPeers = getSignatureSuppliers(entry, signatures);
+        for (const peer of disconnectedPeers) {
+            this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                peer
+            );
         }
         if (disconnectedPeers.size > 0) {
             this.logger.warn("Disconnected peers for invalid signatures", {
@@ -432,7 +475,7 @@ export default class BlockQueueManager {
             // Unknown fork (not disputed, no local genesis for it): ask the
             // suppliers to prove it once; a failed sync punishes them, and so
             // does a proven lineage that does not carry the block. This is
-            // the sole sync-probe site now that arrival-time sync is gone.
+            // separate expiry recovery after source admission at ingress.
             this.logger.verbose(
                 "queueTimeout - unknown fork, requesting sync from suppliers",
                 {
@@ -466,7 +509,7 @@ export default class BlockQueueManager {
 
     private disconnectEntrySources(entry: QueuedBlockEntry): void {
         this.stateManager.p2pManager.disconnectAndBlacklistPeers(
-            entry.sourcePeers
+            getSourcePeers(entry)
         );
     }
 
@@ -568,10 +611,16 @@ export default class BlockQueueManager {
                         entry.block,
                         this.stateManager.storage
                     ),
-                    sourcePeers: Array.from(entry.sourcePeers)
+                    sourcePeers: Array.from(getSourcePeers(entry))
                 }
             );
         }
+    }
+
+    public dispose(): void {
+        for (const hash of this.timeoutHandles.keys())
+            this.cancelQueueTimeout(hash);
+        this.stateManager.storage.queues.clear();
     }
 
     private cancelQueueTimeout(blockHash: Hash): void {
@@ -590,7 +639,7 @@ export default class BlockQueueManager {
      * work; nothing after the sync awaits, so a probe cannot reject.
      */
     private probeSources(entry: QueuedBlockEntry): void {
-        for (const peer of sourcePeersAndAuthor(entry)) {
+        for (const peer of getSourcePeersAndAuthor(entry)) {
             DetachedPromises.collect(this.probeSource(peer, entry));
         }
     }
@@ -600,10 +649,10 @@ export default class BlockQueueManager {
         entry: QueuedBlockEntry
     ): Promise<void> {
         const block = entry.block;
-        // Waits behind any sync already in flight toward the peer, which need
-        // not cover this block; `false` then always means the peer was cut.
+        // Sync waits for an in-flight request and proves this target before
+        // returning success; a failed proof excludes the peer.
         const synced =
-            await this.stateManager.p2pManager.localRpc.spectateService.syncAfterInFlight(
+            await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
                 block.forkId,

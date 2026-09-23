@@ -1,3 +1,4 @@
+import { BlacklistStorage } from "./BlacklistStorage";
 import { BlockCalldataStorage } from "./BlockCalldataStorage";
 import { BlockStorage } from "./BlockStorage";
 import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
@@ -16,7 +17,7 @@ import { TimeoutStorage } from "./TimeoutStorage";
 import { BlockCoordinates, StateSnapshot } from "@/models";
 import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
-import { deepCopyProxy } from "@/utils";
+import { deepCopyProxy, getChecksumAddress } from "@/utils";
 
 export class Storage {
     public blocks!: BlockStorage;
@@ -34,8 +35,16 @@ export class Storage {
     public forceJoin!: ForceJoinStorage;
     public blockCalldata!: BlockCalldataStorage;
     public eventSync!: EventSyncStorage;
+    // Not channel-scoped: a blacklist verdict follows the identity into the
+    // next channel, so `clear` keeps this store.
+    public readonly blacklist: BlacklistStorage;
+    private readonly maxChannelParticipants?: number;
 
-    constructor() {
+    // `maxChannelParticipants` comes from the deployed contract, so the queue's
+    // retention bound follows the chain instead of restating it.
+    constructor(maxChannelParticipants?: number) {
+        this.maxChannelParticipants = maxChannelParticipants;
+        this.blacklist = deepCopyProxy(new BlacklistStorage());
         this.initStores();
         return deepCopyProxy(this);
     }
@@ -59,7 +68,9 @@ export class Storage {
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage()
         );
-        this.queues = deepCopyProxy(new QueueStorage());
+        this.queues = deepCopyProxy(
+            new QueueStorage(this.maxChannelParticipants)
+        );
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());
         this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());
@@ -122,15 +133,6 @@ export class Storage {
         resultingStateSnapshotHash?: Hash
     ): Address[] {
         const previousSnapshot = this.getPreviousStateSnapshot(coordinates);
-        const participants = new Set<Address>();
-
-        if (previousSnapshot?.snapshotData.participants) {
-            for (const participant of previousSnapshot.snapshotData
-                .participants) {
-                participants.add(participant);
-            }
-        }
-
         let resultingSnapshot: StateSnapshot | undefined;
         if (resultingStateSnapshotHash) {
             resultingSnapshot = this.stateSnapshots.getStateSnapshotByHash(
@@ -148,13 +150,23 @@ export class Storage {
             }
         }
 
-        if (resultingSnapshot?.snapshotData.participants) {
-            for (const participant of resultingSnapshot.snapshotData
-                .participants) {
-                participants.add(participant);
+        return this.getParticipantsUnionFromSnapshots(
+            previousSnapshot,
+            resultingSnapshot
+        );
+    }
+
+    getParticipantsUnionFromSnapshots(
+        previous?: StateSnapshot,
+        resulting?: StateSnapshot
+    ): Address[] {
+        const participants = new Set<Address>();
+        for (const snapshot of [previous, resulting]) {
+            for (const participant of snapshot?.snapshotData.participants ??
+                []) {
+                participants.add(getChecksumAddress(participant));
             }
         }
-
         return [...participants];
     }
 

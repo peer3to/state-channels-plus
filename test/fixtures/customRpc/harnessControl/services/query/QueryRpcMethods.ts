@@ -115,6 +115,8 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         peerAddress: string;
         channelId: string;
         attemptNonce: string;
+        selectorChallenge: string;
+        advertiserChallenge: string;
         localOpeningSignatureIssued: boolean;
     } | null {
         const attempt =
@@ -125,6 +127,8 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
             peerAddress: String(attempt.peerAddress),
             channelId: attempt.channelId,
             attemptNonce: attempt.attemptNonce,
+            selectorChallenge: attempt.selectorChallenge,
+            advertiserChallenge: attempt.advertiserChallenge,
             localOpeningSignatureIssued: attempt.localOpeningSignatureIssued
         };
     }
@@ -355,11 +359,50 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.p2pManager.isBlacklisted(evmAddress);
     }
 
+    /** Retry-tier strikes this peer recorded against `key` in this session. */
+    public getStrikes(key: string): number {
+        return this.p2pManager.profileManager.getStrikes(key);
+    }
+
+    /** Whether this peer has suspended `evmAddress` for this session. */
+    public isSuspended(evmAddress: Address): boolean {
+        return this.p2pManager.isSuspended(evmAddress);
+    }
+
     /** Whether the block confirmation queue holds an entry for `blockHash`. */
     public isBlockQueued(blockHash: Hash): boolean {
         return (
             this.service.storage.queues.getQueuedEntry(blockHash) !== undefined
         );
+    }
+
+    public getSourceEligibility(source: Address) {
+        return this.service.sm.membershipService.getCachedSourceEligibility(
+            source
+        );
+    }
+
+    /** Plain projection of the queued entry's source contributions. */
+    public getQueuedRetention(blockHash: Hash) {
+        const queues = this.service.storage.queues;
+        const entry = queues.getQueuedEntry(blockHash);
+        if (!entry) return null;
+        return {
+            origin: entry.origin,
+            firstSeenAt: entry.firstSeenAt,
+            onChainTimestamp: entry.block.onChainTimestamp ?? null,
+            confirmationSignatures: entry.block.confirmationSignatures.size,
+            retainedSignatures: new Set(
+                [...entry.sourcesToSignatures.values()].flatMap((values) => [
+                    ...values
+                ])
+            ).size,
+            sourceCount: entry.sourcesToSignatures.size,
+            perSource: [...entry.sourcesToSignatures].map(
+                ([source, values]) => ({ source, count: values.size })
+            ),
+            maxChannelParticipants: queues.maxChannelParticipants
+        };
     }
 
     /**

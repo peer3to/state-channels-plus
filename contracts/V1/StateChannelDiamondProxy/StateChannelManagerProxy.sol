@@ -28,6 +28,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
     uint256 private constant DEFAULT_CHAIN_FALLBACK_TIME = 30;
     uint256 private constant DEFAULT_EVIDENCE_TIME = 30;
     uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+    uint256 private constant DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
     constructor(
         address _stateMachineImplementation,
@@ -44,7 +45,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
         uint256 _evidenceTime,
-        uint256 _disputeExecutionGasLimit
+        uint256 _disputeExecutionGasLimit,
+        uint256 _maxChannelParticipants
     ) {
         stateMachineImplementation = AStateMachine(_stateMachineImplementation);
         disputeManagerFacetAddress = _disputeManagerFacet;
@@ -101,6 +103,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getChainFallbackTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getEvidenceTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getGasLimit.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getMaxChannelParticipants.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
         _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
@@ -121,6 +124,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
         chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
         evidenceTime = _evidenceTime == 0 ? DEFAULT_EVIDENCE_TIME : _evidenceTime;
         gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
+        maxChannelParticipants =
+            _maxChannelParticipants == 0 ? DEFAULT_MAX_CHANNEL_PARTICIPANTS : _maxChannelParticipants;
     }
 
     fallback() external {
@@ -186,6 +191,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
+
+        require(
+            openChannelData.participants.length <= _getMaxChannelParticipants(),
+            ErrorTooManyParticipants(openChannelData.participants.length, _getMaxChannelParticipants())
+        );
 
         // reject duplicate participants
         for (uint256 i = 0; i < openChannelData.participants.length; i++) {

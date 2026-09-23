@@ -359,11 +359,11 @@ the wait against a five-second bound, reporting "still pending" as a distinct ou
 handler turns it red with that exact string.
 The exclusion case reads the non-excluded peer before the reset as well as after, so the "forgotten"
 assertion cannot pass against an empty pre-state, and asserts the ban survives in the same structure
-([`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4)); restoring the
+([`REQ-AUTH-4-JWCF71.T1.P7`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p7)); restoring the
 old `dispose()` call turns it red.
 The reduction case counts `multicall` invocations rather than inferring from state, parks the submit on its
 gas-limit read, resets, releases, and waits a further second so a late write still fails
-([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p14)).
+([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P15`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p15)).
 
 [SpectateService.test.ts](../verification/tests/test/unit/SpectateService.test.ts.md) gained two cases at the top of the file, and
 every declaration's line link in that report was re-resolved against the current file. The first drives
@@ -407,7 +407,7 @@ reads the blacklist both during the reset and after it in one structure, so a su
 deferred the verdict fails the second read; disabling the reset-window suppression turns it red
 ([`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23),
 [`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P10`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p10),
-[`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P5`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p5)).
+[`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P16`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p16)).
 
 The mid-reset case in
 [E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) was strengthened rather

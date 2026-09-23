@@ -220,7 +220,52 @@ function aggregateWorkerStats(workers) {
         (sum, entry) => sum + entry.memorySampleCount,
         0
     );
+    const pressureSamples = stats.reduce(
+        (sum, entry) => sum + (entry.cpuPressureSampleCount || 0),
+        0
+    );
+    const withPressure = stats.filter((entry) =>
+        Number.isFinite(entry.avgCpuPressure)
+    );
+    const withThrottle = stats.filter((entry) =>
+        Number.isFinite(entry.throttledMs)
+    );
     return {
+        ...(withPressure.length
+            ? {
+                  peakCpuPressure: Math.max(
+                      0,
+                      ...withPressure.map((entry) => entry.peakCpuPressure)
+                  ),
+                  avgCpuPressure: pressureSamples
+                      ? withPressure.reduce(
+                            (sum, entry) =>
+                                sum +
+                                entry.avgCpuPressure *
+                                    (entry.cpuPressureSampleCount || 0),
+                            0
+                        ) / pressureSamples
+                      : 0
+              }
+            : {}),
+        ...(withThrottle.length
+            ? {
+                  cpuDetail: {
+                      throttledMs: withThrottle.reduce(
+                          (sum, entry) => sum + entry.throttledMs,
+                          0
+                      ),
+                      nrThrottled: withThrottle.reduce(
+                          (sum, entry) => sum + (entry.nrThrottled || 0),
+                          0
+                      ),
+                      peakHostSteal: Math.max(
+                          0,
+                          ...stats.map((entry) => entry.peakHostSteal || 0)
+                      )
+                  }
+              }
+            : {}),
         peakCpu: Math.max(0, ...stats.map((entry) => entry.peakCpu)),
         avgCpu: cpuSamples
             ? stats.reduce(
@@ -318,7 +363,7 @@ function formatWorkerSummary(worker, completed) {
     const stats = worker.stats;
     return (
         `${workerName(worker)} (${capacity}) · ${completed} tests · ` +
-        `cpu avg ${(stats.avgCpu * 100).toFixed(0)}% / peak ${(stats.peakCpu * 100).toFixed(0)}% · ` +
+        `cpu avg ${(stats.avgCpu * 100).toFixed(0)}% / peak ${(stats.peakCpu * 100).toFixed(0)}%${logging.formatCpuPressure(stats.avgCpuPressure, stats.peakCpuPressure)}${logging.formatCpuDetail(stats)} · ` +
         `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB`
     );
 }
@@ -774,14 +819,16 @@ async function runDistributed(options) {
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
-                    starveCount: completion.parsed.starveCount
+                    starveCount: completion.parsed.starveCount,
+                    worker: workerName(worker)
                 });
             } else if (completion.disposition === "retry-infrastructure") {
                 logging.infrastructureRetry({
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
-                    reason: completion.failureReason
+                    reason: completion.failureReason,
+                    worker: workerName(worker)
                 });
             }
             await Promise.all(
@@ -1028,7 +1075,8 @@ async function runDistributed(options) {
         completed: state.completed,
         sumDurationMs: state.sumDurationMs,
         ...resourceStats,
-        workers: workerLabels
+        workers: workerLabels,
+        workerLabel: (id) => workerLabelById.get(id) || id
     };
 }
 

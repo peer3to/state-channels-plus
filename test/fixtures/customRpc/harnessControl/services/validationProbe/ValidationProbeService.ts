@@ -9,6 +9,7 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import { BlockOrigin, getSourcePeers } from "@/storage/QueueStorage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
@@ -85,7 +86,7 @@ export type IsDisputedForkProbe = {
 export type BlockProbeOptions = {
     strategy?: "active" | "dispute" | "spectating";
     encodedDispute?: string;
-    /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
+    /** Supplier of this copy, recorded in the per-source contribution map. */
     senderAddress?: Address;
 };
 
@@ -553,6 +554,201 @@ export class ValidationProbeService extends ANetworkRpcService<
         return matrix;
     }
 
+    public async probeReplayCommitCache(source: Address) {
+        const sm = this.sm;
+        await sm.mutex.lock({ taskName: "probeReplayCommitCache" });
+        try {
+            const block = sm.storage.blocks.getBlock(sm.forkId, 0);
+            if (!block) throw new Error("Expected historical block zero");
+            const snapshot = sm.storage.stateSnapshots.getStateSnapshotByHash(
+                block.stateSnapshotHash
+            )!;
+            const encodedState =
+                sm.storage.stateMachineStates.getStateMachineState(
+                    snapshot.stateMachineStateHash
+                )!;
+            const before =
+                sm.membershipService.getCachedSourceEligibility(source);
+            const heightBefore = sm.storage.blocks.getNextBlockHeight(
+                sm.forkId
+            );
+            const { dispute } = await sm.disputeManager.constructDispute(
+                sm.forkId
+            );
+            let committed = false;
+            await sm.blockCommitService.success(
+                block,
+                snapshot,
+                encodedState,
+                () => {},
+                { joined: new Set(), left: new Set() },
+                {
+                    strategy: this.createDisputeValidationStrategy(dispute),
+                    onBlockCommitted: () => {
+                        committed = true;
+                    }
+                }
+            );
+            return {
+                before,
+                after: sm.membershipService.getCachedSourceEligibility(source),
+                heightBefore,
+                heightAfter: sm.storage.blocks.getNextBlockHeight(sm.forkId),
+                historicalParticipants: snapshot.snapshotData.participants,
+                committed
+            };
+        } finally {
+            sm.mutex.unlock();
+        }
+    }
+
+    public async commitPreparedSnapshot(
+        encodedBlockConfirmation: string,
+        encodedSnapshot: string,
+        encodedState: string
+    ) {
+        const sm = this.sm;
+        return sm.withMutex(
+            async () => {
+                const block = Block.fromBlockConfirmation(
+                    Codec.decode(
+                        encodedBlockConfirmation,
+                        Type.BlockConfirmation
+                    )
+                );
+                const snapshot = StateSnapshot.from(
+                    Codec.decode(encodedSnapshot, Type.StateSnapshot)
+                );
+                const previous =
+                    sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                        block.coordinates
+                    );
+                const joined = new Set(
+                    snapshot.snapshotData.participants.filter(
+                        (address) =>
+                            !previous.snapshotData.participants.includes(
+                                address
+                            )
+                    )
+                );
+                const left = new Set(
+                    previous.snapshotData.participants.filter(
+                        (address) =>
+                            !snapshot.snapshotData.participants.includes(
+                                address
+                            )
+                    )
+                );
+                await sm.diamondStateMachine.setState(encodedState);
+                let callbackCalled = false;
+                await sm.blockCommitService.success(
+                    block,
+                    snapshot,
+                    encodedState,
+                    () => {
+                        callbackCalled = true;
+                    },
+                    { joined, left }
+                );
+                const stored = sm.storage.blocks.getBlock(block.hash)!;
+                return {
+                    callbackCalled,
+                    status: sm.status,
+                    height: stored.height,
+                    hash: stored.hash,
+                    snapshotHash:
+                        sm.storage.stateSnapshots.getStateSnapshotByHash(
+                            snapshot.hash
+                        )?.hash,
+                    encodedState: String(
+                        await sm.diamondStateMachine.getState()
+                    ),
+                    signedBySelf:
+                        stored.confirmationSignatures.size > 0 &&
+                        [...stored.confirmationSignatures].some(
+                            (signature) =>
+                                stored.signatureToAddress(signature) ===
+                                sm.signerAddress
+                        ),
+                    eligibility:
+                        sm.membershipService.getCachedSourceEligibility(
+                            sm.signerAddress
+                        )
+                };
+            },
+            { taskName: "commitPreparedSnapshot" }
+        );
+    }
+
+    public async normalizeConfirmationCopies(
+        copies: { encodedBlockConfirmation: string; source?: Address }[],
+        strategyName: "live" | "spectating" | "dispute" | "calldata"
+    ) {
+        const sm = this.sm;
+        const decoded = copies.map((copy) => ({
+            block: Block.fromBlockConfirmation(
+                Codec.decode(
+                    copy.encodedBlockConfirmation,
+                    Type.BlockConfirmation
+                )
+            ),
+            source: copy.source
+        }));
+        if (!decoded.length) throw new Error("Expected a confirmation copy");
+        let entry: QueuedBlockEntry;
+        if (decoded[0].source) {
+            for (const copy of decoded) {
+                if (!copy.source)
+                    throw new Error("Cannot mix sourced and proof copies");
+                sm.storage.queues.queueBlock(copy.block, {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: copy.source
+                });
+            }
+            entry = sm.storage.queues.removeBlock(decoded[0].block.hash)!;
+        } else
+            entry = sm.storage.queues.createEntry(decoded[0].block, {
+                origin: BlockOrigin.PROOF
+            });
+
+        let strategy: AValidationStrategy = sm.blockValidationStrategy;
+        if (strategyName === "spectating")
+            strategy = sm.spectatingValidationStrategy;
+        if (strategyName === "calldata")
+            strategy = new CalldataCommittedStrategy(
+                sm.disputeManager,
+                sm.blockValidationStrategy
+            );
+        if (strategyName === "dispute") {
+            const { dispute } = await sm.disputeManager.constructDispute(
+                sm.forkId
+            );
+            strategy = this.createDisputeValidationStrategy(dispute);
+        }
+        let result: string;
+        try {
+            result =
+                BlockValidationResult[
+                    await sm.validationService.normalizeConfirmationSignatures(
+                        entry,
+                        strategy
+                    )
+                ];
+        } catch (error) {
+            result = `throw: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        return {
+            result,
+            signatures: [...entry.block.confirmationSignatures].map(String),
+            sources: [...entry.sourcesToSignatures].map(([source, values]) => ({
+                source,
+                charged: values.size,
+                blacklisted: sm.p2pManager.isBlacklisted(source)
+            })),
+            authorBlacklisted: sm.p2pManager.isBlacklisted(entry.block.author)
+        };
+    }
+
     public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
         const { dispute } = await this.sm.disputeManager.constructDispute(
             this.sm.forkId
@@ -562,9 +758,11 @@ export class ValidationProbeService extends ANetworkRpcService<
         );
         if (!latestBlock) throw new Error("Expected a latest block");
         const strategy = this.createDisputeValidationStrategy(dispute);
-        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(
-            this.sm.storage.queues.createEntry(latestBlock)
-        );
+        const entry = this.sm.storage.queues.createEntry(latestBlock, {
+            origin: BlockOrigin.PROOF
+        });
+
+        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         return {
             result: BlockValidationResult[result],
             proofStored:
@@ -590,7 +788,10 @@ export class ValidationProbeService extends ANetworkRpcService<
             this.sm.signer
         );
         const strategy = this.createDisputeValidationStrategy(dispute);
-        const entry = this.sm.storage.queues.createEntry(block);
+        const entry = this.sm.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+
         const earlyAuthorResult =
             await strategy.blockAuthorIsNotParticipant(entry);
         const signatureUnionResult =
@@ -629,7 +830,10 @@ export class ValidationProbeService extends ANetworkRpcService<
             Type.BlockConfirmation
         );
         const block = Block.fromBlockConfirmation(blockConfirmation);
-        const entry = sm.storage.queues.createEntry(block);
+        const entry = sm.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+
         let strategy: AValidationStrategy;
         switch (options?.strategy) {
             case "dispute":
@@ -766,11 +970,15 @@ export class ValidationProbeService extends ANetworkRpcService<
             Type.BlockConfirmation
         );
         const block = Block.fromBlockConfirmation(blockConfirmation);
-        // same entry the gossip pipeline builds: a supplied copy carries its
-        // sender into sourcePeers/signatureSources, a sourceless one doesn't
-        const entry = sm.storage.queues.createEntry(block, {
-            senderAddress: options?.senderAddress
-        });
+        // Sourced probes spend network allowances; replay has an explicit origin.
+        const entry = options?.senderAddress
+            ? sm.storage.queues.createEntry(block, {
+                  origin: BlockOrigin.NETWORK,
+                  senderAddress: options.senderAddress
+              })
+            : sm.storage.queues.createEntry(block, {
+                  origin: BlockOrigin.PROOF
+              });
         // default: the live block strategy (PARTICIPATING). "dispute" builds a
         // real DisputeValidationStrategy - as dispute auditing does - so the
         // dispute-only branches (skip future/disputed gates, setState, the
@@ -921,7 +1129,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             abortCalled: run.recorded.abortCalled,
             signerAddress: String(run.block.signerAddress),
             fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
-            sourcePeers: [...run.entry.sourcePeers].map(String),
+            sourcePeers: [...getSourcePeers(run.entry)].map(String),
             calldataRecoveryQueries: run.recorded.calldataRecoveryQueries,
             subjectiveWarningCount: run.recorded.subjectiveWarningCount
         };
@@ -949,10 +1157,15 @@ export class ValidationProbeService extends ANetworkRpcService<
         const { strategy, result } = recordValidationBoundary(
             this.sm.blockValidationStrategy
         );
+        const entry = this.sm.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+
         await this.sm.validationService.validateBlockConfirmation(
-            this.sm.storage.queues.createEntry(block),
+            entry,
             strategy
         );
+
         // the staged blocks always target the live, open channel - stopping
         // this early means the staging broke, not that the gate decided
         if (["wrongChannel", "channelNotOpened"].includes(result.reached)) {

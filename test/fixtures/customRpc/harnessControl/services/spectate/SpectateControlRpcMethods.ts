@@ -18,6 +18,15 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         super(transport, service);
     }
 
+    public sync(peerAddress: Address, forkId: ForkId, blockHeight: number) {
+        return this.service.spectate.sync(
+            peerAddress,
+            this.service.sm.channelId,
+            forkId,
+            blockHeight
+        );
+    }
+
     /** Generate a sync payload, returned encoded (or null if not provable). */
     public async generateSyncPayload(
         channelId: ChannelId,

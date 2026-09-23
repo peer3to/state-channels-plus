@@ -14,6 +14,7 @@ import type {
     ExactTransportQueueGuardProbe,
     ClosedTransportDispatchGuardProbe,
     LateCompletionGuardProbe,
+    RepeatedTimeoutGuardProbe,
     TimeoutGuardProbe,
     DeferredAdmissionProbe
 } from "./HandshakeCompletedGuardProbeService";
@@ -72,6 +73,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ANetworkRpcMethods<H
         completed: boolean
     ): Promise<DisposedWaiterGuardProbe> {
         return this.service.probeDisposedWaiter(completed);
+    }
+
+    public probeRepeatedTimeoutsSuspend(): Promise<RepeatedTimeoutGuardProbe> {
+        return this.service.probeRepeatedTimeoutsSuspend();
     }
 
     public probeLateCompletionAfterTimeout(): Promise<LateCompletionGuardProbe> {

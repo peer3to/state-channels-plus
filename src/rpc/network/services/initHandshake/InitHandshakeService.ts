@@ -1,5 +1,6 @@
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import NetworkTransport from "@/transport/NetworkTransport";
@@ -24,6 +25,9 @@ export type HandshakeResponse = {
 };
 
 class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
+    /** Name of the scheduled task that fires the acknowledgement timeout. */
+    public static readonly HANDSHAKE_ACK_TIMEOUT_TASK =
+        "InitHandshakeService - handshake ack timeout";
     /**
      * Domain tag scoping a handshake signature to the handshake protocol.
      * The responder signs this string, never the bare 32-byte challenge hash.
@@ -121,7 +125,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                         ? `handshake response not received in time: ${error.message}`
                         : "handshake response not received in time"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.allowRetry()
+            );
             return;
         }
 
@@ -147,7 +154,11 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                         ? `invalid handshake response: ${error.message}`
                         : "invalid handshake response"
             });
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.BLACKLIST,
+                "invalid handshake response"
+            );
         }
     }
 
@@ -181,7 +192,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response RTT outside agreement window"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.allowRetry()
+            );
             return;
         }
         const responseTimeDifference = responseTime - initTime;
@@ -199,7 +213,12 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response timestamp outside agreement window"
             });
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            // Same clock-skew class as the RTT check above, so it shares the
+            // peer's retry bound instead of recording a verdict.
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.allowRetry()
+            );
             return;
         }
         //verify signature
@@ -229,7 +248,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 signerAddress,
                 reason: "response signer is blacklisted"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
 
@@ -343,9 +365,11 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                // Handshake negotiation started but never finalized.
-                // If we have an authenticated peer address, blacklist by address;
-                // otherwise just disconnect the transport.
+                // Handshake negotiation started but never finalized. Silence
+                // after the proof leg is still not proven misbehaviour, so it
+                // spends the peer's shared retry bound; the strike lands on the
+                // key the profile already carries, and a suspension also bars
+                // the identity the response already proved.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
@@ -357,17 +381,15 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                     reason: "handshake ack not received in time"
                 });
 
-                if (peerAddress) {
-                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        peerAddress
-                    );
-                    return;
-                }
-
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.allowRetry(),
+                    undefined,
+                    peerAddress
+                );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "InitHandshakeService - handshake ack timeout"
+            InitHandshakeService.HANDSHAKE_ACK_TIMEOUT_TASK
         );
     }
 

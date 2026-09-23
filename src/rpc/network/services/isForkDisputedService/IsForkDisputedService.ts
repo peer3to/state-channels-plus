@@ -1,4 +1,5 @@
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
@@ -85,12 +86,15 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                             .request(peerAddress, { timeoutMs });
                     if (isStale()) return;
                     if (!acknowledged) {
+                        // A refusal may be a lagging chain view, not proven
+                        // misbehaviour: it spends the peer's retry bound.
                         this.logger.debug(
                             `Peer did not acknowledge disputed fork ${forkId}, disconnecting`,
                             { peerAddress }
                         );
-                        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                            peerAddress
+                        this.p2pManager.disconnectConnection(
+                            peerAddress,
+                            DisconnectPolicy.allowRetry()
                         );
                         return;
                     }
@@ -110,8 +114,9 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                             error: errorMessage(error)
                         }
                     );
-                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        peerAddress
+                    this.p2pManager.disconnectConnection(
+                        peerAddress,
+                        DisconnectPolicy.allowRetry()
                     );
                 }
             })
@@ -152,7 +157,10 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
      */
     public peerAcknowledgesDisputedFork(peerAddress: string, forkId: ForkId) {
         if (this.didPeerAcknowledgeDisputedFork(peerAddress, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                peerAddress,
+                "duplicate dispute acknowledgment"
+            );
             return;
         }
         this.recordAcknowledgement(
@@ -167,7 +175,10 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
      */
     public IAcknowledgeDisputedFork(peerAddress: string, forkId: ForkId) {
         if (this.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                peerAddress,
+                "duplicate dispute acknowledgment request"
+            );
             return;
         }
         this.recordAcknowledgement(

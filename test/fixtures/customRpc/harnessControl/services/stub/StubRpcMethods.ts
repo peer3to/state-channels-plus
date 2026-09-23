@@ -48,12 +48,57 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         super(transport, service);
     }
 
+    public observeDisputeParticipation(): boolean {
+        this.service.observeDisputeParticipation();
+        return true;
+    }
+    public getDisputeParticipationObservation() {
+        return this.service.getDisputeParticipationObservation();
+    }
+    public restoreDisputeParticipationObservation(): boolean {
+        this.service.restoreDisputeParticipationObservation();
+        return true;
+    }
+
+    public observeAdmission(
+        options?: Parameters<StubService["observeAdmission"]>[0]
+    ): boolean {
+        this.service.observeAdmission(options);
+        return true;
+    }
+    public getAdmissionObservation() {
+        return this.service.getAdmissionObservation();
+    }
+    public releaseAdmissionMembership(): boolean {
+        this.service.releaseAdmissionMembership();
+        return true;
+    }
+    public releaseAdmissionGossip(): boolean {
+        this.service.releaseAdmissionGossip();
+        return true;
+    }
+    public restoreAdmissionObservation(): boolean {
+        this.service.restoreAdmissionObservation();
+        return true;
+    }
+
     public scheduleProbe(taskName: string): Promise<boolean> {
         return this.service.scheduleProbe(taskName);
     }
 
     public holdBlockWork(point: BlockWorkHoldPoint): boolean {
-        if (!["authoring", "commit", "signature"].includes(point))
+        if (
+            ![
+                "queueDequeue",
+                "authoring",
+                "commit",
+                "signature",
+                "confirmationValidation",
+                "proofConfirmationValidation",
+                "storedMerge",
+                "stateApplicationInspection"
+            ].includes(point)
+        )
             throw new Error("Invalid block-work hold point");
         this.service.installBlockWorkHold(point);
         return true;
@@ -966,6 +1011,132 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /**
+     * Skew the request time this peer sends in its own handshake challenges by
+     * `offsetSeconds`, as a peer with a wrong clock would. Only the outgoing
+     * request is touched; the local clock stays correct.
+     */
+    public stubHandshakeRequestSkew(offsetSeconds: number): boolean {
+        const p2pManager = this.p2pManager;
+        if (!this.service.stubOriginals.has("handshakeRequestSkew")) {
+            this.service.stubOriginals.set(
+                "handshakeRequestSkew",
+                p2pManager.remoteRpc
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "handshakeRequestSkew"
+        ) as typeof p2pManager.remoteRpc;
+        // Own-property overrides over the real proxy: every other service and
+        // endpoint still resolves through the original.
+        const handshake = original.initHandshakeService;
+        const skewedHandshake = Object.create(handshake, {
+            onInitHandshakeRequest: {
+                value: (challengeHash: Hash, time: Timestamp) =>
+                    handshake.onInitHandshakeRequest(
+                        challengeHash,
+                        time + offsetSeconds
+                    )
+            }
+        }) as typeof handshake;
+        p2pManager.remoteRpc = Object.create(original, {
+            initHandshakeService: { value: skewedHandshake }
+        }) as typeof original;
+        return true;
+    }
+
+    public restoreHandshakeRequestSkew(): boolean {
+        const original = this.service.stubOriginals.get("handshakeRequestSkew");
+        if (original === undefined) return false;
+        this.p2pManager.remoteRpc =
+            original as typeof this.p2pManager.remoteRpc;
+        this.service.stubOriginals.delete("handshakeRequestSkew");
+        return true;
+    }
+
+    /**
+     * Ignore every handshake acknowledgement this peer receives, so its own
+     * acknowledgement timeout fires for each handshake it verified.
+     */
+    public stubDropHandshakeAcks(): boolean {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.service.stubOriginals.has("dropHandshakeAcks")) {
+            this.service.stubOriginals.set(
+                "dropHandshakeAcks",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "dropHandshakeAcks"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: NetworkTransport) => {
+            const methods = original(transport);
+            methods.onInitHandshakeAck = async () => {};
+            return methods;
+        };
+        return true;
+    }
+
+    public restoreDropHandshakeAcks(): boolean {
+        const original = this.service.stubOriginals.get("dropHandshakeAcks");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("dropHandshakeAcks");
+        return true;
+    }
+
+    /**
+     * Park this peer's opening submission after it signed the opening, so a
+     * signed attempt can be aborted before the channel lands on chain.
+     */
+    public stubHoldOpeningSubmission(): boolean {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `submitOpening` is private on the service; the stub patches it by name.
+        const target = service as unknown as {
+            submitOpening: (...parameters: unknown[]) => Promise<unknown>;
+        };
+        if (!this.service.stubOriginals.has("openingSubmission")) {
+            this.service.stubOriginals.set(
+                "openingSubmission",
+                target.submitOpening
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "openingSubmission"
+        ) as typeof target.submitOpening;
+        const stubService = this.service;
+        target.submitOpening = async (...parameters: unknown[]) => {
+            await new Promise<void>((resolve) => {
+                stubService.heldOpeningSubmissions.push(resolve);
+            });
+            return original.apply(service, parameters);
+        };
+        return true;
+    }
+
+    public getHeldOpeningSubmissionCount(): number {
+        return this.service.heldOpeningSubmissions.length;
+    }
+
+    /** Restore the real submission and let the parked ones proceed. */
+    public releaseOpeningSubmission(): number {
+        const original = this.service.stubOriginals.get("openingSubmission");
+        const held = this.service.heldOpeningSubmissions.splice(0);
+        if (original !== undefined) {
+            const service =
+                this.p2pManager.localRpc.openChannelNegotiationService;
+            (
+                service as unknown as {
+                    submitOpening: unknown;
+                }
+            ).submitOpening = original;
+            this.service.stubOriginals.delete("openingSubmission");
+        }
+        for (const release of held) release();
+        return held.length;
+    }
+
     public restoreHandshakeResponse(): boolean {
         const original = this.service.stubOriginals.get(
             "initHandshakeCreateRpcMethods"
@@ -1555,6 +1726,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Resolves once a rebuild is parked at the hold; parked count. */
     public waitForHeldAuditingDataRebuild(): Promise<number> {
         return this.service.waitForHeldAuditingDataRebuild();
+    }
+
+    /** Hold the discovery join for `holdMs` so an abort can land inside it. */
+    public stubHoldDiscoveryJoin(holdMs: number): boolean {
+        this.service.installDiscoveryJoinHold(holdMs);
+        return true;
     }
 
     public async joinAndLeavePendingLocalDiscovery(
@@ -2591,8 +2768,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSpectateResponseCount();
     }
 
-    public holdPostMatchTargetRefresh(): boolean {
-        this.service.holdPostMatchTargetRefresh();
+    public holdPostMatchTargetRefresh(autoReleaseMs?: number): boolean {
+        this.service.holdPostMatchTargetRefresh(autoReleaseMs);
         return true;
     }
 

@@ -81,6 +81,9 @@ jobs:
                     exit 1
                   fi
 
+            - name: Compile contracts and generated artifacts
+              run: yarn compile
+
             - name: Run full test suite on the distributed pool
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}

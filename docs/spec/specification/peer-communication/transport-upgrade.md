@@ -127,7 +127,9 @@ identity exclusion MUST remain in force across every transport change. A late bo
 that reaches authentication MUST still be refused while the direct transport is healthy or the
 identity is excluded. After current-direct retirement, a non-excluded bootstrap connection may
 authenticate, become current, and carry traffic. Refusing a non-current transport MUST NOT emit a
-peer-disconnection event for the still-current identity transport.
+peer-disconnection event for the still-current identity transport. A close taken for upgrade
+preference is never punitive: it carries the reconnect-allowed outcome
+([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](rpc.md#req-rpc-6-e60s4j)).
 
 **<a id="req-upg-5-yqv7mj"></a>`REQ-UPG-5-YQV7MJ` — Relay retries converge without stale work.** Relay selection MUST avoid failed URLs
 until pool exhaustion, apply bounded jittered backoff, deduplicate paired failure events, and cancel

@@ -42,7 +42,7 @@ describe("EventSyncService", function () {
                 provider.getBlock = original;
             }
         });
-        expect(error).to.equal("Slash recovery could not read the chain head");
+        expect(error).to.equal("Membership read could not read the chain head");
     });
 
     it("authoritative slash recovery rejects exhausted chain log queries", async function () {

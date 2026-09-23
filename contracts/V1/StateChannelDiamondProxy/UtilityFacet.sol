@@ -311,6 +311,10 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _getAllTimes();
     }
 
+    function getMaxChannelParticipants() public view returns (uint256) {
+        return _getMaxChannelParticipants();
+    }
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view

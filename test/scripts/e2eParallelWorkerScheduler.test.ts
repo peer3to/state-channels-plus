@@ -16,6 +16,10 @@ const {
     accountPartitionFor
 } = require("../../scripts/e2e-parallel/shared/accountPartitionPool.js");
 const {
+    cpuDelta,
+    readCpuSnapshot
+} = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
+const {
     getErrorLogPath
 } = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
@@ -148,6 +152,144 @@ describe("distributed worker scheduler", function () {
         expect(pool.acquire()).to.equal(first);
         expect(accountPartitionFor({ id: 1 }, second)).to.equal(second);
         expect(accountPartitionFor(null, second)).to.equal(0);
+    });
+
+    it("reads container CPU use, pressure and throttling from its own cgroup and the host busy share beside it", function () {
+        const files = (
+            usage: number,
+            pressure: number,
+            throttled: number,
+            hostIdle: number
+        ) => ({
+            "/proc/self/cgroup": "0::/\n",
+            "/sys/fs/cgroup/cpu.stat": `usage_usec ${usage}\nuser_usec 1\nsystem_usec 1\nnr_periods 10\nnr_throttled ${throttled / 50000}\nthrottled_usec ${throttled}\n`,
+            "/sys/fs/cgroup/cpu.pressure": `some avg10=0.00 avg60=0.00 avg300=0.00 total=${pressure}\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=${pressure / 2}\n`,
+            "/sys/fs/cgroup/cpuset.cpus.effective": "0-6,7\n",
+            "/proc/stat": `cpu 1000 0 500 ${hostIdle} 0 0 0 100 0 0\ncpu0 1 0 0 0 0 0 0 0 0 0\n`
+        });
+        const snapshotAt = (at: number, contents: Record<string, string>) =>
+            readCpuSnapshot({
+                platform: "linux",
+                now: () => at,
+                cpuCount: () => 99,
+                readFile: (file: string) => {
+                    if (!(file in contents)) throw new Error(`ENOENT ${file}`);
+                    return contents[file];
+                }
+            });
+        const first = snapshotAt(1000, files(1_000_000, 100_000, 0, 8000));
+        const second = snapshotAt(
+            2000,
+            files(
+                1_000_000 + 4_000_000,
+                100_000 + 250_000,
+                150_000,
+                8000 + 1400
+            )
+        );
+        expect(first.source).to.equal("cgroup");
+        expect(first.cores).to.equal(8);
+        const delta = cpuDelta(first, second);
+        // 4 CPU-seconds over 1s of wall time on 8 cores
+        expect(delta.cpuUtil).to.be.closeTo(0.5, 1e-9);
+        expect(delta.cpuPressure).to.be.closeTo(0.25, 1e-9);
+        expect(delta.cpuPressureFull).to.be.closeTo(0.125, 1e-9);
+        expect(delta.throttledMs).to.equal(150);
+        expect(delta.nrThrottled).to.equal(3);
+        // host: 1400 idle of 1400 total jiffies elapsed -> nothing else ran
+        expect(delta.hostCpuUtil).to.be.closeTo(0, 1e-9);
+        expect(delta.hostSteal).to.equal(0);
+    });
+
+    it("falls back to the host CPU accounting with steal counted as busy, then to the platform times", function () {
+        const hostOnly = (idle: number, steal: number) => ({
+            "/proc/stat": `cpu 100 0 100 ${idle} 0 0 0 ${steal} 0 0\n`,
+            "/proc/pressure/cpu":
+                "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
+        });
+        const snapshotAt = (at: number, contents: Record<string, string>) =>
+            readCpuSnapshot({
+                platform: "linux",
+                now: () => at,
+                cpuCount: () => 4,
+                readFile: (file: string) => {
+                    if (!(file in contents)) throw new Error(`ENOENT ${file}`);
+                    return contents[file];
+                }
+            });
+        const first = snapshotAt(0, hostOnly(1000, 0));
+        // 100 idle and 100 stolen of 400 elapsed jiffies -> 75% busy, 25% steal
+        const second = snapshotAt(1000, hostOnly(1100, 100));
+        const withUser = (contents: Record<string, string>, user: number) => ({
+            ...contents,
+            "/proc/stat": contents["/proc/stat"].replace(
+                "cpu 100",
+                `cpu ${user}`
+            )
+        });
+        const later = snapshotAt(1000, withUser(hostOnly(1100, 100), 300));
+        expect(first.source).to.equal("host");
+        expect(first.cores).to.equal(4);
+        const delta = cpuDelta(first, later);
+        expect(delta.cpuUtil).to.be.closeTo(0.75, 1e-9);
+        expect(delta.hostSteal).to.be.closeTo(0.25, 1e-9);
+        expect(delta.cpuPressure).to.equal(0);
+        expect(delta.throttledMs).to.equal(undefined);
+        expect(second.source).to.equal("host");
+        const platform = readCpuSnapshot({
+            platform: "darwin",
+            readFile: () => {
+                throw new Error("must not read files off Linux");
+            }
+        });
+        expect(platform.source).to.equal("os");
+        expect(platform.cores).to.be.greaterThan(0);
+    });
+
+    it("admits on the machine's busy share and reports the cgroup's own use and stall figures beside it", async function () {
+        const contents: Record<string, string> = {
+            "/proc/self/cgroup": "0::/\n",
+            "/sys/fs/cgroup/cpu.stat":
+                "usage_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\n",
+            "/sys/fs/cgroup/cpu.pressure":
+                "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+            "/proc/stat": "cpu 0 0 0 1000 0 0 0 0 0 0\n"
+        };
+        let clock = 0;
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 1,
+            memBoundGb: Number.MAX_SAFE_INTEGER,
+            sampleOptions: {
+                platform: "linux",
+                now: () => clock,
+                cpuCount: () => 2,
+                readFile: (file: string) => {
+                    if (!(file in contents)) throw new Error(`ENOENT ${file}`);
+                    return contents[file];
+                }
+            }
+        });
+        clock = 1000;
+        contents["/sys/fs/cgroup/cpu.stat"] =
+            "usage_usec 1000000\nnr_periods 10\nnr_throttled 2\nthrottled_usec 80000\n";
+        contents["/sys/fs/cgroup/cpu.pressure"] =
+            "some avg10=0.00 avg60=0.00 avg300=0.00 total=300000\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=100000\n";
+        contents["/proc/stat"] = "cpu 60 0 40 1050 0 0 0 0 0 0\n";
+        expect(await resources.allows(1, 4)).to.equal(true);
+        const stats = resources.stats();
+        expect(stats.cpuSource).to.equal("cgroup");
+        expect(stats.cpuCores).to.equal(2);
+        // admission sees the machine: 100 busy of 150 elapsed jiffies
+        expect(stats.peakCpu).to.be.closeTo(100 / 150, 1e-9);
+        // this cgroup itself: 1 CPU-second on 2 cores in 1s
+        expect(stats.peakContainerCpu).to.be.closeTo(0.5, 1e-9);
+        expect(stats.peakCpuPressure).to.be.closeTo(0.3, 1e-9);
+        expect(stats.peakCpuPressureFull).to.be.closeTo(0.1, 1e-9);
+        expect(stats.throttledMs).to.equal(80);
+        expect(stats.nrThrottled).to.equal(2);
+        expect(stats.cpuPressureSampleCount).to.equal(1);
     });
 
     it("uses the shared always-one and process-cap admission rules", async function () {

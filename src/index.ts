@@ -66,6 +66,7 @@ export {
     NetworkTransport,
     getChecksumAddress
 };
+export { DisconnectPolicy } from "@/DisconnectPolicy";
 export { Status } from "@/types";
 export type { ChannelId } from "@/types";
 export {

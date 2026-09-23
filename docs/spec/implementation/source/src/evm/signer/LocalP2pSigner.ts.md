@@ -34,15 +34,16 @@ The inline signer facade: local key-backed signing plus the join-collection entr
 Lobby input checks delegate to the shared topic/timeout validators, then the application state machine checks positive balance. Validation order and the original messages stay unchanged. See [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L288).
 
 1. **One facade for signing + protocol collection** so integrators never touch services directly.
+   `connectToChannel` answers `false` when an error surfaces after the runtime was aborted or disposed, logging the suppressed error at debug level: the abort is the connect's outcome, not the error a torn-down dependency raised on the way out.
 2. **One generation captured at entry, re-read before every effect the call can still produce.**
    `connectToChannel` is a long sequential composition and a leave can settle under any of its awaits,
-   so it captures `stateManager.channelGeneration` once, immediately after the operation guard ([#L173](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L173)),
+   so it captures `stateManager.channelGeneration` once, immediately after the operation guard ([#L191](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L191)),
    and calls `stateManager.isStaleChannelWork()` at each point where a resumed call would leave a mark.
-   Before joining channel discovery ([#L231](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L231)): joining there would subscribe the reused runtime to the topic
+   Before joining channel discovery ([#L249](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L249)): joining there would subscribe the reused runtime to the topic
    of the channel it left and overwrite the discovery key its next reset has to release — neither is
    undone by the call returning `false` afterwards, and the status check just above it is no substitute,
-   because a next channel that is already open clears it. Before `membershipService.topUpBalance` ([#L247](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L247))
-   and before `membershipService.joinChannel` ([#L262](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L262)): collecting the join confirmation is a network round
+   because a next channel that is already open clears it. Before `membershipService.topUpBalance` ([#L265](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L265))
+   and before `membershipService.joinChannel` ([#L280](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L280)): collecting the join confirmation is a network round
    trip over the peer set, and the collected authorization stays perfectly valid, which is the problem —
    submitting it is an on-chain write that would put the departed signer back into the channel it just
    left, the one consequence of late work that no later local cleanup can undo. The two membership

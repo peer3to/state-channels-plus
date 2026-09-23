@@ -240,15 +240,18 @@ export async function assertDirectSlashRecovery(
         h.getPeer(0),
         async (sm, args) => {
             const contract = sm.stateChannelManagerContract;
-            const original = contract.getOnChainSlashedParticipants;
-            if (args.failRead)
-                Reflect.set(
-                    contract,
-                    "getOnChainSlashedParticipants",
-                    async () => {
+            const provider = contract.runner!.provider!;
+            const original = provider.call.bind(provider);
+            const selector = contract.interface
+                .getFunction("getOnChainSlashedParticipants")!
+                .selector.slice(2);
+            if (args.failRead) {
+                provider.call = async (transaction) => {
+                    if (String(transaction.data).includes(selector))
                         throw new Error("slash source unavailable");
-                    }
-                );
+                    return original(transaction);
+                };
+            }
             try {
                 const changed = await sm.eventSyncService.recoverOnChainSlashes(
                     sm.channelId
@@ -261,11 +264,7 @@ export async function assertDirectSlashRecovery(
                         error instanceof Error ? error.message : String(error)
                 };
             } finally {
-                Reflect.set(
-                    contract,
-                    "getOnChainSlashedParticipants",
-                    original
-                );
+                provider.call = original;
             }
         },
         { failRead }

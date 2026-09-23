@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: harness network setup exercised by owning mapped test declarations
 import type { NetworkService } from "./NetworkService";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -89,7 +90,7 @@ export class NetworkRpcMethods extends ANetworkRpcMethods<NetworkService> {
             );
         });
         if (!transport) return false;
-        this.p2pManager.disconnectConnection(transport);
+        this.p2pManager.disconnectConnection(transport, DisconnectPolicy.ALLOW);
         return true;
     }
 

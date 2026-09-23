@@ -3,6 +3,7 @@ import { channelIdToTargetedJoinTopic, sleep } from "@/utils";
 
 import {
     assertLateSyncResultAfterAbortChangesNothing,
+    assertObserverConnectSettlesFalseOnAbort,
     withFreshInitialSyncObserver
 } from "@test/fixtures/AbortDuringInitialSyncStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
@@ -364,7 +365,7 @@ describe("P2PManager", function () {
         expect(result.blacklistByAddress).to.equal(true);
         expect(result.blacklistByStaleTransportAddress).to.equal(true);
         expect(result.staleAndCurrentDisconnected).to.equal(true);
-        expect(result.missingAddressIgnored).to.equal(true);
+        expect(result.missingAddressRecorded).to.equal(true);
         expect(result.connectedPeers).to.deep.equal([
             fixture!.address(0),
             fixture!.address(1)
@@ -1048,43 +1049,27 @@ describe("P2PManager", function () {
                 }
             });
             const h = fixture.getHarness();
-            await h.lifecycle.openChannelForParticipants([0, 1]);
-            await h.network.joinSelectedKey([0, 1], String(h.channelId));
-            const observerIndex = h.peers.length;
-            await h.createPeer(
-                observerIndex,
-                h.signerFor(slotAccountIndex(observerIndex))
-            );
-            const observer = h.getPeer(observerIndex);
-            const host = clientRootFor(
-                observer.p2pInstance
-            ).p2pRuntimeHostRemoteRoot!;
-            await Promise.all(
-                h.peers.map((peer) =>
-                    h
-                        .control(peer)
-                        .stub.stubBlockHandshakeAndRecordSpectateGuard()
-                        .request()
-                )
-            );
             try {
-                const startedAt = Date.now();
-                const connect = observer.p2pInstance.p2pSigner.connectToChannel(
-                    h.channelId
-                );
-                await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
-                await h.control(observer).stub.abortDetached().request();
-                expect(await connect).to.equal(false);
-                // Settled by the abort, well inside the two-window deadline.
-                expect(Date.now() - startedAt).to.be.lessThan(2 * 2 * 1000);
-                await waitFor(
-                    () => host.isClosed,
-                    h.event.protocolEventTimeoutMs()
-                );
+                await assertObserverConnectSettlesFalseOnAbort(h, {
+                    // Settled by the abort, well inside the two-window deadline.
+                    settledWithinMs: 2 * 2 * 1000,
+                    // participants never answer the handshake, so the connect
+                    // parks on the armed initial wait
+                    stage: async () => {
+                        await Promise.all(
+                            h.peers.map((peer) =>
+                                h
+                                    .control(peer)
+                                    .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                                    .request()
+                            )
+                        );
+                    }
+                });
             } finally {
                 await Promise.all(
                     h.peers
-                        .filter((peer) => peer.index !== observerIndex)
+                        .filter((peer) => peer.index !== h.peers.length - 1)
                         .map((peer) =>
                             h
                                 .control(peer)
@@ -1093,6 +1078,66 @@ describe("P2PManager", function () {
                         )
                 );
             }
+        });
+
+        it("observer connect resolves false when the runtime aborts during the discovery join", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            // the join is held longer than the whole abort sequence, so the
+            // abort lands while the connect handler is still inside it and
+            // the answer must come from the abort, not from the held join
+            const holdMs = 3000;
+            await assertObserverConnectSettlesFalseOnAbort(
+                fixture.getHarness(),
+                {
+                    settledWithinMs: holdMs,
+                    stage: (observer) =>
+                        fixture!
+                            .getHarness()
+                            .control(observer)
+                            .stub.stubHoldDiscoveryJoin(holdMs)
+                            .request()
+                            .then(() => undefined)
+                }
+            );
+        });
+
+        it("observer connect resolves false when the runtime aborts during the pre-join chain read", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            // connect reads the opened status twice before it joins discovery;
+            // parking the second read lets the abort land between OPENED and
+            // the join, and the timer frees the read after the abort
+            const holdMs = 1000;
+            await assertObserverConnectSettlesFalseOnAbort(
+                fixture.getHarness(),
+                {
+                    settledWithinMs: 2 * 2 * 1000,
+                    stage: (observer) =>
+                        fixture!
+                            .getHarness()
+                            .control(observer)
+                            .stub.holdPostMatchTargetRefresh(holdMs)
+                            .request()
+                            .then(() => undefined)
+                }
+            );
         });
 
         it("a late sync success after the abort changes nothing", async function () {

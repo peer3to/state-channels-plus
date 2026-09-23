@@ -138,8 +138,9 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
         address alice = vm.addr(ALICE_PK);
         address bob = vm.addr(BOB_PK);
         address failingParticipant = address(0xFA11);
-        OutboundMessageApplyHarness harness =
-            new OutboundMessageApplyHarness(new MathStateMachine(SM_GAS_LIMIT), failingParticipant);
+        OutboundMessageApplyHarness harness = new OutboundMessageApplyHarness(
+            new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS), failingParticipant
+        );
 
         MessageBlock[] memory outboundMessageBlocks = new MessageBlock[](2);
         outboundMessageBlocks[0].messages = new Message[](1);

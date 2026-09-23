@@ -28,7 +28,9 @@ Frame delivery converts Uint8Array input to Buffer, then delegates to NetworkTra
 
 1. **Handshake-on-construct:** no window where an unauthenticated bootstrap connection idles usable.
 2. **Ban policy stays outside the transport.** Construction supplies the SDK handle to its profile;
-   the transport neither decides nor exposes ban/unban policy.
+   the transport neither decides nor exposes ban/unban policy. When registration refuses the handle
+   because its key is suspended, the profile owner has already banned and closed the transport, and
+   the constructor returns before starting a handshake on it.
 
 ## Inputs, outputs, state, and side effects
 

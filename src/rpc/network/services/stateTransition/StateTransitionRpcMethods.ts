@@ -1,5 +1,7 @@
 import StateTransitionService from "./StateTransitionService";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { NetworkTransport } from "@/transport";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
@@ -15,13 +17,18 @@ class StateTransitionRpcMethods extends ANetworkRpcMethods<StateTransitionServic
         const peerAddress = senderTransport.peerAddress;
 
         if (!peerAddress) {
-            this.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            this.p2pManager.disconnectConnection(
+                senderTransport,
+                DisconnectPolicy.BLACKLIST,
+                "block confirmation without peer address"
+            );
             return;
         }
         const keepConnection =
             await this.p2pManager.stateManager.blockQueueManager.ingestBlockConfirmation(
                 blockConfirmation,
                 {
+                    origin: BlockOrigin.NETWORK,
                     senderAddress: peerAddress
                 }
             );
