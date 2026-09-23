@@ -1,4 +1,3 @@
-import { DEFAULT_GAS_LIMIT } from "@/disputeManager/DisputeManager";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
@@ -867,7 +866,8 @@ describe("Unit: DisputeManager", function () {
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("uploadDispute");
             expect(submission.encodedAuditingData).to.equal(null);
-            expect(submission.gasLimit).to.equal(String(DEFAULT_GAS_LIMIT));
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -904,9 +904,8 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("uploadDisputeWithCalldata");
-            // Same fixed ceiling as every upload: an exact estimate can run out
-            // of gas when a concurrent dispute lands first.
-            expect(submission.gasLimit).to.equal(String(DEFAULT_GAS_LIMIT));
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -947,7 +946,8 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
-            expect(submission.gasLimit).to.equal(String(DEFAULT_GAS_LIMIT));
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDispute"
@@ -992,7 +992,8 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
-            expect(submission.gasLimit).to.equal(String(DEFAULT_GAS_LIMIT));
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDisputeWithCalldata"

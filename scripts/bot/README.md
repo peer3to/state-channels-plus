@@ -11,10 +11,10 @@ still needs accounting. CI's GitHub publisher token never reaches the worker; th
 may use its own optional read-only `SCP_REVIEW_GITHUB_TOKEN`, sent only to
 `api.github.com` (see [GitHub read token](../../docs/pr-review-bot.md#github-read-token)).
 
-Every assessment fetch regenerates the active Markdown and JSON from current
-GitHub findings, excluding resolved findings. Any existing Markdown, including
-Human notes and selections, is preserved verbatim in
-`assessment.md.backup-<timestamp>-<uuid>` rather than merged into the new file.
+Every assessment fetch writes the current GitHub findings, excluding resolved
+findings, to the next numbered `<n>-assessment.md` and refreshes the JSON
+snapshot. Earlier assessments, including Human notes and selections, are never
+renamed, overwritten or merged into the new file.
 
 | Operation | Owner |
 | --- | --- |

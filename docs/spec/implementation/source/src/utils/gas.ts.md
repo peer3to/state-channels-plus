@@ -1,7 +1,7 @@
-# HostNonceManager.ts — Source Report
+# gas.ts — Source Report
 
-> **Source:** [src/evm/signer/HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../../views/architecture/sdk/architecture.md)
+> **Source:** [src/utils/gas.ts](../../../../../../src/utils/gas.ts) > **Status:** Authored — engineer verification pending.
+> **Design views:** [architecture/sdk/components.md](../../../views/architecture/sdk/components.md)
 
 ## Contents
 
@@ -19,15 +19,15 @@
 
 ## Responsibility and observable boundary
 
-Host-side nonce management for chain submissions (serializes nonce allocation).
+Gas headroom for chain transactions: `GAS_ESTIMATE_HEADROOM_PERCENT` and `withGasHeadroom(estimate)`, which the chain signers apply to every estimate and to every send without a caller gas limit.
 
 ## Key design decisions
 
-1. **Nonce allocation is host-owned** so concurrent submitters cannot race nonces.
-2. **Gas headroom on every estimate.** `estimateGas` returns the wrapped wallet's estimate plus
-   [`withGasHeadroom`](../../utils/gas.ts.md), and a send without a caller gas limit uses it. Every
-   peer's chain transaction passes here, including client-mode sends forwarded by
-   [ClientChainSigner](./ClientChainSigner.ts.md), so no caller sets a fixed limit.
+1. **Estimate plus headroom, never a fixed limit.** A gas estimate is exact for the chain state when
+   taken; a concurrent transaction included first can make ours cost more. Seen with honest peers
+   racing to dispute the same fraud: a late disputer estimated as the 2nd disputer and included as
+   the 3rd ran out of gas, and its retry missed the evidence window. A fixed limit is avoided because
+   consumer state machines make transaction costs vary.
 
 ## Inputs, outputs, state, and side effects
 
@@ -43,17 +43,17 @@ Host-side nonce management for chain submissions (serializes nonce allocation).
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs |
-| ------------------------------------------------------------------------------ | ----------------- |
-| [HostNonceManager.ts](../../../../../../../src/evm/signer/HostNonceManager.ts) |                   |
+| Source file                                  | Specification IDs |
+| -------------------------------------------- | ----------------- |
+| [gas.ts](../../../../../../src/utils/gas.ts) |                   |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+- Utility semantics must hold identically on both supported hosts.
 
 ## Specification adherence
 
-- Signing confinement per the identity rules.
+- Role-consistent with the owning views.
 
 ## Specification contradictions
 
@@ -81,4 +81,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
+- [HostNonceManager.ts](../evm/signer/HostNonceManager.ts.md)
+- [ClientChainSigner.ts](../evm/signer/ClientChainSigner.ts.md)

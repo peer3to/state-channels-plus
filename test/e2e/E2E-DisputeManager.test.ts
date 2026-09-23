@@ -1,4 +1,3 @@
-import { DEFAULT_GAS_LIMIT } from "@/disputeManager/DisputeManager";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep } from "@/utils";
 import { assertKilledOpenerSubmissionRace } from "@test/fixtures/DisputeSlashRecoveryStaging";
@@ -73,7 +72,7 @@ describe("E2E: Dispute Manager", function () {
             );
         });
 
-        it("every honest peer racing to dispute the same invalid block lands its dispute under the fixed gas ceiling", async function () {
+        it("every honest peer racing to dispute the same invalid block lands its dispute", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({ peerCount: 4 });
             const forkId = h.activeForkId!;
@@ -101,9 +100,8 @@ describe("E2E: Dispute Manager", function () {
                 for (const recorder of recorders)
                     for (const submission of await recorder.submissions()) {
                         expect(submission.method).to.equal("multicall");
-                        expect(submission.gasLimit).to.equal(
-                            String(DEFAULT_GAS_LIMIT)
-                        );
+                        // The chain signer supplies the gas: estimate plus headroom.
+                        expect(submission.gasLimit).to.equal(null);
                     }
                 await h.dispute.resolveDisputeWait({ forkId });
             } finally {

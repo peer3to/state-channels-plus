@@ -53,7 +53,6 @@ export class PartialAuditingDataError extends Error {}
 
 // Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
 // generous headroom for larger disputes while freeing block gas under concurrency.
-export const DEFAULT_GAS_LIMIT = 2_500_000;
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -144,22 +143,9 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
-            // Every upload carries the fixed DEFAULT_GAS_LIMIT ceiling, never
-            // ethers' default estimate, which is exact for the chain state at
-            // estimation time and has no headroom. Honest peers detect the same
-            // fraud together and race to dispute; each late disputer skips the
-            // already-applied fraud proof, but its upload costs more for every
-            // disputer already in the window (_hadParticipantPostedEvidence
-            // reads the whole hasPosted list). If another honest dispute lands
-            // between our estimate and our inclusion, the exact estimate falls
-            // a few thousand gas short: the upload runs out of gas inside the
-            // proxy's delegatecall and reverts with only "Delegatecall failed".
-            // Seen live: estimated as the 2nd disputer (311,723), included as
-            // the 3rd, out of gas at 305,268. The retry needs another block,
-            // and in a short evidence window that lands at evidencePeriodEnd,
-            // so the honest disputer's evidence is refused
-            // (RaceConditionDisputeEvidencePeriodExpired). Unused gas is
-            // refunded, so the ceiling costs nothing extra.
+            // No gas limit is passed: the chain signer sends each upload with
+            // its estimate plus headroom (see GAS_ESTIMATE_HEADROOM_PERCENT for
+            // the concurrent-dispute race this protects against).
 
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
@@ -188,10 +174,10 @@ class DisputeManager {
                         )
                     ).data!;
                 }
-                txResponse = await this.stateChannelManagerContract.multicall(
-                    [fraudProofCalldata, uploadDisputeCalldata],
-                    { gasLimit: DEFAULT_GAS_LIMIT }
-                );
+                txResponse = await this.stateChannelManagerContract.multicall([
+                    fraudProofCalldata,
+                    uploadDisputeCalldata
+                ]);
             } else {
                 // no multicall - upload dispute separately
                 if (shouldPostAuditingData) {
@@ -199,14 +185,12 @@ class DisputeManager {
                     txResponse =
                         await this.stateChannelManagerContract.uploadDisputeWithCalldata(
                             disputeConfirmation,
-                            auditingData,
-                            { gasLimit: DEFAULT_GAS_LIMIT }
+                            auditingData
                         );
                 } else {
                     txResponse =
                         await this.stateChannelManagerContract.uploadDispute(
-                            disputeConfirmation,
-                            { gasLimit: DEFAULT_GAS_LIMIT }
+                            disputeConfirmation
                         );
                 }
             }

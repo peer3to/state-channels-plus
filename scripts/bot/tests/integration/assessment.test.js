@@ -1497,7 +1497,7 @@ describe("assessment GitHub lifecycle", function () {
         await publisher.publish(result(wire.input));
         assert.equal(wire.reviews.length, 0);
     });
-    it("backs up an unmanaged assessment before creating a managed assessment", async function () {
+    it("writes each fetch to the next numbered assessment and leaves existing files untouched", async function () {
         const root = await fs.mkdtemp(
             path.join(os.tmpdir(), "assessment-import-")
         );
@@ -1512,97 +1512,79 @@ describe("assessment GitHub lifecycle", function () {
             const original =
                 "# Manual assessment\n\nHuman notes must survive.\n";
             await fs.writeFile(path.join(directory, "assessment.md"), original);
-            const filename = await fetchAssessment(
-                structuredClone(wire.input),
-                { token: "recorded", root, exchange: wire.exchange }
-            );
-            const backups = (await fs.readdir(directory)).filter((name) =>
-                name.startsWith("assessment.md.backup-")
-            );
-            assert.equal(backups.length, 1);
-            assert.equal(
-                await fs.readFile(path.join(directory, backups[0]), "utf8"),
-                original
-            );
-            assert.match(
-                await fs.readFile(filename, "utf8"),
-                /<!-- peer3-assessment:v1 -->/
-            );
-            assert.match(
-                await fs.readFile(filename, "utf8"),
-                /Finding ID: R1FO1/
-            );
-            await fetchAssessment(structuredClone(wire.input), {
+            const first = await fetchAssessment(structuredClone(wire.input), {
                 token: "recorded",
                 root,
                 exchange: wire.exchange
             });
+            assert.equal(first, path.join(directory, "1-assessment.md"));
+            assert.match(
+                await fs.readFile(first, "utf8"),
+                /<!-- peer3-assessment:v1 -->/
+            );
+            assert.match(await fs.readFile(first, "utf8"), /Finding ID: R1FO1/);
+            const second = await fetchAssessment(structuredClone(wire.input), {
+                token: "recorded",
+                root,
+                exchange: wire.exchange
+            });
+            assert.equal(second, path.join(directory, "2-assessment.md"));
             assert.equal(
-                (await fs.readdir(directory)).filter((name) =>
-                    name.startsWith("assessment.md.backup-")
-                ).length,
-                2
+                await fs.readFile(
+                    path.join(directory, "assessment.md"),
+                    "utf8"
+                ),
+                original
+            );
+            assert.deepEqual(
+                (await fs.readdir(directory))
+                    .filter((name) => name.includes("assessment"))
+                    .sort(),
+                ["1-assessment.md", "2-assessment.md", "assessment.md"]
             );
         } finally {
             await fs.rm(root, { recursive: true, force: true });
         }
     });
-    it("regenerates from current reads and preserves edited assessment text only in backup", async function () {
+    it("regenerates from current reads into a new file and keeps an edited earlier assessment as it was", async function () {
         const root = await fs.mkdtemp(
             path.join(os.tmpdir(), "assessment-fetch-")
         );
         try {
             const wire = wireFixture();
-            const filename = await fetchAssessment(
-                structuredClone(wire.input),
-                { token: "recorded", root, exchange: wire.exchange }
+            const first = await fetchAssessment(structuredClone(wire.input), {
+                token: "recorded",
+                root,
+                exchange: wire.exchange
+            });
+            const firstText = await fs.readFile(first, "utf8");
+            assert.match(firstText, /Finding ID: R1FO1/);
+            const edited = firstText.replace(
+                "### Proposed fix\n\n",
+                "### Proposed fix\n\nHuman implementation plan.\n\n"
             );
-            const first = await fs.readFile(filename, "utf8");
-            assert.match(first, /Finding ID: R1FO1/);
-            await fs.writeFile(
-                filename,
-                first.replace(
-                    "### Proposed fix\n\n",
-                    "### Proposed fix\n\nHuman implementation plan.\n\n"
-                )
-            );
-            await fetchAssessment(structuredClone(wire.input), {
+            await fs.writeFile(first, edited);
+            const second = await fetchAssessment(structuredClone(wire.input), {
                 token: "recorded",
                 root,
                 exchange: wire.exchange
             });
             assert.doesNotMatch(
-                await fs.readFile(filename, "utf8"),
+                await fs.readFile(second, "utf8"),
                 /Human implementation plan/
             );
+            assert.equal(await fs.readFile(first, "utf8"), edited);
             wire.reviews[0].body = wrapFinding(
                 "R1FO1",
                 "<details>\n<summary>✅ RESOLVED — [R1FO1]</summary>\nFixed.\n</details>"
             );
-            await fetchAssessment(structuredClone(wire.input), {
+            const third = await fetchAssessment(structuredClone(wire.input), {
                 token: "recorded",
                 root,
                 exchange: wire.exchange
             });
-            assert.ok(
-                !(await fs.readFile(filename, "utf8")).includes("## APR-")
-            );
-            const backups = (await fs.readdir(path.dirname(filename))).filter(
-                (name) => name.startsWith("assessment.md.backup-")
-            );
-            assert.ok(backups.length > 0);
-            assert.ok(
-                (
-                    await Promise.all(
-                        backups.map((name) =>
-                            fs.readFile(
-                                path.join(path.dirname(filename), name),
-                                "utf8"
-                            )
-                        )
-                    )
-                ).some((text) => text.includes("Human implementation plan"))
-            );
+            assert.ok(!(await fs.readFile(third, "utf8")).includes("## APR-"));
+            assert.equal(await fs.readFile(first, "utf8"), edited);
             assert.ok(
                 wire.calls.every(
                     (call) =>

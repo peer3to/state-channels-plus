@@ -1,8 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
 const { execFileSync } = require("node:child_process");
-const { check, digest, ownedPath, writeText, writeJson } = require("./data");
+const { check, digest, ownedPath, writeJson } = require("./data");
 const { GitHubWriter, actionsBotId } = require("./github-write");
 const { readStates } = require("./state");
 const { findingSource, findingBounds } = require("./finding-source");
@@ -165,44 +164,42 @@ async function fetchAssessment(request, { token, root, exchange = fetch }) {
     request.head = pull.head.sha;
     const observations = await reader.observe();
     const findings = assessmentFindings(request, observations, botId);
-    const relative = `temp/pr-github-reviews/${request.pr}/assessment.md`;
-    const filename = await ownedPath(root, relative, true);
-    let previous = "";
-    let existed = false;
-    try {
-        previous = await fs.readFile(filename, "utf8");
-        existed = true;
-    } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-    }
+    const directory = `temp/pr-github-reviews/${request.pr}`;
     const next = renderAssessment(findings, request);
-    // A concurrent local edit must not be overwritten by this fetch.
-    let current = "";
-    try {
-        current = await fs.readFile(filename, "utf8");
-    } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-    }
-    check(current === previous, "INVALID_REQUEST");
-    if (existed) {
-        const backup = `${relative}.backup-${Date.now()}-${randomUUID()}`;
-        await writeText(root, backup, previous);
-        console.log(
-            `Previous assessment preserved: ${path.join(root, backup)}`
+    await writeJson(root, `${directory}/github-findings.json`, {
+        request,
+        findings: findings.filter((finding) => !finding.resolved)
+    });
+    // Each fetch writes the next <n>-assessment.md; earlier ones stay untouched.
+    const folder = await ownedPath(root, directory, true);
+    await fs.mkdir(folder, { recursive: true, mode: 0o700 });
+    let number =
+        Math.max(
+            0,
+            ...(await fs.readdir(folder)).map(
+                (name) => Number(/^(\d+)-assessment\.md$/.exec(name)?.[1]) || 0
+            )
+        ) + 1;
+    while (true) {
+        const filename = await ownedPath(
+            root,
+            `${directory}/${number}-assessment.md`,
+            true
         );
+        try {
+            // Exclusive create: a concurrent fetch takes the next number.
+            await fs.writeFile(filename, next, { flag: "wx", mode: 0o600 });
+            return filename;
+        } catch (error) {
+            if (error.code !== "EEXIST") throw error;
+            number++;
+        }
     }
-    await writeJson(
-        root,
-        `temp/pr-github-reviews/${request.pr}/github-findings.json`,
-        { request, findings: findings.filter((finding) => !finding.resolved) }
-    );
-    await writeText(root, relative, next);
-    return filename;
 }
 async function main(args) {
     if (args.includes("--help")) {
         console.log(
-            "Usage: yarn review-bot:fetch-assessment <PR number or URL> [--repo owner/repo]\nReads GitHub only. Uses GH_TOKEN/GITHUB_TOKEN or saved gh credentials (including older gh versions). Regenerates from current GitHub findings; preserves the previous file in a timestamped backup."
+            "Usage: yarn review-bot:fetch-assessment <PR number or URL> [--repo owner/repo]\nReads GitHub only. Uses GH_TOKEN/GITHUB_TOKEN or saved gh credentials (including older gh versions). Writes the current GitHub findings to the next numbered <n>-assessment.md; earlier assessments are left untouched."
         );
         return;
     }

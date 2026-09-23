@@ -37,6 +37,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [errorMessage.ts](./errorMessage.ts.md)
 - [errorPeerAddress.ts](./errorPeerAddress.ts.md)
 - [evmErrorHandler.ts](./evmErrorHandler.ts.md)
+- [gas.ts](./gas.ts.md)
 - [hash.ts](./hash.ts.md)
 - [index.ts](./index.ts.md)
 - [localDiamond.ts](./localDiamond.ts.md)
@@ -83,6 +84,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [errorMessage.ts](../../../../../../src/utils/errorMessage.ts) | [errorMessage.ts.md](./errorMessage.ts.md) |
 | [errorPeerAddress.ts](../../../../../../src/utils/errorPeerAddress.ts) | [errorPeerAddress.ts.md](./errorPeerAddress.ts.md) |
 | [evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts) | [evmErrorHandler.ts.md](./evmErrorHandler.ts.md) |
+| [gas.ts](../../../../../../src/utils/gas.ts) | [gas.ts.md](./gas.ts.md) |
 | [hash.ts](../../../../../../src/utils/hash.ts) | [hash.ts.md](./hash.ts.md) |
 | [index.ts](../../../../../../src/utils/index.ts) | [index.ts.md](./index.ts.md) |
 | [localDiamond.ts](../../../../../../src/utils/localDiamond.ts) | [localDiamond.ts.md](./localDiamond.ts.md) |

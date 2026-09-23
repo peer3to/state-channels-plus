@@ -165,7 +165,8 @@ yarn review-bot:fetch-assessment https://github.com/peer3to/state-channels-plus/
 ```
 
 The script reads GitHub only and writes
-`temp/pr-github-reviews/498/assessment.md` plus a `github-findings.json` snapshot.
+the next numbered `temp/pr-github-reviews/498/<n>-assessment.md` (`1-assessment.md`,
+`2-assessment.md`, …) plus a `github-findings.json` snapshot.
 It imports outstanding bot findings, not an AI assessment: Assessment, Reply and
 Proposed fix start empty for you to fill. It supports old grouped reviews and
 new individual comments using the published finding ID and source URL. Open the
@@ -175,10 +176,9 @@ when ready to publish. Fetching never posts, resolves or invents a Human answer.
 
 Every fetch generates a fresh assessment from current GitHub findings and thread
 resolution state. Resolved findings are excluded, including advisory Human decision
-findings. Existing cards, verdicts, selections and local replies are not merged.
-Before replacement, any existing assessment (managed or unmanaged) is preserved
-verbatim in a timestamp/UUID-suffixed backup beside the file. Recover previous notes
-from that backup. Do not edit the file concurrently with fetch.
+findings. Existing cards, verdicts, selections and local replies are not merged. Earlier
+assessments are left exactly as they are: each fetch creates the next number, so
+previous notes stay in their own files.
 
 If a previously excluded thread reopens before publication, the publisher's missing
 accounting IDs restore that thread's comments in the worker reader and its saved

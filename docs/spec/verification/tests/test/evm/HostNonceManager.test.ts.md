@@ -28,8 +28,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                             | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| [`HostNonceManager > reuses a failed middle nonce without colliding with concurrent sends`](../../../../../../test/evm/HostNonceManager.test.ts#L9) (line 9) | —      |
-| [`HostNonceManager > cannot create another nonce owner by reconnecting`](../../../../../../test/evm/HostNonceManager.test.ts#L71) (line 71)                  | —      |
-| [`HostNonceManager > recovers an indeterminate nonce lazily on the next send`](../../../../../../test/evm/HostNonceManager.test.ts#L81) (line 81)            | —      |
+| Test declaration                                                                                                                                                                    | Covers |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`HostNonceManager > reuses a failed middle nonce without colliding with concurrent sends`](../../../../../../test/evm/HostNonceManager.test.ts#L10) (line 10)                      | —      |
+| [`HostNonceManager > cannot create another nonce owner by reconnecting`](../../../../../../test/evm/HostNonceManager.test.ts#L101) (line 101)                                       | —      |
+| [`HostNonceManager > recovers an indeterminate nonce lazily on the next send`](../../../../../../test/evm/HostNonceManager.test.ts#L111) (line 111)                                 | —      |
+| [`HostNonceManager > sends without a caller limit using its estimate plus headroom and keeps an explicit limit`](../../../../../../test/evm/HostNonceManager.test.ts#L72) (line 72) | —      |

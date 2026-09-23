@@ -23,7 +23,7 @@ Client-side chain signer proxy for transaction signing via host authority.
 
 ## Key design decisions
 
-The facade selects chainSigner methods on the concrete bound SDK host root and explicitly requests responses. Transaction request/response serialization and native ethers response reconstruction remain unchanged; sendTransaction retains its unbounded outer request. See [ChainSignerRpcMethods.ts](../../rpc/internal/services/chainSigner/ChainSignerRpcMethods.ts.md).
+`estimateGas` adds the same [`withGasHeadroom`](../../utils/gas.ts.md) as the host signer, which fills the gas of every forwarded send without a limit. The facade selects chainSigner methods on the concrete bound SDK host root and explicitly requests responses. Transaction request/response serialization and native ethers response reconstruction remain unchanged; sendTransaction retains its unbounded outer request. See [ChainSignerRpcMethods.ts](../../rpc/internal/services/chainSigner/ChainSignerRpcMethods.ts.md).
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
