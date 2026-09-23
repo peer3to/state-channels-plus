@@ -158,8 +158,9 @@ export async function portIsOccupied(port: number) {
  * Launch Chromium through the gates' own policy in a child process, so the
  * browsers path — which Playwright resolves when it is imported — is the one
  * the case asks for. `mode` picks the real failure to provoke: "missing" points
- * Playwright at an empty browsers directory, "unrelated" gives its own launch a
- * path that is not a browser at all.
+ * Playwright at an empty browsers directory, "unrelated" launches an executable
+ * that exists but is not a browser (Node itself), so the launch fails for a
+ * reason other than a missing binary.
  */
 export function runGateLaunchProbe(
     mode: "launch" | "missing" | "unrelated",
@@ -170,7 +171,7 @@ export function runGateLaunchProbe(
         const { launchChromium } = require(${JSON.stringify(LAUNCH_HELPER)});
         const target =
             ${JSON.stringify(mode)} === "unrelated"
-                ? { launch: () => chromium.launch({ executablePath: "/nonexistent/browser" }) }
+                ? { launch: () => chromium.launch({ executablePath: process.execPath }) }
                 : chromium;
         launchChromium(target)
             .then(async (browser) => {

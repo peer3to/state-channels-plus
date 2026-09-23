@@ -166,10 +166,10 @@ and they reach the worker through a Hardhat task — `browser-test` in
 `tasks/browserTest.ts`, which runs the gate with Node and passes its exit code
 on.
 
-The gates load `src` through Vite, so the browser build is the tier's typecheck
-of `tsconfig.browser.json` rather than an input. Local runs build it once before
-scheduling rather than once per gate, while distributed runs get it from the
-worker's prepare script.
+The gates load `src` through Vite, so the tier needs only a typecheck of
+`tsconfig.browser.json` (`yarn typecheck:browser`), not a build. Local runs
+perform it once before scheduling rather than once per gate, while distributed
+runs get it from the worker's prepare script.
 
 ```shell
 yarn test:parallel --browser-only
@@ -178,17 +178,17 @@ yarn hardhat browser-test --script test/browser/run-p2p-webrtc-e2e.mjs
 
 A gate needs the Chromium that Playwright ships with the version `yarn.lock`
 resolves. Install it locally with `yarn playwright install chromium`; the
-distributed runner image installs it during the image build. The container is the isolation
-boundary; Chromium's own sandbox is a separate setting that an environment
-dropping every capability may not allow, so the image declares
-`SCP_BROWSER_CONTAINED=1` and the gates launch without it there.
+distributed runner image installs it during the image build. Playwright
+launches Chromium without its own sandbox by default, so the container is the
+isolation boundary. The container's `/dev/shm` is the default 64MB, so the image
+declares `SCP_BROWSER_CONTAINED=1` and the gates keep Chromium's shared memory
+in `/tmp` there.
 
 An environment hands its worker a fresh `HOME`, and `pnpm install` never
 downloads browsers, so a gate finds Chromium only through
 `PLAYWRIGHT_BROWSERS_PATH`. The runner image sets it; a worker started with
-`--execution-backend unsafe-host` has to export it itself, for example
-`PLAYWRIGHT_BROWSERS_PATH="$HOME/Library/Caches/ms-playwright"` on macOS or
-`"$HOME/.cache/ms-playwright"` on Linux. A gate that cannot find the browser
+`--execution-backend unsafe-host` points it at the host's own Playwright cache
+unless the operator exported another path. A gate that cannot find the browser
 says so and names the variable.
 
 A worker runs tasks with the runner from its own checkout, so the browser tier

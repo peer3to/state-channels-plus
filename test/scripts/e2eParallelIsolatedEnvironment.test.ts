@@ -2,6 +2,7 @@
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
 import { setImmediate } from "node:timers";
@@ -20,7 +21,8 @@ const {
     IsolatedEnvironmentManager,
     runProcess,
     runtimeNames,
-    trustedRunnerManifest
+    trustedRunnerManifest,
+    UnsafeHostBackend
 } = require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js");
 const {
     DISTRIBUTED_PROTOCOL_VERSION
@@ -857,5 +859,82 @@ describe("distributed isolated environment", function () {
         );
         assembler.accept("stdout", 0, Buffer.from("no"));
         expect(() => assembler.complete()).to.throw("verification failed");
+    });
+});
+
+describe("unsafe-host browsers path", function () {
+    // Start an unsafe-host environment and return the environment its guest
+    // receives; the guest itself is not needed to read that.
+    async function guestEnvironment(
+        hostEnv: NodeJS.ProcessEnv
+    ): Promise<NodeJS.ProcessEnv> {
+        const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scp-unsafe-"));
+        let guestEnv: NodeJS.ProcessEnv = {};
+        const backend = new UnsafeHostBackend({
+            workRoot,
+            processFactory: (
+                _command: string,
+                _args: string[],
+                options: { env: NodeJS.ProcessEnv }
+            ) => {
+                guestEnv = options.env;
+                return {};
+            }
+        });
+        const saved = process.env.PLAYWRIGHT_BROWSERS_PATH;
+        try {
+            if (hostEnv.PLAYWRIGHT_BROWSERS_PATH === undefined) {
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            } else {
+                process.env.PLAYWRIGHT_BROWSERS_PATH =
+                    hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+            }
+            const handle = await backend.create({
+                environmentKey: "a".repeat(64)
+            });
+            await backend.start(handle);
+        } finally {
+            if (saved === undefined)
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            else process.env.PLAYWRIGHT_BROWSERS_PATH = saved;
+            fs.rmSync(workRoot, { recursive: true, force: true });
+        }
+        return guestEnv;
+    }
+
+    function chromiumPathUnder(env: NodeJS.ProcessEnv): string {
+        const result = spawnSync(
+            process.execPath,
+            [
+                "-e",
+                'process.stdout.write(require("playwright").chromium.executablePath())'
+            ],
+            { cwd: repoRoot(), encoding: "utf8", env }
+        );
+        return result.stdout;
+    }
+
+    it("resolves the host's own Chromium from the guest's fresh HOME", async function () {
+        const hostEnv = { ...process.env };
+        delete hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+        const guestEnv = await guestEnvironment(hostEnv);
+
+        expect({
+            homeReplaced: guestEnv.HOME !== process.env.HOME,
+            chromium: chromiumPathUnder(guestEnv)
+        }).to.deep.equal({
+            homeReplaced: true,
+            chromium: chromiumPathUnder(hostEnv)
+        });
+    });
+
+    it("keeps a browsers path the operator exported", async function () {
+        const guestEnv = await guestEnvironment({
+            PLAYWRIGHT_BROWSERS_PATH: "/operator/browsers"
+        });
+
+        expect(guestEnv.PLAYWRIGHT_BROWSERS_PATH).to.equal(
+            "/operator/browsers"
+        );
     });
 });

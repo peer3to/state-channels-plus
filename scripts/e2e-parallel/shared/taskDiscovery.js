@@ -188,7 +188,7 @@ function discoverTasks(
         .filter(isMochaTestFile)
         .sort();
     const resolvedE2eDir = path.resolve(e2eDir);
-    let tasks = [];
+    const tasks = [];
     for (const f of files) {
         const resolvedFile = path.resolve(f);
         const isE2E =
@@ -230,12 +230,35 @@ function discoverTasks(
             });
         }
     }
-    const preGrepTaskCount = tasks.length;
-    if (grep) {
-        const re = new RegExp(grep);
-        tasks = tasks.filter((t) => re.test(t.fullTitle));
+    return filterByGrep(files, tasks, grep);
+}
+
+/**
+ * `name (file, file)` for every name more than one entry carries. A tier names
+ * its tasks and log files after these, so it fails discovery on any duplicate
+ * rather than scheduling tasks that overwrite each other.
+ */
+function duplicateNames(entries) {
+    const filesByName = new Map();
+    for (const { name, file } of entries) {
+        if (!filesByName.has(name)) filesByName.set(name, []);
+        filesByName.get(name).push(file);
     }
-    return { files, tasks, preGrepTaskCount };
+    return [...filesByName.entries()]
+        .filter(([, files]) => files.length > 1)
+        .map(([name, files]) => `${name} (${files.join(", ")})`);
+}
+
+/** Keep the tasks whose full title matches `grep`, counting them first. */
+function filterByGrep(files, tasks, grep) {
+    const matcher = grep ? new RegExp(grep) : undefined;
+    return {
+        files,
+        tasks: matcher
+            ? tasks.filter((task) => matcher.test(task.fullTitle))
+            : tasks,
+        preGrepTaskCount: tasks.length
+    };
 }
 
 module.exports = {
@@ -248,5 +271,7 @@ module.exports = {
     enumerateMochaTests,
     escapeRegex,
     sanitizeFileName,
+    duplicateNames,
+    filterByGrep,
     discoverTasks
 };

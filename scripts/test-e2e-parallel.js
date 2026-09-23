@@ -79,7 +79,7 @@ const {
 } = require("./e2e-parallel/shared/browserTaskDiscovery");
 const {
     TASK_RUNNERS,
-    browserBuildFailure,
+    browserTypecheckFailure,
     browserChromiumFailure,
     countTasksForRunner,
     forgeBuildFailure,
@@ -162,7 +162,7 @@ function validateDiscoveryResults(
  * What a run has to warm before it admits a task, in order. Distributed workers
  * build in their prepare script, so only the local path warms anything: forge
  * so concurrent tasks never race on a cold via_ir build, Chromium because a gate
- * cannot run without it, and the browser build so one run typechecks it once
+ * cannot run without it, and the browser typecheck so one run performs it once
  * rather than per gate. A tier with no scheduled task warms nothing.
  */
 function resolveWarmUps(tasks, distributed) {
@@ -180,10 +180,21 @@ function resolveWarmUps(tasks, distributed) {
         },
         {
             runner: TASK_RUNNERS.BROWSER,
-            message: "Warming the browser build before the browser tier...",
-            warm: browserBuildFailure
+            message:
+                "Typechecking the browser sources before the browser tier...",
+            warm: browserTypecheckFailure
         }
     ].filter(({ runner }) => countTasksForRunner(tasks, runner) > 0);
+}
+
+/**
+ * The order tasks are admitted in. Browser gates run for minutes each, so they
+ * start first instead of stretching the end of the run; and the coordinator
+ * copies the most recently admitted task onto an idle worker, so gates admitted
+ * last would each be launched again, with its own Chromium, on every idle one.
+ */
+function orderTasks(mochaTasks, forgeTasks, browserTasks) {
+    return [...browserTasks, ...mochaTasks, ...forgeTasks];
 }
 
 /**
@@ -333,7 +344,7 @@ async function main(options = {}) {
     }
     const forgeTasks = forgeDiscovery.tasks;
     const browserTasks = browserDiscovery.tasks;
-    const tasks = [...mochaDiscovery.tasks, ...forgeTasks, ...browserTasks];
+    const tasks = orderTasks(mochaDiscovery.tasks, forgeTasks, browserTasks);
 
     // ---- resolve config ----
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
@@ -628,6 +639,7 @@ if (require.main === module) {
 module.exports = {
     buildBaseEnv,
     resolveWarmUps,
+    orderTasks,
     discoveryFailureMessage,
     validateDiscoveryResults,
     resolveDistributedExecutionProfile,

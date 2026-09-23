@@ -38,9 +38,9 @@ const { BROWSER_TEST_TASK, discoverBrowserTasks } =
             preGrepTaskCount: number;
         };
     };
-const { BROWSER_BUILD_COMMAND, DEFAULT_BROWSER_TEST_PATTERN } =
+const { BROWSER_TYPECHECK_COMMAND, DEFAULT_BROWSER_TEST_PATTERN } =
     require("../../scripts/e2e-parallel/shared/browserConfig.js") as {
-        BROWSER_BUILD_COMMAND: string[];
+        BROWSER_TYPECHECK_COMMAND: string[];
         DEFAULT_BROWSER_TEST_PATTERN: string;
     };
 const { runBrowserGate } =
@@ -158,7 +158,6 @@ const { chromiumLaunchOptions, launchChromium } =
     require("../browser/chromiumLaunch.js") as {
         chromiumLaunchOptions: (env: NodeJS.ProcessEnv) => {
             headless: boolean;
-            chromiumSandbox?: boolean;
             args?: string[];
         };
         launchChromium: (
@@ -168,29 +167,34 @@ const { chromiumLaunchOptions, launchChromium } =
             env?: NodeJS.ProcessEnv
         ) => Promise<string>;
     };
-const { validateDiscoveryResults, resolveSlotCount, resolveWarmUps } =
-    require("../../scripts/test-e2e-parallel.js") as {
-        resolveWarmUps: (
-            tasks: { runner?: string }[],
-            distributed?: boolean
-        ) => { runner: string; message: string; warm: () => Error | null }[];
-        validateDiscoveryResults: (
-            cli: Record<string, unknown>,
-            selection: {
-                includeMocha: boolean;
-                includeForge: boolean;
-                includeBrowser: boolean;
-            },
-            mocha: { tasks: unknown[]; preGrepTaskCount: number },
-            forge: { tasks: unknown[]; preGrepTaskCount: number },
-            browser?: { tasks: unknown[]; preGrepTaskCount: number }
-        ) => string | null;
-        resolveSlotCount: (
-            tasks: { runner?: string }[],
-            requestedSlotCount: number,
-            maxSlots: number
-        ) => number;
-    };
+const {
+    validateDiscoveryResults,
+    resolveSlotCount,
+    resolveWarmUps,
+    orderTasks
+} = require("../../scripts/test-e2e-parallel.js") as {
+    orderTasks: <T>(mocha: T[], forge: T[], browser: T[]) => T[];
+    resolveWarmUps: (
+        tasks: { runner?: string }[],
+        distributed?: boolean
+    ) => { runner: string; message: string; warm: () => Error | null }[];
+    validateDiscoveryResults: (
+        cli: Record<string, unknown>,
+        selection: {
+            includeMocha: boolean;
+            includeForge: boolean;
+            includeBrowser: boolean;
+        },
+        mocha: { tasks: unknown[]; preGrepTaskCount: number },
+        forge: { tasks: unknown[]; preGrepTaskCount: number },
+        browser?: { tasks: unknown[]; preGrepTaskCount: number }
+    ) => string | null;
+    resolveSlotCount: (
+        tasks: { runner?: string }[],
+        requestedSlotCount: number,
+        maxSlots: number
+    ) => number;
+};
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const REPO_TEST_DIR = path.resolve(__dirname, "..");
@@ -483,7 +487,7 @@ describe("browser gate runner", function () {
 });
 
 describe("browser warm-up selection", function () {
-    it("checks Chromium before building, and both before any gate is admitted", function () {
+    it("checks Chromium before typechecking, and both before any gate is admitted", function () {
         expect(
             resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK]).map(
                 (warmUp) => warmUp.message
@@ -491,7 +495,7 @@ describe("browser warm-up selection", function () {
         ).to.deep.equal([
             "Warming the Foundry build before the forge tier...",
             "Checking Chromium before the browser tier...",
-            "Warming the browser build before the browser tier..."
+            "Typechecking the browser sources before the browser tier..."
         ]);
     });
 
@@ -515,7 +519,21 @@ describe("browser warm-up selection", function () {
     });
 });
 
-describe("browser build boundary", function () {
+describe("browser task admission order", function () {
+    it("admits the browser gates before the Mocha and forge tasks", function () {
+        expect(
+            orderTasks([MOCHA_TASK], [FORGE_TASK], [BROWSER_TASK]).map(
+                (task) => task.label
+            )
+        ).to.deep.equal([
+            BROWSER_TASK.label,
+            MOCHA_TASK.label,
+            FORGE_TASK.label
+        ]);
+    });
+});
+
+describe("browser typecheck boundary", function () {
     it("names the browser tier when its build command cannot be run", function () {
         const failure = tierBuildFailure("scp-no-such-build-command", [], {
             missing:
@@ -526,7 +544,7 @@ describe("browser build boundary", function () {
         expect(failure?.message).to.contain("--no-browser");
     });
 
-    it("preserves a nonzero browser build exit in the diagnostic", function () {
+    it("preserves a nonzero browser typecheck exit in the diagnostic", function () {
         const { command } = writeBuildCommand("build", "exit 3");
         const failure = tierBuildFailure(command, [], {
             missing: "unused",
@@ -536,7 +554,7 @@ describe("browser build boundary", function () {
         expect(failure?.message).to.contain("--no-browser");
     });
 
-    it("reports a browser build killed by a signal as a failure", function () {
+    it("reports a browser typecheck killed by a signal as a failure", function () {
         const { command } = writeBuildCommand(
             "build",
             "kill -TERM $$; sleep 5"
@@ -856,23 +874,26 @@ describe("browser tier selection", function () {
 });
 
 describe("browser tier environment", function () {
-    it("builds the browser sources through the project's own build script", function () {
-        expect(BROWSER_BUILD_COMMAND).to.deep.equal(["yarn", "build:browser"]);
+    it("typechecks the browser sources through the project's own script", function () {
+        expect(BROWSER_TYPECHECK_COMMAND).to.deep.equal([
+            "yarn",
+            "typecheck:browser"
+        ]);
     });
 
     it("checks the gates' Chromium before a run schedules them", function () {
-        // The browser build is a typecheck and says nothing about the browser,
+        // The browser typecheck says nothing about the browser,
         // so without this the tier fails only after the whole run.
         expect(browserChromiumFailure()).to.equal(null);
     });
 
-    it("keeps the worker prepare script building the browser sources", function () {
+    it("keeps the worker prepare script typechecking the browser sources", function () {
         const packageJson = JSON.parse(
             fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")
         ) as { scripts: Record<string, string> };
         expect(
             packageJson.scripts["test:parallel:prepare:cached-contracts"]
-        ).to.contain("yarn build:browser");
+        ).to.contain("yarn typecheck:browser");
     });
 
     it("pins the runner image to the Playwright version yarn.lock resolves", function () {
@@ -903,7 +924,7 @@ describe("browser tier environment", function () {
             nodePaths: ["/environment/runner/node_modules"]
         });
         // A gate runs in a task child of that fork, so without these it would
-        // look for Chromium under the fresh HOME and keep its own sandbox.
+        // look for Chromium under the fresh HOME and keep using /dev/shm.
         expect(forked.PLAYWRIGHT_BROWSERS_PATH).to.equal("/ms-playwright");
         expect(forked.SCP_BROWSER_CONTAINED).to.equal("1");
         expect(forked.HOME).to.equal("/environment/home");
@@ -1003,12 +1024,11 @@ describe("browser tier environment", function () {
         expect(chromiumLaunchOptions({})).to.deep.equal({ headless: true });
     });
 
-    it("drops Chromium's sandbox and /dev/shm use where the image declares one", function () {
+    it("moves Chromium's shared memory off /dev/shm where the image declares a contained environment", function () {
         expect(
             chromiumLaunchOptions({ SCP_BROWSER_CONTAINED: "1" })
         ).to.deep.equal({
             headless: true,
-            chromiumSandbox: false,
             args: ["--disable-dev-shm-usage"]
         });
     });

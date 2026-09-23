@@ -1,6 +1,6 @@
 const { spawnSync } = require("child_process");
 const fs = require("fs");
-const { BROWSER_BUILD_COMMAND } = require("./browserConfig");
+const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
 // Which tier a discovered task belongs to. Every task carries one. This is a
@@ -87,16 +87,8 @@ function forgeBuildFailure() {
 }
 
 /**
- * Warm the browser build before any browser gate is scheduled. The gates load
- * `src` through Vite, so the build is the tier's typecheck of
- * tsconfig.browser.json rather than an input, and one run needs it once rather
- * than once per gate. Distributed workers build it in their prepare script; the
- * local path has no such step, so it builds once here.
- */
-/**
- * Check the gates' actual requirement before the tier runs. The browser build
- * says nothing about it — it is a typecheck, and `dist/browser` is not an input
- * — so without this a whole run ends with two gates failing on a missing
+ * Check the gates' actual requirement before the tier runs. The browser
+ * typecheck says nothing about it, so without this a whole run ends with two gates failing on a missing
  * browser, where the forge tier fails immediately on a missing binary.
  */
 function browserChromiumFailure() {
@@ -118,15 +110,21 @@ function browserChromiumFailure() {
     );
 }
 
-function browserBuildFailure() {
-    const [command, ...args] = BROWSER_BUILD_COMMAND;
+/**
+ * Typecheck the browser sources before any browser gate is scheduled. The gates
+ * load `src` through Vite, so `dist/browser` is not an input, and one run needs
+ * the check once rather than once per gate. Distributed workers run it in their
+ * prepare script; the local path has no such step, so it runs once here.
+ */
+function browserTypecheckFailure() {
+    const [command, ...args] = BROWSER_TYPECHECK_COMMAND;
     return tierBuildFailure(command, args, {
         missing:
             "Install the project dependencies, or re-run with --no-browser to " +
             "skip the browser tier.",
         failed:
-            "A browser gate runs the same sources in Chromium, so a broken " +
-            "browser build is a broken tier. Fix the build, or re-run with " +
+            "A browser gate runs the same sources in Chromium, so sources " +
+            "that fail the browser typecheck are a broken tier. Fix them, or re-run with " +
             "--no-browser to skip the browser tier."
     });
 }
@@ -140,5 +138,5 @@ module.exports = {
     tierBuildFailure,
     forgeBuildFailure,
     browserChromiumFailure,
-    browserBuildFailure
+    browserTypecheckFailure
 };

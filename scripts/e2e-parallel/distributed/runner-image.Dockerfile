@@ -12,9 +12,8 @@ ARG PLAYWRIGHT_VERSION=1.60.0
 # Chromium lives in the image rather than being downloaded per environment: the
 # container filesystem is read-only apart from its own volume.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-# Chromium's own sandbox needs capabilities and an unprivileged user namespace,
-# and its default /dev/shm is 64MB. This environment drops every capability and
-# sets no-new-privileges, so the gates launch a contained Chromium instead.
+# The container keeps the default 64MB /dev/shm, too small for Chromium's shared
+# memory, so the gates move it to /tmp here.
 ENV SCP_BROWSER_CONTAINED=1
 
 RUN apt-get update \
