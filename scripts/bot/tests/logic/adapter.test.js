@@ -226,11 +226,24 @@ describe("review native adapter controls", function () {
             "Subscription login has expired."
         );
     });
-    it("rejects an unavailable model configuration instead of substituting another model", function () {
-        assert.throws(() =>
-            configuration(config({ model: "different-model" }))
-        );
+    it("defaults to gpt-6-astra at low effort and accepts a worker-selected model and effort", function () {
         assert.equal(configuration(config()).model, "gpt-6-astra");
         assert.equal(configuration(config()).effort, "low");
+        const selected = configuration(
+            config({ model: "gpt-7-nova", effort: "high" })
+        );
+        assert.equal(selected.model, "gpt-7-nova");
+        assert.equal(selected.effort, "high");
+    });
+    it("rejects malformed model and effort settings", function () {
+        for (const setting of [
+            { model: "" },
+            { model: "bad model" },
+            { effort: "-high" },
+            { effort: 3 }
+        ])
+            assert.throws(() => configuration(config(setting)), {
+                code: "INVALID_REQUEST"
+            });
     });
 });

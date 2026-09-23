@@ -25,7 +25,8 @@ function runRecords(input, options = {}) {
         const jobs = names.map((name, index) => ({
             id: id * 100 + index,
             name,
-            run_attempt: 1,
+            // GitHub reports retained jobs under the rerun's attempt.
+            run_attempt: 2,
             status: "completed",
             conclusion: "success"
         }));
@@ -48,6 +49,19 @@ function runRecords(input, options = {}) {
             response: { jobs }
         });
         if (options.bad || options.absent) break;
+        if (workflow === "review.yml")
+            records.push({
+                path:
+                    prefix +
+                    "/actions/runs/" +
+                    id +
+                    "/artifacts?per_page=100&page=1",
+                response: {
+                    artifacts: options.artifacts || [
+                        { name: "review-" + id + "-1-result", expired: false }
+                    ]
+                }
+            });
     }
     return records;
 }

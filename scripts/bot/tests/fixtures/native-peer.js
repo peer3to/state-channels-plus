@@ -4,7 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const assert = require("node:assert/strict");
-const { MODEL } = require("../../config");
+const { DEFAULT_MODEL } = require("../../config");
+// A second listed model lets tests select a non-default worker model.
+const ALTERNATE_MODEL = "alternate-review-model";
 if (process.argv.includes("--version")) {
     process.stdout.write("codex-cli 0.154.0\n");
     process.exit(0);
@@ -130,7 +132,9 @@ require("node:readline")
         if (message.method === "account/read")
             result = { account: { type: "chatgpt" } };
         else if (message.method === "model/list")
-            result = { data: [{ id: MODEL }] };
+            result = {
+                data: [{ id: DEFAULT_MODEL }, { model: ALTERNATE_MODEL }]
+            };
         else if (["thread/start", "thread/resume"].includes(message.method)) {
             thread =
                 message.method === "thread/start"
@@ -139,6 +143,7 @@ require("node:readline")
                           fs.readFileSync(file(params.threadId), "utf8")
                       );
             thread.instructions = params.developerInstructions;
+            thread.model = params.model;
             record(file(thread.id), thread);
             result = { thread: { id: thread.id } };
         } else if (message.method === "thread/read")
@@ -149,6 +154,10 @@ require("node:readline")
             };
         else if (message.method === "turn/start") {
             const turn = `turn-${++serial}`;
+            thread.turnSettings = [
+                ...(thread.turnSettings || []),
+                { model: params.model, effort: params.effort }
+            ];
             send({ id: message.id, result: { turn: { id: turn } } });
             generate(params, turn).catch((error) => {
                 process.stderr.write(error.stack);

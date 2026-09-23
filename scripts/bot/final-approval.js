@@ -49,8 +49,9 @@ async function completedInputs(github, request) {
             `/actions/runs/${run.id}/jobs?filter=latest`,
             "jobs"
         );
-        // Failed-job reruns retain successful jobs from earlier attempts.
-        if (!jobs.some((job) => job.run_attempt === run.run_attempt))
+        // A rerun copies retained jobs into the new attempt under its number, so
+        // a listing with an older attempt has not caught up with the rerun yet.
+        if (!jobs.every((job) => job.run_attempt === run.run_attempt))
             return null;
         const substantive = jobs.filter((job) => job.name !== "approve");
         if (
@@ -63,14 +64,39 @@ async function completedInputs(github, request) {
             )
         )
             return null;
+        let modelAttempt = null;
+        if (workflow === "review.yml") {
+            // Retained jobs report the rerun's attempt, not the one that ran the
+            // model; the newest result artifact names the producing attempt.
+            const artifacts = await collection(
+                github,
+                `/actions/runs/${run.id}/artifacts`,
+                "artifacts"
+            );
+            modelAttempt = Math.max(
+                0,
+                ...artifacts
+                    .filter((artifact) => !artifact.expired)
+                    .map((artifact) =>
+                        Number(
+                            new RegExp(`^review-${run.id}-(\\d+)-result$`).exec(
+                                artifact.name
+                            )?.[1]
+                        )
+                    )
+                    .filter(
+                        (attempt) =>
+                            Number.isSafeInteger(attempt) &&
+                            attempt > 0 &&
+                            attempt <= run.run_attempt
+                    )
+            );
+            if (!modelAttempt) return null;
+        }
         selected[workflow] = {
             id: run.id,
             attempt: run.run_attempt,
-            modelAttempt:
-                workflow === "review.yml"
-                    ? substantive.find((job) => job.name === "review-model")
-                          .run_attempt
-                    : null,
+            modelAttempt,
             jobs: substantive.map((job) => job.id).sort((a, b) => a - b)
         };
     }

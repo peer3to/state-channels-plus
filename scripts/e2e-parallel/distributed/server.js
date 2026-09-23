@@ -200,7 +200,9 @@ async function main(options = {}) {
     if (config.review) {
         const { ReviewService } = require("../../bot/server");
         review = new ReviewService({
-            stateRoot: path.join(config.workRoot, "review")
+            stateRoot: path.join(config.workRoot, "review"),
+            model: config.reviewModel,
+            effort: config.reviewEffort
         });
         try {
             await review.start();
@@ -211,6 +213,10 @@ async function main(options = {}) {
         }
     }
     console.log(`Starting worker ${config.name}; announcing availability`);
+    if (review)
+        console.log(
+            `Offering Codex reviews with ${review.config.model} at ${review.config.effort} effort`
+        );
     let pool;
     try {
         pool = await createPool({

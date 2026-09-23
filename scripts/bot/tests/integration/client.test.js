@@ -266,6 +266,17 @@ describe("review client visible activity", function () {
                                 })
                             );
                         }
+                        if (route.endsWith("/artifacts"))
+                            return new Response(
+                                JSON.stringify({
+                                    artifacts: [
+                                        {
+                                            name: `review-${input.run.id}-${input.run.attempt}-result`,
+                                            expired: false
+                                        }
+                                    ]
+                                })
+                            );
                         if (route.includes("/actions/runs/")) {
                             const ci = route.includes("/runs/99/");
                             const names = ci
@@ -282,7 +293,8 @@ describe("review client visible activity", function () {
                                         ...names.map((name, index) => ({
                                             id: (ci ? 9900 : 100) + index,
                                             name,
-                                            run_attempt: 1,
+                                            // Retained jobs carry the rerun's attempt.
+                                            run_attempt: 2,
                                             status:
                                                 !ready && ci && name === "test"
                                                     ? "in_progress"

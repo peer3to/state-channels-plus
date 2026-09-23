@@ -109,6 +109,60 @@ describe("integrated worker review service", function () {
             }
         });
     });
+    it("runs the review with the worker-configured Codex model and effort", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        await executionFixture(async ({ service, connected, input }) => {
+            service.config.model = "alternate-review-model";
+            service.config.effort = "high";
+            const connection = await connected;
+            const response = once(connection, "payload");
+            await connection.send(
+                "request",
+                "configured",
+                input.attempt,
+                input
+            );
+            const message = (await response)[0];
+            assert.equal(message.operation, "result");
+            const threads = [];
+            for (const file of await fs.readdir(service.config.runtimeRoot))
+                if (/^[0-9a-f-]{36}\.json$/.test(file))
+                    threads.push(
+                        JSON.parse(
+                            await fs.readFile(
+                                path.join(service.config.runtimeRoot, file),
+                                "utf8"
+                            )
+                        )
+                    );
+            assert.equal(threads.length, 1);
+            assert.equal(threads[0].model, "alternate-review-model");
+            assert.ok(threads[0].turnSettings.length > 0);
+            for (const settings of threads[0].turnSettings)
+                assert.deepEqual(settings, {
+                    model: "alternate-review-model",
+                    effort: "high"
+                });
+        });
+    });
+    it("fails the review when Codex does not list the configured model instead of substituting another", async function () {
+        const { executionFixture } = require("../fixtures/review-execution");
+        await executionFixture(async ({ service, connected, input }) => {
+            service.config.model = "unlisted-review-model";
+            const connection = await connected;
+            const response = once(connection, "payload");
+            await connection.send("request", "unlisted", input.attempt, input);
+            const message = (await response)[0];
+            assert.equal(message.operation, "failure");
+            assert.equal(message.value.code, "MODEL_UNAVAILABLE");
+            const files = await fs.readdir(service.config.runtimeRoot);
+            assert.equal(
+                files.filter((file) => /^[0-9a-f-]{36}\.json$/.test(file))
+                    .length,
+                0
+            );
+        });
+    });
     it("rereads a controller-excluded thread after reopening and publishes revision-bound correction", async function () {
         const { executionFixture } = require("../fixtures/review-execution");
         const { resolvedThreads } = require("../../resolved-threads");
@@ -959,17 +1013,65 @@ describe("integrated worker review service", function () {
             }
         });
     });
-    it("enables review with one worker flag while retaining the existing authorization policy", function () {
+    it("enables Codex review with the default model and effort while retaining the existing authorization policy", function () {
         const config = parseServerArgs([
             "node",
             "server",
             "--name",
             "worker",
-            "--review"
+            "--review-codex"
         ]);
         assert.equal(config.review, true);
+        assert.equal(config.reviewModel, "gpt-6-astra");
+        assert.equal(config.reviewEffort, "low");
         assert.equal(config.allowUnlistedOrchestrators, true);
         assert.equal(config.authorizationPolicyProvided, false);
+    });
+    it("takes the Codex model and effort from worker flags in either value form", function () {
+        const spaced = parseServerArgs([
+            "node",
+            "server",
+            "--review-codex",
+            "gpt-7-nova",
+            "--review-effort",
+            "high",
+            "--name",
+            "worker"
+        ]);
+        assert.equal(spaced.review, true);
+        assert.equal(spaced.reviewModel, "gpt-7-nova");
+        assert.equal(spaced.reviewEffort, "high");
+        const inline = parseServerArgs([
+            "node",
+            "server",
+            "--name",
+            "worker",
+            "--review-effort=medium",
+            "--review-codex=gpt-6.1-astra"
+        ]);
+        assert.equal(inline.reviewModel, "gpt-6.1-astra");
+        assert.equal(inline.reviewEffort, "medium");
+    });
+    it("rejects the retired review flag, effort without Codex review, and malformed settings", function () {
+        const parse = (...args) =>
+            parseServerArgs(["node", "server", "--name", "worker", ...args]);
+        assert.throws(() => parse("--review"), /Unknown server option/);
+        assert.throws(
+            () => parse("--review-effort", "high"),
+            /--review-effort requires --review-codex/
+        );
+        assert.throws(
+            () => parse("--review-codex", "--review-effort"),
+            /--review-effort requires a value/
+        );
+        assert.throws(
+            () => parse("--review-codex=bad model"),
+            /Invalid review model/
+        );
+        assert.throws(
+            () => parse("--review-codex", "--review-effort", "-high"),
+            /Invalid review effort/
+        );
     });
     it("serves review and test lease messages on one authenticated worker connection", async function () {
         await reviewWorker(async ({ worker, connected, root, keyPair }) => {

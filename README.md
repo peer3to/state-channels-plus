@@ -292,8 +292,10 @@ yarn test:parallel:server \
   --work-root /your/chosen/directory
 ```
 
-Add `--review` to the same worker command to also offer Codex PR reviews. The
-worker reuses its identity, pool secret and authorization policy, announces the
+Add `--review-codex [model]` to the same worker command to also offer Codex PR
+reviews (default model `gpt-6-astra`); `--review-effort <effort>` sets the
+reasoning effort (default `low`). Both are worker-side, so changing them needs a
+worker restart, not a push. The worker reuses its identity, pool secret and authorization policy, announces the
 review discovery topics, and stores review state under `<work-root>/review/`.
 Codex must be installed on PATH and logged in as the worker user. No separate
 review-server command or configuration file is needed. See

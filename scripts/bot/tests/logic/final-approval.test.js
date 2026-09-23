@@ -160,6 +160,35 @@ describe("final cross-workflow approval", function () {
             wire.done();
         }
     });
+    it("takes the model attempt from the newest valid result artifact, not from retained jobs", async function () {
+        const input = request();
+        const id = input.run.id;
+        const { wire, github } = writer(
+            input,
+            runRecords(input, {
+                artifacts: [
+                    { name: `review-${id}-1-result`, expired: false },
+                    { name: `review-${id}-2-result`, expired: true },
+                    { name: `review-${id}-3-result`, expired: false },
+                    { name: `review-${id + 1}-2-result`, expired: false },
+                    { name: `review-${id}-2-handoff`, expired: false }
+                ]
+            })
+        );
+        const selected = await completedInputs(github, input);
+        assert.equal(selected["review.yml"].attempt, 2);
+        assert.equal(selected["review.yml"].modelAttempt, 1);
+        wire.done();
+    });
+    it("defers when no result artifact names a producing attempt", async function () {
+        const input = request(),
+            { wire, github } = writer(
+                input,
+                runRecords(input, { artifacts: [] })
+            );
+        assert.equal(await completedInputs(github, input), null);
+        wire.done();
+    });
     it("joins the latest substantive jobs across partial reruns without waiting for its own jobs", async function () {
         const input = request(),
             { wire, github } = writer(input, runRecords(input));

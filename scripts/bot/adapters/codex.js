@@ -3,7 +3,6 @@ const fs = require("node:fs/promises");
 const { EventEmitter } = require("node:events");
 const { check, exact } = require("../data");
 const { ReviewError, sanitized } = require("../errors");
-const { MODEL } = require("../config");
 const DISABLED = [
     "apps",
     "browser_use",
@@ -335,14 +334,16 @@ class CodexAdapter {
         });
         check(
             models.data?.some(
-                (model) => model.id === MODEL || model.model === MODEL
+                (model) =>
+                    model.id === this.config.model ||
+                    model.model === this.config.model
             ),
             "MODEL_UNAVAILABLE"
         );
     }
     async session(existingId, instructions) {
         const params = {
-            model: MODEL,
+            model: this.config.model,
             approvalPolicy: "never",
             sandbox: "read-only",
             cwd: this.config.runtimeRoot,
@@ -472,7 +473,7 @@ class CodexAdapter {
                 try {
                     const started = await this.process.request("turn/start", {
                         threadId: this.threadId,
-                        model: MODEL,
+                        model: this.config.model,
                         effort: this.config.effort,
                         approvalPolicy: "never",
                         environments: [],

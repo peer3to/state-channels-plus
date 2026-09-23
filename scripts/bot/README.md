@@ -1,6 +1,6 @@
 # Review service implementation
 
-Operational setup, failure recovery and acceptance are in [the operations guide](../../docs/pr-review-bot.md). The existing worker enables this handler with `--review`; Codex runs from PATH as the worker user.
+Operational setup, failure recovery and acceptance are in [the operations guide](../../docs/pr-review-bot.md). The existing worker enables this handler with `--review-codex [model]` (default `gpt-6-astra`) and optional `--review-effort <effort>` (default `low`); Codex runs from PATH as the worker user.
 
 ## Owners
 
@@ -53,7 +53,7 @@ Run `yarn review-bot:test --grep '<literal case>'` for a focused check, and `yar
 
 ## Worker and CI integration
 
-The normal worker owns the pool, peer identity, authentication, authorization store, connection deduplication, heartbeats and shutdown. `--review` initializes the review handler below the worker work root and advertises the review topic pair. Authenticated `REVIEW_*` messages are dispatched before test lease handling. `ReviewService.attach` uses the existing protocol peer; it opens no second pool and performs no second authentication.
+The normal worker owns the pool, peer identity, authentication, authorization store, connection deduplication, heartbeats and shutdown. `--review-codex` initializes the review handler below the worker work root and advertises the review topic pair. Authenticated `REVIEW_*` messages are dispatched before test lease handling. `ReviewService.attach` uses the existing protocol peer; it opens no second pool and performs no second authentication.
 
 CI derives a review identity per run attempt by SHA-256 hashing the fixed `peer3/review-orchestrator/v1` domain (NUL terminated), existing orchestrator seed bytes, and JSON array of repository ID, run ID and attempt strings. Every job and reconnect in that attempt derives the same key; different runs do not displace each other's connections. No new secret is required. The deployment uses shared-secret admission with unlisted orchestrators allowed; strict key allowlisting is not required for this setup. Per-PR conversations remain independent of client keys. Discovery uses the review topic pair and capability negotiation. The fixed Codex adapter uses the existing worker user's login with only PATH, HOME and optional CODEX_HOME passed to its process. This is source-tool restriction, not separate OS-user isolation.
 

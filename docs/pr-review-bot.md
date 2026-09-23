@@ -12,17 +12,20 @@ API failures record the operation and HTTP status without exposing credentials.
 Permanent permission errors or unavailable GitHub service still need recovery;
 they cannot be solved by asking the model to rewrite a valid review.
 
-Start the normal distributed worker with `--review` to offer source-only Codex reviews as well as tests:
+Start the normal distributed worker with `--review-codex` to offer source-only Codex reviews as well as tests:
 
 ```sh
-yarn test:parallel:server --name worker-one --review
+yarn test:parallel:server --name worker-one --review-codex
+yarn test:parallel:server --name worker-one --review-codex gpt-6-astra --review-effort medium
 ```
+
+`--review-codex [model]` selects the Codex model (default `gpt-6-astra`); `--review-effort <effort>` is passed to Codex as the reasoning effort (default `low`) and requires `--review-codex`. Both are worker settings: change them by restarting the worker, not by pushing. CI requests do not carry or check them.
 
 Keep your existing worker flags and environment. The worker uses the same identity, `SCP_TEST_POOL_SECRET`, authentication, authorization policy and connection lifecycle. No separate review server, JSON configuration, secret or operating-system user is required. Review clients derive a distinct transport identity as described below. When the worker permits unlisted authenticated orchestrators, the review handler does too. Strict allowlists must authorize that derived review key before the service can be reached.
 
 ## Worker prerequisites and storage
 
-Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests `gpt-6-astra` with `low`, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
+Run the worker as the user whose Codex CLI is installed and logged in. `codex` must be on `PATH`; the current adapter checks CLI version `0.154.0`, requests the configured model and effort (default `gpt-6-astra` at `low`), fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. Missing CLI, unsupported version/model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback. The worker uses the existing `HOME` and optional `CODEX_HOME` for that login.
 
 Review worktrees, session records and runtime files live under `<worker-work-root>/review/`. With the normal default this is `./temp/distributed-worker/review/`. The worker keeps test-owned paths separate. Native Codex session files remain in the existing Codex home; the registry records the exact native session IDs it owns. This uses the worker's operating-system identity, not a separate security boundary. Model execution receives only the approved source/public-read tools; the server persists its returned report. Application execution, tests and direct publication remain disabled.
 
@@ -69,7 +72,7 @@ alone does not create an inline comment. Human decisions carry
 
 CI uses the existing `SCP_TEST_POOL_SECRET` and `SCP_TEST_ORCHESTRATOR_SEED`. Review derives its seed as SHA-256 of the fixed UTF-8 domain `peer3/review-orchestrator/v1` followed by a NUL byte, original seed bytes, and the JSON array of `GITHUB_REPOSITORY_ID`, `GITHUB_RUN_ID`, and `GITHUB_RUN_ATTEMPT` strings. Those values are required in CI. Reconnects and jobs within one run attempt share a key; concurrent runs have different keys. Test identity and test-lease serialization are unchanged. No new secret is required. The selected deployment policy accepts unlisted clients authenticated with the shared pool secret; a strict public-key allowlist is not part of this per-run setup. Local clients without an environment seed retain their existing persistent identity. Review conversations remain keyed by repository and PR, not client identity.
 
-No review-specific CI variables or secrets are required. Eligible PR pushes request a review automatically; discovery fails visibly if no review worker is available. The worker's `--review` flag controls whether it offers the service. Limits and policy hashing come from the checked-in `config.js`.
+No review-specific CI variables or secrets are required. Eligible PR pushes request a review automatically; discovery fails visibly if no review worker is available. The worker's `--review-codex` flag controls whether it offers the service and which model it uses. Limits and policy hashing come from the checked-in `config.js`.
 
 Human-decision markers tell people what needs a decision and tell implementing agents to ask their humans. They do not verify identity or repository authority. People can use ordinary PR comments; there is no required reply template or maintainer-ID list. The reviewer assesses the discussion and explains whether the question is settled. The protocol's authority label describes who the question is aimed at; it is not an access check.
 
@@ -81,7 +84,7 @@ In Settings → Actions → General → Workflow permissions, enable **Allow Git
 
 1. Commit the implementation. Update the worker's checkout to the same bot revision used by the PR. Install its normal dependencies.
 2. In the worker's normal login environment, check `codex --version` and `codex login status`. The adapter currently expects `codex-cli 0.154.0` and ChatGPT login with Astra access.
-3. Restart the existing worker command with `--review` added. Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
+3. Restart the existing worker command with `--review-codex` added (optionally a model and `--review-effort`). Keep its existing name, work root, secret and authorization flags. No second process or configuration file is needed.
 4. Enable GitHub Actions approval as described above. Keep the existing CI pool/orchestrator secrets.
 5. Push to the existing same-repository implementation PR. A comment alone does not start review. A manual workflow rerun uses its original event head and skips if that head is now stale.
 6. Inspect `review-model` and `review-publish` in the separate PR Review Bot workflow. Confirm publication for the latest SHA and the service's confirmed receipt. Fix a finding and push again to exercise continued review and resolution.
@@ -196,7 +199,9 @@ Both `ci.yml` and `review.yml` end with an `approve` job using the same
 deterministic gate. This works on PR branches without a workflow on `master`.
 The first finisher defers if the other workflow is still running. The last
 finisher checks successful substantive jobs in both workflows, ignoring the
-approval jobs themselves. A shared per-PR concurrency group prevents duplicate
+approval jobs themselves. A partial rerun relabels retained jobs with the new attempt
+number, so the gate takes the model's producing attempt from the newest
+unexpired `review-<run>-<attempt>-result` artifact. A shared per-PR concurrency group prevents duplicate
 approval writes. The gate reads the server's confirmed publication receipt and
 `everythingResolved` state, then rechecks current GitHub discussion and head.
 New or edited discussion, an open thread, an open finding, incomplete publication,

@@ -103,6 +103,9 @@ class GitHubWriter {
                 ) ||
                     /^\/actions\/runs\/[1-9][0-9]*\/jobs\?filter=latest&per_page=100&page=[1-9][0-9]*$/.test(
                         suffix
+                    ) ||
+                    /^\/actions\/runs\/[1-9][0-9]*\/artifacts\?per_page=100&page=[1-9][0-9]*$/.test(
+                        suffix
                     ))) ||
                 /^\/(?:pulls|issues)\/[1-9][0-9]*(?:\/(?:comments|reviews)(?:\/[1-9][0-9]*(?:\/(?:dismissals|replies))?)?)?(?:\?per_page=100&page=[1-9][0-9]*)?$/.test(
                     suffix

@@ -4,10 +4,17 @@ const {
     MAX_SLOTS_FROM_POOL,
     SCHEDULER_TICK_MS
 } = require("../shared/constants");
+const {
+    DEFAULT_EFFORT,
+    DEFAULT_MODEL,
+    validReviewSetting
+} = require("../../bot/config");
 const { validateCidr } = require("./egressPolicy");
 
 const DEFAULTS = {
     review: false,
+    reviewModel: DEFAULT_MODEL,
+    reviewEffort: DEFAULT_EFFORT,
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
     maxCompressedBytes: 2 * 1024 ** 3,
@@ -77,10 +84,28 @@ function parseServerArgs(argv, env = process.env) {
         ...DEFAULTS,
         name: env.SCP_TEST_WORKER_NAME
     };
+    let reviewEffortProvided = false;
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
-        if (arg === "--review") {
+        // Codex reviews; the model name is optional and defaults to DEFAULT_MODEL.
+        if (arg === "--review-codex" || arg.startsWith("--review-codex=")) {
+            const inline = arg.split(/=(.*)/s)[1];
+            const next = argv[i + 1];
             result.review = true;
+            if (inline !== undefined) result.reviewModel = inline;
+            else if (next !== undefined && !next.startsWith("--")) {
+                result.reviewModel = next;
+                i++;
+            }
+            continue;
+        }
+        if (arg === "--review-effort" || arg.startsWith("--review-effort=")) {
+            const inline = arg.split(/=(.*)/s)[1];
+            const raw = inline === undefined ? argv[++i] : inline;
+            if (!raw || raw.startsWith("--"))
+                throw new Error("--review-effort requires a value");
+            result.reviewEffort = raw;
+            reviewEffortProvided = true;
             continue;
         }
         if (arg === "--allow-shared-host") {
@@ -156,6 +181,15 @@ function parseServerArgs(argv, env = process.env) {
         throw new Error(
             "Worker name must match [a-z0-9-] and be at most 48 characters"
         );
+    }
+    if (reviewEffortProvided && !result.review) {
+        throw new Error("--review-effort requires --review-codex");
+    }
+    if (!validReviewSetting(result.reviewModel)) {
+        throw new Error(`Invalid review model ${result.reviewModel}`);
+    }
+    if (!validReviewSetting(result.reviewEffort)) {
+        throw new Error(`Invalid review effort ${result.reviewEffort}`);
     }
     result.deniedPrivateCidrs.forEach(validateCidr);
     return result;
