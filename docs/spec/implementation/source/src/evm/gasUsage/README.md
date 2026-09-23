@@ -8,7 +8,9 @@ I/O, and `GasUsageRecorder` is the thin observer that waits for a receipt and ha
 single producer is [HostNonceManager.ts](../signer/HostNonceManager.ts.md), the one signer every
 real-chain transaction of a peer passes through; the readers are the chain-signer runtime service
 and the runtime host root's disposal report, and both go through the recorder's own
-settle-then-snapshot read so they answer with one freshness rule.
+settle-then-snapshot read under one bound, `GAS_USAGE_SETTLE_MS`, so they answer with one freshness
+rule. The host root disposes the recorder after its report, which ends every receipt wait still
+running.
 
 ## Contents
 

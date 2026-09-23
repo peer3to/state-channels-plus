@@ -25,11 +25,13 @@ Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debu
 
 CRASH_LOG_UPLOAD_COALESCE_MS defaults to 3,000 ms and controls deterministic gossip coalescing independently of random upload jitter. The obsolete per-hop flush timeout is removed; uploader HTTP deadlines and retries are unchanged.
 
-1. **The two gas-usage bounds are configuration, not constants.** `GAS_USAGE_RECEIPT_WAIT_MS`
-   (120,000 ms) caps one receipt wait, so an observation whose provider closed under it still
-   settles; `GAS_USAGE_DISPOSAL_SETTLE_MS` (2,000 ms) caps how long disposal waits for outstanding
-   observations before it reports the table anyway. Both bound waits on a chain a deployment may
-   not control, which is why they are tunable per deployment rather than compiled in.
+1. **The gas-usage read bound is configuration, not a constant.** `GAS_USAGE_SETTLE_MS`
+   (2,000 ms) caps how long a gas-usage read — the public table read and the disposal report —
+   waits for outstanding receipts before it answers with the rows already recorded; a receipt still
+   pending then shows up on a later read. It bounds a wait on a chain a deployment may not control,
+   which is why it is tunable per deployment rather than compiled in. A receipt wait itself has no
+   bound: a transaction counts whenever it mines, and recorder disposal ends the waits still open.
+   See [GAS_USAGE_SETTLE_MS](../../../../../../src/utils/config.ts#L35).
 2. **`EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS` is a per-context throw, not a process kill.** The monitor throws in its own context; the sdk and contract-executor workers report that throw to the host as a detached error and keep serving, inline it surfaces like any uncaught error. The same flag enables the `##E2E_TIMING##` diagnostics.
 
 ## Inputs, outputs, state, and side effects

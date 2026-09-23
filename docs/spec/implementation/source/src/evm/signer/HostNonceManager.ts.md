@@ -32,10 +32,14 @@ where the peer's chain spending is observed.
 3. **Gas is observed here because every real-chain transaction of the peer passes here.** The
    worker-side signers reach the chain through the chain-signer runtime service, which sends
    through this manager, and the host-side manager contract and dispute retries are bound to it
-   too. `sendTransaction` is a thin wrapper that hands the broadcast response to the recorder and
-   returns it unchanged, so nonce handling stays in `sendWithOwnedNonce`.
+   too. `sendTransaction` overrides `AbstractSigner.sendTransaction` as a thin wrapper: it
+   broadcasts through `sendWithOwnedNonce`, hands the response to the recorder and returns it
+   unchanged, so nonce handling stays in `sendWithOwnedNonce`. A response recovered from the node
+   after a failed broadcast is observed like any other; a broadcast that fails with nothing on the
+   node rejects before anything is observed.
 4. **The recorder is created with the signer** — it lives exactly as long as the signer whose
-   transactions it counts, and every reader reaches the same instance through it.
+   transactions it counts, and every reader reaches the same instance through it. The signer's
+   owner disposes it through the same field when the chain connection goes away.
 
 ## Inputs, outputs, state, and side effects
 
@@ -79,7 +83,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                  | Gap / divergence                                             |
 | -------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** the observation point and the owned recorder in [sendTransaction](../../../../../../../src/evm/signer/HostNonceManager.ts#L76). **Other files:** [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md) waits for the receipt, [GasUsageTable.ts](../gasUsage/GasUsageTable.ts.md) aggregates, and [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports the table on disposal. | Exposure to callers is the client signer's, not this file's. |
+| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** the observation point and the owned recorder in [sendTransaction](../../../../../../../src/evm/signer/HostNonceManager.ts#L78). **Other files:** [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md) waits for the receipt, [GasUsageTable.ts](../gasUsage/GasUsageTable.ts.md) aggregates, and [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports the table on disposal. | Exposure to callers is the client signer's, not this file's. |
 
 ## Component test obligations
 
