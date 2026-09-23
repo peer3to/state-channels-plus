@@ -3,7 +3,10 @@ const { once } = require("node:events");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { TOOL_NAMES } = require("../../adapters/claude");
+const { ClaudeAdapter, TOOL_NAMES } = require("../../adapters/claude");
+const { configuration } = require("../../config");
+const { ModelBudget } = require("../../timing");
+const { request: requestRecord } = require("../fixtures/records");
 const { digest } = require("../../data");
 const { ReviewService } = require("../../server");
 const {
@@ -100,6 +103,12 @@ describe("Claude review adapter", function () {
                 assert.equal(native.effort, "high");
                 assert.deepEqual(native.allowedTools, TOOL_NAMES);
                 assert.equal(native.instructions, service.instructions);
+                // Full tool results up to the worker's own byte limit reach the
+                // model instead of the CLI's 25k-token default.
+                assert.equal(
+                    native.maxMcpOutputTokens,
+                    String(service.config.limits.maxBytes)
+                );
                 assert.equal(native.turns, 1);
                 const active = service.sessions.slots.get(
                     service.sessions.key(input)
@@ -120,6 +129,35 @@ describe("Claude review adapter", function () {
             },
             { provider: "claude" }
         );
+    });
+    it("delivers a tool result far above the CLI's default output cap to the model", async function () {
+        const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-cap-"));
+        const config = configuration({
+            stateRoot: root,
+            provider: "claude",
+            claudePath: path.join(__dirname, "../fixtures/claude-peer.js")
+        });
+        // About 100 KB, four times the CLI's 25k-token default.
+        const large = "x".repeat(100000);
+        const adapter = new ClaudeAdapter(config, {
+            call: async (name) =>
+                name === "source_read"
+                    ? { lines: ["Reviewed source.", large] }
+                    : { data: [] },
+            close: async () => {}
+        });
+        try {
+            await adapter.open();
+            await adapter.session(null, "Large result check.");
+            const report = await adapter.turn(
+                "Controller-bound input:\n" + JSON.stringify(requestRecord()),
+                new ModelBudget(20000)
+            );
+            assert.match(report, /## Review completion/);
+        } finally {
+            await adapter.stop();
+            await fs.rm(root, { recursive: true, force: true });
+        }
     });
     it("resumes the same Claude session for the next review of the PR", async function () {
         await executionFixture(

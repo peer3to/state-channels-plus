@@ -30,6 +30,10 @@ const thread = resumed
     ? JSON.parse(fs.readFileSync(file(id), "utf8"))
     : { id, turns: 0 };
 thread.model = option("--model");
+// Like the real CLI, results over this many tokens (default 25k) never reach
+// the model; one character per token is the fixture's conservative estimate.
+thread.maxMcpOutputTokens = process.env.MAX_MCP_OUTPUT_TOKENS;
+const outputCap = Number(process.env.MAX_MCP_OUTPUT_TOKENS || 25000);
 thread.effort = option("--effort");
 thread.instructions = fs.readFileSync(option("--system-prompt-file"), "utf8");
 thread.allowedTools = args.slice(
@@ -99,10 +103,23 @@ async function turn(prompt) {
             message: { content: [{ type: "tool_use", name, input }] }
         });
         const response = await mcp("tools/call", { name, arguments: input });
-        return {
-            success: !response.result.isError,
-            text: response.result.content[0].text
-        };
+        const text = response.result.content[0].text;
+        // The size threshold (about 50 KB by default) replaces a result with
+        // a preview unless the tool raised it through its listed _meta.
+        const listed = tools.find((tool) => tool.name === name);
+        const sizeCap =
+            listed?._meta?.["anthropic/maxResultSizeChars"] ?? 50000;
+        if (text.length > sizeCap)
+            return {
+                success: false,
+                text: `Output too large. Full output saved to a file.`
+            };
+        if (text.length > outputCap)
+            return {
+                success: false,
+                text: `MCP tool "${name}" response exceeds maximum allowed tokens`
+            };
+        return { success: !response.result.isError, text };
     });
     send({
         type: "assistant",

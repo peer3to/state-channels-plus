@@ -637,4 +637,111 @@ describe("review public context", function () {
         assert.equal(owner.gathered(), false);
         records.done();
     });
+    it("sends the worker token only to api.github.com and reads anonymously without one", async function () {
+        for (const token of ["read-only-token", null]) {
+            const records = new RecordedGitHub([
+                { path: `${prefix}/pulls/6/comments`, response: [] }
+            ]);
+            const owner = new PublicGitHub(
+                repository,
+                6,
+                new ContextBudget(
+                    DEFAULTS,
+                    new PublicAccounting(DEFAULTS, token)
+                ),
+                records.exchange.bind(records)
+            );
+            await owner.read(
+                `https://api.github.com${prefix}/pulls/6/comments`
+            );
+            assert.equal(
+                records.requests[0].headers.Authorization,
+                token ? `Bearer ${token}` : undefined
+            );
+            records.done();
+        }
+        const html = new RecordedGitHub([
+            {
+                path: `/${repository}/pull/6/commits`,
+                rawBody: "<html><body>commits</body></html>",
+                headers: { "content-type": "text/html" }
+            }
+        ]);
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            new ContextBudget(
+                DEFAULTS,
+                new PublicAccounting(DEFAULTS, "read-only-token")
+            ),
+            async (url, options) => {
+                if (new URL(url).hostname === "github.com")
+                    assert.equal(options.headers.Authorization, undefined);
+                return html.exchange(url, options);
+            }
+        );
+        await owner
+            .read(`https://github.com/${repository}/pull/6/commits`)
+            .catch(() => {});
+        assert.equal(html.requests.length, 1);
+        assert.equal(html.requests[0].headers.Authorization, undefined);
+    });
+    it("reuses a remembered page when GitHub answers an If-None-Match read with 304", async function () {
+        const route = `${prefix}/pulls/6/comments`;
+        const comment = {
+            id: 3,
+            body: "open root",
+            user: { id: 7, type: "User" }
+        };
+        const records = new RecordedGitHub([
+            { path: route, response: [comment], headers: { etag: '"v1"' } },
+            { path: route, status: 304, headers: { etag: '"v1"' } },
+            {
+                path: route,
+                response: [comment, { ...comment, id: 4 }],
+                headers: { etag: '"v2"' }
+            }
+        ]);
+        const accounting = new PublicAccounting(DEFAULTS, "read-only-token");
+        const read = async () => {
+            const budget = new ContextBudget(DEFAULTS, accounting);
+            const owner = new PublicGitHub(
+                repository,
+                6,
+                budget,
+                records.exchange.bind(records)
+            );
+            const page = await owner.read(`https://api.github.com${route}`);
+            return { page, budget };
+        };
+        const first = await read();
+        assert.equal(records.requests[0].headers["If-None-Match"], undefined);
+        const second = await read();
+        assert.equal(records.requests[1].headers["If-None-Match"], '"v1"');
+        assert.deepEqual(second.page.data, first.page.data);
+        assert.equal(second.budget.cacheHits, 1);
+        assert.equal(second.budget.bytes, 0);
+        assert.equal(
+            second.page.source.contextRevision,
+            first.page.source.contextRevision
+        );
+        // A changed page replaces the remembered one.
+        const third = await read();
+        assert.equal(records.requests[2].headers["If-None-Match"], '"v1"');
+        assert.deepEqual(
+            third.page.data.map((item) => item.id),
+            [3, 4]
+        );
+        assert.equal(third.budget.cacheHits, 0);
+        records.done();
+    });
+    it("evicts the oldest remembered pages beyond the conditional cache size", function () {
+        const accounting = new PublicAccounting(DEFAULTS, null);
+        const headers = new Headers({ etag: '"x"' });
+        const page = "x".repeat(20 * 1024 * 1024);
+        for (const url of ["a", "b", "c", "d"])
+            accounting.remember(url, page, headers);
+        assert.deepEqual([...accounting.conditional.keys()], ["b", "c", "d"]);
+        assert.equal(accounting.conditionalBytes, 3 * page.length);
+    });
 });

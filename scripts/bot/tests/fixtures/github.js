@@ -17,9 +17,14 @@ class RecordedGitHub {
         );
         const body = options.body ? JSON.parse(options.body) : null;
         expected.inspect?.(body);
-        this.requests.push({ url, method: options.method, body });
+        this.requests.push({
+            url,
+            method: options.method,
+            body,
+            headers: options.headers || {}
+        });
         return new Response(
-            expected.status === 204
+            [204, 304].includes(expected.status)
                 ? null
                 : (expected.rawBody ?? JSON.stringify(expected.response)),
             {

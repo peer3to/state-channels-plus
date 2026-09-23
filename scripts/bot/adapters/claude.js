@@ -15,6 +15,12 @@ const {
 // The CLI exposes worker-served tools as mcp__<server>__<tool>.
 const SERVER = "review";
 const TOOL_NAMES = TOOLS.map((tool) => `mcp__${SERVER}__${tool.name}`);
+// Above the CLI's default size threshold a result is replaced by a 2 KB preview
+// and a saved file the model cannot open; raise it to the CLI's maximum.
+const LISTED_TOOLS = TOOLS.map((tool) => ({
+    ...tool,
+    _meta: { "anthropic/maxResultSizeChars": 500000 }
+}));
 const SESSION_ID =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function providerFailure(code, status) {
@@ -52,6 +58,10 @@ class ClaudeAdapter {
         return {
             PATH: process.env.PATH,
             HOME: process.env.HOME,
+            // The CLI's default 25k-token MCP result cap rejects full GitHub
+            // pages, and the model then re-pages in tiny requests. The worker's
+            // own maxBytes check is the limit; a token is at least one byte.
+            MAX_MCP_OUTPUT_TOKENS: String(this.config.limits.maxBytes),
             ...(process.env.CLAUDE_CONFIG_DIR
                 ? { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR }
                 : {})
@@ -208,7 +218,7 @@ class ClaudeAdapter {
                 }
             };
         else if (rpc.method === "tools/list")
-            reply = { result: { tools: TOOLS } };
+            reply = { result: { tools: LISTED_TOOLS } };
         else if (rpc.method === "tools/call") {
             check(this.active, "ISOLATION_UNVERIFIED");
             this.activity.toolCalls++;

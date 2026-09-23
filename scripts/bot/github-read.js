@@ -2,6 +2,8 @@ const { performance } = require("node:perf_hooks");
 const { check, digest } = require("./data");
 const { ReviewError } = require("./errors");
 const { DEFAULTS } = require("./config");
+// Worker memory kept for conditional GitHub reads, oldest pages evicted first.
+const CONDITIONAL_CACHE_BYTES = 64 * 1024 * 1024;
 class PublicAccounting {
     requests = 0;
     bytes = 0;
@@ -11,8 +13,37 @@ class PublicAccounting {
     lastThrottle = null;
     // Public origins map to advertised or fallback retry timestamps in milliseconds.
     blockedUntil = new Map();
-    constructor(limits = DEFAULTS) {
+    // Read-only GitHub token sent to api.github.com only; null reads anonymously.
+    token;
+    // Canonical API URL -> last full response (body, etag, headers). A 304 to an
+    // If-None-Match reuses it and, when authenticated, costs no GitHub quota.
+    conditional = new Map();
+    conditionalBytes = 0;
+    constructor(limits = DEFAULTS, token = null) {
         this.fallbackBlockMs = limits.throttleFallbackMs;
+        this.token = token || null;
+    }
+    remember(url, body, headers) {
+        this.forget(url);
+        const size = Buffer.byteLength(body);
+        if (size > CONDITIONAL_CACHE_BYTES) return;
+        this.conditional.set(url, {
+            body,
+            size,
+            headers: new Headers(headers)
+        });
+        this.conditionalBytes += size;
+        for (const [oldest, entry] of this.conditional) {
+            if (this.conditionalBytes <= CONDITIONAL_CACHE_BYTES) break;
+            this.conditional.delete(oldest);
+            this.conditionalBytes -= entry.size;
+        }
+    }
+    forget(url) {
+        const entry = this.conditional.get(url);
+        if (!entry) return;
+        this.conditional.delete(url);
+        this.conditionalBytes -= entry.size;
     }
     beforeRequest(url) {
         const origin = new URL(url).origin;
@@ -443,15 +474,22 @@ class PublicGitHub {
         let url = this.permitted(input);
         for (let redirects = 0; redirects <= 3; redirects++) {
             this.budget.beforeRequest(url);
+            const api = url.hostname === "api.github.com";
+            const shared = this.budget.shared;
+            const cached = api ? shared?.conditional.get(url.href) : undefined;
             const response = await this.exchange(url, {
                 method: "GET",
                 redirect: "manual",
                 headers: {
-                    Accept:
-                        url.hostname === "api.github.com"
-                            ? "application/vnd.github+json"
-                            : "text/html",
-                    "User-Agent": "peer3-review-service"
+                    Accept: api ? "application/vnd.github+json" : "text/html",
+                    "User-Agent": "peer3-review-service",
+                    // The token never leaves api.github.com, even on redirect.
+                    ...(api && shared?.token
+                        ? { Authorization: `Bearer ${shared.token}` }
+                        : {}),
+                    ...(cached
+                        ? { "If-None-Match": cached.headers.get("etag") }
+                        : {})
                 },
                 signal: AbortSignal.any([
                     this.controller.signal,
@@ -464,46 +502,55 @@ class PublicGitHub {
                 ])
             });
             this.budget.shared?.observe(url, response);
-            if (response.status >= 300 && response.status < 400) {
+            let body, headers;
+            if (response.status === 304 && cached) {
+                // Unchanged since the remembered read: reuse its body and headers.
+                await response.body?.cancel();
+                this.budget.cacheHits++;
+                ({ body, headers } = cached);
+            } else if (response.status >= 300 && response.status < 400) {
                 check(response.headers.get("location"), "CONTEXT_UNAVAILABLE");
                 url = this.permitted(
                     new URL(response.headers.get("location"), url).href
                 );
                 await response.body?.cancel();
                 continue;
+            } else {
+                if (
+                    response.status === 429 ||
+                    (response.status === 403 &&
+                        response.headers.get("x-ratelimit-remaining") === "0")
+                ) {
+                    await response.body?.cancel();
+                    throw new ReviewError("CONTEXT_RATE_LIMITED");
+                }
+                if (!response.ok) {
+                    await response.body?.cancel();
+                    throw new ReviewError("CONTEXT_UNAVAILABLE");
+                }
+                const chunks = [];
+                for await (const chunk of response.body) {
+                    this.budget.addBytes(chunk.length);
+                    chunks.push(Buffer.from(chunk));
+                }
+                body = Buffer.concat(chunks).toString("utf8");
+                headers = response.headers;
+                if (api && headers.get("etag"))
+                    shared?.remember(url.href, body, headers);
             }
-            if (
-                response.status === 429 ||
-                (response.status === 403 &&
-                    response.headers.get("x-ratelimit-remaining") === "0")
-            ) {
-                await response.body?.cancel();
-                throw new ReviewError("CONTEXT_RATE_LIMITED");
-            }
-            if (!response.ok) {
-                await response.body?.cancel();
-                throw new ReviewError("CONTEXT_UNAVAILABLE");
-            }
-            const chunks = [];
-            for await (const chunk of response.body) {
-                this.budget.addBytes(chunk.length);
-                chunks.push(Buffer.from(chunk));
-            }
-            const body = Buffer.concat(chunks).toString("utf8");
             let data = decodePage(
                 url.href,
                 body,
-                response.headers.get("content-type") || "",
+                headers.get("content-type") || "",
                 this.repository,
                 this.pr,
                 this.head
             );
             let next =
-                response.headers
-                    .get("link")
-                    ?.match(/<([^>]+)>;\s*rel="next"/)?.[1] || null;
+                headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ||
+                null;
             if (next) next = this.permitted(next).href;
-            this.budget.record(url.href, body, response.headers, data, next);
+            this.budget.record(url.href, body, headers, data, next);
             const kind = url.pathname.endsWith(`/issues/${this.pr}/comments`)
                 ? "comment"
                 : url.pathname.endsWith(`/pulls/${this.pr}/comments`)

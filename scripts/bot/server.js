@@ -43,7 +43,12 @@ class ReviewService {
     maintenance = null;
     constructor(config) {
         this.config = configuration(config);
-        this.publicAccounting = new PublicAccounting(this.config.limits);
+        // Optional read-only token from the worker's .env; never passed to
+        // the model processes, whose environment is limited to PATH and HOME.
+        this.publicAccounting = new PublicAccounting(
+            this.config.limits,
+            process.env.SCP_REVIEW_GITHUB_TOKEN
+        );
         this.sessions = new Sessions(
             path.join(this.config.stateRoot, "sessions"),
             this.config.limits

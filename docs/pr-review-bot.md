@@ -32,7 +32,7 @@ Keep your existing worker flags and environment. The worker uses the same identi
 Run the worker as the user whose review CLI is installed and logged in. CLI versions are recorded in each result's `runtime` (for example `codex-0.156.1` or `claude-2.1.280`), not enforced; the adapters were last tested with Codex CLI `0.156.1` and Claude Code `2.1.280`.
 
 - **Codex:** `codex` must be on `PATH`. The adapter requests the configured model and effort, fails if Codex does not list that model, and verifies the existing login is a ChatGPT account. The worker passes only `PATH`, `HOME` and optional `CODEX_HOME`.
-- **Claude:** `claude` must be on `PATH` and logged in with a claude.ai subscription (`claude auth status` shows `authMethod: claude.ai`). The worker passes only `PATH`, `HOME` and optional `CLAUDE_CONFIG_DIR`, never an API key. Each review runs `claude -p` with no built-in tools, no settings files, skills, plugins or user MCP servers, and only the worker source tools, served in-band over the CLI's stream-JSON protocol. A session exposing any other tool, or any CLI permission request, stops the review. An unknown model fails at the first turn.
+- **Claude:** `claude` must be on `PATH` and logged in with a claude.ai subscription (`claude auth status` shows `authMethod: claude.ai`). The worker passes only `PATH`, `HOME` and optional `CLAUDE_CONFIG_DIR`, never an API key. Each review runs `claude -p` with no built-in tools, no settings files, skills, plugins or user MCP servers, and only the worker source tools, served in-band over the CLI's stream-JSON protocol. A session exposing any other tool, or any CLI permission request, stops the review. An unknown model fails at the first turn. The adapter raises Claude Code's tool-result caps (`MAX_MCP_OUTPUT_TOKENS` and each tool's `anthropic/maxResultSizeChars`, whose maximum is 500,000 characters), so full GitHub pages reach the model instead of a preview it cannot open. Otherwise Claude re-reads the same pages in tiny requests and can exhaust GitHub's unauthenticated limit of 60 requests per hour.
 
 Missing CLI, unavailable model, expired login or usage exhaustion fails the review. There is no API-key or paid-credit fallback.
 
@@ -219,6 +219,12 @@ metadata-only body; the bot never merges. A comment alone starts no run, so new
 discussion requires another review before approval.
 
 Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Review retrieval has no cumulative request, page or byte cap; zero in those configured limits means unlimited. Counters remain recorded. Progress and reconnect do not reset the model timeout. Missing evidence prevents approval.
+
+### GitHub read token
+
+Without a token the worker's GitHub reads share the anonymous limit of 60 requests per hour per IP. Set `SCP_REVIEW_GITHUB_TOKEN` in the worker's `.env` to a fine-grained personal access token with **Public repositories (read-only)** access and no other permissions; the limit becomes 5,000 requests per hour. The worker sends it only to `api.github.com`, never to the model processes, and never logs it. Restart the worker after changing it.
+
+Each API page is remembered with its ETag and re-read with `If-None-Match`. An unchanged page returns `304` and is served from memory; with the token GitHub does not charge a `304` against the limit, so freshness checks and repeated reads of unchanged pages cost nothing. The worker keeps up to 64 MB of pages, oldest evicted first.
 
 A valid future GitHub throttle reset is respected. Missing, invalid or expired reset information uses the configured context window; the affected origin becomes usable again after expiry. `review-public-throttle` records count, origin, status, reason and `blockedUntil` without credentials.
 
