@@ -43,15 +43,18 @@ where the peer's chain spending is observed.
 5. **A recovered response detects its replacement.** When the broadcast throws but the node
    already holds the transaction, the manager answers with the node's copy made replaceable, as
    the response of ethers' own broadcast is
-   ([reconcileBroadcastFailure](../../../../../../../src/evm/signer/HostNonceManager.ts#L165)).
+   ([reconcileBroadcastFailure](../../../../../../../src/evm/signer/HostNonceManager.ts#L176)).
    Without that, the `wait()` of a transaction replaced at its nonce never ends: neither the
    caller's nor the recorder's receipt wait, which then holds every later bounded read for its full
    bound. The scan's start block is read before the broadcast
-   ([sendWithOwnedNonce](../../../../../../../src/evm/signer/HostNonceManager.ts#L119)), because
+   ([sendWithOwnedNonce](../../../../../../../src/evm/signer/HostNonceManager.ts#L121)), because
    the scan only walks forward from it and a later read could start past a replacement that
-   already mined. It costs one round trip before each broadcast. On an ethers provider the
-   broadcast's own block-number read reuses it from the provider's 250 ms request cache, so there
-   is no extra request while that read returns inside the cache window.
+   already mined. The read is sent but not awaited, so the broadcast does not wait for it: on an
+   ethers provider the broadcast's own block-number read joins the same in-flight request through
+   the provider's request cache, so a send makes one block-number request and waits no extra round
+   trip. Only a failed broadcast awaits the read; if the read itself failed, it is not retried,
+   since a later read could start past a replacement, and the nonce state is left indeterminate like
+   any other failed reconciliation.
 
 ## Inputs, outputs, state, and side effects
 
@@ -95,7 +98,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Gap / divergence                                             |
 | -------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** the observation point and the owned recorder in [sendTransaction](../../../../../../../src/evm/signer/HostNonceManager.ts#L78), and a recovered response that still detects its replacement in [reconcileBroadcastFailure](../../../../../../../src/evm/signer/HostNonceManager.ts#L165), so its observation ends as not mined. **Other files:** [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md) waits for the receipt, [GasUsageTable.ts](../gasUsage/GasUsageTable.ts.md) aggregates, and [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports the table on disposal. | Exposure to callers is the client signer's, not this file's. |
+| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** the observation point and the owned recorder in [sendTransaction](../../../../../../../src/evm/signer/HostNonceManager.ts#L78), and a recovered response that still detects its replacement in [reconcileBroadcastFailure](../../../../../../../src/evm/signer/HostNonceManager.ts#L176), so its observation ends as not mined. **Other files:** [GasUsageRecorder.ts](../gasUsage/GasUsageRecorder.ts.md) waits for the receipt, [GasUsageTable.ts](../gasUsage/GasUsageTable.ts.md) aggregates, and [P2pRuntimeHostRoot.ts](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reports the table on disposal. | Exposure to callers is the client signer's, not this file's. |
 
 ## Component test obligations
 

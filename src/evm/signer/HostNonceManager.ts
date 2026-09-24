@@ -113,10 +113,15 @@ class HostNonceManager extends AbstractSigner {
             const encodedTransaction =
                 await this.signer.signTransaction(populated);
             // Where a recovered response starts scanning for a replacement.
-            // Read before the broadcast: the scan only walks forward, so a
+            // Sent before the broadcast: the scan only walks forward, so a
             // later read could start past a replacement that already mined.
-            // An ethers provider's broadcast reuses it from its short cache.
-            const replacementScanStartBlock = await provider.getBlockNumber();
+            // Not awaited: an ethers provider's broadcast joins this in-flight
+            // request for its own block number, so a send makes one request
+            // and waits no extra round trip. Only a failed broadcast reads it.
+            const replacementScanStartBlock = provider.getBlockNumber();
+            // A successful broadcast never reads it, so its failure must not
+            // surface as an unhandled rejection.
+            void replacementScanStartBlock.catch(() => undefined);
             try {
                 const response =
                     await provider.broadcastTransaction(encodedTransaction);
@@ -138,18 +143,24 @@ class HostNonceManager extends AbstractSigner {
     private async reconcileBroadcastFailure(
         encodedTransaction: string,
         nonce: number,
-        replacementScanStartBlock: number,
+        replacementScanStartBlock: Promise<number>,
         broadcastError: unknown
     ): Promise<TransactionResponse> {
         const provider = this.provider!;
         const transactionHash = keccak256(encodedTransaction);
         let observedTransaction: TransactionResponse | null;
         let pendingNonce: number;
+        let scanStartBlock: number;
         try {
-            [observedTransaction, pendingNonce] = await Promise.all([
-                provider.getTransaction(transactionHash),
-                this.signer.getNonce("pending")
-            ]);
+            // A failed start-block read cannot be retried here: a later read
+            // could start past a replacement. It leaves the nonce state
+            // indeterminate like any other failed reconciliation.
+            [observedTransaction, pendingNonce, scanStartBlock] =
+                await Promise.all([
+                    provider.getTransaction(transactionHash),
+                    this.signer.getNonce("pending"),
+                    replacementScanStartBlock
+                ]);
         } catch (reconciliationError) {
             this.nonceStateIndeterminate = true;
             throw new Error(
@@ -162,9 +173,7 @@ class HostNonceManager extends AbstractSigner {
             this.nextNonce = Math.max(nonce + 1, pendingNonce);
             // Like a broadcast's response, its wait() ends if a replacement
             // mines; the plain node answer would wait for it forever.
-            return observedTransaction.replaceableTransaction(
-                replacementScanStartBlock
-            );
+            return observedTransaction.replaceableTransaction(scanStartBlock);
         }
 
         this.nextNonce = pendingNonce > nonce ? pendingNonce : nonce;

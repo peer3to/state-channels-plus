@@ -2,6 +2,7 @@ import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { withGasHeadroom } from "@/utils/gas";
 import {
     assertIsolatedBoundedReadCountsLaterReceipt,
+    assertIsolatedBroadcastSharesStartBlockRead,
     assertIsolatedDisposalEndsClosedProviderWait,
     assertIsolatedRecoveredBroadcastRecorded,
     assertIsolatedRecoveredReplacementDetected,
@@ -185,6 +186,10 @@ describe("HostNonceManager", () => {
 
     it("settles and leaves out a recovered transaction once its replacement mines", async () => {
         await assertIsolatedRecoveredReplacementDetected();
+    });
+
+    it("sends its replacement-scan start-block read in the same request as the broadcast", async () => {
+        await assertIsolatedBroadcastSharesStartBlockRead();
     });
 
     it("records nothing for a broadcast the node rejected", async () => {

@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: exclusively owned nodes for the gas usage receipt cases
+// @spec-test-coverage-ignore: exclusively owned nodes for the gas usage receipt cases and the broadcast's start-block read
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import GasUsageRecorder from "@/evm/gasUsage/GasUsageRecorder";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
@@ -512,5 +512,61 @@ export async function assertIsolatedRecoveredReplacementDetected(): Promise<void
             rows.map((row) => row.functionSelector),
             "only the first send is counted: the replaced one never mined, and its replacement is not counted under its selector"
         ).to.deep.equal([firstSelector]);
+    });
+}
+
+export async function assertIsolatedBroadcastSharesStartBlockRead(): Promise<void> {
+    await withIsolatedHardhatNode(async (provider) => {
+        const sender = await fundedWallet(provider);
+        const manager = new HostNonceManager(sender);
+        const gasPrice = (await provider.getFeeData()).gasPrice!;
+        // The JSON-RPC method names of each request the provider sent, one
+        // entry per HTTP request (a batch lists all of its methods).
+        const sentRequests: string[][] = [];
+        const onDebug = (event: {
+            action: string;
+            payload?: { method: string } | Array<{ method: string }>;
+        }) => {
+            if (event.action !== "sendRpcPayload" || !event.payload) return;
+            const payloads = Array.isArray(event.payload)
+                ? event.payload
+                : [event.payload];
+            sentRequests.push(payloads.map((payload) => payload.method));
+        };
+        // Setup's own block-number reads must leave the 250ms perform cache,
+        // or the send's read answers from it and no request is sent.
+        await new Promise((resolve) =>
+            setTimeout(resolve, BACKGROUND_MINE_INTERVAL_MS)
+        );
+        await provider.on("debug", onDebug);
+        let response;
+        try {
+            // Legacy fields, a fixed price and an explicit limit: nothing
+            // before the broadcast asks for the block number.
+            response = await manager.sendTransaction({
+                type: 0,
+                to: Wallet.createRandom().address,
+                data: ethers.id("sentWithItsStartBlockRead()").slice(0, 10),
+                gasPrice,
+                gasLimit: EXPLICIT_GAS_LIMIT
+            });
+        } finally {
+            await provider.off("debug", onDebug);
+        }
+        await response.wait();
+
+        const broadcastIndex = sentRequests.findIndex((methods) =>
+            methods.includes("eth_sendRawTransaction")
+        );
+        expect(broadcastIndex, "the send reached the node").to.not.equal(-1);
+        const upToBroadcast = sentRequests.slice(0, broadcastIndex + 1);
+        expect(
+            upToBroadcast.flat().filter((m) => m === "eth_blockNumber").length,
+            "the start-block read and the broadcast's own read are one request"
+        ).to.equal(1);
+        expect(
+            sentRequests[broadcastIndex],
+            "the start-block read travels with the broadcast, adding no round trip"
+        ).to.include("eth_blockNumber");
     });
 }
