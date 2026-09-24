@@ -24,6 +24,10 @@ Under each descriptive `##` review section, write findings like this:
 are private and are not published. `Status` is new, continued, fixed, recurred or
 disagreement. Reuse published IDs exactly. Existing findings being fixed or
 disagreed still need an evidence-backed disposition; omission is not resolution.
+A `fixed` or `disagreement` finding must contain at least one pinned source link
+(`https://github.com/<repo>/blob/<reviewed head SHA>/<path>#L<line>`): the controller
+derives its evidence from those links, and publication refuses a closed finding
+without one. For a deletion, link where the code was removed or its replacement.
 
 For unresolved design choices start the finding body with
 `🧑 **HUMAN DECISION REQUIRED**`, before the severity lead, then a `Decision:`

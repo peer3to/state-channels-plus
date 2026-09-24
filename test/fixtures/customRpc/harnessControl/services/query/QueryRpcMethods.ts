@@ -101,6 +101,11 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.service.sm.signerAddress as string;
     }
 
+    /** Aggregated gas of the real-chain transactions this peer sent. */
+    public getGasUsageTable() {
+        return this.service.settledGasUsage();
+    }
+
     public getLobbyAvailability() {
         return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
     }

@@ -27,6 +27,8 @@ Client-side chain signer proxy for transaction signing via host authority.
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
+The gas usage accessor unwraps the endpoint's named field, so the public surface answers the rows themselves.
+
 Message signing preserves text versus byte input through the shared tagged message serializer.
 
 ## Inputs, outputs, state, and side effects
@@ -43,9 +45,9 @@ Message signing preserves text versus byte input through the shared tagged messa
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                      | Specification IDs                                                                                                                                                                          |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [ClientChainSigner.ts](../../../../../../../src/evm/signer/ClientChainSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk) |
+| Source file                                                                      | Specification IDs                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ClientChainSigner.ts](../../../../../../../src/evm/signer/ClientChainSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`REQ-SDK-ARCH-5-AAM7YK`](../../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk), [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -69,8 +71,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                 | Gap / divergence                         |
+| -------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) | Partial               | **Here:** the client read in [getGasUsageTable](../../../../../../../src/evm/signer/ClientChainSigner.ts#L86). **Other files:** [ChainSignerRpcMethods.ts](../../rpc/internal/services/chainSigner/ChainSignerRpcMethods.ts.md) serves it, [P2pInstance.ts](../P2pInstance.ts.md) exposes it to callers. | None demonstrated for this contribution. |
 
 ## Component test obligations
 

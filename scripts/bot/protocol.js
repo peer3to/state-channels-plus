@@ -1,5 +1,5 @@
 const { check, exact, digest } = require("./data");
-const { MESSAGES } = require("./errors");
+const { MESSAGES, ReviewError } = require("./errors");
 const { MAX_MODEL_MS } = require("./config");
 const VERSION = 1;
 const SHA = /^[a-f0-9]{40}$/;
@@ -739,7 +739,24 @@ function failure(error, expected) {
     if (error.diagnostics !== undefined) value.diagnostics = error.diagnostics;
     return failureResult(value, expected);
 }
+// Same rule the publisher applies: a disposition needs inspected evidence.
+// Only fresh model output is checked, so results stored under older rules still
+// load; a failure gives the worker's repair loop a precise correction.
+function requireEvidencedDispositions(value) {
+    const unevidenced = value.findings
+        .filter(
+            (item) =>
+                ["fixed", "disagreement"].includes(item.status) &&
+                item.evidence.length === 0
+        )
+        .map((item) => item.id);
+    if (!unevidenced.length) return;
+    const error = new ReviewError("INVALID_RESULT");
+    error.validationFeedback = `Findings ${unevidenced.join(", ")} are marked fixed or disagreement without evidence. Each needs at least one pinned source link in its body (https://github.com/<repo>/blob/<reviewed head SHA>/<path>#L<line>) showing the fix or the reason. For a deletion, link the file at the reviewed head where the code was removed or where its replacement now lives. Keep the rest of the review unchanged.`;
+    throw error;
+}
 module.exports = {
+    requireEvidencedDispositions,
     requireCompleteReview,
     VERSION,
     request,

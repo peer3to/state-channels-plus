@@ -264,6 +264,42 @@ describe("review sessions", function () {
             }
         });
     });
+    it("reloads a stored review whose closed finding predates the evidence rule", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const legacy = result(input, {
+                recommendation: "comment",
+                findings: [
+                    {
+                        id: "FO1",
+                        body: "Evidence boundary",
+                        path: null,
+                        line: null,
+                        threadId: null,
+                        status: "fixed",
+                        human: null,
+                        evidence: []
+                    }
+                ]
+            });
+            legacy.report += `\n## Correctness\n- [x] **[FO1] General PR comment**\n<!-- pr-review-finding ${JSON.stringify({ id: "FO1", kind: "general", evidence: [] })} -->\n<!-- human:FO1:start -->\n<!-- human:FO1:end -->\n<!-- ai:FO1:start -->\nEvidence boundary\n<!-- ai:FO1:end -->\n`;
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async () => legacy,
+                async () => true
+            );
+            await sessions.finish(sessions.key(input), output.executionId);
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                assert.equal(restarted.attempts.size, 1);
+            } finally {
+                await restarted.close();
+            }
+        });
+    });
     it("preserves the native conversation across setup failure and worker restart", async function () {
         await fixture(async (sessions) => {
             const input = request();

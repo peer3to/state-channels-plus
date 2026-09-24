@@ -8,9 +8,10 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                             | Question                                                            | Source                 | Affected documents                                            | Status |
-| ---------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
-| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx) | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
+| ID                                               | Question                                                                            | Source                  | Affected documents                                            | Status |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------- | ------ |
+| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx)   | Dispute-reduction order-independence: proof and permutation testing                 | Specification analysis  | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
+| [`OQ-46-YWF8AM`](open-questions.md#oq-46-ywf8am) | Gas usage: component-level evidence for an unused participant and a second contract | Implementation analysis | [runtime/sdk.md](../specification/runtime/sdk.md)             | Open   |
 
 <a id="oq-4-jgdcnx"></a>
 
@@ -29,3 +30,11 @@ serialized output state and therefore the successor `forkId`; the empty-timeout 
 last-writer-wins). Candidate directions: canonicalize (sort) the survivor set before reduction,
 or prove and permutation-test independence including kills and slash-application order. See
 [protocol/disputes.md](../specification/disputes/disputes.md) §5 ([`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.md#inv-dis-5-j1qz92)).
+
+<a id="oq-46-ywf8am"></a>
+
+## OQ-46-YWF8AM — Component-level gas usage evidence
+
+[`REQ-SDK-ARCH-6-8DE4ER.T1.P1`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p1) (a participant that sent nothing) and [`REQ-SDK-ARCH-6-8DE4ER.T1.P5`](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p5) (one selector on
+two contract addresses) keep component-level evidence on the pure table. A session has only one
+manager contract, so no existing fixture can drive either through a live participant.

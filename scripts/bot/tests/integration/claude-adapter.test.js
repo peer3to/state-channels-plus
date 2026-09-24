@@ -369,6 +369,28 @@ describe("Claude review adapter", function () {
             }
         });
     });
+    it("repairs a fixed finding without evidence in the same session before returning it", async function () {
+        await executionFixture(
+            async ({ service, connected, input }) => {
+                await publishFinding(service, input);
+                service.config.model = "fix-without-evidence-model";
+                const message = await request(await connected, input, "fix");
+                assert.equal(
+                    message.operation,
+                    "result",
+                    JSON.stringify(message.value)
+                );
+                const [finding] = message.value.findings;
+                assert.equal(finding.id, "R1FO1");
+                assert.equal(finding.status, "fixed");
+                assert.ok(finding.evidence.length > 0);
+                const native = await thread(service, message.value.sessionId);
+                // One review turn plus one repair turn on the same session.
+                assert.equal(native.turns, 2);
+            },
+            { provider: "claude" }
+        );
+    });
     it("fails with MODEL_UNAVAILABLE when Claude rejects the configured model", async function () {
         await executionFixture(
             async ({ service, connected, input }) => {

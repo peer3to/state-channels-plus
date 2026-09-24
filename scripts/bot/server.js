@@ -656,6 +656,7 @@ class ReviewService {
             errors: generated.evidence?.errors || []
         };
         protocol.result(generated, input);
+        protocol.requireEvidencedDispositions(generated);
         try {
             protocol.requireCompleteReview(generated);
         } catch (error) {

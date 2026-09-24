@@ -3,6 +3,7 @@ import {
     deserializeTransactionResponse,
     serializeTransactionRequest
 } from "../../rpc/internal/services/chainSigner/chainSignerSerialization";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { serializeSignerMessage } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
 import { withGasHeadroom } from "@/utils/gas";
@@ -79,6 +80,14 @@ class ClientChainSigner extends AbstractSigner {
             serializedResponse,
             this.provider!
         );
+    }
+
+    /** Gas used per contract function by the transactions the host sent. */
+    async getGasUsageTable(): Promise<GasUsageRow[]> {
+        const { gasUsage } = await this.requester.chainSigner
+            .getGasUsageTable()
+            .request();
+        return gasUsage;
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {

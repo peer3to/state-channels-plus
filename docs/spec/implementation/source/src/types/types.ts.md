@@ -23,7 +23,7 @@ Core aliases (Address, Hash, ChannelId, ForkId, BlockHeight…) shared across th
 
 ## Key design decisions
 
-`HpAddress` names a lowercase Hyperswarm public key and `PeerKey` is the union of `Address` and `HpAddress`: the key a peer is counted by before and after identity proof ([ProfileManager](../ProfileManager.ts.md)). ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. See [types.ts](../../../../../../src/types/types.ts#L10).
+`HpAddress` names a lowercase Hyperswarm public key and `PeerKey` is the union of `Address` and `HpAddress`: the key a peer is counted by before and after identity proof ([ProfileManager](../ProfileManager.ts.md)). ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. `FunctionSelector` names a 4-byte contract function selector as a `0x`-prefixed hex string; it is the second half of the gas usage table's (contract, function) key and the field every contract-call log line carries. See [types.ts](../../../../../../src/types/types.ts#L10).
 
 Address and Signature are the source map key and value types; ChecksumAddress names normalized eligibility-cache identities. These aliases do not perform runtime validation. QueueStorage only enforces contribution counts. See [Address](../../../../../../src/types/types.ts#L9).
 
