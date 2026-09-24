@@ -6,6 +6,7 @@ import {
     assertIsolatedDisposalEndsClosedProviderWait,
     assertIsolatedRecoveredBroadcastRecorded,
     assertIsolatedRecoveredReplacementDetected,
+    assertIsolatedRecoveryOutlivesFailedBlockNumberRead,
     assertIsolatedReplacedTransactionAbsent,
     assertIsolatedRevertedGasRecorded,
     assertIsolatedSettleIgnoresLaterObservation
@@ -190,6 +191,10 @@ describe("HostNonceManager", () => {
 
     it("sends its replacement-scan start-block read in the same request as the broadcast", async () => {
         await assertIsolatedBroadcastSharesStartBlockRead();
+    });
+
+    it("recovers a transaction the node accepted when the broadcast's block-number read failed", async () => {
+        await assertIsolatedRecoveryOutlivesFailedBlockNumberRead();
     });
 
     it("records nothing for a broadcast the node rejected", async () => {

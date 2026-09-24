@@ -152,15 +152,26 @@ class HostNonceManager extends AbstractSigner {
         let pendingNonce: number;
         let scanStartBlock: number;
         try {
-            // A failed start-block read cannot be retried here: a later read
-            // could start past a replacement. It leaves the nonce state
-            // indeterminate like any other failed reconciliation.
-            [observedTransaction, pendingNonce, scanStartBlock] =
-                await Promise.all([
-                    provider.getTransaction(transactionHash),
-                    this.signer.getNonce("pending"),
-                    replacementScanStartBlock
-                ]);
+            // The broadcast shares this read, so it fails whenever the
+            // broadcast's own read failed, even if the node accepted the
+            // transaction. Then read the start block again before
+            // getTransaction: a transaction still pending there had no
+            // replacement mined by that block, and one that mined or was
+            // replaced needs no scan. getBlock, not getBlockNumber: the
+            // provider's request cache would answer with the same failure.
+            scanStartBlock = await replacementScanStartBlock.catch(async () => {
+                const latestBlock = await provider.getBlock("latest");
+                assert(
+                    latestBlock,
+                    "no latest block to start a replacement scan",
+                    "UNKNOWN_ERROR"
+                );
+                return latestBlock.number;
+            });
+            [observedTransaction, pendingNonce] = await Promise.all([
+                provider.getTransaction(transactionHash),
+                this.signer.getNonce("pending")
+            ]);
         } catch (reconciliationError) {
             this.nonceStateIndeterminate = true;
             throw new Error(

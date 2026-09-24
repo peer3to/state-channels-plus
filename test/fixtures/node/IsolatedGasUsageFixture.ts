@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: exclusively owned nodes for the gas usage receipt cases and the broadcast's start-block read
+// @spec-test-coverage-ignore: exclusively owned nodes for the gas usage receipt cases and the broadcast recovery cases
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import GasUsageRecorder from "@/evm/gasUsage/GasUsageRecorder";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
@@ -6,11 +6,13 @@ import { expect } from "chai";
 import {
     ethers,
     type HDNodeWallet,
-    type JsonRpcProvider,
+    JsonRpcProvider,
     type TransactionReceipt,
     Wallet
 } from "ethers";
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
 
 /**
  * Runtime `PUSH1 0 PUSH1 0 REVERT`: every call reverts, whatever the selector.
@@ -568,5 +570,172 @@ export async function assertIsolatedBroadcastSharesStartBlockRead(): Promise<voi
             sentRequests[broadcastIndex],
             "the start-block read travels with the broadcast, adding no round trip"
         ).to.include("eth_blockNumber");
+    });
+}
+
+/** One JSON-RPC request or response object, as the proxy reads it. */
+interface JsonRpcMessage {
+    jsonrpc: string;
+    id: number;
+    method?: string;
+}
+
+/**
+ * Runs `use` with a provider behind an HTTP proxy to `nodeUrl`. After
+ * `failNextBlockNumber()`, the proxy answers the next `eth_blockNumber` with a
+ * JSON-RPC error and forwards every other request of the same batch to the
+ * node, so the node still accepts a raw transaction sent with it.
+ */
+async function withBlockNumberFailingProxy<T>(
+    nodeUrl: string,
+    use: (proxy: {
+        provider: JsonRpcProvider;
+        failNextBlockNumber: () => void;
+        injectedFailures: () => number;
+    }) => Promise<T>
+): Promise<T> {
+    let armed = false;
+    let injected = 0;
+    const forward = async (body: string): Promise<string> =>
+        (
+            await fetch(nodeUrl, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body
+            })
+        ).text();
+    const server = createServer((request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+            void (async () => {
+                const body = Buffer.concat(chunks).toString("utf8");
+                const parsed = JSON.parse(body) as
+                    | JsonRpcMessage
+                    | JsonRpcMessage[];
+                const messages = Array.isArray(parsed) ? parsed : [parsed];
+                const failed = armed
+                    ? messages.find(
+                          (message) => message.method === "eth_blockNumber"
+                      )
+                    : undefined;
+                let answer: string;
+                if (!failed) {
+                    answer = await forward(body);
+                } else {
+                    armed = false;
+                    injected += 1;
+                    const others = messages.filter(
+                        (message) => message !== failed
+                    );
+                    const forwarded = others.length
+                        ? (JSON.parse(
+                              await forward(JSON.stringify(others))
+                          ) as JsonRpcMessage[])
+                        : [];
+                    const results = [
+                        ...forwarded,
+                        {
+                            jsonrpc: "2.0",
+                            id: failed.id,
+                            error: {
+                                code: -32603,
+                                message: "injected eth_blockNumber failure"
+                            }
+                        }
+                    ];
+                    answer = JSON.stringify(
+                        Array.isArray(parsed) ? results : results[0]
+                    );
+                }
+                response.writeHead(200, {
+                    "content-type": "application/json"
+                });
+                response.end(answer);
+            })().catch(() => {
+                response.writeHead(502);
+                response.end();
+            });
+        });
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string")
+        throw new Error("Expected a TCP proxy address");
+    const provider = new JsonRpcProvider(
+        `http://127.0.0.1:${address.port}`,
+        31337,
+        { staticNetwork: true }
+    );
+    try {
+        return await use({
+            provider,
+            failNextBlockNumber: () => {
+                armed = true;
+            },
+            injectedFailures: () => injected
+        });
+    } finally {
+        provider.destroy();
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+}
+
+export async function assertIsolatedRecoveryOutlivesFailedBlockNumberRead(): Promise<void> {
+    await withIsolatedHardhatNode(async (nodeProvider) => {
+        const funded = await fundedWallet(nodeProvider);
+        const gasPrice = (await nodeProvider.getFeeData()).gasPrice!;
+        await withBlockNumberFailingProxy(
+            nodeProvider._getConnection().url,
+            async (proxy) => {
+                const sender = new Wallet(funded.privateKey, proxy.provider);
+                const manager = new HostNonceManager(sender);
+                const call = {
+                    type: 0,
+                    to: Wallet.createRandom().address,
+                    data: ethers
+                        .id("sentWhileTheBlockReadFailed()")
+                        .slice(0, 10),
+                    gasPrice,
+                    gasLimit: EXPLICIT_GAS_LIMIT
+                };
+
+                // The broadcast's own block-number read fails while the node
+                // accepts the raw transaction sent with it, so the broadcast
+                // rejects and the manager must recover what the node holds.
+                proxy.failNextBlockNumber();
+                const recovered = await manager.sendTransaction(call);
+
+                expect(
+                    proxy.injectedFailures(),
+                    "the broadcast's block-number read was failed"
+                ).to.equal(1);
+                const held = await nodeProvider.getTransaction(recovered.hash);
+                expect(held, "the node holds the recovered transaction").to.not
+                    .be.null;
+                expect(held!.from).to.equal(sender.address);
+                // ethers caches the failed read for 250ms; wait past it so the
+                // caller's own wait reads a fresh block number.
+                await new Promise((resolve) =>
+                    setTimeout(resolve, BACKGROUND_MINE_INTERVAL_MS)
+                );
+                const receipt = await recovered.wait();
+                expect(
+                    receipt!.status,
+                    "the recovered transaction mined"
+                ).to.equal(1);
+                const next = await manager.sendTransaction({
+                    ...call,
+                    data: ethers.id("sentAfterTheRecovery()").slice(0, 10)
+                });
+                expect(
+                    next.nonce,
+                    "the manager kept the nonce after the recovery"
+                ).to.equal(recovered.nonce + 1);
+                await next.wait();
+            }
+        );
     });
 }
