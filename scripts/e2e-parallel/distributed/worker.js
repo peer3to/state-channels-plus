@@ -250,6 +250,7 @@ async function start(config) {
                 concurrencyCap: config.concurrencyCap,
                 acct: needsChain ? accountPartition : "-",
                 cpuUtil: resources.cpuUtil,
+                cpuPressure: resources.cpuPressure,
                 targetLoad: config.targetLoad,
                 occupiedGb: resources.occupiedGb,
                 memBoundGb: config.memBoundGb,

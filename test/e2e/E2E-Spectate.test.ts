@@ -1,8 +1,18 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    assertOffChainPromotion,
+    assertVerifiedSyncPromotion,
+    assertPromotionBeforeReceiverApplication
+} from "@test/fixtures/OffChainPromotionFixture";
 import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
+import {
+    assertSpectatorSilence,
+    assertSpectatorRejectedWork
+} from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -17,6 +27,33 @@ import { ethers } from "ethers";
  * Tests spectator joining, syncing, and fork traversal mechanisms.
  */
 describe("E2E: Spectate Service", function () {
+    it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
+        await assertPromotionBeforeReceiverApplication(true);
+    });
+    it("spectator rejects an invalid envelope without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("invalid");
+    });
+    it("spectator parks not-ready work without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("not-ready");
+    });
+
+    it("new participant gossip can precede another peer applying insertion", async () => {
+        await assertPromotionBeforeReceiverApplication();
+    });
+    it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
+        await assertVerifiedSyncPromotion();
+    });
+    it("spectators apply fresh and late confirmations without relaying and still serve sync", async () => {
+        await assertSpectatorSilence();
+    });
+    it("spectator becomes participant through an off-chain balance transfer", async () => {
+        await assertOffChainPromotion(TestSession.getHarness());
+    });
+
+    it("full-capacity insertion advances the turn without promoting a spectator", async () => {
+        await assertOffChainPromotion(TestSession.getHarness(), true);
+    });
+
     describe("Guard Protection", function () {
         it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
@@ -946,7 +983,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelInvalidSignature (pending participant did not sign confirmation)", async function () {
+        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
@@ -977,6 +1014,53 @@ describe("E2E: Spectate Service", function () {
                 participant: joinerB.address
             });
 
+            // Pin which revert the client path is reacting to. Every name in
+            // the MembershipService abort switch produces the same
+            // OPENED/disposed pair, so the status assertions below cannot tell
+            // them apart; this static call does.
+            let thresholdRevert: unknown;
+            try {
+                await h.channelManager
+                    .connect(joinerA.signer)
+                    .joinChannel.staticCall(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    );
+                expect.fail(
+                    "expected joinChannel to revert: joinerA's pre-signed confirmation is missing the pending participant's signature"
+                );
+            } catch (e) {
+                thresholdRevert = e;
+            }
+            const thresholdError = expectDecodedError(
+                thresholdRevert,
+                "ErrorJoinChannelConfirmationNotThresholdSigned",
+                "joinChannel must reject the sub-threshold confirmation by name"
+            );
+            expect(thresholdError.errorDescription.args.participant).to.equal(
+                joinerA.address
+            );
+            // The payload carries the two compared sets, so the missing signer
+            // is identifiable: forceInboundJoin widened the threshold to the
+            // three participants plus joinerB, while joinerA's pre-signed
+            // confirmation still only recovers to the three participants.
+            const originalParticipants = [0, 1, 2].map(
+                (peerIndex) => h.getPeer(peerIndex).address
+            );
+            const thresholdParticipants = [
+                ...thresholdError.errorDescription.args.thresholdParticipants
+            ];
+            const confirmationSigners = [
+                ...thresholdError.errorDescription.args.signers
+            ];
+            expect(thresholdParticipants).to.have.members([
+                ...originalParticipants,
+                joinerB.address
+            ]);
+            expect(confirmationSigners).to.have.members(originalParticipants);
+            expect(confirmationSigners).to.not.include(joinerB.address);
+
             expect(
                 await joinerA.p2pInstance.p2pSigner.joinChannel(
                     prepared.confirmation,
@@ -984,16 +1068,49 @@ describe("E2E: Spectate Service", function () {
                     prepared.expectedForkId
                 )
             ).to.equal(false);
+            // The abort path sets OPENED itself, so the terminal status alone
+            // says nothing about the two cleanup effects the terminal-revert
+            // branch owes before aborting: restoring SYNCED and clearing the
+            // force-join marker. Status hooks cross the runtime port ahead of
+            // the joinChannel response, so the transient restore is still
+            // observable here, and the abort follows it rather than replacing
+            // it: without the restore the peer would go straight from
+            // PENDING_PARTICIPANT to OPENED and neither index would be found.
+            const statusChanges = (
+                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
+            ).map((call): [Status, Status] => [call.args[0], call.args[1]]);
+            const restoredSyncedIndex = statusChanges.findIndex(
+                ([oldStatus, newStatus]) =>
+                    oldStatus === Status.PENDING_PARTICIPANT &&
+                    newStatus === Status.SYNCED
+            );
+            expect(restoredSyncedIndex).to.be.greaterThan(-1);
+            const abortedIndex = statusChanges.findIndex(
+                ([oldStatus, newStatus], index) =>
+                    index > restoredSyncedIndex &&
+                    oldStatus === Status.SYNCED &&
+                    newStatus === Status.OPENED
+            );
+            expect(abortedIndex).to.be.greaterThan(restoredSyncedIndex);
+
             const failedJoinState = await h.execOnHost(
                 h.getPeer(joinerA.index),
                 async (stateManager) => ({
                     status: stateManager.status,
-                    isDisposed: stateManager.isDisposed
+                    isDisposed: stateManager.isDisposed,
+                    joinSubmissionBlockHeight:
+                        stateManager.storage.forceJoin.getJoinSubmissionBlockHeight()
                 }),
                 {}
             );
             expect(failedJoinState.status).to.equal(Status.OPENED);
             expect(failedJoinState.isDisposed).to.equal(true);
+            // joinChannel recorded the submission height before submitting; the
+            // terminal branch must drop it, otherwise the dead join keeps a
+            // force-join trigger height on record.
+            expect(failedJoinState.joinSubmissionBlockHeight).to.equal(
+                undefined
+            );
         });
     });
 
@@ -1143,7 +1260,7 @@ describe("E2E: Spectate Service", function () {
             // Fire two concurrent startSync calls for the same peer on peer 0.
             // `sync()` marks `inFlightByPeerAddress` synchronously before its
             // background request completes (a full spectate RTT), so the second
-            // must be dropped before it hits the wire. Both control round-trips
+            // must share the pending result. Both control round-trips
             // land well inside that window.
             await Promise.all([
                 h
@@ -1172,7 +1289,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Unprovable sync target mutually blacklists both peers", function () {
-        it("an above-latest target can't be proven, so requester and responder blacklist each other", async function () {
+        it("an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
@@ -1184,8 +1301,8 @@ describe("E2E: Spectate Service", function () {
             // Ask for a height far above anything the responder can prove. p2p
             // sync is mutual-cooperation: an unprovable request is a cooperation
             // failure, so the responder cuts the requester (and never serves a
-            // downgraded latest-height proof), and the failed request cuts the
-            // responder in turn.
+            // downgraded latest-height proof). The refusal is not proof of the
+            // responder's misbehaviour, so the requester only strikes it.
             await h
                 .control(requester)
                 .spectate.startSync(responder.address, forkId, 9999)
@@ -1199,14 +1316,10 @@ describe("E2E: Spectate Service", function () {
                         .request(),
                 h.event.protocolEventTimeoutMs()
             );
-            await waitFor(
-                async () =>
-                    await h
-                        .control(requester)
-                        .query.isBlacklisted(responder.address)
-                        .request(),
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
         });
     });
 

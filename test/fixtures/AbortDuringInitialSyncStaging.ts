@@ -45,6 +45,45 @@ export async function withFreshInitialSyncObserver<
 }
 
 /**
+ * Open a two-participant channel, spawn an observer, start its connect and
+ * abort the runtime as soon as the status is OPENED. `stage` runs on the
+ * observer before the connect and decides which phase the abort lands in.
+ * The connect must settle `false` within `settledWithinMs`, and the host root
+ * must close afterwards.
+ */
+export async function assertObserverConnectSettlesFalseOnAbort<
+    TCustomRpc extends HarnessControlRpc
+>(
+    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    options: {
+        settledWithinMs: number;
+        stage?: (
+            observer: TestPeer<TCustomRpc, MathStateMachine>
+        ) => Promise<void>;
+    }
+): Promise<void> {
+    await h.lifecycle.openChannelForParticipants([0, 1]);
+    await h.network.joinSelectedKey([0, 1], String(h.channelId));
+    const observerIndex = h.peers.length;
+    await h.createPeer(
+        observerIndex,
+        h.signerFor(slotAccountIndex(observerIndex))
+    );
+    const observer = h.getPeer(observerIndex);
+    const host = clientRootFor(observer.p2pInstance).p2pRuntimeHostRemoteRoot!;
+    await options.stage?.(observer);
+    const startedAt = Date.now();
+    const connect = observer.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId
+    );
+    await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
+    await h.control(observer).stub.abortDetached().request();
+    expect(await connect).to.equal(false);
+    expect(Date.now() - startedAt).to.be.lessThan(options.settledWithinMs);
+    await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
+}
+
+/**
  * Open a two-participant channel, hold the participants' sync responses so
  * the observer's real initial sync request is in flight, abort the observer,
  * then release the held response as a success or a failure. The connect

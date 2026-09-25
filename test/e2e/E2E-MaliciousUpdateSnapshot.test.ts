@@ -1,6 +1,7 @@
-import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
+import { Codec, Type, hash } from "@/utils";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import {
     MESSAGE_TYPE_EXIT,
     decodeMathState,
@@ -22,6 +23,8 @@ describe("E2E: Malicious updateSnapshot", function () {
         await h.lifecycle.start(3, 1);
 
         const initialBalance = h.options.initialBalance!;
+        // every peer in this scenario joined the channel at open (no spectator),
+        // each funding `initialBalance`, so this is the channel's deposit total
         const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
         const inflatedAmount = totalDeposits + 500n;
         const recipient = h.getPeer(0).address;
@@ -80,11 +83,17 @@ describe("E2E: Malicious updateSnapshot", function () {
             revertError = e;
         }
 
-        const customError = tryDecodeCustomError(revertError);
-        expect(customError, "expected decodable custom error").to.not.be.null;
-        expect(customError!.errorDescription.name).to.equal(
-            "CantWithdrawMoreThanDeposits"
+        const customError = expectDecodedError(
+            revertError,
+            "CantWithdrawMoreThanDeposits",
+            "expected CantWithdrawMoreThanDeposits"
         );
+        const args = customError.errorDescription.args;
+        // the running withdrawal total is exactly the forged exit message
+        expect(args.totalWithdrawalAmount).to.equal(inflatedAmount);
+        // and the deposit side is exactly what the participants funded at open,
+        // which is what the forged withdrawal outgrew
+        expect(args.totalDepositAmount).to.equal(totalDeposits);
     });
 
     it("outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid", async function () {
@@ -149,11 +158,25 @@ describe("E2E: Malicious updateSnapshot", function () {
             revertError = e;
         }
 
-        const customError = tryDecodeCustomError(revertError);
-        expect(customError, "expected decodable custom error").to.not.be.null;
-        expect(customError!.errorDescription.name).to.equal(
-            "ErrorOutboundMessageBlocksInvalid"
+        const customError = expectDecodedError(
+            revertError,
+            "ErrorOutboundMessageBlocksInvalid",
+            "expected ErrorOutboundMessageBlocksInvalid"
         );
+        // the update reverted, so the chain still holds the pre-attempt snapshot
+        // the error reported as the lower bound of the outbound chain
+        const onChainSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        const args = customError.errorDescription.args;
+        expect(args.lowerLatestOutboundMessageBlockHash).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHash
+        );
+        expect(args.lowerLatestOutboundMessageBlockHeight).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHeight
+        );
+        // the single forged block survived pruning and was the one rejected
+        expect(args.outboundMessageBlockCount).to.equal(1n);
     });
 
     it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {

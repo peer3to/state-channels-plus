@@ -1,4 +1,9 @@
 import { block as blockFactory } from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
+import {
+    __resetSignerRecoveryCache,
+    __signerRecoveryCacheSize
+} from "@/cache/SignerRecoveryCache";
 import Block from "@/models/Block";
 import { Timestamp, Signature } from "@/types/types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -497,5 +502,101 @@ describe("Block Model", () => {
             // They should still be equal because onChainTimestamp doesn't affect encoding
             expect(block1.equals(block2)).to.be.true;
         });
+    });
+});
+
+describe("Block Model canonical signature bytes", () => {
+    it("equivalent byte representations share one recovery-cache entry", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const first = f.copy([signature]);
+        const second = Block.fromBlockConfirmation({
+            signedBlock: f.block.signedBlock,
+            signatures: [
+                "0x" + signature.slice(2).toUpperCase(),
+                ethers.getBytes(signature)
+            ]
+        });
+        __resetSignerRecoveryCache();
+        expect([...first.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(1);
+        expect([...second.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(1);
+        first.expandSignatures([f.signature(1, 1)]);
+        expect([...first.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect(__signerRecoveryCacheSize()).to.equal(2);
+    });
+    it("merge uses canonical equality and keeps its original author envelope", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const original = f.block.originalSignature;
+        f.block.expandSignatures([signature]);
+        f.block.mergeFrom(
+            f.alternateEnvelope(3, ["0x" + signature.slice(2).toUpperCase()])
+        );
+        expect([...f.block.confirmationSignatures]).to.deep.equal([signature]);
+        expect(f.block.originalSignature).to.equal(original);
+    });
+    it("struct construction and author re-signing normalize real signer output", async () => {
+        const f = new QueueAdmissionFixture();
+        const wallet = f.wallets[0];
+        const sign = wallet.signMessage.bind(wallet);
+        wallet.signMessage = async (message) => {
+            const signature = await sign(message);
+            return "0x" + signature.slice(2).toUpperCase();
+        };
+        const block = await Block.fromBlockStruct(f.block.blockStruct, wallet);
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        await block.signAsAuthor(wallet);
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        expect(block.signerAddress).to.equal(wallet.address);
+    });
+
+    it("constructors deduplicate hex casing and byte-array confirmations", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const block = Block.fromBlockConfirmation({
+            signedBlock: {
+                encodedBlock: f.block.encode(),
+                signature: ethers.getBytes(String(f.block.originalSignature))
+            },
+            signatures: [
+                signature,
+                "0x" + signature.slice(2).toUpperCase(),
+                ethers.getBytes(signature)
+            ]
+        });
+        expect(block.originalSignature).to.equal(f.block.originalSignature);
+        expect([...block.confirmationSignatures]).to.deep.equal([signature]);
+        expect([...block.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+    });
+
+    it("expansion and removal use the same byte equality", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = f.signature();
+        const upper = "0x" + signature.slice(2).toUpperCase();
+        f.block.expandSignatures([upper, signature]);
+        expect(f.block.confirmationSignatures.size).to.equal(1);
+        f.block.removeConfirmationSignatures(new Set([upper]));
+        expect(f.block.confirmationSignatures.size).to.equal(0);
+    });
+
+    it("keeps malformed envelopes unchanged for authentication failure", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = "0x" + "00".repeat(64) + "ff";
+        const block = Block.fromSignedBlock({
+            encodedBlock: f.block.encode(),
+            signature
+        });
+        expect(block.originalSignature).to.equal(signature);
+        expect(() => block.signatureToAddress(signature)).to.throw();
     });
 });

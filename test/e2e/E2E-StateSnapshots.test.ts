@@ -1,6 +1,10 @@
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { tryDecodeCustomError } from "@/utils";
+import {
+    assertPromotionDisputeStanding,
+    assertUnpublishedPromotionTimeout
+} from "@test/fixtures/PromotionStandingFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -15,6 +19,35 @@ import { expect } from "chai";
  * after fork resolution, and single multicall (fork + same-fork) update.
  */
 describe("E2E: State Snapshots", function () {
+    it("unpublished newcomer survives timeout rejection and applies resumed verified history", async () => {
+        await assertUnpublishedPromotionTimeout();
+    });
+    it("chain-eligible participants still open a real timeout dispute", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.timeoutSetup(3, 2);
+        await h.assert.dispute.initiatedWait({ peersIndices: [0, 1] });
+        await waitFor(
+            async () =>
+                Number(
+                    await h.channelManager.getDisputeWindowCreationTimestamp(
+                        h.channelId,
+                        h.activeForkId!
+                    )
+                ) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        expect(
+            Number(
+                await h.channelManager.getDisputeWindowCreationTimestamp(
+                    h.channelId,
+                    h.activeForkId!
+                )
+            )
+        ).to.be.greaterThan(0);
+    });
+    it("off-chain promotion gains dispute standing only after snapshot publication", async () => {
+        await assertPromotionDisputeStanding();
+    });
     const forkTimeConfig = {
         p2pTime: 3,
         agreementTime: 2,

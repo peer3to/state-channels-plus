@@ -19,12 +19,12 @@ Owns network frame byte limits, response-first ingress, broadcast delivery, time
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Boundary                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------- |
-| Inputs       | Host string/byte frames, network sender, logical outbound RPC and caller timeout options. |
-| Outputs      | Dispatch, admitted response settlement, or unchanged peer penalty/error handling.         |
-| Owned state  | Manager reference; pending entries exist only in the inherited shared owner.              |
-| Side effects | Broadcast sends, manager timeout tasks, manager disconnect/blacklist calls and logging.   |
+| Aspect       | Boundary                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Inputs       | Host string/byte frames, network sender, logical outbound RPC and caller timeout options.          |
+| Outputs      | Dispatch, admitted response settlement, or unchanged peer penalty/error handling.                  |
+| Owned state  | Manager reference; pending entries exist only in the inherited shared owner.                       |
+| Side effects | Broadcast sends, manager timeout tasks, manager close calls under an explicit policy, and logging. |
 
 ## Linked requirements
 

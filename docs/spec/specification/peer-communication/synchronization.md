@@ -168,13 +168,13 @@ invalid response, or protocol-breaking data makes that request fail; the connect
 the uncommitted runtime and does not start another initial request. Exact recovery returns failure
 to its queue owner without disposing a synchronized observer.
 
-| Path      | Failure                                                          | Outcome                                                                                                                                                                                                                          |
-| --------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Responder | Malformed target                                                 | Refuse before expensive work; consequence per ingress rules.                                                                                                                                                                     |
-| Responder | Cannot prove target (lagging, unknown fork, above-latest height) | Explicit refusal. Whether refusal may carry a penalty for the _requester_ is an open decision — see [Security considerations](#security-considerations).                                                                         |
-| Requester | Transport failure, timeout, or refusal                           | Sync fails; the selected peer remains liable under the assumption that honest peers observe the same reality within agreementTime; local blacklisting is retained ([`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n)). |
-| Requester | Any verification failure (steps 1–11, 13–14)                     | Abort: full stop for a fresh spectator, peer cut for a recovering participant; the failed payload is Byzantine evidence against the responder.                                                                                   |
-| Requester | Local knowledge already ahead                                    | Skip persistence; not a failure.                                                                                                                                                                                                 |
+| Path      | Failure                                                          | Outcome                                                                                                                                                                                                                                              |
+| --------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Responder | Malformed target                                                 | Refuse before expensive work; consequence per ingress rules.                                                                                                                                                                                         |
+| Responder | Cannot prove target (lagging, unknown fork, above-latest height) | Explicit refusal. Whether refusal may carry a penalty for the _requester_ is an open decision — see [Security considerations](#security-considerations).                                                                                             |
+| Requester | Transport failure, timeout, or refusal                           | Sync fails; the selected peer takes a counted close under [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j): honest peers observe the same reality within agreementTime, but silence or refusal is not proof, so no verdict is recorded below the bound. |
+| Requester | Any verification failure (steps 1–11, 13–14)                     | Abort: full stop for a fresh spectator, peer cut for a recovering participant; the failed payload is Byzantine evidence against the responder.                                                                                                       |
+| Requester | Local knowledge already ahead                                    | Skip persistence; not a failure.                                                                                                                                                                                                                     |
 
 ## Requirements and invariants
 
@@ -208,6 +208,17 @@ satisfy the channel-balance invariant checked against chain-anchored deposits an
 **<a id="req-sync-3-1p5zht"></a>`REQ-SYNC-3-1P5ZHT` — Suffix through the standard pipeline.** Unfinalized blocks arriving via sync MUST
 replay through the same validation pipeline as live blocks, under the spectating context's
 consequence rules.
+
+An authenticated source still absent after chain refresh triggers ordinary sync under
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df). Intake awaits the existing channel,
+fork and minimum-height request, then rechecks cached sender eligibility regardless of the sync result. A sender that remains ineligible is blacklisted before intake returns. It creates no candidate record and does not resume
+processing the triggering gossip copy. The sync owner retains verification, state application,
+in-flight collision and peer-failure behavior. Existing queued-source expiry probes retain their
+separate lineage and successor-fork policy.
+
+Post-authentication engagement ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)) is identity/lifecycle policy. A connected
+nonparticipant may request and serve sync while remaining unable to contribute unsolicited block gossip.
+Dispute standing is a third, chain-defined predicate.
 
 ## Assumptions and constraints
 

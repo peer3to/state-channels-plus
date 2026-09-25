@@ -1,7 +1,10 @@
 // @spec-test-coverage-ignore: real browser SDK setup shared by the browser gates
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import { deployFullStack } from "../../scripts/V1/deploy";
+import {
+    deployFullStack,
+    DEFAULT_MAX_CHANNEL_PARTICIPANTS
+} from "../../scripts/V1/deploy";
 import { RootCreationControl } from "../fixtures/runtimeRpc/RootCreationControl.ts";
 import { RuntimeRpcControl } from "../fixtures/runtimeRpc/RuntimeRpcControl.ts";
 import { TestClockProvider } from "../fixtures/TestClockProvider.ts";
@@ -46,7 +49,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
     const scmDeployment = await deployFullStack(deployerSigner, {
         stateMachineArtifact: MathStateMachineArtifact,
         consumerFacetArtifact: MathConsumerFacetArtifact,
-        stateMachineArgs: [5_000_000],
+        stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
         consumerFacetArgs: [],
         timeConfig,
         disputeExecutionGasLimit: 1_000_000
@@ -102,13 +105,19 @@ export async function deployStack(providerUrl, openExistingChannel) {
     };
 }
 
-export async function deployLocalStateMachine(stateMachineSigner) {
+export async function deployLocalStateMachine(
+    stateMachineSigner,
+    maxChannelParticipants
+) {
     const stateMachineFactory = new ContractFactory(
         MathStateMachineArtifact.abi,
         MathStateMachineArtifact.bytecode,
         stateMachineSigner
     );
-    const deployTx = await stateMachineFactory.getDeployTransaction(5_000_000);
+    const deployTx = await stateMachineFactory.getDeployTransaction(
+        5_000_000,
+        maxChannelParticipants
+    );
     const sent = await stateMachineSigner.sendTransaction(deployTx);
     const receipt = await sent.wait();
     if (!receipt?.contractAddress) {
@@ -126,6 +135,8 @@ export async function setupBrowserPeer(
 ) {
     const provider = new ethers.JsonRpcProvider(providerUrl);
     const runtimeSigner = peerWallet.connect(provider);
+    const manager = connectStateChannelManager(scmAddress, runtimeSigner);
+    const maxChannelParticipants = await manager.getMaxChannelParticipants();
     let control;
     let instance;
     try {
@@ -137,7 +148,8 @@ export async function setupBrowserPeer(
                         ethers.ZeroAddress,
                         runtimeSigner
                     ),
-                    deployLocalStateMachine,
+                    (signer) =>
+                        deployLocalStateMachine(signer, maxChannelParticipants),
                     {
                         ...options,
                         config: {

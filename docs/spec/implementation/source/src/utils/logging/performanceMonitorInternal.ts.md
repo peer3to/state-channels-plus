@@ -23,7 +23,7 @@ Internal types of the event-loop monitor: the typed watchdog data (`EventLoopDel
 
 ## Key design decisions
 
-The shared reporter owns strict threshold comparisons, exact metadata and watchdog details. Each platform retains sample acquisition, timer lifetime, stdout behavior and throw/stop ordering. See [performanceMonitorInternal.ts](../../../../../../../src/utils/logging/performanceMonitorInternal.ts#L65).
+The shared reporter owns strict threshold comparisons, exact metadata and watchdog details; the optional thread scheduler fields (`cpuMs`, `runQueueWaitMs`), host fields (`hostBusy`, `hostSteal`) and stall fields (`hostCpuPressureMs`, `cgroupThrottledMs`) are projected only when a source supplied them. Each platform retains sample acquisition, timer lifetime, stdout behavior and throw/stop ordering. See [performanceMonitorInternal.ts](../../../../../../../src/utils/logging/performanceMonitorInternal.ts#L65).
 
 1. **Not part of the package API.** The exported `LoggerPerformanceMonitorOptions` stays as is; these types extend it for the loggers and for tests only and are not re-exported from the package root.
 

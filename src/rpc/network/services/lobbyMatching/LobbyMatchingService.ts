@@ -10,6 +10,7 @@ import type {
 } from "./LobbyMatchingTypes";
 import { validateMatchTimeout } from "./LobbyMatchingValidation";
 import LobbyRpcAdmissionGuard from "./LobbyRpcAdmissionGuard";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
@@ -20,6 +21,7 @@ import type NetworkTransport from "@/transport/NetworkTransport";
 import { Status } from "@/types";
 import type { Address } from "@/types/types";
 import { requireBytes32 } from "@/utils/bytes32";
+import { errorMessage } from "@/utils/errorMessage";
 
 import { ethers, ZeroHash } from "ethers";
 
@@ -70,6 +72,8 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     /** Selected profile that may add replacement transports during handoff. */
     private handedOffPeerAddress?: Address;
     private activeTopic?: string;
+    /** Lobby topic this session joined and has not left yet. */
+    private joinedTopic?: string;
     private role: LobbyRole = "none";
     private roleEpoch = 0;
     private inFlightSelection?: Selection;
@@ -79,6 +83,11 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     private deferredRoleSwitch = false;
     private exhaustionSwitchScheduled = false;
     private matchResolve?: (match: LobbyMatch | undefined) => void;
+    /** The cleanup still running, so a new session cannot start under it. */
+    private cleanupInFlight?: Promise<void>;
+    // Sessions waiting for that cleanup to finish. The caller of a waiting
+    // session already set the status it wants; the cleanup must not reset it.
+    private matchesWaitingForCleanup = 0;
     private commitInFlight = false;
     private pendingCancellation?: {
         promise: Promise<boolean>;
@@ -131,12 +140,21 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             ? this.validateTopic(observedTargetChannelId)
             : undefined;
 
-        if (this.activeTopic && !this.matchResolve) {
-            throw new Error(
-                "Lobby matching already handed off to channel negotiation"
-            );
+        // A cleanup that is still awaiting its topic leave owns the session
+        // transports it is about to close; a session started under it would
+        // lose them and its status to that cleanup.
+        this.matchesWaitingForCleanup += 1;
+        try {
+            await this.cleanupInFlight;
+            if (this.activeTopic && !this.matchResolve) {
+                throw new Error(
+                    "Lobby matching already handed off to channel negotiation"
+                );
+            }
+            if (this.activeTopic) await this.cleanup();
+        } finally {
+            this.matchesWaitingForCleanup -= 1;
         }
-        if (this.activeTopic) await this.cleanup();
         return this.startMatching(
             normalizedTopic,
             normalizedTimeout,
@@ -206,6 +224,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
 
     public getAvailability(): {
         topic?: string;
+        topicJoined: boolean;
         role: LobbyRole;
         roleEpoch: number;
         candidateCount: number;
@@ -215,6 +234,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     } {
         return {
             topic: this.activeTopic,
+            topicJoined: !!this.joinedTopic,
             role: this.role,
             roleEpoch: this.roleEpoch,
             candidateCount: this.candidates.size,
@@ -252,7 +272,11 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         const count = (this.rejectedRpcCounts.get(transport) ?? 0) + 1;
         this.rejectedRpcCounts.set(transport, count);
         if (count > MAX_REJECTED_RPCS_PER_TRANSPORT) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.BLACKLIST,
+                "repeated rejected lobby traffic"
+            );
         }
     }
 
@@ -271,7 +295,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
         if (!this.sessionTransports.has(transport)) {
@@ -427,7 +454,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         );
         reservation.unsubscribeDisconnected?.();
         this.reservation = undefined;
-        this.finishMatch({
+        void this.finishMatch({
             peerAddress,
             attemptNonce,
             selectorAddress: peerAddress,
@@ -460,6 +487,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     ): Promise<LobbyMatch | undefined> {
         this.activeTopic = topic;
         this.role = "none";
+        // Role epochs are per session: a peer met in an earlier session sends
+        // its bootstrap availability at the epoch this map still remembers,
+        // and a remembered epoch would make that message read as a repeat.
+        this.peerRoleEpochs.clear();
         this.observedTargetChannelId = undefined;
         if (observedTargetChannelId) {
             this.unsubscribeTargetOpened =
@@ -490,6 +521,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                     "lobby match timeout"
                 );
         }
+        this.joinedTopic = topic;
         await this.p2pManager.joinDiscoveryKey(topic);
         return matchPromise;
     }
@@ -596,7 +628,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             }
             this.inFlightSelection = undefined;
             selection.unsubscribeDisconnected?.();
-            this.finishMatch({
+            await this.finishMatch({
                 peerAddress,
                 attemptNonce: selection.attemptNonce,
                 selectorAddress:
@@ -623,8 +655,12 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                 !rejectedByGuard &&
                 !this.neutralProfileLosses.delete(peerAddress)
             ) {
-                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    peerAddress
+                // A peer that accepted a pick and then dropped its commit
+                // burned an agreement window. That is not proven misbehaviour,
+                // so it spends the peer's shared retry bound.
+                this.p2pManager.disconnectConnection(
+                    peerAddress,
+                    DisconnectPolicy.allowRetry()
                 );
             } else {
                 this.neutralProfileLosses.delete(peerAddress);
@@ -648,7 +684,12 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         if (this.reservation?.peerAddress !== peerAddress) return;
         this.reservation.unsubscribeDisconnected?.();
         this.reservation = undefined;
-        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        // Mirror image of the selector side: an abandoned reservation is a
+        // burned agreement window, so it spends the peer's retry bound.
+        this.p2pManager.disconnectConnection(
+            peerAddress,
+            DisconnectPolicy.allowRetry()
+        );
         this.applyDeferredRoleSwitch();
         if (this.role === "advertiser") this.broadcastAvailability();
     }
@@ -660,7 +701,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                 // Agreement-window liability: the commit is already sent, so
                 // final transport loss is not neutral. Keep the selection in
                 // place so the rejected commit reaches the catch path, which
-                // blacklists the absent peer at once.
+                // strikes the absent peer at once.
                 this.inFlightSelection.unsubscribeDisconnected?.();
                 this.inFlightSelection.unsubscribeDisconnected = undefined;
             } else {
@@ -673,8 +714,8 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         }
         if (this.reservation?.peerAddress === peerAddress) {
             // Agreement-window liability: an accepted pick keeps its bound
-            // running. expireReservation blacklists the absent selector when
-            // it fires; a replacement transport may still commit before then.
+            // running. expireReservation strikes the absent selector when it
+            // fires; a replacement transport may still commit before then.
             this.reservation.unsubscribeDisconnected?.();
             this.reservation.unsubscribeDisconnected = undefined;
         }
@@ -702,22 +743,33 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         }
     }
 
-    private finishMatch(match: LobbyMatch): void {
+    private async finishMatch(match: LobbyMatch): Promise<void> {
         const resolve = this.matchResolve;
         if (!resolve) return;
         this.commitInFlight = false;
         this.resolvePendingCancellation(false);
         this.broadcastUnavailable();
         this.stopMatchingWork();
-        this.handoffSelectedPeer(match.peerAddress);
         this.matchResolve = undefined;
+        await this.handoffSelectedPeer(match.peerAddress);
         resolve(match);
     }
 
     private async cleanup(
         options: { preserveHandedOffTransports?: boolean } = {}
     ): Promise<void> {
-        const topic = this.activeTopic;
+        const run = this.runCleanup(options);
+        this.cleanupInFlight = run;
+        try {
+            await run;
+        } finally {
+            if (this.cleanupInFlight === run) this.cleanupInFlight = undefined;
+        }
+    }
+
+    private async runCleanup(options: {
+        preserveHandedOffTransports?: boolean;
+    }): Promise<void> {
         const resolve = this.matchResolve;
         if (resolve) this.broadcastUnavailable();
         this.stopMatchingWork();
@@ -725,6 +777,9 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         this.matchResolve = undefined;
         this.unsubscribeTargetOpened?.();
         this.unsubscribeTargetOpened = undefined;
+        // Leave the topic before cutting anything: a transport closed while we
+        // are still joined is rediscovered and redialed right away.
+        await this.leaveJoinedTopic();
         this.disconnectSessionTransports();
         if (!options.preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
@@ -732,12 +787,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             this.handedOffTransports.clear();
             this.handedOffPeerAddress = undefined;
         }
-        if (topic) {
-            await this.p2pManager.leaveDiscoveryKey(topic);
-        }
         if (
             String(this.p2pManager.stateManager.channelId) === ZeroHash &&
-            !this.p2pManager.stateManager.isDisposed
+            !this.p2pManager.stateManager.isDisposed &&
+            this.matchesWaitingForCleanup === 0
         ) {
             this.p2pManager.stateManager.setStatus(Status.NOT_OPENED);
         }
@@ -794,8 +847,9 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         }
     }
 
-    private handoffSelectedPeer(peerAddress: Address): void {
+    private async handoffSelectedPeer(peerAddress: Address): Promise<void> {
         this.handedOffPeerAddress = peerAddress;
+        const nonSelectedTransports: NetworkTransport[] = [];
         for (const [transport, unsubscribe] of [
             ...this.sessionTransports.entries()
         ]) {
@@ -805,8 +859,37 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             if (address === peerAddress && !transport.isClosed) {
                 this.handedOffTransports.add(transport);
             } else {
-                this.p2pManager.disconnectConnection(transport);
+                nonSelectedTransports.push(transport);
             }
+        }
+        // Leave the lobby topic before cutting the non-selected transports.
+        // Closing a transport does not stop discovery, so a loser cut while
+        // the topic is still joined is re-dialled for the whole negotiation.
+        await this.leaveJoinedTopic();
+        for (const transport of nonSelectedTransports) {
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
+        }
+    }
+
+    /**
+     * The single owner of "this session has left its lobby topic". A failed
+     * leave must not hold back the handoff that awaits it, so it is reported
+     * and the session continues; the worst case is the redial it prevents.
+     */
+    private async leaveJoinedTopic(): Promise<void> {
+        const topic = this.joinedTopic;
+        if (!topic) return;
+        this.joinedTopic = undefined;
+        try {
+            await this.p2pManager.leaveDiscoveryKey(topic);
+        } catch (error) {
+            this.logger.warn("Failed to leave the lobby topic", {
+                topic,
+                error: errorMessage(error)
+            });
         }
     }
 
@@ -816,14 +899,20 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         ]) {
             unsubscribe();
             this.sessionTransports.delete(transport);
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         }
     }
 
     private disconnectHandedOffTransports(): void {
         for (const transport of [...this.handedOffTransports]) {
             this.handedOffTransports.delete(transport);
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         }
         this.handedOffPeerAddress = undefined;
     }

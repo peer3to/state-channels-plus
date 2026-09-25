@@ -452,23 +452,23 @@ SDK's chain listener consumes these. All verified:
 families:
 
 - **Validation errors (`Error*`)** — the submitted argument is invalid regardless of timing: bad
-  or missing signatures (`ErrorJoinChannelInvalidSignature`), malformed channel/join data
+  or missing signatures (`ErrorJoinChannelInvalidSignature`,
+  `ErrorJoinChannelConfirmationNotThresholdSigned`), malformed channel/join data
   (`ErrorInvalidChannelId`, `ErrorInvalidJoinChannel`, `ErrorDuplicateParticipant`,
   `ErrorAtLeastTwoParticipantsRequired`), snapshot/proof failures (`ErrorInvalidStateProof`,
-  `ErrorInvalidStateSnapshot`, `ErrorInvalidLatestState`,
+  `ErrorNotGenesisSnapshot`, `ErrorSnapshotGenesisTimestampMismatch`,
+  `ErrorSnapshotDataForkMismatch`, `ErrorInvalidStateSnapshotHash`, `ErrorInvalidLatestState`,
   `ErrorDisputeInboundMessageBlocksInvalid` — which carries the compared hashes, break index, and
   an `INBOUND_FAILURE_*` reason code), value-conservation (`CantWithdrawMoreThanDeposits`,
-  `ErrorWithdrawalFailed`, `ErrorOutboundMessageBalanceMismatch`), fraud-proof rejections
-  (`ErrorInvalidFraudProof`, `ErrorInvalidFraudProofType`, `ErrorDoubleSignBlocksNotSame`), and
-  state-machine hook failures during re-execution (`ErrorDisputeStateMachineJoiningFailed`,
-  `…SlashingFailed`, `…RemovingFailed`, `…InboundProcessingFailed`).
+  `ErrorWithdrawalFailed`, `ErrorOutboundMessageBalanceMismatch`), and a state-machine hook
+  failure during re-execution (`ErrorDisputeStateMachineInboundProcessingFailed`).
 - **Race-condition guards (`RaceCondition*`)** — a state- or time-dependent precondition failed
   because of ordering between competing on-chain actions: `RaceConditionChannelAlreadyOpen`,
   `RaceConditionBlockCalldataTimestampTooLate`, `RaceConditionSnapshotForkMismatch`,
   `RaceConditionJoinChannelExpired` / `…JoinChannelSnapshotMismatch` /
   `…JoinChannelForkDisputed` / `…PendingInboundNotConsumed`, the dispute-window family
   (`…DisputeEvidencePeriodExpired`, `…DisputeKillPeriodNotExpired`, `…DisputeKillPeriodExpired`,
-  `…DisputeAlreadyReduced`, `…ReductionExpectationDoesntMatch`, `…DisputeAuditingRequired`), the
+  `…DisputeAlreadyReduced`, `…ReductionExpectationDoesntMatch`), the
   timeout family (`…DisputeTimeoutCalldataPosted`,
   `…DisputeTimeoutPreviousBlockProducerPostedCalldataMismatch`, `…DisputeTimeoutNotMinTimestamp`,
   `…DisputeTimeoutWindowCreatedTooEarly`, `…UnexpectedBlockCalldataPosted`),
@@ -519,7 +519,7 @@ _Non-normative._
 | Requirement / invariant                                        | Statement                                                                                                                                                                                                                                | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                     | Gap / divergence |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-CON-11-VDGJYA`](manager-and-facets.md#req-con-11-vdgjya) | `open` MUST reject duplicate participants and already-open channels, verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot.                          | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L119) (`open`)                                                                                                                                                          | None.            |
-| [`INV-CON-12-MXRTGG`](manager-and-facets.md#inv-con-12-mxrtgg) | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                    | Covered               | [StateSnapshotFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L143) (`_applyOutboundMessageBlocks`)                                                                                                                                               | None.            |
+| [`INV-CON-12-MXRTGG`](manager-and-facets.md#inv-con-12-mxrtgg) | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                    | Covered               | [StateSnapshotFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L155) (`_applyOutboundMessageBlocks`)                                                                                                                                               | None.            |
 | [`REQ-CON-13-C7ACX2`](manager-and-facets.md#req-con-13-c7acx2) | Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.                                                                                | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L92) (`postBlockCalldata`)                                                                                                                                              | None.            |
 | [`REQ-CON-14-MBV0SV`](manager-and-facets.md#req-con-14-mbv0sv) | Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window. | Covered               | [DisputeManagerFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L40) (`_uploadDispute`); [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L57) (`disputerThrottle`)        | None.            |
-| [`REQ-CON-15-6M91QC`](manager-and-facets.md#req-con-15-6m91qc) | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                           | Covered               | [DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17) (`applyDisputeFraudProofs`); [DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L272) (`killDispute`) | None.            |
+| [`REQ-CON-15-6M91QC`](manager-and-facets.md#req-con-15-6m91qc) | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                           | Covered               | [DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17) (`applyDisputeFraudProofs`); [DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L285) (`killDispute`) | None.            |

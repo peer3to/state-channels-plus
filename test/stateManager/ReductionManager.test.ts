@@ -1,5 +1,6 @@
 import { Status } from "@/types";
 import { sleep } from "@/utils";
+import { DetachedPromises } from "@/utils/DetachedPromises";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertInvalidReductionControl } from "@test/fixtures/InvalidReductionControlFixture";
 import {
@@ -483,8 +484,11 @@ describe("ReductionManager", function () {
             try {
                 stub.startTryReduce(sourceForkId);
                 // The gas-limit read is reached only after the local install,
-                // so the attempt has already settled with the reduced fork.
+                // but the detached caller's outcome callback may still be pending.
                 await waitFor(async () => (await hold.entered()) === 1);
+                await waitFor(
+                    async () => stub.getTryReduceOutcome()?.settled === true
+                );
                 expect(stub.getTryReduceOutcome()?.result).to.be.a("string");
                 stub.abortDetached();
                 await waitFor(async () => sm.isDisposed);
@@ -496,6 +500,35 @@ describe("ReductionManager", function () {
             await sleep(500);
             expect(stub.getReductionSubmitCallCount()).to.equal(0);
             await host.dispose();
+        });
+
+        it("a chain-write read that fails after the runtime is torn down is dropped as the disposal outcome", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } = await stageDisposalFork(h);
+            const target = h.getPeer(0);
+            const { host, sm, stub } = runtimeEndpointFor(target.p2pInstance);
+            // The released gas-limit read fails, as it does when a provider is
+            // destroyed while the read is still in flight.
+            const hold = await h.rpcStub.holdReductionAttempt(
+                0,
+                "submit",
+                "throw"
+            );
+            try {
+                stub.startTryReduce(sourceForkId);
+                await waitFor(async () => (await hold.entered()) === 1);
+                stub.abortDetached();
+                await waitFor(async () => sm.isDisposed);
+                // Full teardown, loggers included, lands before the read fails.
+                await host.dispose();
+            } finally {
+                stub.restoreReductionAttempt();
+            }
+            const settled = await DetachedPromises.awaitAllAndClear();
+            expect(
+                settled.filter((entry) => entry.status === "rejected")
+            ).to.deep.equal([]);
+            expect(stub.getReductionSubmitCallCount()).to.equal(0);
         });
 
         it("an ordinary attempt that completes a window the chain already finalized converges without a chain write", async function () {

@@ -2,8 +2,9 @@ pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 
-contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
+contract DisputeWindowAdmissionHarness is DisputeManagerFacet, DisputeWindowSeeding {
     constructor() {
         evidenceTime = 10;
         utilityFacetAddress = address(new UtilityFacet());
@@ -15,10 +16,7 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
     }
 
     function seedWindow(bytes32 channelId, bytes32 forkId, uint256 created, bool populated, bool finalized) external {
-        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
-        window.forkId = forkId;
-        window.evidence.creationTimestamp = created;
-        window.evidence.lastEvidenceSubmissionTimestamp = created;
+        DisputeWindow storage window = _seedDisputeWindow(channelId, forkId, created, created);
         if (populated) window.evidence.disputeCommitments.push(keccak256("prior commitment"));
         if (finalized) window.reducedResult.forkId = keccak256("reduced fork");
     }

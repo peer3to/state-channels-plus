@@ -9,6 +9,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 - [ADiamondStateMachine.ts](./ADiamondStateMachine.ts.md)
 - [Clock.ts](./Clock.ts.md)
+- [DisconnectPolicy.ts](./DisconnectPolicy.ts.md)
 - [Holepunch.ts](./Holepunch.ts.md)
 - [HolepunchRelay.ts](./HolepunchRelay.ts.md)
 - [P2PManager.ts](./P2PManager.ts.md)

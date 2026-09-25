@@ -2,6 +2,7 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
@@ -277,6 +278,10 @@ describe("E2E: Participant Lifecycle", function () {
                     ).to.equal(false);
                 }
             }
+        });
+
+        it("remaining peers do not blacklist the leaver after its exit and it can be force-joined back", async function () {
+            await assertLeaverCanBeForceJoinedBackAfterExit();
         });
 
         it("public terminal leave settles before disposal and excludes the former signer", async function () {

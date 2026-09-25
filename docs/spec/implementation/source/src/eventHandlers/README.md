@@ -9,3 +9,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 - [EventHandler.ts](./EventHandler.ts.md)
 - [EventHandlerHooks.ts](./EventHandlerHooks.ts.md)
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [EventHandler.ts](EventHandler.ts.md) | Observed slashes immediately override both eligibility caches. | [`REQ-GOSSIP-4-J5Z4DF`](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) |

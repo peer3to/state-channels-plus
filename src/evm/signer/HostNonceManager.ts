@@ -1,4 +1,6 @@
+import GasUsageRecorder from "@/evm/gasUsage/GasUsageRecorder";
 import { Mutex } from "@/utils";
+import { withGasHeadroom } from "@/utils/gas";
 import type { Logger } from "@/utils/logging/Logger";
 import {
     AbstractSigner,
@@ -13,6 +15,8 @@ import {
 /** Host-bound nonce owner for every real-chain transaction sent by one peer. */
 class HostNonceManager extends AbstractSigner {
     readonly signer: Signer;
+    /** Gas of every real-chain transaction this owner broadcast. */
+    readonly gasUsage: GasUsageRecorder;
 
     private readonly mutex: Mutex;
     private nextNonce: number | null = null;
@@ -21,6 +25,9 @@ class HostNonceManager extends AbstractSigner {
     constructor(signer: Signer, logger?: Logger) {
         super(signer.provider);
         this.signer = signer;
+        this.gasUsage = new GasUsageRecorder(
+            logger?.child({ component: "GasUsage" })
+        );
         this.mutex = new Mutex(
             logger?.child({ component: "HostNonceManager" })
         );
@@ -44,6 +51,12 @@ class HostNonceManager extends AbstractSigner {
         return this.signer.signTransaction(tx);
     }
 
+    // Overrides AbstractSigner.estimateGas: the wrapped wallet's estimate plus
+    // withGasHeadroom, so a concurrent transaction cannot push ours out of gas.
+    override async estimateGas(tx: TransactionRequest): Promise<bigint> {
+        return withGasHeadroom(await this.signer.estimateGas(tx));
+    }
+
     signMessage(message: string | Uint8Array): Promise<string> {
         return this.signer.signMessage(message);
     }
@@ -56,7 +69,21 @@ class HostNonceManager extends AbstractSigner {
         return this.signer.signTypedData(domain, types, value);
     }
 
-    async sendTransaction(
+    /**
+     * Every real-chain transaction of this peer passes through here, which is
+     * why this is also where its gas usage is observed.
+     */
+    // Overrides AbstractSigner.sendTransaction: broadcasts with the owned
+    // nonce, then hands the response to the gas usage recorder.
+    override async sendTransaction(
+        tx: TransactionRequest
+    ): Promise<TransactionResponse> {
+        const response = await this.sendWithOwnedNonce(tx);
+        this.gasUsage.observe(response);
+        return response;
+    }
+
+    private async sendWithOwnedNonce(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
         await this.mutex.lock({
@@ -76,12 +103,25 @@ class HostNonceManager extends AbstractSigner {
             }
             const nonce =
                 this.nextNonce ?? (await this.signer.getNonce("pending"));
+            const request = { ...tx, nonce };
             const populated = await this.signer.populateTransaction({
-                ...tx,
-                nonce
+                ...request,
+                // Without a caller limit, use our estimate with headroom
+                // rather than the wallet's bare estimate.
+                gasLimit: tx.gasLimit ?? (await this.estimateGas(request))
             });
             const encodedTransaction =
                 await this.signer.signTransaction(populated);
+            // Where a recovered response starts scanning for a replacement.
+            // Sent before the broadcast: the scan only walks forward, so a
+            // later read could start past a replacement that already mined.
+            // Not awaited: an ethers provider's broadcast joins this in-flight
+            // request for its own block number, so a send makes one request
+            // and waits no extra round trip. Only a failed broadcast reads it.
+            const replacementScanStartBlock = provider.getBlockNumber();
+            // A successful broadcast never reads it, so its failure must not
+            // surface as an unhandled rejection.
+            void replacementScanStartBlock.catch(() => undefined);
             try {
                 const response =
                     await provider.broadcastTransaction(encodedTransaction);
@@ -91,6 +131,7 @@ class HostNonceManager extends AbstractSigner {
                 return await this.reconcileBroadcastFailure(
                     encodedTransaction,
                     nonce,
+                    replacementScanStartBlock,
                     error
                 );
             }
@@ -102,13 +143,31 @@ class HostNonceManager extends AbstractSigner {
     private async reconcileBroadcastFailure(
         encodedTransaction: string,
         nonce: number,
+        replacementScanStartBlock: Promise<number>,
         broadcastError: unknown
     ): Promise<TransactionResponse> {
         const provider = this.provider!;
         const transactionHash = keccak256(encodedTransaction);
         let observedTransaction: TransactionResponse | null;
         let pendingNonce: number;
+        let scanStartBlock: number;
         try {
+            // The broadcast shares this read, so it fails whenever the
+            // broadcast's own read failed, even if the node accepted the
+            // transaction. Then read the start block again before
+            // getTransaction: a transaction still pending there had no
+            // replacement mined by that block, and one that mined or was
+            // replaced needs no scan. getBlock, not getBlockNumber: the
+            // provider's request cache would answer with the same failure.
+            scanStartBlock = await replacementScanStartBlock.catch(async () => {
+                const latestBlock = await provider.getBlock("latest");
+                assert(
+                    latestBlock,
+                    "no latest block to start a replacement scan",
+                    "UNKNOWN_ERROR"
+                );
+                return latestBlock.number;
+            });
             [observedTransaction, pendingNonce] = await Promise.all([
                 provider.getTransaction(transactionHash),
                 this.signer.getNonce("pending")
@@ -123,7 +182,9 @@ class HostNonceManager extends AbstractSigner {
 
         if (observedTransaction) {
             this.nextNonce = Math.max(nonce + 1, pendingNonce);
-            return observedTransaction;
+            // Like a broadcast's response, its wait() ends if a replacement
+            // mines; the plain node answer would wait for it forever.
+            return observedTransaction.replaceableTransaction(scanStartBlock);
         }
 
         this.nextNonce = pendingNonce > nonce ? pendingNonce : nonce;

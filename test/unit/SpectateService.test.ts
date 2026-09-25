@@ -4,6 +4,7 @@ import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertConcurrentSyncWindowOverwrite,
+    assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
@@ -16,6 +17,25 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
+    it("concurrent identical sync requests share the completed result", async () => {
+        await assertConcurrentPinnedRequests(TestSession.getHarness(), "same");
+    });
+    it("a higher in-flight sync satisfies a lower requested height", async () => {
+        await assertConcurrentPinnedRequests(TestSession.getHarness(), "lower");
+    });
+    it("a higher requested height waits then runs its own pinned sync", async () => {
+        await assertConcurrentPinnedRequests(
+            TestSession.getHarness(),
+            "higher"
+        );
+    });
+    it("concurrent sync callers both receive a completed proof failure", async () => {
+        await assertConcurrentPinnedRequests(
+            TestSession.getHarness(),
+            "failure"
+        );
+    });
+
     it("concurrent source syncs accept when a second persist overwrites the first reduction", async function () {
         await assertConcurrentSyncWindowOverwrite(TestSession.getHarness());
     });

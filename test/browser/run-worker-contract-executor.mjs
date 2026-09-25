@@ -285,9 +285,12 @@ try {
         };
         // The browser worker's ambient block time is wall time plus the host's
         // clock adjustment, within the one-second sampling boundary, and advances.
+        // Bracket the asynchronous read so reply latency is not clock drift.
+        const { firstOffsetLowerBound, firstOffsetUpperBound } =
+            result.contractExecutorClock;
         assert.ok(
-            Math.abs(result.contractExecutorClock.firstOffset - 600) <= 1,
-            `browser worker block.timestamp offset ${result.contractExecutorClock.firstOffset}`
+            firstOffsetLowerBound <= 601 && firstOffsetUpperBound >= 599,
+            `browser worker block.timestamp offset range ${firstOffsetLowerBound}..${firstOffsetUpperBound}`
         );
         assert.equal(result.contractExecutorClock.advanced, true);
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);

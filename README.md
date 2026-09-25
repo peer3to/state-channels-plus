@@ -109,6 +109,23 @@ yarn test:parallel --forge-threads 2
 yarn test:parallel --test-pattern 'V1/**' # filter both tiers
 ```
 
+Mocha tests are discovered from their TypeScript sources but run from the
+compiled tree under `dist/` by default, so no test child or worker thread
+transpiles anything, while `--enable-source-maps` keeps every stack trace on
+the `.ts` lines. The distributed workers build that tree in their prepare step
+(`yarn test:parallel:build`, a clean build). The local runner keeps it current
+from a stamp the build writes: when only file contents changed it re-emits in
+place without deleting anything, because a runner can itself be a task of an
+outer run that is loading from the same tree; when a source was added, removed
+or renamed it runs the clean build, so no compiled twin of a deleted file can
+linger and run. Outside a project with that build script the runner falls back
+to the sources. Two flags change the default:
+
+```shell
+yarn test:parallel --skip-build     # never refresh, use the dist tree as is
+yarn test:parallel --source-tests   # run the .ts sources under ts-node instead
+```
+
 Each forge task uses one thread by default. `forge test` otherwise sizes its
 thread pool from the logical core count, which inside a CPU-limited container is
 still the host's count, so unpinned tasks oversubscribe the host. The runner
@@ -275,6 +292,16 @@ yarn test:parallel:server \
   --work-root /your/chosen/directory
 ```
 
+Add `--review-codex [model]` (default `gpt-6-astra`) or `--review-claude [model]`
+(default `claude-opus-5-5`) to the same worker command to also offer PR reviews;
+`--review-effort <effort>` sets the reasoning effort (default `low`). These are
+worker-side, so changing them needs a worker restart, not a push. The worker reuses its identity, pool secret and authorization policy, announces the
+review discovery topics, and stores review state under `<work-root>/review/`.
+The selected CLI (`codex` or `claude`) must be on PATH and logged in as the
+worker user. No separate
+review-server command or configuration file is needed. See
+[PR review setup](docs/pr-review-bot.md).
+
 All worker-managed files then live under `/your/chosen/directory`; nothing is
 written to `temp/distributed-worker/`. Use an empty, writable directory on fast
 local storage. `--allow-shared-host` requires an explicit `--work-root`; startup
@@ -303,10 +330,11 @@ The orchestrator normally stores its seed under
 dedicated `SCP_TEST_ORCHESTRATOR_SEED` secret containing 64 lowercase hex
 characters. The same seed produces the same transport identity on every run,
 so each worker reuses one CI environment for the same workspace. Do not reuse
-`SCP_TEST_POOL_SECRET` as this seed. CI runs that share this identity must be
-serialized across the repository. GitHub keeps only one pending run in a
-concurrency group, so a newer PR update can cancel an older queued run. Re-run
-that cancelled check from the Actions tab. Host-lock process coverage runs as
+`SCP_TEST_POOL_SECRET` as this seed. Distributed test jobs that share this identity
+are serialized across the repository with `queue: max`; unrelated spec/browser
+jobs and the independent review workflow do not wait for that queue. Reviews
+finish their active run and retain only the newest pending run per PR; superseded
+reviews stay on the server without publication. Host-lock process coverage runs as
 part of the canonical distributed suite; CI does not start a separate local
 host-lock job.
 
@@ -416,3 +444,7 @@ Files are automatically formatted when you commit changes. The pre-commit hook w
 
 # License
 MIT
+
+## Automated PR review
+
+See the [persistent PR review service guide](docs/pr-review-bot.md) for setup, account and host prerequisites, CI ownership, recovery and acceptance.

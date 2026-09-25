@@ -10,6 +10,7 @@ import {
 } from "@test/fixtures/NodeLoggerMonitorStaging";
 import { quietSample } from "@test/fixtures/PerformanceReportingStaging";
 import { expect } from "chai";
+import { existsSync } from "node:fs";
 import sinon from "sinon";
 
 /**
@@ -222,6 +223,59 @@ describe("NodeLogger performance monitor", function () {
                 );
             expect(entry?.level).to.equal("warn");
             expect(entry?.meta[0].error).to.include("resolution");
+        } finally {
+            logger.dispose();
+        }
+    });
+    it("attaches the thread's CPU time and run-queue wait and the host's busy and steal share to real main-thread samples where the kernel exposes them and omits them elsewhere", async function () {
+        const store = new LogStore(1024 * 1024, true);
+        const logger = new NodeLogger(
+            {},
+            {},
+            "verbose",
+            store,
+            { attachErrorListener: false },
+            new Set(),
+            true
+        );
+        try {
+            logger.startPerformanceMonitoring({ intervalMs: INTERVAL_MS });
+            // the real source exists once the perf_hooks import has resolved
+            for (let i = 0; i < 5; i++)
+                await new Promise<void>((resolve) => setImmediate(resolve));
+            // the timers are faked, so let real time pass: the host counters
+            // are kernel ticks and a zero-length interval carries no share
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < 40) {
+                // busy wait
+            }
+            clock.tick(INTERVAL_MS);
+            const entry = store
+                .getAllLogs()
+                .find((entry) =>
+                    entry.message.startsWith("Event Loop mean delay")
+                );
+            expect(entry, "one real sample was reported").to.not.equal(
+                undefined
+            );
+            const meta = entry!.meta[0] as Record<string, unknown>;
+            if (existsSync("/proc/thread-self/schedstat")) {
+                expect(meta.cpuMs).to.be.a("number").and.to.be.at.least(0);
+                expect(meta.runQueueWaitMs)
+                    .to.be.a("number")
+                    .and.to.be.at.least(0);
+            } else {
+                expect(meta).to.not.have.property("cpuMs");
+                expect(meta).to.not.have.property("runQueueWaitMs");
+            }
+            // this logger reports for the main thread, which adds the host view
+            if (existsSync("/proc/stat")) {
+                expect(meta.hostBusy).to.be.a("number").and.to.be.within(0, 1);
+                expect(meta.hostSteal).to.be.a("number").and.to.be.within(0, 1);
+            } else {
+                expect(meta).to.not.have.property("hostBusy");
+                expect(meta).to.not.have.property("hostSteal");
+            }
         } finally {
             logger.dispose();
         }

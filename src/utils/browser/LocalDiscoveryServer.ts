@@ -1,4 +1,5 @@
 import type P2PManager from "../../P2PManager";
+import LocalPeerInfo from "../../transport/LocalPeerInfo";
 import { config } from "../config";
 import type { Logger } from "../logging/Logger";
 
@@ -91,6 +92,10 @@ export class LocalDiscoveryServer {
                 const transport = new BrowserLocalTransport(
                     ws,
                     p2pManager.rpcRouter
+                );
+                p2pManager.profileManager.setBannablePeerInfo(
+                    transport,
+                    new LocalPeerInfo(p2pManager, remoteAddress)
                 );
                 // Both ends initiate: the handshake is a mutual challenge, so a
                 // peer only finalizes once it has BOTH verified the remote (via

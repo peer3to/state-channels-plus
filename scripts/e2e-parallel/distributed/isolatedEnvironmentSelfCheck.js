@@ -118,7 +118,7 @@ async function main(argv = process.argv, runOptions = {}) {
             reused.handle
         );
         if (
-            configuredLimits.cpu !== secondProfile.cpu ||
+            configuredLimits.cpuQuota !== 0 ||
             configuredLimits.memoryBytes !== secondProfile.memoryBytes ||
             configuredLimits.memorySwapBytes !== secondProfile.memoryBytes ||
             configuredLimits.pidsLimit !== secondProfile.pidsLimit

@@ -1,6 +1,10 @@
+import { resolveRuntimeModulePath } from "./resolveRuntimeModulePath";
 export async function importModuleFromManifest(
-    moduleSpecifier: string
+    manifestModuleSpecifier: string
 ): Promise<any> {
+    // A manifest may name the source tree while the compiled tree runs, or
+    // the other way round; load whichever twin exists.
+    const moduleSpecifier = resolveRuntimeModulePath(manifestModuleSpecifier);
     if (typeof require === "function") {
         if (isTypeScriptModuleSpecifier(moduleSpecifier)) {
             registerNodeTypeScriptLoader(moduleSpecifier);

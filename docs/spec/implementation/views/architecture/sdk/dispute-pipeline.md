@@ -118,7 +118,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L285),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L334),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -164,7 +164,10 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    `DisputeConfirmation` with an empty co-signature list.
 
 **Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain upload (gas limit 2.5M). Race reverts are classified:
+without: the plain or calldata upload. No upload passes a gas limit: the chain signer sends each
+with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest dispute that lands
+between estimate and inclusion cannot push a late disputer out of gas (and past the evidence
+window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
@@ -226,7 +229,7 @@ is an internal error (throws).
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L299):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L364):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, derive auditing data locally if not
@@ -258,7 +261,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   difference means our evidence changes the outcome → upload our dispute
   (evidence accumulation). Otherwise schedule reduction at `killPeriodEnd`.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L879)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L888)):
 record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
@@ -310,7 +313,7 @@ is still a participant.
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L760)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L767)):
 mirror into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute locally; a mismatching
 `reducedForkId` → `SCM.challengeDisputeReduction(disputes, latestSnapshot, state, inboundBlocks)`

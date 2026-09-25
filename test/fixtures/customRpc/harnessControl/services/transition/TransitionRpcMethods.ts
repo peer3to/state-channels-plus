@@ -72,7 +72,7 @@ export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> 
 
     public async ingestBlockConfirmation(
         encodedBlockConfirmation: string,
-        options?: IngestBlockConfirmationOptions
+        options: IngestBlockConfirmationOptions
     ): Promise<boolean> {
         const queue = this.service.sm.blockQueueManager;
         return await this.service.stub.controlIngestContext.run(true, () =>

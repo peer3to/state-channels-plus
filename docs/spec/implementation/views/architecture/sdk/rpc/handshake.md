@@ -163,8 +163,8 @@ signature)`. This is the only authentication step: it proves the responder holds
 
 ### 3.4 `onInitHandshakeAck(challengeHash?)` — fire-and-forget
 
-1. **Duplicate check.** `didReceiveAck(senderTransport)` → `disconnectAndBlacklistPeer(senderTransport,
-"protocol violation: duplicate handshake ack")`, return. (Replay-as-violation, [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).)
+1. **Duplicate check.** `didReceiveAck(senderTransport)` → `disconnectConnection(senderTransport,
+DisconnectPolicy.BLACKLIST, "duplicate handshake ack")`, return. (Replay-as-violation, [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).)
 2. `markAcked(senderTransport)`.
 3. `void maybeFinalizeHandshakeOnceFromTransport(senderTransport)`.
 
@@ -202,14 +202,21 @@ When satisfied:
 
 ### 3.6 Timeouts and their consequences
 
-- **Response timeout** (initiator): `agreementTime` → `disconnectConnection`. No blacklist — the peer
-  never proved an identity to blacklist.
+- **Response timeout or refusal** (initiator): `agreementTime` → `disconnectConnection(transport,
+allowRetry())`. No verdict — the peer never proved an identity, and silence is not proof. The close
+  counts against the transport's Hyperswarm key, so a first contact that never answers is refused by
+  that key after the bound.
+- **Round trip and response-timestamp bounds** (initiator) and **request-time skew** (responder):
+  the same counted close; a forged or undecodable response and a malformed request blacklist with a
+  stated reason.
 - **Ack timeout** (`ensureHandshakeAckTimeoutScheduled`, armed by both roles, deduped by
-  `ackTimeoutScheduled`): after `agreementTime`, if `!didReceiveAck` → if a peer address is known
-  (`transport.peerAddress || verifiedPeerAddressByTransport.get(transport)`),
-  `disconnectAndBlacklistPeerByEvmAddress`; else `disconnectConnection`. So a peer this node has
-  _verified_ (initiator role complete) but which never acks gets blacklisted by address; an unverified
-  peer is merely disconnected.
+  `ackTimeoutScheduled`): after `agreementTime`, if `!didReceiveAck` →
+  `disconnectConnection(transport, allowRetry(), undefined, peerAddress)` with
+  `peerAddress = transport.peerAddress || verifiedPeerAddressByTransport.get(transport)`. The strike
+  lands on the profile's key (the EVM address once registered, the Hyperswarm key before); the
+  suspension reached at the bound also bars the verified address the response proved, so a peer this
+  node has _verified_ but which never acks cannot escape by presenting a fresh handle. An unverified
+  peer is merely counted by its key.
 
 ### 3.7 Sequence diagram (mutual, both directions on one transport)
 
@@ -303,7 +310,7 @@ peer's private key). A forged ack thus sets `ackedTransports` but cannot forge i
 `challengeHash` is ignored for decisions ([`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w)).
 
 **Duplicate ack (replay / protocol-order abuse).** Handled: second ack →
-`disconnectAndBlacklistPeer`. The transport already owns an addressless `PeerProfile`, so a
+`disconnectConnection(…, BLACKLIST, reason)`. The transport already owns an addressless `PeerProfile`, so a
 Holepunch peer is banned through its SDK handle even if identity verification has not completed.
 Durability across a new SDK handle or process restart remains open in
 [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2).

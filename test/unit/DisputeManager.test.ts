@@ -867,7 +867,8 @@ describe("Unit: DisputeManager", function () {
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("uploadDispute");
             expect(submission.encodedAuditingData).to.equal(null);
-            expect(submission.gasLimit).to.equal("2500000");
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -904,6 +905,7 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("uploadDisputeWithCalldata");
+            // No limit is passed: the chain signer adds headroom to its estimate.
             expect(submission.gasLimit).to.equal(null);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
@@ -945,6 +947,8 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDispute"
@@ -989,6 +993,8 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
+            // No limit is passed: the chain signer adds headroom to its estimate.
+            expect(submission.gasLimit).to.equal(null);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDisputeWithCalldata"

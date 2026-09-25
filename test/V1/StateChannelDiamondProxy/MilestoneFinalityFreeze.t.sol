@@ -66,7 +66,7 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
         utilityFacetAddress = address(new UtilityFacet());
         stateProofFacetAddress = address(new StateProofFacet());
         disputeVerificationFacetAddress = address(this);
-        stateMachineImplementation = new MathStateMachine(3_000_000);
+        stateMachineImplementation = new MathStateMachine(3_000_000, 32);
     }
 
     fallback() external {
@@ -344,7 +344,10 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "adopted {A, B}");
         DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
         vm.prank(b);
-        vm.expectRevert(RaceConditionDisputeKillPeriodExpired.selector);
+        // the kill period ends exactly now
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, block.timestamp, block.timestamp)
+        );
         harness.applyDisputeFraudProofs(
             _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
         );
@@ -358,7 +361,7 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         harness.seedWindow(CHANNEL_ID, genesis.forkId, dispute);
 
         // the freeze is reached only after the reduction link is proven
-        vm.expectRevert(ErrorStateSnapshotNotValid.selector);
+        vm.expectRevert(abi.encodeWithSelector(ErrorStateSnapshotNotValid.selector, E_FORK_ID, genesis.forkId));
         harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
     }
 
@@ -454,10 +457,11 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
     }
 
     function test_sameFork_invalidProofOnDisputedFork_revertsInvalidStateProof() public {
-        _openWindow(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId, PK_A);
+        bytes32 forkId = diamond.getStateSnapshot(CHANNEL).forkId;
+        _openWindow(CHANNEL, forkId, PK_A);
         (, StateSnapshot[] memory snapshots) = _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
 
-        vm.expectRevert(ErrorInvalidStateProof.selector);
+        vm.expectRevert(abi.encodeWithSelector(ErrorInvalidStateProof.selector, forkId, 0, snapshots.length));
         diamond.updateStateSnapshotSameFork(CHANNEL, new MilestoneProof[](0), snapshots, new MessageBlock[](0));
     }
 

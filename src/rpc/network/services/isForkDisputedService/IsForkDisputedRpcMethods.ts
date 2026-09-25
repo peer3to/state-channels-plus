@@ -1,4 +1,5 @@
 import IsForkDisputedService from "./IsForkDisputedService";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { NetworkTransport } from "@/transport";
 import { ChannelId, ForkId } from "@/types/types";
@@ -24,7 +25,11 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
             this.service.logger.error(
                 `onDisputeAcknowledgmentRequest - missing peer address`
             );
-            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            this.p2pManager.disconnectConnection(
+                this.senderTransport,
+                DisconnectPolicy.BLACKLIST,
+                "dispute acknowledgment request without peer address"
+            );
             throw new Error(
                 "onDisputeAcknowledgmentRequest - missing peer address"
             );

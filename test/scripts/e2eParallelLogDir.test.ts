@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { repoRoot as findRepoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import fs from "fs";
@@ -201,7 +202,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
     });
 
     it("runs the packed tools with production dependencies only", function () {
-        const repoRoot = path.resolve(__dirname, "..", "..");
+        const repoRoot = findRepoRoot();
         fs.mkdirSync(path.join(repoRoot, "temp"), { recursive: true });
         const root = fs.mkdtempSync(
             path.join(repoRoot, "temp", "packed-runner-")

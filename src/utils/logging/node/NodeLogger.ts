@@ -17,20 +17,30 @@ import { reportPerformanceSample } from "../performanceMonitorInternal";
 import { NodeLogUploader } from "./NodeLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import { Colors } from "./colors";
+import {
+    hostDelta,
+    readHostCounters,
+    readThreadSchedstat
+} from "./kernelCounters";
 import { errorMessage } from "@/utils/errorMessage";
 
 /**
  * The real Node sample source: the perf_hooks delay histogram plus event-loop
- * utilization, read once per reporting interval.
+ * utilization, and on Linux the thread's scheduler counters, read once per
+ * reporting interval. The main thread also reads the host-wide counters, so
+ * one line per process per interval carries the machine's view.
  */
 async function createNodeSampleSource(
-    sampleIntervalMs: number
+    sampleIntervalMs: number,
+    includeHost: boolean
 ): Promise<PerformanceSampleSource> {
     const { monitorEventLoopDelay, performance } = await import(
         "node:perf_hooks"
     );
     const h = monitorEventLoopDelay({ resolution: sampleIntervalMs });
     let last = performance.eventLoopUtilization();
+    let lastSched = readThreadSchedstat();
+    let lastHost = includeHost ? readHostCounters() : undefined;
 
     const toMs = (nanoseconds: number) => {
         const ms = nanoseconds / 1e6;
@@ -41,17 +51,33 @@ async function createNodeSampleSource(
         start() {
             h.enable();
             last = performance.eventLoopUtilization();
+            lastSched = readThreadSchedstat();
+            lastHost = includeHost ? readHostCounters() : undefined;
         },
         sample() {
             const elu = performance.eventLoopUtilization(last);
             last = performance.eventLoopUtilization();
+            const sched = readThreadSchedstat();
+            const schedDelta =
+                sched && lastSched
+                    ? {
+                          cpuMs: toMs(sched.runNs - lastSched.runNs),
+                          runQueueWaitMs: toMs(sched.waitNs - lastSched.waitNs)
+                      }
+                    : {};
+            lastSched = sched;
+            const host = includeHost ? readHostCounters() : undefined;
+            const hostFields = hostDelta(host, lastHost);
+            lastHost = host;
             return {
                 dMean: toMs(h.mean),
                 d50: toMs(h.percentile(50)),
                 d90: toMs(h.percentile(90)),
                 d99: toMs(h.percentile(99)),
                 dMax: toMs(h.max),
-                utilization: elu.utilization
+                utilization: elu.utilization,
+                ...schedDelta,
+                ...hostFields
             };
         },
         reset() {
@@ -218,8 +244,8 @@ export class NodeLogger extends Logger {
             source.start();
             const timer = setInterval(() => {
                 if (stopped) return;
-                const { dMean, d50, d90, d99, dMax, utilization } =
-                    source.sample();
+                const sample = source.sample();
+                const { dMax } = sample;
 
                 if (emitTiming && dMax > peakMs) {
                     peakMs = dMax;
@@ -234,7 +260,7 @@ export class NodeLogger extends Logger {
                 }
                 const details = reportPerformanceSample(
                     this,
-                    { dMean, d50, d90, d99, dMax, utilization },
+                    sample,
                     options,
                     "node"
                 );
@@ -265,7 +291,7 @@ export class NodeLogger extends Logger {
         if (options.sampleSource) {
             start(options.sampleSource);
         } else {
-            void createNodeSampleSource(sampleIntervalMs)
+            void createNodeSampleSource(sampleIntervalMs, elThread === "main")
                 .then(start)
                 .catch((error) => {
                     if (stopped) return;

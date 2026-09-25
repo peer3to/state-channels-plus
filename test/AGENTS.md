@@ -280,7 +280,7 @@ in the parallel summary is the detector.
 
 Addresses are already ethers-checksummed everywhere a test can reach them:
 `peer.address`, control-service projections (`signerAddress`, `author`,
-`sourcePeers`, `disconnectedAddresses`, `confirmationSignerAddresses`) and
+`sources`, per-source contribution counts, `disconnectedAddresses`, `confirmationSignerAddresses`) and
 contract reads (`getParticipants`, `getPendingParticipants`). **Compare them
 directly.** No `.toLowerCase()` on either side, no
 `.map((a: unknown) => String(a))` to "normalize" a contract array, no `String(x)`
