@@ -160,7 +160,10 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    `DisputeConfirmation` with an empty co-signature list.
 
 **Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain upload (gas limit 2.5M). Race reverts are classified:
+without: the plain or calldata upload. No upload passes a gas limit: the chain signer sends each
+with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest dispute that lands
+between estimate and inclusion cannot push a late disputer out of gas (and past the evidence
+window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
@@ -234,7 +237,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L211)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L295)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,

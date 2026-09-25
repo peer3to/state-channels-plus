@@ -688,7 +688,15 @@ export class StubService extends ANetworkRpcService<
         };
         queues.createEntry = (...args) => {
             const entry = createEntry(...args);
-            if (entry.origin === BlockOrigin.NETWORK)
+            // Like completedIntakes, a source filter counts only that sender's
+            // entries: concurrent copies from honest participants are not
+            // the observed source's admission.
+            if (
+                entry.origin === BlockOrigin.NETWORK &&
+                (!options.source ||
+                    (args[1].origin === BlockOrigin.NETWORK &&
+                        args[1].senderAddress === options.source))
+            )
                 observation.networkEntries++;
             if (entry.origin === BlockOrigin.PROOF) {
                 observation.proofEntries++;
@@ -2446,7 +2454,8 @@ export class StubService extends ANetworkRpcService<
             contract.uploadDisputeWithCalldata,
             (
                 confirmation: DisputeConfirmationStruct,
-                auditingData: DisputeAuditingDataStruct
+                auditingData: DisputeAuditingDataStruct,
+                overrides?: unknown
             ) =>
                 record(
                     {
@@ -2460,12 +2469,17 @@ export class StubService extends ANetworkRpcService<
                             Type.DisputeAuditingData
                         ) as string,
                         fraudProofParticipants: [],
-                        gasLimit: null
+                        gasLimit: this.overrideGasLimit(overrides)
                     },
                     () =>
-                        originals.uploadDisputeWithCalldata(
-                            confirmation,
-                            auditingData
+                        Reflect.apply(
+                            originals.uploadDisputeWithCalldata,
+                            contract,
+                            [
+                                confirmation,
+                                auditingData,
+                                ...(overrides ? [overrides] : [])
+                            ]
                         )
                 )
         );

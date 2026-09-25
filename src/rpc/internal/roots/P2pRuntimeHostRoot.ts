@@ -402,6 +402,21 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 const runtimeHandle = this.runtimeHandle;
                 const provider = this.chainContext?.provider;
                 const ctx = this.context;
+                // Reported before the provider closes; the settle is bounded
+                // so disposal never hangs on the chain.
+                if (this.managedSigner) {
+                    this.rootLogger.info(
+                        "gas usage",
+                        LoggerUtils.getGasUsageMetadata(
+                            await this.managedSigner.gasUsage.settledSnapshot(
+                                config.GAS_USAGE_SETTLE_MS
+                            )
+                        )
+                    );
+                    // The report is out; end the receipt waits still running
+                    // before the provider that would never end them closes.
+                    this.managedSigner.gasUsage.dispose();
+                }
                 try {
                     try {
                         // Destroy first so ethers marks the provider closed before its

@@ -64,7 +64,7 @@ Return: `P2pInstance<T, TCustomRpc>` with members:
 `p2pSetup` accepts only `signerSecret`; injected `ethers.Signer` objects are
 intentionally unsupported. The host builds its own `Wallet` on its own provider
 ([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4))
-and wraps it in [`HostNonceManager`](../../../../../../src/evm/signer/HostNonceManager.ts#L14)
+and wraps it in [`HostNonceManager`](../../../../../../src/evm/signer/HostNonceManager.ts#L15)
 for every on-chain manager send, so concurrent async flows cannot race on the
 account nonce. The client realm holds only proxy signers that forward over the
 port.

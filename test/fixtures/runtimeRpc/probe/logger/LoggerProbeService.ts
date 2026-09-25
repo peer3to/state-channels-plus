@@ -7,7 +7,11 @@ import type {
 } from "@/rpc/internal/AInternalRpcRoot";
 import { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
 import type InternalTransport from "@/transport/InternalTransport";
-import type { Logger, SharedLoggerContext } from "@/utils/logging/Logger";
+import type {
+    LogEntry,
+    Logger,
+    SharedLoggerContext
+} from "@/utils/logging/Logger";
 import type { LogUploader } from "@/utils/logging/LogUploader";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 
@@ -42,6 +46,11 @@ export class LoggerProbeService extends AInternalRpcService<LoggerProbeRpcMethod
             pending: service["pendingUpload"] !== undefined,
             remainingWindowMs: Math.max(0, service["windowEndsAt"] - Date.now())
         };
+    }
+
+    /** Every entry this realm's store still holds, disposed logger included. */
+    public entries(): LogEntry[] {
+        return this.logger["logStore"].getAllLogs();
     }
 
     public frames() {
