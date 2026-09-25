@@ -321,6 +321,34 @@ describe("Unit: ValidationService", function () {
             expect(r.disconnectedAddresses).to.deep.equal([outsider.address]);
         });
 
+        it("under CalldataCommittedStrategy an author outside the participant set → blockAuthorIsNotParticipant → DISCONNECT, as the live strategy", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const observer = h.getPeer(0);
+
+            const outsider = factory.randomWallet();
+            const encoded = await factory.buildAndEncodeBlock(outsider, {
+                header: {
+                    channelId: h.channelId,
+                    forkId: h.activeForkId!,
+                    transactionCnt: 0,
+                    participant: outsider.address as Address
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded, {
+                    strategy: "calldata"
+                })
+                .request();
+
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockAuthorIsNotParticipant");
+            expect(r.disconnectedAddresses).to.deep.equal([outsider.address]);
+        });
+
         it("height above nextHeight → blockIsNotNextAndIsInTheFuture → NOT_READY, requeued", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);

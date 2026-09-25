@@ -377,6 +377,35 @@ describe("Unit: StoredBlockMergeService", function () {
         expect(r.persistedSignatures).to.include.members(newSignatures);
     });
 
+    it("under CalldataCommittedStrategy a stray signature → stripped as the live strategy does, lands DUPLICATE", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const forkId = h.activeForkId!;
+
+        const bundle = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const outsider = ethers.Wallet.createRandom();
+        const straySignature = await outsider.signMessage(
+            ethers.getBytes(bundle!.hash)
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: 0,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...bundle!.confirmationSignatures, straySignature]
+            },
+            strategy: "calldata"
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.not.include(straySignature);
+    });
+
     it("under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });

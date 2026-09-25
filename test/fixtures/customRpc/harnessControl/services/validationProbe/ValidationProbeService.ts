@@ -83,7 +83,7 @@ export type IsDisputedForkProbe = {
 };
 
 export type BlockProbeOptions = {
-    strategy?: "active" | "dispute" | "spectating";
+    strategy?: "active" | "dispute" | "spectating" | "calldata";
     encodedDispute?: string;
     /** Supplier of this copy, recorded in the per-source contribution map. */
     senderAddress?: Address;
@@ -986,7 +986,9 @@ export class ValidationProbeService extends ANetworkRpcService<
                   )
                 : options?.strategy === "spectating"
                   ? sm.spectatingValidationStrategy
-                  : sm.getActiveValidationStrategy();
+                  : options?.strategy === "calldata"
+                    ? sm.calldataCommittedStrategy
+                    : sm.getActiveValidationStrategy();
 
         const recorded: RecordedValidationRun["recorded"] = {
             disputedForkIds: [],
