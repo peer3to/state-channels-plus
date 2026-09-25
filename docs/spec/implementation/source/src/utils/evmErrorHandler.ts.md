@@ -1,100 +1,46 @@
-# evmErrorHandler.ts — Source Report
+# evmErrorHandler.ts
 
-> **Source:** [src/utils/evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/utils/evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts)
+>
 > **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 
-## Responsibility and observable boundary
+## UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF
 
-Custom-error decoding and the named-handler race classifier (`tryHandleEvmError`,
-`tryDecodeCustomError`): maps contract reverts to the client's convergence/no-op/rethrow
-decisions.
+Classification
 
-## Key design decisions
+- Setup: Decode each named error; unknown errors; non-revert failures
+- Oracle: Named handlers fire exactly; unknowns report unhandled; decode robust
 
-The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI decoding dispatches that exact name; DisputeManager owns rollback, slash recovery, and normal re-entry. Other custom errors keep their existing handlers.
-
-`GeneratedArtifacts.errorAbis` is the single reachable-manager error union. It includes the
-`StateProofFacet` and `UtilityFacet` ECDSA errors used by both the decoder and canonical binding.
-
-1. **Errors-as-protocol-signals:** race classification keys on custom-error names from [Errors.sol](../../contracts/V1/StateChannelDiamondProxy/Errors.sol.md) — the client/contract error vocabulary is one contract.
-2. **The union mirrors only constructible errors:** a name the contracts no longer declare is
-   removed from `RaceConditionErrorName` in the same change, so a handler map can never name a
-   revert that cannot happen. A retired name's planned permutation is retired with it, not
-   renumbered or reused.
-3. **The unhandled-error log delegates its metadata to `LoggerUtils`.** When no handler matches
-   the decoded name, the log line carries
-   `LoggerUtils.getCustomEvmErrorMetadata(customError)`
-   ([#L140](../../../../../../src/utils/evmErrorHandler.ts#L140)) rather than a hand-built
-   `{name, args}` object. This is the sink every argument-carrying error without a handler lands
-   in, and an ethers `Result` serializes positionally, so the hand-built object logged the
-   operands as a bare array; the shared helper converts them to the ABI's own field names.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                          | Specification IDs                                                                                                 |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts) | [`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- The race-classification mechanism behind convergence handling ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                           | Implementation status | Evidence                                                                                           | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) | Covered               | **Here:** named-handler dispatch + decode. **Other files:** call sites choose the classifications. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                            | Obligation     | Public entry and setup                                       | Oracle and forbidden effects                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| --------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-evm-error-handler-1-dp1mjf"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF` | Classification | Decode each named error; unknown errors; non-revert failures | Named handlers fire exactly; unknowns report unhandled; decode robust | <a id="unit-test-evm-error-handler-1-dp1mjf.p1"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P1` — RaceConditionChannelAlreadyOpen; <a id="unit-test-evm-error-handler-1-dp1mjf.p2"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P2` — unknown error; <a id="unit-test-evm-error-handler-1-dp1mjf.p3"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P3` — malformed revert data; <a id="unit-test-evm-error-handler-1-dp1mjf.p4"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P4` — RaceConditionBlockCalldataTimestampTooLate; <a id="unit-test-evm-error-handler-1-dp1mjf.p5"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P5` — RaceConditionSnapshotForkMismatch; <a id="unit-test-evm-error-handler-1-dp1mjf.p6"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P6` — RaceConditionBlockHeightTooOld; <a id="unit-test-evm-error-handler-1-dp1mjf.p7"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P7` — RaceConditionJoinChannelExpired; <a id="unit-test-evm-error-handler-1-dp1mjf.p8"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P8` — RaceConditionJoinChannelSnapshotMismatch; <a id="unit-test-evm-error-handler-1-dp1mjf.p9"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P9` — RaceConditionPendingInboundNotConsumed; <a id="unit-test-evm-error-handler-1-dp1mjf.p10"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P10` — RaceConditionForceInboundJoinForkDisputed; <a id="unit-test-evm-error-handler-1-dp1mjf.p11"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P11` — RaceConditionDisputeEvidencePeriodExpired; <a id="unit-test-evm-error-handler-1-dp1mjf.p12"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P12` — RaceConditionDisputeKillPeriodNotExpired; <a id="unit-test-evm-error-handler-1-dp1mjf.p13"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P13` — RaceConditionDisputeKillPeriodExpired; <a id="unit-test-evm-error-handler-1-dp1mjf.p14"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P14` — RaceConditionDisputeAlreadyReduced; <a id="unit-test-evm-error-handler-1-dp1mjf.p15"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P15` — RaceConditionReductionExpectationDoesntMatch; <a id="unit-test-evm-error-handler-1-dp1mjf.p17"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P17` — RaceConditionDisputeTimeoutCalldataPosted; <a id="unit-test-evm-error-handler-1-dp1mjf.p18"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P18` — RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch; <a id="unit-test-evm-error-handler-1-dp1mjf.p19"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P19` — RaceConditionDisputeTimeoutNotMinTimestamp; <a id="unit-test-evm-error-handler-1-dp1mjf.p20"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P20` — RaceConditionDisputeTimeoutWindowCreatedTooEarly; <a id="unit-test-evm-error-handler-1-dp1mjf.p21"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P21` — RaceConditionUnexpectedBlockCalldataPosted; <a id="unit-test-evm-error-handler-1-dp1mjf.p22"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P22` — RaceConditionGenesisTimestampNotAvailable; <a id="unit-test-evm-error-handler-1-dp1mjf.p23"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P23` — RaceConditionOnChainSlashes; <a id="unit-test-evm-error-handler-1-dp1mjf.p24"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P24` — ErrorCantParticipateInDispute; <a id="unit-test-evm-error-handler-1-dp1mjf.p25"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P25` — ErrorDisputePostedAuditingDataMismatch; <a id="unit-test-evm-error-handler-1-dp1mjf.p26"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P26` — ErrorDisputeChallengePeriodExpired; <a id="unit-test-evm-error-handler-1-dp1mjf.p27"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P27` — ErrorDisputeCommitmentNotAvailable; <a id="unit-test-evm-error-handler-1-dp1mjf.p28"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P28` — generated error union includes all reachable ECDSA errors; <a id="unit-test-evm-error-handler-1-dp1mjf.p29"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P29` — ECDSAInvalidSignatureS decodes with its argument; <a id="unit-test-evm-error-handler-1-dp1mjf.p30"></a>`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P30` — generated artifact inputs include every routed facet |
-
-## Related source reports
-
-- [DisputeManager](../disputeManager/DisputeManager.ts.md), [ReductionExecutor](../stateManager/reduction/ReductionExecutor.ts.md).
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P1` — RaceConditionChannelAlreadyOpen
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P2` — unknown error
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P3` — malformed revert data
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P4` — RaceConditionBlockCalldataTimestampTooLate
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P5` — RaceConditionSnapshotForkMismatch
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P6` — RaceConditionBlockHeightTooOld
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P7` — RaceConditionJoinChannelExpired
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P8` — RaceConditionJoinChannelSnapshotMismatch
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P9` — RaceConditionPendingInboundNotConsumed
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P10` — RaceConditionForceInboundJoinForkDisputed
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P11` — RaceConditionDisputeEvidencePeriodExpired
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P12` — RaceConditionDisputeKillPeriodNotExpired
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P13` — RaceConditionDisputeKillPeriodExpired
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P14` — RaceConditionDisputeAlreadyReduced
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P15` — RaceConditionReductionExpectationDoesntMatch
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P17` — RaceConditionDisputeTimeoutCalldataPosted
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P18` — RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P19` — RaceConditionDisputeTimeoutNotMinTimestamp
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P20` — RaceConditionDisputeTimeoutWindowCreatedTooEarly
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P21` — RaceConditionUnexpectedBlockCalldataPosted
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P22` — RaceConditionGenesisTimestampNotAvailable
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P23` — RaceConditionOnChainSlashes
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P24` — ErrorCantParticipateInDispute
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P25` — ErrorDisputePostedAuditingDataMismatch
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P26` — ErrorDisputeChallengePeriodExpired
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P27` — ErrorDisputeCommitmentNotAvailable
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P28` — generated error union includes all reachable ECDSA errors
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P29` — ECDSAInvalidSignatureS decodes with its argument
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P30` — generated artifact inputs include every routed facet

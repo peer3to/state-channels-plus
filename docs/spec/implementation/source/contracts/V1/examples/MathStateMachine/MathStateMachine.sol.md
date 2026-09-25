@@ -1,102 +1,160 @@
-# MathStateMachine.sol — Source Report
+# MathStateMachine.sol
 
-> **Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol)
+>
 > **Design views:** [architecture/contracts/state-machine-base.md](../../../../../views/architecture/contracts/state-machine-base.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+  Partial: No static or runtime policy rejects an application that reads prohibited ambient context or `_tx.body`.
+- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
+- [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+- [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
+  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
+- [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+  Partial: Checked amount arithmetic implemented; custom aggregation pending — No static rule or reusable suite prevents integrator `unchecked` arithmetic or invalid custom-data aggregation.
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-FIN-6-YZWJX2` (Recommended leader-election policy is round-robin as a function of channel state)](../../../../../../specification/protocol-model/finality.md#req-fin-6-yzwjx2)
 
-## Responsibility and observable boundary
+## UNIT-TEST-MATH-INSERTION-1-29TPFK
 
-The reference arithmetic state machine uses an injected author, an ordered participant/balance roster,
-and a turn counter. It supports ordinary arithmetic, lifecycle joins/top-ups/removal, and an optional
-balance-funded off-chain insertion transition. The constructor takes gas limit and the effective
-maximum participant count used by the deployment.
+Public component behavior
 
-## Key design decisions
+- Setup: Real wallet-built blocks or a real session through this component's public boundary.
+- Oracle: Exact state, role, attribution, quota, and failure outcomes below; no substituted protocol logic.
 
-`insertParticipantOffChain` checks the injected next author, nonzero fresh target, author membership
-and sufficient funds before checking capacity. Below N it subtracts the amount from that author and
-appends the target/balance through `_appendParticipant`; total value, number and message anchors stay
-unchanged. Zero transfer is valid. At or above N, valid input advances only the turn; invalid input
-still fails. Appending preserves roster order, and next-author selection uses the new roster length.
-The helper is shared with join/top-up insertion. See [insertParticipantOffChain](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L40).
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P1` — the SDK rejects an insertion by the wrong author without changing roster state or eligibility
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P2` — transfers part of the author's balance without changing total value or message anchors
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P3` — accepts zero transfer from a funded author
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P4` — accepts zero transfer from a zero-balance author
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P5` — rejects insufficient balance without changing the state
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P6` — rejects an existing target without changing the state
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P7` — rejects self insertion without changing the state
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P8` — rejects the zero address without changing the state
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P9` — rejects a participant acting out of turn
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P10` — rejects a nonparticipant author
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P11` — selects the next author using the new roster after a wrapped turn index
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P12` — fills the configured N minus one roster to exactly N
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P13` — at capacity advances only the turn counter for a valid positive transfer
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P14` — repeated full-capacity requests each advance exactly one turn
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P15` — a zero-amount request at capacity cannot append a participant
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P16` — an already oversized adopted roster remains unchanged
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P17` — maximum one accepts a valid no-op and keeps its only author
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P18` — capacity does not waive invalid-target checks
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P19` — can transfer the author's exact remaining balance
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P20` — capacity does not waive zero-address rejection
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P21` — capacity does not waive duplicate-participant rejection
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P22` — capacity does not waive insufficient balance
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P23` — capacity does not waive turn authorization
+- [x] `UNIT-TEST-MATH-INSERTION-1-29TPFK.P24` — capacity does not admit a nonparticipant author
 
-The immutable maximum is producer-local enforcement. `_setState` still accepts an encoded roster;
-this transition does not repair generic genesis/snapshot adoption limits ([`FIND-SETTLE-1-G2CPV6`](../../../../../../audit/open-findings.md#find-settle-1-g2cpv6)).
-Off-chain promotion can precede chain dispute standing ([`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)).
+## UNIT-TEST-SM-MATH-1-3TW0WT
 
-Both slash and removal return false without changing state when the target is absent. This remains true when an older on-chain snapshot still lists the target. A repeated application creates no second exit or withdrawal. See [MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L96).
+Transitions and context
 
-1. **The living example of the integration contract** — cited by the spec's state-machine doc as the pattern.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`REQ-SM-1-Y72CKX.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 
-## Inputs, outputs, state, and side effects
+- [ ] `UNIT-TEST-SM-MATH-1-3TW0WT.P1` — `add` from the injected next writer updates deterministically and emits the expected ordered events/messages
+- [ ] `UNIT-TEST-SM-MATH-1-3TW0WT.P2` — `add` from any other author rejects
+- [ ] `UNIT-TEST-SM-MATH-1-3TW0WT.P3` — `leaveChannel` from the injected next writer updates deterministically and emits the expected ordered events/messages
+- [ ] `UNIT-TEST-SM-MATH-1-3TW0WT.P4` — `leaveChannel` from any other author rejects
 
-Inputs are the injected transaction and application arguments, or canonical encoded MathState.
-Owned state is number, ordered participants, parallel balances, currentTurnIndex, and immutable N.
-Insertion mutates roster/balances only below N and advances the turn exactly once on valid input.
-It emits no inbound or outbound membership message and creates no value. Existing arithmetic events
-and successful lifecycle exits retain their previous behavior.
+## UNIT-TEST-SM-MATH-2-TBFZ5Z
 
-## Linked requirements
+State codec
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-| Source file                                                                                                 | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [MathStateMachine.sol](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol) | [`REQ-SM-1-Y72CKX`](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx), [`REQ-SM-8-8CHSQ8`](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8), [`REQ-SM-10-JD8TSF`](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf), [`REQ-SM-11-VVP01C`](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c) |
+- [ ] `UNIT-TEST-SM-MATH-2-TBFZ5Z.P1` — An empty `MathState` round-trips exactly and preserves participant/balance array alignment
+- [ ] `UNIT-TEST-SM-MATH-2-TBFZ5Z.P2` — a minimum `MathState` round-trips exactly
+- [ ] `UNIT-TEST-SM-MATH-2-TBFZ5Z.P3` — a typical `MathState` round-trips exactly
+- [ ] `UNIT-TEST-SM-MATH-2-TBFZ5Z.P4` — a maximum `MathState` round-trips exactly
 
-## Assumptions, dependencies, trust boundaries, and limits
+## UNIT-TEST-SM-MATH-3-TS2Q90
 
-The deployment must pass the same effective N to chain and local math instances. Constructor callers
-include normal deployment, test deployment cache, custom runtime deployments and browser setup.
-The insertion hook does not imply every consumer offers it or that generic adoption rejects oversized
-rosters. Authorization uses injected protocol context, never ambient msg.sender.
+Canonical representation
 
-## Specification adherence
+- Specification: [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
+- Specification tests: [`REQ-SM-2-PHCRFR.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr.t1)
 
-- Consistent with the owning documents' type/behavior contracts.
+- [ ] `UNIT-TEST-SM-MATH-3-TS2Q90.P1` — Equivalent states encode identically
+- [ ] `UNIT-TEST-SM-MATH-3-TS2Q90.P2` — malformed bytes reject
+- [ ] `UNIT-TEST-SM-MATH-3-TS2Q90.P3` — incompatible shapes reject
+- [ ] `UNIT-TEST-SM-MATH-3-TS2Q90.P4` — stale parallel-array data rejects
 
-## Specification contradictions
+## UNIT-TEST-SM-MATH-4-04QW8S
 
-None demonstrated.
+Turn selection
 
-## Missing behavior
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-None demonstrated.
+- [ ] `UNIT-TEST-SM-MATH-4-04QW8S.P1` — An empty participant state returns the correct fallback author
+- [ ] `UNIT-TEST-SM-MATH-4-04QW8S.P2` — a one-participant state returns the correct author
+- [ ] `UNIT-TEST-SM-MATH-4-04QW8S.P3` — a many-participant state returns the correct author across a full modulo turn cycle
+- [ ] `UNIT-TEST-SM-MATH-4-04QW8S.P4` — the correct author is returned after a membership change
 
-## Conformance traceability
+## UNIT-TEST-SM-MATH-5-AYZHPG
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+Admission and top-up
 
-| Requirement / invariant                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Gap / divergence                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-SM-8-8CHSQ8`](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)   | Covered               | **Here:** [\_removeParticipant](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L96) removes a present member with its balance and returns the corresponding exit; `_slashParticipant` delegates to it in this example. **Other files:** AStateMachine records successful hook exits.                                                                                                                                                                     | Successful removal now records its exit through the same wrapper contract as slashing; the example machine treats slashing as removal and returns the same balance in both cases. The dispute consumer reads returned exits once. |
-| [`REQ-SM-10-JD8TSF`](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf) | Covered               | **Here:** [\_removeParticipant](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L96) owns its part of absent-target handling: application hooks return false and reduction emits exits only for successful changes. **Other files:** [AStateMachine](../../AStateMachine.sol.md) skips recording on hook failure; [DisputeVerificationFacet](../../StateChannelDiamondProxy/DisputeVerificationFacet.sol.md) skips failed removals when collecting exits. | Absent and repeated targets leave state, balances, messages and withdrawals unchanged, including stale chain membership.                                                                                                          |
-| [`REQ-SM-11-VVP01C`](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c) | Covered               | **Here:** [insertParticipantOffChain](../../../../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L40) checks author/target/funds, preserves total value and applies the configured cap. **Other files:** [AStateMachine](../../AStateMachine.sol.md) supplies injected context; [MembershipService](../../../../src/stateManager/membership/MembershipService.ts.md) admits verified off-chain membership.                                                           | Optional reference-consumer transition; generic adoption gaps remain open.                                                                                                                                                        |
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
-## Component test obligations
+- [x] `UNIT-TEST-SM-MATH-5-AYZHPG.P1` — New joins append once
+- [ ] `UNIT-TEST-SM-MATH-5-AYZHPG.P2` — repeated joins update only the existing balance
+- [ ] `UNIT-TEST-SM-MATH-5-AYZHPG.P3` — zero-value joins behave atomically
+- [ ] `UNIT-TEST-SM-MATH-5-AYZHPG.P4` — max-value joins behave atomically
+- [ ] `UNIT-TEST-SM-MATH-5-AYZHPG.P5` — join retries behave atomically
+- [ ] `UNIT-TEST-SM-MATH-5-AYZHPG.P6` — joins against invalid states behave atomically
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+## UNIT-TEST-SM-MATH-6-37SRDX
 
-| Unit test ID                                                                      | Obligation                | Public entry and setup                                                               | Oracle and forbidden effects                                                                      | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-math-insertion-1-29tpfk"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK` | Public component behavior | Real wallet-built blocks or a real session through this component's public boundary. | Exact state, role, attribution, quota, and failure outcomes below; no substituted protocol logic. | <a id="unit-test-math-insertion-1-29tpfk.p1"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P1` — the SDK rejects an insertion by the wrong author without changing roster state or eligibility; <a id="unit-test-math-insertion-1-29tpfk.p2"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P2` — transfers part of the author's balance without changing total value or message anchors; <a id="unit-test-math-insertion-1-29tpfk.p3"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P3` — accepts zero transfer from a funded author; <a id="unit-test-math-insertion-1-29tpfk.p4"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P4` — accepts zero transfer from a zero-balance author; <a id="unit-test-math-insertion-1-29tpfk.p5"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P5` — rejects insufficient balance without changing the state; <a id="unit-test-math-insertion-1-29tpfk.p6"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P6` — rejects an existing target without changing the state; <a id="unit-test-math-insertion-1-29tpfk.p7"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P7` — rejects self insertion without changing the state; <a id="unit-test-math-insertion-1-29tpfk.p8"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P8` — rejects the zero address without changing the state; <a id="unit-test-math-insertion-1-29tpfk.p9"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P9` — rejects a participant acting out of turn; <a id="unit-test-math-insertion-1-29tpfk.p10"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P10` — rejects a nonparticipant author; <a id="unit-test-math-insertion-1-29tpfk.p11"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P11` — selects the next author using the new roster after a wrapped turn index; <a id="unit-test-math-insertion-1-29tpfk.p12"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P12` — fills the configured N minus one roster to exactly N; <a id="unit-test-math-insertion-1-29tpfk.p13"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P13` — at capacity advances only the turn counter for a valid positive transfer; <a id="unit-test-math-insertion-1-29tpfk.p14"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P14` — repeated full-capacity requests each advance exactly one turn; <a id="unit-test-math-insertion-1-29tpfk.p15"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P15` — a zero-amount request at capacity cannot append a participant; <a id="unit-test-math-insertion-1-29tpfk.p16"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P16` — an already oversized adopted roster remains unchanged; <a id="unit-test-math-insertion-1-29tpfk.p17"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P17` — maximum one accepts a valid no-op and keeps its only author; <a id="unit-test-math-insertion-1-29tpfk.p18"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P18` — capacity does not waive invalid-target checks; <a id="unit-test-math-insertion-1-29tpfk.p19"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P19` — can transfer the author's exact remaining balance; <a id="unit-test-math-insertion-1-29tpfk.p20"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P20` — capacity does not waive zero-address rejection; <a id="unit-test-math-insertion-1-29tpfk.p21"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P21` — capacity does not waive duplicate-participant rejection; <a id="unit-test-math-insertion-1-29tpfk.p22"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P22` — capacity does not waive insufficient balance; <a id="unit-test-math-insertion-1-29tpfk.p23"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P23` — capacity does not waive turn authorization; <a id="unit-test-math-insertion-1-29tpfk.p24"></a>`UNIT-TEST-MATH-INSERTION-1-29TPFK.P24` — capacity does not admit a nonparticipant author |
+Removal and slashing policy
 
-## Related source reports
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
-- Consumers per the manager and state-machine-base views.
+- [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P1` — Existing-member removal adjusts the current index, returns the balance, and preserves aligned state
+- [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P2` — non-member removal preserves aligned state
+- [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P3` — slash delegation preserves aligned state
+- [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P4` — duplicate removal preserves aligned state
+- [ ] `UNIT-TEST-SM-MATH-6-37SRDX.P5` — removal failure preserves aligned state
+
+## UNIT-TEST-SM-MATH-7-YVYYNV
+
+Simple-amount algebra
+
+- Specification: [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+- Specification tests: [`REQ-BAL-1-Z8RH4V.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v.t1), [`REQ-BAL-2-KTSW9B.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
+
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P1` — Zero-value addition has exact checked-arithmetic results
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P2` — boundary/max-value addition is exact
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P3` — subtraction is exact
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P4` — comparison is exact
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P5` — zero identity holds
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P6` — total aggregation is exact
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P7` — underflow rejects
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P8` — overflow rejects
+- [ ] `UNIT-TEST-SM-MATH-7-YVYYNV.P9` — retry after rejection is exact
+
+## UNIT-TEST-SM-MATH-8-2VRMCT
+
+Application interface
+
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
+
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P1` — The transition operations match the base/adapter ABI
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P2` — the state codec operations match the base/adapter ABI
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P3` — the turn selector matches the base/adapter ABI
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P4` — the balance operations match the base/adapter ABI
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P5` — the membership/lifecycle operations match the base/adapter ABI
+- [ ] `UNIT-TEST-SM-MATH-8-2VRMCT.P6` — read-only operations do not mutate state

@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/architecture/rpc.md](../../../../../specification/peer-communication/rpc.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The `webRTCSetupService` RPC service: the offer/answer/ICE signaling that upgrades an
 > authenticated peer connection from its bootstrap transport (Holepunch / local discovery) to a direct
 > `WebRTCTransport`. This document goes deep on the service; shared dispatch, guards, wire envelope,
@@ -233,31 +232,41 @@ the model table.
 
 ## 6. Invariants
 
-| ID                                                | Invariant                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-wrtc-1-fz9rbh"></a>`INV-WRTC-1-FZ9RBH` | The peer address keying every WebRTC connection is read from the authenticated `senderTransport.peerAddress`, never from the signaling payload; a peer can only affect its own connection slot.                                                                                                                   |
-| <a id="inv-wrtc-2-691kc5"></a>`INV-WRTC-2-691KC5` | All three remote signaling methods are one-way and reachable only behind `HandshakeCompletedGuard`; they never run for an unauthenticated transport.                                                                                                                                                              |
-| <a id="inv-wrtc-3-9gbjgj"></a>`INV-WRTC-3-9GBJGJ` | Every signaling handler catches its own failures and neither throws to the dispatcher nor disconnects/blacklists the peer (silent-ignore), so a failed upgrade degrades to the existing transport.                                                                                                                |
-| <a id="inv-wrtc-4-z0mazf"></a>`INV-WRTC-4-Z0MAZF` | Only one peer offers per upgrade (`localAddress < completedPeerAddress` tiebreak), avoiding offer glare.                                                                                                                                                                                                          |
-| <a id="req-wrtc-1-b12mmp"></a>`REQ-WRTC-1-B12MMP` | Signaling payloads (`serializedOffer`/`serializedAnswer`/`serializedCandidate`) crossing into the WebRTC stack MUST be treated as untrusted; the SDK adds no schema validation and delegates SDP/ICE parsing safety to the WebRTC implementation — this delegation MUST be documented as a dependency assumption. |
+<a id="inv-wrtc-1-fz9rbh"></a>
+
+### INV-WRTC-1-FZ9RBH — Connections keyed by the authenticated sender
+
+The peer address keying every WebRTC connection is read from the authenticated `senderTransport.peerAddress`, never from the signaling payload; a peer can only affect its own connection slot.
+
+<a id="inv-wrtc-2-691kc5"></a>
+
+### INV-WRTC-2-691KC5 — One-way, guarded signaling methods
+
+All three remote signaling methods are one-way and reachable only behind `HandshakeCompletedGuard`; they never run for an unauthenticated transport.
+
+<a id="inv-wrtc-3-9gbjgj"></a>
+
+### INV-WRTC-3-9GBJGJ — Signaling handlers contain their failures
+
+Every signaling handler catches its own failures and neither throws to the dispatcher nor disconnects/blacklists the peer (silent-ignore), so a failed upgrade degrades to the existing transport.
+
+<a id="inv-wrtc-4-z0mazf"></a>
+
+### INV-WRTC-4-Z0MAZF — One offerer per upgrade
+
+Only one peer offers per upgrade (`localAddress < completedPeerAddress` tiebreak), avoiding offer glare.
+
+<a id="req-wrtc-1-b12mmp"></a>
+
+### REQ-WRTC-1-B12MMP — Untrusted signaling payloads
+
+Signaling payloads (`serializedOffer`/`serializedAnswer`/`serializedCandidate`) crossing into the WebRTC stack MUST be treated as untrusted; the SDK adds no schema validation and delegates SDP/ICE parsing safety to the WebRTC implementation — this delegation MUST be documented as a dependency assumption.
 
 ---
 
 ## 7. Verification
 
 ---
-
-### Implementation test plan
-
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
-
-| Plan item                                               | Requirement / invariant                                  | Setup and stimulus                                                                                                      | Expected result                                                                                        | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-wrtc-1-fz9rbh.t1"></a>`INV-WRTC-1-FZ9RBH.T1` | [`INV-WRTC-1-FZ9RBH`](webrtc-setup.md#inv-wrtc-1-fz9rbh) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Connection key comes from the authenticated transport, never the payload.                              | <a id="inv-wrtc-1-fz9rbh.t1.p1"></a>`INV-WRTC-1-FZ9RBH.T1.P1` — valid case<br><a id="inv-wrtc-1-fz9rbh.t1.p2"></a>`INV-WRTC-1-FZ9RBH.T1.P2` — zero/empty/no-op where meaningful<br><a id="inv-wrtc-1-fz9rbh.t1.p3"></a>`INV-WRTC-1-FZ9RBH.T1.P3` — direct invalid/opposite<br><a id="inv-wrtc-1-fz9rbh.t1.p4"></a>`INV-WRTC-1-FZ9RBH.T1.P4` — exact boundary<br><a id="inv-wrtc-1-fz9rbh.t1.p5"></a>`INV-WRTC-1-FZ9RBH.T1.P5` — failure/recovery<br><a id="inv-wrtc-1-fz9rbh.t1.p6"></a>`INV-WRTC-1-FZ9RBH.T1.P6` — relevant race                                                                                                                                                                                                                 |
-| <a id="inv-wrtc-2-691kc5.t1"></a>`INV-WRTC-2-691KC5.T1` | [`INV-WRTC-2-691KC5`](webrtc-setup.md#inv-wrtc-2-691kc5) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | One-way signaling methods reachable only behind `HandshakeCompletedGuard`.                             | <a id="inv-wrtc-2-691kc5.t1.p1"></a>`INV-WRTC-2-691KC5.T1.P1` — valid case<br><a id="inv-wrtc-2-691kc5.t1.p2"></a>`INV-WRTC-2-691KC5.T1.P2` — correct identity/signature<br><a id="inv-wrtc-2-691kc5.t1.p3"></a>`INV-WRTC-2-691KC5.T1.P3` — direct invalid/opposite<br><a id="inv-wrtc-2-691kc5.t1.p4"></a>`INV-WRTC-2-691KC5.T1.P4` — wrong identity/signature<br><a id="inv-wrtc-2-691kc5.t1.p5"></a>`INV-WRTC-2-691KC5.T1.P5` — missing identity/signature<br><a id="inv-wrtc-2-691kc5.t1.p6"></a>`INV-WRTC-2-691KC5.T1.P6` — duplicate identity/signature<br><a id="inv-wrtc-2-691kc5.t1.p7"></a>`INV-WRTC-2-691KC5.T1.P7` — forged identity/signature<br><a id="inv-wrtc-2-691kc5.t1.p8"></a>`INV-WRTC-2-691KC5.T1.P8` — membership boundary |
-| <a id="inv-wrtc-3-9gbjgj.t1"></a>`INV-WRTC-3-9GBJGJ.T1` | [`INV-WRTC-3-9GBJGJ`](webrtc-setup.md#inv-wrtc-3-9gbjgj) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Handlers silent-ignore all failures; no throw, no disconnect from the service.                         | <a id="inv-wrtc-3-9gbjgj.t1.p1"></a>`INV-WRTC-3-9GBJGJ.T1.P1` — valid case<br><a id="inv-wrtc-3-9gbjgj.t1.p2"></a>`INV-WRTC-3-9GBJGJ.T1.P2` — malformed input<br><a id="inv-wrtc-3-9gbjgj.t1.p3"></a>`INV-WRTC-3-9GBJGJ.T1.P3` — direct invalid/opposite<br><a id="inv-wrtc-3-9gbjgj.t1.p4"></a>`INV-WRTC-3-9GBJGJ.T1.P4` — adversarial input<br><a id="inv-wrtc-3-9gbjgj.t1.p5"></a>`INV-WRTC-3-9GBJGJ.T1.P5` — partial failure<br><a id="inv-wrtc-3-9gbjgj.t1.p6"></a>`INV-WRTC-3-9GBJGJ.T1.P6` — retry and recovery                                                                                                                                                                                                                            |
-| <a id="inv-wrtc-4-z0mazf.t1"></a>`INV-WRTC-4-Z0MAZF.T1` | [`INV-WRTC-4-Z0MAZF`](webrtc-setup.md#inv-wrtc-4-z0mazf) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Single offerer via `localAddress < completedPeerAddress`.                                              | <a id="inv-wrtc-4-z0mazf.t1.p1"></a>`INV-WRTC-4-Z0MAZF.T1.P1` — valid case<br><a id="inv-wrtc-4-z0mazf.t1.p2"></a>`INV-WRTC-4-Z0MAZF.T1.P2` — correct identity/signature<br><a id="inv-wrtc-4-z0mazf.t1.p3"></a>`INV-WRTC-4-Z0MAZF.T1.P3` — direct invalid/opposite<br><a id="inv-wrtc-4-z0mazf.t1.p4"></a>`INV-WRTC-4-Z0MAZF.T1.P4` — wrong identity/signature<br><a id="inv-wrtc-4-z0mazf.t1.p5"></a>`INV-WRTC-4-Z0MAZF.T1.P5` — missing identity/signature<br><a id="inv-wrtc-4-z0mazf.t1.p6"></a>`INV-WRTC-4-Z0MAZF.T1.P6` — duplicate identity/signature<br><a id="inv-wrtc-4-z0mazf.t1.p7"></a>`INV-WRTC-4-Z0MAZF.T1.P7` — forged identity/signature<br><a id="inv-wrtc-4-z0mazf.t1.p8"></a>`INV-WRTC-4-Z0MAZF.T1.P8` — membership boundary |
-| <a id="req-wrtc-1-b12mmp.t1"></a>`REQ-WRTC-1-B12MMP.T1` | [`REQ-WRTC-1-B12MMP`](webrtc-setup.md#req-wrtc-1-b12mmp) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Signaling payloads are untrusted; SDP/ICE parsing safety is a documented WebRTC-dependency assumption. | <a id="req-wrtc-1-b12mmp.t1.p1"></a>`REQ-WRTC-1-B12MMP.T1.P1` — valid case<br><a id="req-wrtc-1-b12mmp.t1.p2"></a>`REQ-WRTC-1-B12MMP.T1.P2` — correct identity/signature<br><a id="req-wrtc-1-b12mmp.t1.p3"></a>`REQ-WRTC-1-B12MMP.T1.P3` — direct invalid/opposite<br><a id="req-wrtc-1-b12mmp.t1.p4"></a>`REQ-WRTC-1-B12MMP.T1.P4` — wrong identity/signature<br><a id="req-wrtc-1-b12mmp.t1.p5"></a>`REQ-WRTC-1-B12MMP.T1.P5` — missing identity/signature<br><a id="req-wrtc-1-b12mmp.t1.p6"></a>`REQ-WRTC-1-B12MMP.T1.P6` — duplicate identity/signature<br><a id="req-wrtc-1-b12mmp.t1.p7"></a>`REQ-WRTC-1-B12MMP.T1.P7` — forged identity/signature<br><a id="req-wrtc-1-b12mmp.t1.p8"></a>`REQ-WRTC-1-B12MMP.T1.P8` — membership boundary |
 
 ## Future Work
 
@@ -274,13 +283,3 @@ _Non-normative._
   [../../security/trust-model.md](../../../../../specification/security/trust-model.md) ([`REQ-WRTC-1-B12MMP`](webrtc-setup.md#req-wrtc-1-b12mmp)).
 
 ---
-
-## Implementation traceability
-
-| Requirement / invariant                                  | Statement                                                                                              | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                            | Gap / divergence |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-WRTC-1-FZ9RBH`](webrtc-setup.md#inv-wrtc-1-fz9rbh) | Connection key comes from the authenticated transport, never the payload.                              | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (`senderTransport.peerAddress`), [WebRTCSetupService.normalizePeerAddress/findWebRTCTransport](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts#L20) | None.            |
-| [`INV-WRTC-2-691KC5`](webrtc-setup.md#inv-wrtc-2-691kc5) | One-way signaling methods reachable only behind `HandshakeCompletedGuard`.                             | Covered               | [WebRTCSetupService constructor](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts#L1) (`this.guards`), [HandshakeCompletedGuard](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L44)                                                        | None.            |
-| [`INV-WRTC-3-9GBJGJ`](webrtc-setup.md#inv-wrtc-3-9gbjgj) | Handlers silent-ignore all failures; no throw, no disconnect from the service.                         | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (try/catch → log)                                                                                                                                                                   | None.            |
-| [`INV-WRTC-4-Z0MAZF`](webrtc-setup.md#inv-wrtc-4-z0mazf) | Single offerer via `localAddress < completedPeerAddress`.                                              | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242)                                                                                                                                           | None.            |
-| [`REQ-WRTC-1-B12MMP`](webrtc-setup.md#req-wrtc-1-b12mmp) | Signaling payloads are untrusted; SDP/ICE parsing safety is a documented WebRTC-dependency assumption. | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (`JSON.parse` → stack), [connection/](../../../../../../../src/rpc/network/services/WebRTCSetup/connection)                                                                         | None.            |

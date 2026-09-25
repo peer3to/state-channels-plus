@@ -1,87 +1,32 @@
-# SignatureUtils.ts — Source Report
+# SignatureUtils.ts
 
-> **Source:** [src/utils/SignatureUtils.ts](../../../../../../src/utils/SignatureUtils.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/utils/SignatureUtils.ts](../../../../../../src/utils/SignatureUtils.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9)
+  Missing: No object-type, chain or deployment domain tags in the signed data. See [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf).
+- [`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)
+- [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
+- [`INV-ID-1-B4FXJ4` (Key control is identity)](../../../../specification/protocol-model/identity.md#inv-id-1-b4fxj4)
+- [`REQ-DATA-3-ANVN8X` (Encoded and signed values bind every domain coordinate required by their owning…)](../../../../specification/protocol-model/data-types.md#req-data-3-anvn8x)
 
-## Responsibility and observable boundary
+## UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58
 
-Protocol signing/recovery helpers: sign/recover over canonical encodings (blocks, joins, opens,
-disputes) via EIP-191 over the keccak of encoded bytes; address recovery and comparison.
+Sign/recover
 
-## Key design decisions
+- Setup: Sign each object class; recover; tamper; malleate
+- Oracle: Recovery matches signer; tampering breaks; malleation never yields a second identity
 
-normalizeSignature converts valid byte representations to lowercase hex without signer recovery. It does not repair malformed values or reinterpret alternate recovery bytes or compact signatures. Block uses this shared representation before queue selection and recovery; the generic signer-recovery cache remains strict. See [normalizeSignature](../../../../../../src/utils/SignatureUtils.ts#L15).
-
-1. **Sign-the-hash-of-canonical-bytes everywhere** — one signing form for protocol objects (the [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) target rule; domain separation remains [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf)).
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                        | Specification IDs                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [SignatureUtils.ts](../../../../../../src/utils/SignatureUtils.ts) | [`REQ-ID-1-3Q2KB9`](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9), [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4), [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Utility semantics must hold identically on both supported hosts.
-
-## Specification adherence
-
-- Recovery-based verification; normalized comparison.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-No object-type/chain/deployment domain tags (the [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf) decision surface).
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                   | Implementation status | Evidence                                                                                                                                                                                                                            | Gap / divergence                                                                                                     |
-| ----------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-ID-1-3Q2KB9`](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) | Covered               | **Here:** canonical-target signing + recovery.                                                                                                                                                                                      | Domain separation pending [`OQ-29-EFY4NF`](../../../../specification/open-questions.md#oq-29-efy4nf) (spec-tracked). |
-| [`INV-ID-1-B4FXJ4`](../../../../specification/protocol-model/identity.md#inv-id-1-b4fxj4) | Covered               | **Here:** recovery over canonical encodings decides identity for every protocol object; no rule distinguishes participant from key holder.                                                                                          | None.                                                                                                                |
-| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)   | Covered               | **Here:** [normalizeSignature](../../../../../../src/utils/SignatureUtils.ts#L15) implements the contribution described above. **Other files:** [Block.ts](../models/Block.ts.md), [QueueStorage.ts](../storage/QueueStorage.ts.md) | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified.                 |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                        | Obligation   | Public entry and setup                            | Oracle and forbidden effects                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------------------------------------------------------------- | ------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-signature-utils-1-9zhm58"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58` | Sign/recover | Sign each object class; recover; tamper; malleate | Recovery matches signer; tampering breaks; malleation never yields a second identity | <a id="unit-test-signature-utils-1-9zhm58.p1"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P1` — block round trip; <a id="unit-test-signature-utils-1-9zhm58.p2"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P2` — tamper detection; <a id="unit-test-signature-utils-1-9zhm58.p3"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P3` — malleation behavior; <a id="unit-test-signature-utils-1-9zhm58.p4"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P4` — join-channel round trip; <a id="unit-test-signature-utils-1-9zhm58.p5"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P5` — open-channel round trip; <a id="unit-test-signature-utils-1-9zhm58.p6"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P6` — transaction round trip; <a id="unit-test-signature-utils-1-9zhm58.p7"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P7` — dispute round trip; <a id="unit-test-signature-utils-1-9zhm58.p8"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P8` — normalizes equivalent hex and bytes without changing recovery; <a id="unit-test-signature-utils-1-9zhm58.p9"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P9` — does not repair malformed hex or reinterpret a recovery byte; <a id="unit-test-signature-utils-1-9zhm58.p10"></a>`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P10` — keeps compact signature bytes compact |
-
-## Related source reports
-
-- [identity.md](../../../../specification/protocol-model/identity.md), [Block](../models/Block.ts.md).
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P1` — block round trip
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P2` — tamper detection
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P3` — malleation behavior
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P4` — join-channel round trip
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P5` — open-channel round trip
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P6` — transaction round trip
+- [ ] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P7` — dispute round trip
+- [x] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P8` — normalizes equivalent hex and bytes without changing recovery
+- [x] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P9` — does not repair malformed hex or reinterpret a recovery byte
+- [x] `UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P10` — keeps compact signature bytes compact

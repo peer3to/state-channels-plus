@@ -1,94 +1,50 @@
-# OpenChannelNegotiationHelpers.ts — Source Report
+# OpenChannelNegotiationHelpers.ts
 
-> **Source:** [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/open-channel-negotiation.md](../../../../../../views/architecture/sdk/rpc/open-channel-negotiation.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p)
+- [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
 
-## Responsibility and observable boundary
+## UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF
 
-The proposal-mismatch predicate and canonical-struct helpers: participants sorted by numeric
-address, balances aligned, and field-by-field comparison (channel, participants, every balance
-amount/data, atomicity, data, deadline bounded into the permitted window). The file also derives a
-channel ID from a domain tag, canonically ordered peers, and each peer's committed fresh challenge.
+Mismatch exhaustiveness
 
-## Key design decisions
+- Setup: Vary each field independently; boundary deadlines
+- Oracle: Each variation detected; identical structs pass; deadline window edges correct
 
-1. **One mismatch predicate for the whole struct** so the verifier cannot forget a field — additions to the struct force a change here.
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1` — channelId variation
+- [ ] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P2` — deadline at expired edge
+- [ ] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P3` — sort/alignment canonicalization
+- [ ] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P4` — participants length variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5` — participant address variation
+- [ ] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P6` — balances length variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P7` — balance amount variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8` — balance data variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P9` — isAtomic variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10` — non-empty data variation
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11` — deadline beyond max edge
 
-## Inputs, outputs, state, and side effects
+## UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW
 
-| Aspect       | Contents                              |
-| ------------ | ------------------------------------- |
-| Inputs       | Proposed and locally rebuilt structs. |
-| Outputs      | Mismatch verdict/canonical struct.    |
-| Owned state  | None.                                 |
-| Side effects | None.                                 |
+Transcript-derived channel identity
 
-## Linked requirements
+- Setup: Derive IDs directly from valid and invalid committed lobby transcripts.
+- Oracle: Both peer views agree; fresh rounds differ; no remote ID is accepted; malformed/self/zero inputs reject.
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- [x] `UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P1` — both views agree
+- [x] `UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P2` — fresh challenges derive distinct IDs
+- [x] `UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P3` — malformed, zero, and self transcripts reject
+- [x] `UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P4` — lobby match carries no channel ID
 
-| Source file                                                                                                                                     | Specification IDs                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| [OpenChannelNegotiationHelpers.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts) | [`INV-NEG-1-6FW90P`](../../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p) |
+## UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-HELPERS-32-FMP9H2
 
-## Assumptions, dependencies, trust boundaries, and limits
+Lobby role ordering
 
-- Canonical participant ordering is the same the contract verifies.
+- Setup: Two real peer addresses in both index orders assign the lower address to advertiser and the other to selector.
+- Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
-## Specification adherence
-
-- Field-exact comparison backbone of [`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                           | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-NEG-1-6FW90P`](../../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p) | Covered               | **Here:** the exhaustive comparison + deadline window.                                             | None.            |
-| [`REQ-NEG-4-ZQ0985`](../../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985) | Covered               | **Here:** canonical, domain-separated ID derivation rejects malformed, zero, and self transcripts. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                                            | Obligation                          | Public entry and setup                                                                                         | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-open-negotiation-helpers-1-rwqazf"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF`                   | Mismatch exhaustiveness             | Vary each field independently; boundary deadlines                                                              | Each variation detected; identical structs pass; deadline window edges correct                               | <a id="unit-test-open-negotiation-helpers-1-rwqazf.p1"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P1` — channelId variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p2"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P2` — deadline at expired edge; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p3"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P3` — sort/alignment canonicalization; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p4"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P4` — participants length variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p5"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P5` — participant address variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p6"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P6` — balances length variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p7"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P7` — balance amount variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p8"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P8` — balance data variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p9"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P9` — isAtomic variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p10"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P10` — non-empty data variation; <a id="unit-test-open-negotiation-helpers-1-rwqazf.p11"></a>`UNIT-TEST-OPEN-NEGOTIATION-HELPERS-1-RWQAZF.P11` — deadline beyond max edge |
-| <a id="unit-test-negotiated-channel-id-1-4c09gw"></a>`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW`                         | Transcript-derived channel identity | Derive IDs directly from valid and invalid committed lobby transcripts.                                        | Both peer views agree; fresh rounds differ; no remote ID is accepted; malformed/self/zero inputs reject.     | <a id="unit-test-negotiated-channel-id-1-4c09gw.p1"></a>`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P1` — both views agree; <a id="unit-test-negotiated-channel-id-1-4c09gw.p2"></a>`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P2` — fresh challenges derive distinct IDs; <a id="unit-test-negotiated-channel-id-1-4c09gw.p3"></a>`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P3` — malformed, zero, and self transcripts reject; <a id="unit-test-negotiated-channel-id-1-4c09gw.p4"></a>`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P4` — lobby match carries no channel ID.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="unit-test-open-channel-negotiation-helpers-32-fmp9h2"></a>`UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-HELPERS-32-FMP9H2` | Lobby role ordering                 | Two real peer addresses in both index orders assign the lower address to advertiser and the other to selector. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-open-channel-negotiation-helpers-32-fmp9h2.p1"></a>`UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-HELPERS-32-FMP9H2.P1` — orders lobby roles by the two real peer addresses in either peer ordering                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-
-## Related source reports
-
-- [OpenChannelNegotiationService](OpenChannelNegotiationService.ts.md).
-
-## Fixed and derived channel identity
-
-Ordinary negotiation derives its ID from the authenticated transcript. Targeted negotiation receives the
-application-selected fixed ID and never replaces it with peer input. The helper constructs opening payloads
-with exact full balances and the negotiation owner's internal deadline.
+- [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-HELPERS-32-FMP9H2.P1` — orders lobby roles by the two real peer addresses in either peer ordering

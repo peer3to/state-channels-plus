@@ -20,7 +20,7 @@ disputer already throttled by opening window B must also be blocked when posting
 peer's open window A (the pre-fix behavior skipped the throttle check on that branch).
 Throttle interaction with real dispute content, the one-post-per-window rule, and eligibility
 gating are out of scope. The facet's throttle-boundary permutation
-([`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P6`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md#unit-test-dispute-manager-facet-1-b4kky2.p6)) needs both the enforced and the expired side of the
+([`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P6`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md#unit-test-dispute-manager-facet-1-b4kky2)) needs both the enforced and the expired side of the
 boundary, which no single test here shows alone, so it stays unassigned.
 
 ## Tests and covered test IDs

@@ -4,10 +4,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { REQUIREMENT_PATTERN } = require("./shared/id-utils");
-const {
-    buildDocumentationGraph,
-    tableRows
-} = require("./shared/documentation-graph");
+const { buildDocumentationGraph } = require("./shared/documentation-graph");
 const {
     headingAnchorBefore,
     parseReportArgs,
@@ -17,35 +14,40 @@ const {
     writeOrCheckReport
 } = require("./shared/report-utils");
 
-const ID_RE = new RegExp(REQUIREMENT_PATTERN, "g");
+const CLAIM_RE = new RegExp(`^-\\s+\\[?\\x60(${REQUIREMENT_PATTERN})\\x60`);
+const STATUS_RE = /^\s+(Partial|Contradicts|Missing):/;
 
-// Collect per-requirement implementation statuses from every conformance table
-// (`Requirement / invariant | Implementation status | ...`) in the implementation layer.
+// A requirement claim is a bullet that starts with the requirement's link, in a
+// file report's Requirements section or a view's Gaps section. Its status is
+// the first indented `Partial:`, `Contradicts:` or `Missing:` line under it,
+// otherwise `Linked`. An ID inside a sentence is not a claim.
 function collectConformance(graph) {
     const byId = new Map(); // id -> [{status, document, line}]
     for (const document of graph.documents.implementationDocs) {
-        for (const table of tableRows(document)) {
-            const idIndex = table.headers.findIndex((h) =>
-                /^requirement \/ invariant$/.test(h)
-            );
-            const statusIndex = table.headers.findIndex((h) =>
-                /^implementation status$/.test(h)
-            );
-            if (idIndex < 0 || statusIndex < 0) continue;
-            for (const row of table.rows) {
-                const status = row.cells[statusIndex]?.trim();
-                if (!status) continue;
-                for (const id of row.cells[idIndex].match(ID_RE) || []) {
-                    if (!byId.has(id)) byId.set(id, []);
-                    byId.get(id).push({
-                        status,
-                        document,
-                        line: row.line,
-                        anchor: headingAnchorBefore(document, row.line)
-                    });
+        const lines = fs.readFileSync(document, "utf8").split(/\r?\n/);
+        lines.forEach((line, index) => {
+            const id = line.match(CLAIM_RE)?.[1];
+            if (!id) return;
+            let status = "Linked";
+            for (
+                let next = index + 1;
+                next < lines.length && /^\s+\S/.test(lines[next]);
+                next += 1
+            ) {
+                const found = lines[next].match(STATUS_RE)?.[1];
+                if (found) {
+                    status = found;
+                    break;
                 }
             }
-        }
+            if (!byId.has(id)) byId.set(id, []);
+            byId.get(id).push({
+                status,
+                document,
+                line: index + 1,
+                anchor: headingAnchorBefore(document, index + 1)
+            });
+        });
     }
     return byId;
 }
@@ -58,7 +60,7 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
     const implementationRoot = path.join(graph.roots.spec, "implementation");
     const sourceReportRoot = path.join(implementationRoot, "source");
 
-    // Section 1: specification IDs whose implementation claim is absent or not fully Covered.
+    // Section 1: specification IDs whose implementation claim is absent or not only Linked.
     const conformance = collectConformance(graph);
     const problemIds = [];
     for (const [id, def] of [...graph.requirements.definitions.entries()].sort(
@@ -74,7 +76,7 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
             });
             continue;
         }
-        const bad = claims.filter(({ status }) => status !== "Covered");
+        const bad = claims.filter(({ status }) => status !== "Linked");
         if (bad.length) {
             const statuses = [...new Set(bad.map(({ status }) => status))].join(
                 "; "
@@ -107,7 +109,7 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         "",
         "## Score",
         "",
-        `- Specification IDs fully implemented (only \`Covered\` claims): ${score(requirementTotal - problemIds.length, requirementTotal)}`,
+        `- Specification IDs fully implemented (only \`Linked\` claims): ${score(requirementTotal - problemIds.length, requirementTotal)}`,
         `- Source files with a file report: ${score(graph.mirrors.length - sourcesWithoutFileReports.length, graph.mirrors.length)}`,
         "",
         "## Contents",
@@ -118,13 +120,13 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         "## Specification IDs not fully implemented",
         "",
         "Every requirement/invariant whose implementation-layer conformance claim is absent, `Partial`,",
-        "`Contradicts`, `Missing`, or any other non-`Covered` status. Statuses are shown verbatim from",
-        "the claiming conformance rows; an ID absent from every conformance table has no claim at all.",
+        "`Contradicts`, `Missing`, or any other non-`Linked` status. Statuses are shown verbatim from",
+        "the status lines under the claiming requirement bullets; an ID no file report or view lists has no claim at all.",
         ""
     ];
     if (!problemIds.length) {
         lines.push(
-            "None — every specification ID has only `Covered` conformance claims."
+            "None — every specification ID has only `Linked` conformance claims."
         );
     } else {
         lines.push(

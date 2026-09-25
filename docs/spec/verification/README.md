@@ -3,9 +3,11 @@
 > **Agent status:** Rebuilt around one report per test file with full-coverage test-ID assignment.
 > **Engineer verification:** Pending.
 
-This layer answers: **what do the real tests actually prove?** It contains exactly one maintained
-report per repository test file with executable declarations, mirroring the `test/` tree
-(`tests/test/unit/ValidationService.test.ts.md`), plus the layer's open-questions register.
+This layer answers: **what do the real tests actually prove?** It holds two things: exactly one
+maintained report per repository test file with executable declarations, mirroring the `test/`
+tree (`tests/test/unit/ValidationService.test.ts.md`), and the tool-written
+[`requirements.md`](./requirements.md), one block per requirement listing how many of its
+specification cases are tested and which are not. It also keeps the layer's open-questions register.
 Fixtures, harness code, utilities, runners, and configuration get no reports.
 
 ## Contents
@@ -55,6 +57,11 @@ and treats every listed ID as an exact mapping claim for that declaration.
 IDs with no evidenced permutation, planned test IDs without an assigned test, test files without
 reports, tests with no assigned ID, and test IDs assigned to more than one test.
 [generated/traceability.md](../generated/traceability.md) is the navigable map of what exists.
+
+`requirements.md` and the checkbox on every implementation-layer case bullet are derived from
+these rows by `yarn spec:ids:fix` and checked by `yarn spec:ids:check`, which also names every row
+whose line anchor matches no declaration. Never edit them by hand; a merge conflict in either is
+resolved by rerunning `yarn spec:ids:fix`.
 
 Oracle, environment, permutation, and evidence questions belong in
 [open-questions.md](./open-questions.md).

@@ -13,6 +13,7 @@ const {
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
+const { REQUIREMENT_STATUS } = require("./shared/traceability-utils");
 
 const SPEC_ROOT = path.join(__dirname, "..");
 const REGISTER = path.join(SPEC_ROOT, "audit/review-state.json");
@@ -29,10 +30,16 @@ function listMd(dir) {
     return out;
 }
 
+// Tool-written checkboxes are derived test status, not reviewed content, so a
+// new test does not return a reviewed document to pending.
 function contentHash(file) {
     return crypto
         .createHash("sha256")
-        .update(fs.readFileSync(file))
+        .update(
+            fs
+                .readFileSync(file, "utf8")
+                .replace(/^(\s*-\s+)\[[ x]\]\s+/gm, "$1")
+        )
         .digest("hex")
         .slice(0, 16);
 }
@@ -48,6 +55,8 @@ function generatePendingReview() {
     const rows = { pending: [], stale: [], verified: [] };
     for (const layer of LAYERS) {
         for (const file of listMd(path.join(SPEC_ROOT, layer))) {
+            // Derived by `yarn spec:ids:fix`; nobody reviews it.
+            if (file === REQUIREMENT_STATUS) continue;
             const rel = path.relative(SPEC_ROOT, file);
             const hash = contentHash(file);
             const entry = register[rel];
@@ -134,4 +143,4 @@ if (require.main === module)
         process.exit(1);
     });
 
-module.exports = { generatePendingReview };
+module.exports = { contentHash, generatePendingReview };

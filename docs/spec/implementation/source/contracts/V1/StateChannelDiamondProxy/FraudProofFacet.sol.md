@@ -1,103 +1,114 @@
-# FraudProofFacet.sol — Source Report
+# FraudProofFacet.sol
 
-> **Source:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
+- [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
+- [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
+- [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
+- [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+  Partial: Checked amount arithmetic implemented; custom aggregation pending — No static rule or reusable suite prevents integrator `unchecked` arithmetic or invalid custom-data aggregation.
+- [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
+  Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
+- [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
+- [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
+- [`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../../../../../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1)
+- [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
+- [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
+- [`INV-SP-6-GNW74H` (Extending the proved anchor with unfinalized blocks is safe because signing is a)](../../../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
+- [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../../../../../specification/protocol-model/time.md#req-time-1-fm4651)
+- [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../../../../../specification/protocol-model/time.md#req-time-4-83v27z)
+- [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
+- [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
+- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 
-## Responsibility and observable boundary
+## UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG
 
-Block fraud-proof application: per-proof skip-if-slashed, type dispatch (double-sign, invalid
-transition via full replay incl. message-block recomputation, wrong genesis, invalid timestamp
-with calldata/forfeit rules, forged inbound block), offender-must-match-declared, failed-or-
-mismatched proofs slash the eligible submitter, successful slashes append with events.
+Proof application
 
-## Key design decisions
+- Setup: Apply each type valid/invalid/mismatched from eligible and ineligible submitters, incl. replay-heavy transitions
+- Oracle: Valid slashes offender once; invalid/mismatch slashes eligible submitter; replay matches client-side execution
 
-Fraud-proof targets must still belong to the current chain snapshot or eligible unconsumed joins and must not already be slashed. A signer absent from that set is no longer slashable. A stale chain snapshot can still admit a locally departed signer, and the on-chain slash record is written. Only the later reduction-time application to a state where that signer is absent is a no-op. See [FraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L24).
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P1` — BlockDoubleSign valid
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P2` — BlockDoubleSign invalid→self-slash
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P3` — offender mismatch
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P4` — skip-if-slashed
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P5` — replay parity with mirror
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P6` — BlockInvalidStateTransition valid
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7` — WrongGenesis valid
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8` — InvalidTimestamp valid
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P9` — ForgedInboundMessageBlock valid
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P10` — BlockInvalidStateTransition invalid→self-slash
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P11` — WrongGenesis invalid→self-slash
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P12` — InvalidTimestamp invalid→self-slash
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P13` — ForgedInboundMessageBlock invalid→self-slash
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P14` — WrongGenesis naming an origin fork with no dispute window reverts `RaceConditionDisputeWindowNotOpen(channelId, originForkId)` instead of a kill-period deadline
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P15` — WrongGenesis against an open dispute window whose kill period is still running reverts `RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, currentTimestamp)`, with the deadline measured from the last evidence submission and strictly ahead of the current timestamp
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P16` — WrongGenesis whose open window leaves no genesis timestamp available reverts `RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId)` naming the channel and both forks
 
-1. **Self-slash symmetry at the boundary:** submission is staked, making the mirror-preflight pattern load-bearing for honest clients.
-2. **The state-transition self-call is typed by the manager interface.** Re-execution is reached on
-   `address(this)` through [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md)
-   ([#L150](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150)) instead of the proxy contract type; the call and its
-   `onlySelf` guard are unchanged, and this facet no longer imports the proxy.
-3. **The wrong-genesis handler reports a missing dispute window under its own name.** The
-   submitter picks `originForkId`, so the window lookup can land on a slot that was never
-   created. The handler checks window existence before the kill-period deadline
-   ([#L310](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L310)), because the kill-period helper derives its deadline from a
-   zero `lastEvidenceSubmissionTimestamp` and would otherwise report a deadline that reads as
-   long past for a call refused precisely because nothing has expired. The existence check
-   raises `RaceConditionDisputeWindowNotOpen(channelId, originForkId)` — the same name and
-   operand pair the dispute-upload path already uses for a window that is not open.
+## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 
-## Inputs, outputs, state, and side effects
+Timestamp-fraud predicate
 
-| Aspect       | Contents                                              |
-| ------------ | ----------------------------------------------------- |
-| Inputs       | Routed calls from the manager (delegatecall context). |
-| Outputs      | State mutations/verdicts/events per operation group.  |
-| Owned state  | None declared (shared layout via inheritance).        |
-| Side effects | Events; escrow via consumer where applicable.         |
+- Setup: `hasInvalidTimestamp(InvalidTimestampProof)` through the deployed diamond, for the genesis branch (previous state snapshot) and the non-genesis branch (previous signed block), over attacker-chosen timestamps, channel/fork ids and signatures
+- Oracle: A boolean verdict only: never reverts on any input, never flags an honestly-skewed block, flips exactly at each branch’s deadline, is a single contiguous valid interval, ignores channel/fork identity, and is inert for an unauthentic block; no state is written and no participant is slashed by the predicate
 
-## Linked requirements
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P1` — genesis branch never reverts on arbitrary timestamps
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P2` — non-genesis branch never reverts on arbitrary timestamps
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P3` — the valid region is one contiguous interval (no valid/invalid/valid hole)
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P4` — the verdict is insensitive to channel id and fork id
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P5` — honest skew up to `evidenceTime + p2pTime` is never flagged
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P6` — first-block grace boundary and one second past it
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P7` — a later block gets no first-block grace: boundary and one second past it
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P8` — a forged author signature makes the proof inert at any timestamp
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+## UNIT-TEST-SM-FRAUD-PROOF-1-S1Q656
 
-| Source file                                                                                           | Specification IDs                                                                                                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [FraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol) | [`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4), [`REQ-ENFFP-1-BREACW`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw), [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) |
+Challenged transition replay
 
-## Assumptions, dependencies, trust boundaries, and limits
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-- Executes only in the manager's delegatecall context (except UtilityFacet's plain calls).
-- Deployment-size budget applies per deployable ([architecture view](../../../../views/architecture/contracts/architecture.md) §3 measurements).
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-1-S1Q656.P1` — Matching transitions reproduce the commitment
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-1-S1Q656.P2` — a changed input is detected through the correct fraud-proof outcome
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-1-S1Q656.P3` — a changed pre-state is detected through the correct fraud-proof outcome
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-1-S1Q656.P4` — a changed result is detected through the correct fraud-proof outcome
 
-## Specification adherence
+## UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP
 
-- Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
+Outbound balance aggregation
 
-## Specification contradictions
+- Specification: [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+- Specification tests: [`REQ-BAL-3-P7Q83F.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
-None demonstrated.
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP.P1` — Zero exits aggregate exactly
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP.P2` — one exit aggregates exactly
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP.P3` — many exits aggregate exactly
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP.P4` — overflow rejection cannot partially update the proof result
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-2-2CFSPP.P5` — custom-value rejection cannot partially update the proof result
 
-## Missing behavior
+## UNIT-TEST-SM-FRAUD-PROOF-3-ZK3SQ2
 
-See conformance rows.
+Author validation dependency
 
-## Conformance traceability
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-3-ZK3SQ2.P1` — A correct author is exercised explicitly
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-3-ZK3SQ2.P2` — the missing generic on-chain check remains a visible failing/gap case
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-3-ZK3SQ2.P3` — a wrong author is exercised explicitly
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-3-ZK3SQ2.P4` — a non-member author is exercised explicitly
 
-| Requirement / invariant                                                                               | Implementation status | Evidence                                | Gap / divergence                                                                           |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`REQ-ENFFP-1-BREACW`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw) | Covered               | **Here:** the submitter-slash branches. | Ineligible-submitter penalty remains the open protocol question (implemented as no-slash). |
-| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** strict type dispatch.         | None.                                                                                      |
-| [`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4) | Covered               | **Here:** append + skip-if-slashed.     | None.                                                                                      |
+## UNIT-TEST-SM-FRAUD-PROOF-4-4WZT2H
 
-## Component test obligations
+Failure and retry
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
-| Unit test ID                                                                            | Obligation                | Public entry and setup                                                                                                                                                                                                                           | Oracle and forbidden effects                                                                                                                                                                                                                                                                                       | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-fraud-proof-facet-1-bwvnpg"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG` | Proof application         | Apply each type valid/invalid/mismatched from eligible and ineligible submitters, incl. replay-heavy transitions                                                                                                                                 | Valid slashes offender once; invalid/mismatch slashes eligible submitter; replay matches client-side execution                                                                                                                                                                                                     | <a id="unit-test-fraud-proof-facet-1-bwvnpg.p1"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P1` — BlockDoubleSign valid; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p2"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P2` — BlockDoubleSign invalid→self-slash; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p3"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P3` — offender mismatch; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p4"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P4` — skip-if-slashed; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p5"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P5` — replay parity with mirror; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p6"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P6` — BlockInvalidStateTransition valid; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p7"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7` — WrongGenesis valid; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p8"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8` — InvalidTimestamp valid; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p9"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P9` — ForgedInboundMessageBlock valid; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p10"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P10` — BlockInvalidStateTransition invalid→self-slash; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p11"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P11` — WrongGenesis invalid→self-slash; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p12"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P12` — InvalidTimestamp invalid→self-slash; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p13"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P13` — ForgedInboundMessageBlock invalid→self-slash; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p14"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P14` — WrongGenesis naming an origin fork with no dispute window reverts `RaceConditionDisputeWindowNotOpen(channelId, originForkId)` instead of a kill-period deadline; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p15"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P15` — WrongGenesis against an open dispute window whose kill period is still running reverts `RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, currentTimestamp)`, with the deadline measured from the last evidence submission and strictly ahead of the current timestamp; <a id="unit-test-fraud-proof-facet-1-bwvnpg.p16"></a>`UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P16` — WrongGenesis whose open window leaves no genesis timestamp available reverts `RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId)` naming the channel and both forks |
-| <a id="unit-test-fraud-proof-facet-2-rvfp04"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04` | Timestamp-fraud predicate | `hasInvalidTimestamp(InvalidTimestampProof)` through the deployed diamond, for the genesis branch (previous state snapshot) and the non-genesis branch (previous signed block), over attacker-chosen timestamps, channel/fork ids and signatures | A boolean verdict only: never reverts on any input, never flags an honestly-skewed block, flips exactly at each branch’s deadline, is a single contiguous valid interval, ignores channel/fork identity, and is inert for an unauthentic block; no state is written and no participant is slashed by the predicate | <a id="unit-test-fraud-proof-facet-2-rvfp04.p1"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P1` — genesis branch never reverts on arbitrary timestamps; <a id="unit-test-fraud-proof-facet-2-rvfp04.p2"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P2` — non-genesis branch never reverts on arbitrary timestamps; <a id="unit-test-fraud-proof-facet-2-rvfp04.p3"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P3` — the valid region is one contiguous interval (no valid/invalid/valid hole); <a id="unit-test-fraud-proof-facet-2-rvfp04.p4"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P4` — the verdict is insensitive to channel id and fork id; <a id="unit-test-fraud-proof-facet-2-rvfp04.p5"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P5` — honest skew up to `evidenceTime + p2pTime` is never flagged; <a id="unit-test-fraud-proof-facet-2-rvfp04.p6"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P6` — first-block grace boundary and one second past it; <a id="unit-test-fraud-proof-facet-2-rvfp04.p7"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P7` — a later block gets no first-block grace: boundary and one second past it; <a id="unit-test-fraud-proof-facet-2-rvfp04.p8"></a>`UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04.P8` — a forged author signature makes the proof inert at any timestamp                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-
-## Related source reports
-
-- [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), [StateChannelCommon](./StateChannelCommon.sol.md).
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-4-4WZT2H.P1` — A failed replay is deterministic and a later valid proof is not contaminated by prior work
+- [ ] `UNIT-TEST-SM-FRAUD-PROOF-4-4WZT2H.P2` — a failed aggregation is deterministic and a later valid proof is not contaminated by prior work

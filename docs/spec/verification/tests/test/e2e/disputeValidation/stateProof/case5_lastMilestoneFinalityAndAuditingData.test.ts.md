@@ -20,7 +20,7 @@ resolves after peer 0 resumes normal dispute submission following the kill. This
 upload whose last anchor is not provably final must post its data, so auditors kill rather
 than abstain; the unjudgeable/abstention branch and calldata-path verification are out of
 scope. After the permutation atomization the case carries the mirrored
-`DisputeLastMilestoneNotFinalAndNoAuditingData` predicate permutation and the [`REQ-SP-1-9YABY1`](../../../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
+`DisputeLastMilestoneNotFinalAndNoAuditingData` predicate permutation and the [`REQ-SP-1-9YABY1` (A milestone is not merely a list of independently threshold-signed blocks)](../../../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
 direct-violation split (a non-final milestone rejected as anchor); the
 [`REQ-DISPUTE-PIPE-2-MJRJV1.T1.P4`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1.t1.p4) "incomplete evidence" family remains broader than this single
 scenario and stays unassigned.

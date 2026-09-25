@@ -1,81 +1,42 @@
-# MessageTypeHashes.sol — Source Report
+# MessageTypeHashes.sol
 
-> **Source:** [contracts/V1/types/MessageTypeHashes.sol](../../../../../../../contracts/V1/types/MessageTypeHashes.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/types/MessageTypeHashes.sol](../../../../../../../contracts/V1/types/MessageTypeHashes.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
 
-## Responsibility and observable boundary
+## UNIT-TEST-SM-MESSAGE-HASHES-1-40HWWB
 
-The hashed message-type constants (JOIN/EXIT keccak tags) shared by contract and client message
-handling.
+Join discriminator
 
-## Key design decisions
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
-1. **Hashed constants, not enum ints** — collision-resistant tags survive integrator custom types.
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-1-40HWWB.P1` — The join constant equals the specified domain hash
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-1-40HWWB.P2` — a join payload routes to the join decoder
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-1-40HWWB.P3` — a non-join payload does not route to the join decoder
 
-## Inputs, outputs, state, and side effects
+## UNIT-TEST-SM-MESSAGE-HASHES-2-RVBJRK
 
-| Aspect       | Contents              |
-| ------------ | --------------------- |
-| Inputs       | Per role above.       |
-| Outputs      | Types/helpers/events. |
-| Owned state  | None.                 |
-| Side effects | None.                 |
+Exit discriminator
 
-## Linked requirements
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-2-RVBJRK.P1` — A removal exit uses the exit constant
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-2-RVBJRK.P2` — a slash exit uses the same exit constant
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-2-RVBJRK.P3` — the exit constant is distinguishable from join/custom message types
 
-| Source file                                                                            | Specification IDs                                                                                  |
-| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [MessageTypeHashes.sol](../../../../../../../contracts/V1/types/MessageTypeHashes.sol) | [`REQ-DATA-1-1KNRQS`](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
+## UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA
 
-## Assumptions, dependencies, trust boundaries, and limits
+Compatibility
 
-- Declarative/support code; behavior owned by consumers.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1), [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
-## Specification adherence
-
-- Consistent with the owning documents' type/behavior contracts.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- Consumers per the manager and state-machine-base views.
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA.P1` — Constants remain identical across producers/consumers
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA.P2` — persisted messages are never reinterpreted
+- [ ] `UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA.P3` — replayed messages are never reinterpreted

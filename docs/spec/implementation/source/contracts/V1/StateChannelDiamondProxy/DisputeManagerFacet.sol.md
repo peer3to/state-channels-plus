@@ -1,94 +1,58 @@
-# DisputeManagerFacet.sol — Source Report
+# DisputeManagerFacet.sol
 
-> **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md), [architecture/contracts/architecture.md](../../../../views/architecture/contracts/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ENFDIS-1-8CSA6B` (Window bookkeeping integrity)](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b)
+- [`REQ-ENFDIS-2-VV9FPR` (Bounded participation)](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr)
+- [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
+- [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
+- [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
+- [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+- [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
+- [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
+- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 
-## Responsibility and observable boundary
+## UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB
 
-Dispute upload: disputer==sender + eligibility, auditing-data hash binding, timeout race checks,
-per-address throttle + one-post-per-window, window creation/commitment/kill-refresh bookkeeping
-(the commitment it pushes comes from the shared
-[`_disputeCommitmentHash`](./utils/DisputeUtils.sol.md) owner, not a local hash)
-with the fully-killed reopen, and the full-threshold immediate-finalization shortcut.
+Conditional admission
 
-## Key design decisions
+- Setup: Call real upload methods with signed inputs; fuzz mode and populated/empty window, holding exact component time boundaries.
+- Oracle: Specific rejection leaves creation, last evidence, throttle, hasPosted and commitments unchanged.
 
-Window creation uses the existing predicate. The reduced-result condition is retained as defense in depth: a normally finalized window already fails the evidence deadline. See [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L57).
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P1` — true rejects an absent window in both upload modes without mutation
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P2` — true rejects a window on another fork
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P3` — true rejects a window on another channel
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P4` — true accepts before deadline in populated and empty-live windows through either upload
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P5` — true rejects at deadline without mutation
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P6` — true rejects after deadline including empty-expired windows
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P7` — true rejects a finalized window
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P8` — false preserves new-window admission
+- [x] `UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P9` — false preserves fully-killed expired-window admission
 
-1. **Commitment recorded immediately at upload** — the kill period is the challenge window over committed disputes, matching the corrected lifecycle of the disputes spec.
+## UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2
 
-## Inputs, outputs, state, and side effects
+Upload bookkeeping
 
-| Aspect       | Contents                                              |
-| ------------ | ----------------------------------------------------- |
-| Inputs       | Routed calls from the manager (delegatecall context). |
-| Outputs      | State mutations/verdicts/events per operation group.  |
-| Owned state  | None declared (shared layout via inheritance).        |
-| Side effects | Events; escrow via consumer where applicable.         |
+- Setup: Upload through every gate, boundary, reopen, and threshold-shortcut case
+- Oracle: Transitions exactly per lifecycle; bounds hold; shortcut force-expires and commits the claimed output
 
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                   | Specification IDs                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-ENFDIS-2-VV9FPR`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
-
-Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Executes only in the manager's delegatecall context (except UtilityFacet's plain calls).
-- Deployment-size budget applies per deployable ([architecture view](../../../../views/architecture/contracts/architecture.md) §3 measurements).
-
-## Specification adherence
-
-- Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Gap / divergence |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-ENFDIS-1-8CSA6B`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b)              | Covered               | **Here:** the exact window transitions incl. reopen + shortcut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | None.            |
-| [`REQ-ENFDIS-2-VV9FPR`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr)              | Covered               | **Here:** throttle + hasPosted bounds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | None.            |
-| [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) | Covered               | **Here:** [source](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L51) checks the existing same-channel/fork unfinalized evidence window before race checks, throttle, or commitments for either upload method. True rejects at the evidence deadline; false preserves existing admission. **Other files:** [DisputeManager.ts](../../../src/disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [EventSyncService.ts](../../../src/stateManager/eventSync/EventSyncService.ts.md) (authoritative timestamped slash recovery), [DisputeUtils.sol](utils/DisputeUtils.sol.md) (canonical reason validation), [DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts.md) (all remaining audit checks). | —                |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                          | Obligation            | Public entry and setup                                                                                                      | Oracle and forbidden effects                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-dispute-window-admission-1-b7xwzb"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB` | Conditional admission | Call real upload methods with signed inputs; fuzz mode and populated/empty window, holding exact component time boundaries. | Specific rejection leaves creation, last evidence, throttle, hasPosted and commitments unchanged.     | <a id="unit-test-dispute-window-admission-1-b7xwzb.p1"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P1` — true rejects an absent window in both upload modes without mutation; <a id="unit-test-dispute-window-admission-1-b7xwzb.p2"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P2` — true rejects a window on another fork; <a id="unit-test-dispute-window-admission-1-b7xwzb.p3"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P3` — true rejects a window on another channel; <a id="unit-test-dispute-window-admission-1-b7xwzb.p4"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P4` — true accepts before deadline in populated and empty-live windows through either upload; <a id="unit-test-dispute-window-admission-1-b7xwzb.p5"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P5` — true rejects at deadline without mutation; <a id="unit-test-dispute-window-admission-1-b7xwzb.p6"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P6` — true rejects after deadline including empty-expired windows; <a id="unit-test-dispute-window-admission-1-b7xwzb.p7"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P7` — true rejects a finalized window; <a id="unit-test-dispute-window-admission-1-b7xwzb.p8"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P8` — false preserves new-window admission; <a id="unit-test-dispute-window-admission-1-b7xwzb.p9"></a>`UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB.P9` — false preserves fully-killed expired-window admission                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="unit-test-dispute-manager-facet-1-b4kky2"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2`       | Upload bookkeeping    | Upload through every gate, boundary, reopen, and threshold-shortcut case                                                    | Transitions exactly per lifecycle; bounds hold; shortcut force-expires and commits the claimed output | <a id="unit-test-dispute-manager-facet-1-b4kky2.p1"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P1` — auditing-flag mismatch revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p2"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P2` — evidence accepted at period edge; <a id="unit-test-dispute-manager-facet-1-b4kky2.p3"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P3` — kill refresh; <a id="unit-test-dispute-manager-facet-1-b4kky2.p4"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P4` — fully-killed reopen; <a id="unit-test-dispute-manager-facet-1-b4kky2.p5"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P5` — threshold shortcut; <a id="unit-test-dispute-manager-facet-1-b4kky2.p6"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P6` — throttle boundary; <a id="unit-test-dispute-manager-facet-1-b4kky2.p7"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P7` — auditing-hash mismatch revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p8"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P8` — disputer-not-sender revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p9"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P9` — cannot-participate revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p10"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P10` — already-posted revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p11"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P11` — timeout calldata-posted race revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p12"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P12` — previous-producer calldata mismatch race revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p13"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P13` — timeout before min-timestamp race revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p14"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P14` — window-created-too-early race revert; <a id="unit-test-dispute-manager-facet-1-b4kky2.p15"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P15` — evidence rejected past period edge; <a id="unit-test-dispute-manager-facet-1-b4kky2.p16"></a>`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16` — the past-deadline rejection on a populated window reverts `RaceConditionDisputeEvidencePeriodExpired` carrying the window's computed evidence-period end and the strictly later current timestamp as two distinct values |
-
-## Related source reports
-
-- [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), [StateChannelCommon](./StateChannelCommon.sol.md).
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P1` — auditing-flag mismatch revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P2` — evidence accepted at period edge
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P3` — kill refresh
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P4` — fully-killed reopen
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P5` — threshold shortcut
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P6` — throttle boundary
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P7` — auditing-hash mismatch revert
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P8` — disputer-not-sender revert
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P9` — cannot-participate revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P10` — already-posted revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P11` — timeout calldata-posted race revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P12` — previous-producer calldata mismatch race revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P13` — timeout before min-timestamp race revert
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P14` — window-created-too-early race revert
+- [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P15` — evidence rejected past period edge
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16` — the past-deadline rejection on a populated window reverts `RaceConditionDisputeEvidencePeriodExpired` carrying the window's computed evidence-period end and the strictly later current timestamp as two distinct values

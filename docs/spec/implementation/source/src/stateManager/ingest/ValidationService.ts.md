@@ -1,103 +1,99 @@
-# ValidationService.ts — Source Report
+# ValidationService.ts
 
-> **Source:** [src/stateManager/ingest/ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/stateManager/ingest/ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts)
+>
 > **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
+- [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
+- [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
+- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+- [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
+  Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
+- [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 
-## Responsibility and observable boundary
+## UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV
 
-The ordered predicate chain of serialized validation: channel, channel-open, author-membership
-(local anchor with on-chain fallback), conflict classification (double-sign / invalid-transition
-/ wrong-genesis / unattributable), live gates, linkage, scheduled-leader, and the time rules —
-objective timestamp via the canonical predicate with calldata-timestamp recovery retry, on-chain
-post timing, and the subjective agreement window (live only, never evidence).
+Predicate chain
 
-## Key design decisions
+- Setup: Violate each predicate alone and in combinations across contexts; drive time edges with and without recoverable calldata
+- Oracle: First relevant failure routes to its hook; recovery retry legitimizes exactly the granted cases; subjective park never produces evidence
 
-Confirmation classification catches recovery failure per signature and collects unrecoverable values for the strategy; successful recoveries populate Block's existing cache. One bad confirmation cannot abort classification of the remaining good ones. Block's existing recovery cache remains the primitive. Author authentication stays separate, and each pipeline invokes its strategy hook with the computed rejected set. See [normalizeConfirmationSignatures](../../../../../../../src/stateManager/ingest/ValidationService.ts#L67).
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P1` — channel predicate alone
+- [ ] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P2` — combination order
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P3` — double-sign conflict class
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P4` — timestamp boundary with recovery retry
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P5` — on-time post short-circuit
+- [ ] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P6` — subjective window live-only
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P7` — channel-open predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P8` — author-membership predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P9` — conflict-classification predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P10` — live-gates predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P11` — linkage predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P12` — scheduled-leader predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13` — objective-timestamp predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P14` — on-chain post-timing predicate alone
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15` — linked invalid-transition conflict class
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16` — wrong-genesis conflict class
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P17` — replayed-own-block double-sign conflict class
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18` — unlinked unattributable conflict class
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19` — timestamp boundary without recoverable calldata
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P20` — author-membership predicate binds the author to the previous snapshot and to a coordinate-matched resulting snapshot
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P21` — a block replayed from a verified synchronization proof outside the agreement window applies while the same live arrival parks
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P22` — a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P23` — live normalization without source attribution strips bad confirmations without blaming the author
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P24` — a malformed-only copy retains its author envelope and charges the rejected confirmation
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P25` — normalization strips an unrecoverable confirmation and punishes only its supplier
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P26` — spectating normalization preserves valid confirmations after a malformed first value
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P27` — shared malformed confirmation punishes both actual suppliers
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P28` — duplicate malformed bytes use one charged slot and are removed once
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P29` — sourceless replay strips irrelevant malformed confirmations without transport punishment
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P30` — calldata strategy rejects the impossible confirmation-bearing shape
 
-Every strategy receives an out-of-window subjective outcome. The strategy owns acceptance or refusal and its diagnostic log; the shared pipeline retains objective timing checks. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L656).
+## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 
-Subjective timestamp outcomes are owned by the selected strategy. Proof replay accepts historical suffixes through its override; live validation retains its timing refusal. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L644).
+Author decision
 
-Failed time-check metadata moves to LoggerUtils with the already-captured now value. Validation thresholds, strategy instanceof policy and return values remain here. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L524).
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-1. **Every predicate against one pre-state** under the caller's mutex ([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)).
-2. **Objective time checks run the exact fraud-proof struct through the mirrored predicate** — the check and the future proof cannot disagree ([`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
-3. **Retroactive legitimization:** a failing timestamp first triggers predecessor-calldata recovery and a re-run — an on-chain post can grant the window that makes it valid.
-4. **Conflict taxonomy decides attribution:** same author → double-sign; linked-to-our-predecessor → author's invalid transition; height-0 → wrong genesis; unlinked → nobody to slash.
-5. **The subjective window judges live arrivals only.** SpectatingValidationStrategy accepts the subjective timing outcome for a verified synchronization proof; every objective check still runs. The replayed suffix is proven history
-   and, by construction of the block queue's expiry probe, at least one window old, so parking it left a
-   participant's recovery unable to apply the suffix ([synchronization.md](../../../../../specification/peer-communication/synchronization.md) step 13).
+- [ ] `UNIT-TEST-SM-VALIDATION-1-1GFNNY.P1` — An empty participant state accepts exactly the selected author
+- [ ] `UNIT-TEST-SM-VALIDATION-1-1GFNNY.P2` — a one-participant state accepts exactly the selected author
+- [ ] `UNIT-TEST-SM-VALIDATION-1-1GFNNY.P3` — a many-participant state accepts exactly the selected author across a full turn cycle
+- [ ] `UNIT-TEST-SM-VALIDATION-1-1GFNNY.P4` — a wrong author is rejected
+- [ ] `UNIT-TEST-SM-VALIDATION-1-1GFNNY.P5` — a non-member author is rejected
 
-## Inputs, outputs, state, and side effects
+## UNIT-TEST-SM-VALIDATION-2-NNZ28B
 
-| Aspect       | Contents                                                  |
-| ------------ | --------------------------------------------------------- |
-| Inputs       | Block + pre-state + strategy context.                     |
-| Outputs      | SUCCESS or the failing predicate's strategy hook verdict. |
-| Owned state  | None.                                                     |
-| Side effects | Calldata-recovery requests.                               |
+Strategy coverage
 
-## Linked requirements
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+- [ ] `UNIT-TEST-SM-VALIDATION-2-NNZ28B.P1` — The live strategy receives the deviation with the correct precomputed attribution and side effect
+- [ ] `UNIT-TEST-SM-VALIDATION-2-NNZ28B.P2` — the stored strategy receives the same deviation with the correct attribution and side effect
+- [ ] `UNIT-TEST-SM-VALIDATION-2-NNZ28B.P3` — the spectating strategy receives the same deviation with the correct attribution and side effect
+- [ ] `UNIT-TEST-SM-VALIDATION-2-NNZ28B.P4` — the dispute strategy receives the same deviation with the correct attribution and side effect
 
-| Source file                                                                               | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts) | [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6), [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7), [`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh), [`REQ-LIF-7-0XZBDM`](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) |
+## UNIT-TEST-SM-VALIDATION-3-8KG380
 
-## Assumptions, dependencies, trust boundaries, and limits
+Membership boundaries
 
-- Runs only under the execution boundary; hooks own consequences ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-## Specification adherence
+- [ ] `UNIT-TEST-SM-VALIDATION-3-8KG380.P1` — A join immediately before validation changes the eligible author according to the exact pre-state, never stale state
+- [ ] `UNIT-TEST-SM-VALIDATION-3-8KG380.P2` — a removal immediately before validation changes the eligible author according to the exact pre-state
+- [ ] `UNIT-TEST-SM-VALIDATION-3-8KG380.P3` — a slash immediately before validation changes the eligible author according to the exact pre-state
 
-- Complete pre-execution chain in fixed order; subjective lateness isolated from evidence ([`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
+## UNIT-TEST-SM-VALIDATION-4-8032ZY
 
-## Specification contradictions
+Selector failure
 
-None demonstrated.
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                           | Gap / divergence                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | Covered               | **Here:** the nine-predicate ordered chain on one pre-state. **Other files:** consequences per strategy.                                                                                                                                                                                                                                                                                                           | None.                                                                                                |
-| [`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh) | Covered               | **Here:** canonical-predicate objective checks; `NOT_ENOUGH_TIME` subjective park.                                                                                                                                                                                                                                                                                                                                 | None.                                                                                                |
-| [`REQ-LIF-7-0XZBDM`](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)                             | Covered               | **Here:** the standing gate — `validateBlockConfirmation` diverts every block on a disputed fork to the strategy deviation `blockForkIsDisputed` instead of the normal pipeline, for as long as the fork is disputed. **Other files:** [EventHandler.ts.md](../../eventHandlers/EventHandler.ts.md) (commitment-time purge and pause surfacing), [BlockQueueManager.ts.md](BlockQueueManager.ts.md) (queue purge). | None.                                                                                                |
-| [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | Covered               | **Here:** [normalizeConfirmationSignatures](../../../../../../../src/stateManager/ingest/ValidationService.ts#L67) implements the contribution described above. **Other files:** [Block.ts](../../models/Block.ts.md), [AValidationStrategy.ts](../validationStrategy/AValidationStrategy.ts.md)                                                                                                                   | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified. |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                              | Obligation      | Public entry and setup                                                                                                   | Oracle and forbidden effects                                                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-validation-service-1-3ej7yv"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV` | Predicate chain | Violate each predicate alone and in combinations across contexts; drive time edges with and without recoverable calldata | First relevant failure routes to its hook; recovery retry legitimizes exactly the granted cases; subjective park never produces evidence | <a id="unit-test-validation-service-1-3ej7yv.p1"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P1` — channel predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p2"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P2` — combination order; <a id="unit-test-validation-service-1-3ej7yv.p3"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P3` — double-sign conflict class; <a id="unit-test-validation-service-1-3ej7yv.p4"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P4` — timestamp boundary with recovery retry; <a id="unit-test-validation-service-1-3ej7yv.p5"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P5` — on-time post short-circuit; <a id="unit-test-validation-service-1-3ej7yv.p6"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P6` — subjective window live-only; <a id="unit-test-validation-service-1-3ej7yv.p7"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P7` — channel-open predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p8"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P8` — author-membership predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p9"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P9` — conflict-classification predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p10"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P10` — live-gates predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p11"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P11` — linkage predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p12"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P12` — scheduled-leader predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p13"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13` — objective-timestamp predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p14"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P14` — on-chain post-timing predicate alone; <a id="unit-test-validation-service-1-3ej7yv.p15"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15` — linked invalid-transition conflict class; <a id="unit-test-validation-service-1-3ej7yv.p16"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16` — wrong-genesis conflict class; <a id="unit-test-validation-service-1-3ej7yv.p17"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P17` — replayed-own-block double-sign conflict class; <a id="unit-test-validation-service-1-3ej7yv.p18"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18` — unlinked unattributable conflict class; <a id="unit-test-validation-service-1-3ej7yv.p19"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19` — timestamp boundary without recoverable calldata; <a id="unit-test-validation-service-1-3ej7yv.p20"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P20` — author-membership predicate binds the author to the previous snapshot and to a coordinate-matched resulting snapshot; <a id="unit-test-validation-service-1-3ej7yv.p21"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P21` — a block replayed from a verified synchronization proof outside the agreement window applies while the same live arrival parks; <a id="unit-test-validation-service-1-3ej7yv.p22"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P22` — a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility; <a id="unit-test-validation-service-1-3ej7yv.p23"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P23` — live normalization without source attribution strips bad confirmations without blaming the author; <a id="unit-test-validation-service-1-3ej7yv.p24"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P24` — a malformed-only copy retains its author envelope and charges the rejected confirmation; <a id="unit-test-validation-service-1-3ej7yv.p25"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P25` — normalization strips an unrecoverable confirmation and punishes only its supplier; <a id="unit-test-validation-service-1-3ej7yv.p26"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P26` — spectating normalization preserves valid confirmations after a malformed first value; <a id="unit-test-validation-service-1-3ej7yv.p27"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P27` — shared malformed confirmation punishes both actual suppliers; <a id="unit-test-validation-service-1-3ej7yv.p28"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P28` — duplicate malformed bytes use one charged slot and are removed once; <a id="unit-test-validation-service-1-3ej7yv.p29"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P29` — sourceless replay strips irrelevant malformed confirmations without transport punishment; <a id="unit-test-validation-service-1-3ej7yv.p30"></a>`UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P30` — calldata strategy rejects the impossible confirmation-bearing shape |
-
-## Related source reports
-
-- [StateManager](../StateManager.ts.md), the strategies, [EventSyncService](../eventSync/EventSyncService.ts.md) (calldata recovery), [EvmDiamondStateMachine](../../evm/EvmDiamondStateMachine.ts.md).
+- [ ] `UNIT-TEST-SM-VALIDATION-4-8032ZY.P1` — Query failure rejects/defer the work through the defined pipeline without executing the transition or losing the queued entry

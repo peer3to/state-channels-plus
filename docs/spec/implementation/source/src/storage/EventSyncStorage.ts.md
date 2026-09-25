@@ -1,92 +1,22 @@
-# EventSyncStorage.ts — Source Report
+# EventSyncStorage.ts
 
-> **Source:** [src/storage/EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/storage/EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts)
+>
 > **Design views:** [views/architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [views/architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
+- [`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)
 
-## Responsibility and observable boundary
+## UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0
 
-Per-channel chain-observation progress: the latest base-layer block number whose events the
-node has processed — where observation resumes after a gap.
+Monotone normalized progress
 
-## Key design decisions
+- Setup: Store increasing, repeated, regressing values with case-variant channel ids
+- Oracle: Monotone per channel; regressions ignored; case variants resolve to one channel
 
-Watermarks use the shared channel conversion. Case variants share the same monotonic cursor, while distinct and absent channels remain distinct. See [EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts#L2).
-
-1. **Monotone by max().** A store keeps the maximum of retained and incoming ([#L13](../../../../../../src/storage/EventSyncStorage.ts#L13)); regressions are ignored, so progress can never be talked backward.
-2. **Normalized keys.** Channel keys are lowercased ([#L21](../../../../../../src/storage/EventSyncStorage.ts#L21)) — the identity-normalization rule applied to channel ids so case variance cannot split progress.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                            |
-| ------------ | ----------------------------------- |
-| Inputs       | (channel, block number).            |
-| Outputs      | Latest processed block per channel. |
-| Owned state  | `latestProcessedBlocks`.            |
-| Side effects | None.                               |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                              | Specification IDs                                                                                                                                                                               |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts) | [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg), [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Producers store only _processed_ positions — a forward-jumped marker would skip events; the store can only prevent regression.
-- In-memory medium for this protocol version: durability across restart is not yet provided; the
-  target contract is [durability.md](../../../../specification/storage/durability.md).
-
-## Specification adherence
-
-- Monotone per-channel progress ([`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)).
-- Normalized key comparison ([`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4) applied to channel ids).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                 | Gap / divergence |
-| ---------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | Covered               | **Here:** max() retention per normalized channel key ([#L13](../../../../../../src/storage/EventSyncStorage.ts#L13)). **Other files:** processed-only discipline — [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md). | None.            |
-| [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)            | Covered               | **Here:** lowercased channel keys ([#L21](../../../../../../src/storage/EventSyncStorage.ts#L21)).                                                                                                                                       | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                              | Obligation                   | Public entry and setup                                                      | Oracle and forbidden effects                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-event-sync-storage-1-0nknw0"></a>`UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0` | Monotone normalized progress | Store increasing, repeated, regressing values with case-variant channel ids | Monotone per channel; regressions ignored; case variants resolve to one channel | <a id="unit-test-event-sync-storage-1-0nknw0.p1"></a>`UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P1` — advance; <a id="unit-test-event-sync-storage-1-0nknw0.p2"></a>`UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P2` — regression ignored; <a id="unit-test-event-sync-storage-1-0nknw0.p3"></a>`UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P3` — case-variant keys unify; <a id="unit-test-event-sync-storage-1-0nknw0.p4"></a>`UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P4` — per-channel isolation |
-
-## Related source reports
-
-- [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md) (the producer enforcing processed-only).
-
-Shared operation owners: [channelKey.ts.md](../utils/channelKey.ts.md).
+- [ ] `UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P1` — advance
+- [x] `UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P2` — regression ignored
+- [ ] `UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P3` — case-variant keys unify
+- [x] `UNIT-TEST-EVENT-SYNC-STORAGE-1-0NKNW0.P4` — per-channel isolation

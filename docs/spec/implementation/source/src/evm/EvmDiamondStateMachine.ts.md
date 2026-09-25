@@ -1,99 +1,122 @@
-# EvmDiamondStateMachine.ts — Source Report
+# EvmDiamondStateMachine.ts
 
-> **Source:** [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts)
+>
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
+- [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
+- [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
+  Partial: [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report).
+- [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+- [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
+  Partial: Interface implemented; integrator conformance pending — Canonical field/collection ordering is application-defined and neither statically checked nor generically tested.
+- [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
+  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
+- [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
+  Partial: Interface implemented; integrator conformance pending — Solidity mutability constrains state writes but does not prove canonical custom-data semantics or cross-runtime determinism.
+- [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+  Partial: Interface split across contract and local adapter; engineer audit pending — Interface presence is visible in source, but completeness, atomic failure, and semantic equivalence have not been audited operation by operation.
 
-## Responsibility and observable boundary
+## UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1
 
-The concrete local mirror: deploys the LocalDiamond plus the dedicated state-machine instance
-into the local EVM (optionally behind the contract-executor boundary), exposes
-`localDiamondContract` for every mirrored predicate/staticCall, drives event replication into the
-mirror, and controls the local execution context (time) for window predicates.
+Mirror equivalence
 
-## Key design decisions
+- Setup: Evaluate window/proof predicates locally vs on-chain under controlled and drifted local time
+- Oracle: Agreement under controlled context; drift produces detectably non-equivalent results
 
-Executor lifetime belongs to the owning runtime root. Domain disposal does not dispose that child again; final root disposal retires the executor in both placements. StateManager abort invokes that host-root disposal, so executor queries then reject in both placements.
+- [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P1` — window-predicate agreement
+- [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P2` — time-drift divergence
+- [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P3` — replication convergence
+- [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P4` — proof-predicate agreement
 
-Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1).
+## UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC
 
-1. **The mirror deployment is the check engine** — every service's staticCall lands here; nothing protocol-shaped is evaluated outside contract logic ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
-2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
-3. **`p2pSetup` is a wrapper over `setupP2pRuntime`** ([setupP2pRuntime.ts](./p2pRuntime/setupP2pRuntime.ts.md)) with the production dependencies; its public signature (`P2pSetupOptions`) is unchanged. The construction returns only after host readiness and disposes the runtime client if deployment completion or application readiness rejects.
+ABI encoding/decoding
 
-## Inputs, outputs, state, and side effects
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC.P1` — The transition method sends the correct selector/arguments and decodes its canonical result
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC.P2` — the state get/set methods encode and decode canonically
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC.P3` — the selector and view methods encode and decode canonically
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC.P4` — the balance methods encode and decode canonical struct results
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC.P5` — the inbound/lifecycle methods encode and decode canonically
 
-## Linked requirements
+## UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+Transition result
 
-| Source file                                                                      | Specification IDs                                                                                                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts) | [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778), [`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb), [`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) |
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-## Assumptions, dependencies, trust boundaries, and limits
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81.P1` — Success with zero messages returns the exact contract classification
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81.P2` — success with one message returns the exact classification and message
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81.P3` — success with many messages preserves message order
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81.P4` — revert returns the exact contract classification
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-2-DB3G81.P5` — repeat calls return consistent classifications
 
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+## UNIT-TEST-SM-EVM-ADAPTER-3-VNHPVK
 
-## Specification adherence
+Logs and callback
 
-- Replication-driven advancement; controlled-context evaluation.
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
-## Specification contradictions
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-3-VNHPVK.P1` — Logs are processed once, only through the success callback for transitions, in emitted order
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-3-VNHPVK.P2` — callback failure is reported without changing state semantics
 
-None demonstrated.
+## UNIT-TEST-SM-EVM-ADAPTER-4-XP8N5Z
 
-## Missing behavior
+Get/set state
 
-[`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30)'s persistence gap manifests through this path (the mirror's `onChannelOpened` genesis inbound block — finding recorded at [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-## Conformance traceability
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-4-XP8N5Z.P1` — Valid states round-trip
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-4-XP8N5Z.P2` — executor failures carry operation context without producing fabricated bytes
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-4-XP8N5Z.P3` — decode failures carry operation context without producing fabricated bytes
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+## UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW
 
-| Requirement / invariant                                                                            | Implementation status | Evidence                                                       | Gap / divergence                                                                                         |
-| -------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | Covered               | **Here:** the single mirrored deployment + staticCall surface. | None.                                                                                                    |
-| [`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial               | **Here:** event-driven replication entry points.               | [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report). |
+Temporary next-writer query
 
-## Component test obligations
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — Live state is restored after success
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P2` — the selector-failure case currently exposes the missing `finally`
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P3` — live state is restored after temporary-set failure
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P4` — live state is restored after selector failure
 
-| Unit test ID                                                                      | Obligation         | Public entry and setup                                                                       | Oracle and forbidden effects                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-evm-diamond-sm-1-q8xjv1"></a>`UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1` | Mirror equivalence | Evaluate window/proof predicates locally vs on-chain under controlled and drifted local time | Agreement under controlled context; drift produces detectably non-equivalent results | <a id="unit-test-evm-diamond-sm-1-q8xjv1.p1"></a>`UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P1` — window-predicate agreement; <a id="unit-test-evm-diamond-sm-1-q8xjv1.p2"></a>`UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P2` — time-drift divergence; <a id="unit-test-evm-diamond-sm-1-q8xjv1.p3"></a>`UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P3` — replication convergence; <a id="unit-test-evm-diamond-sm-1-q8xjv1.p4"></a>`UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P4` — proof-predicate agreement |
+## UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT
 
-## Related source reports
+Balance adapter
 
-- [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md), [ContractExecutor](./contractExecutor/ContractExecutor.ts.md), [ADiamondStateMachine](../ADiamondStateMachine.ts.md).
+- Specification: [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+- Specification tests: [`REQ-BAL-1-Z8RH4V.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v.t1), [`REQ-BAL-2-KTSW9B.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
-## Balance comparison exposure
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT.P1` — `addBalance` preserves exact struct data and consistently propagates success/rejection across executor modes
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT.P2` — `subtractBalance` preserves exact struct data and consistently propagates success/rejection
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT.P3` — `getTotalStateBalance` preserves exact struct data and consistently propagates success/rejection
 
-The EVM adapter forwards full balance values to the existing Solidity lesser-than view and returns its
-Boolean unchanged. This preserves application-specific balance algebra for remote-term validation.
+## UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR
 
-Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).
+Inbound/lifecycle operations
+
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1), [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
+
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P1` — Inbound mutation has correct effects and contextual errors
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P2` — read-only views have correct effects and contextual errors
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P3` — address reporting has correct effects and contextual errors
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P4` — disposal has correct effects and contextual errors
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P5` — operational failure has correct effects and contextual errors

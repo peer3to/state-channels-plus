@@ -32,7 +32,7 @@ and cross-layer interactions. Tracked in detail by
 
 ## OQ-AUDIT-LOBBY-1-9S3GVD — Lobby accepted-lease exclusion versus the no-punishment rule
 
-[`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) says non-Byzantine failures are never punished.
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations)](security-assessment.md#req-sec-3-nppjn5) says non-Byzantine failures are never punished.
 The lobby handoff bounds both sides with one agreement window, and before this decision the first side to
 close a transport cancelled the other side's punishment, so a silent or disconnected counterparty was excluded
 only when both bounds fired first. The question was whether a peer that loses its final transport after an
@@ -40,7 +40,7 @@ accepted lease may be excluded locally.
 
 **Resolution (owner, 2026-09-02).** Yes. After an accepted lease the loss is an agreement-window liability:
 the advertiser excludes at its reservation bound and the selector excludes when its in-flight commitment is
-rejected. The exclusion is a local lobby reputation entry, not on-chain punishment, so [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) now
+rejected. The exclusion is a local lobby reputation entry, not on-chain punishment, so [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations)](security-assessment.md#req-sec-3-nppjn5) now
 states the objective on-chain rule and this local exception separately. Accepted consequence: a partition
 during the handoff excludes two honest peers from each other for the blacklist lifetime. The broader
 availability and local-fault blacklist finding ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n),

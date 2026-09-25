@@ -1,94 +1,129 @@
-# AStateMachine.sol — Source Report
+# AStateMachine.sol
 
-> **Source:** [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol)
+>
 > **Design views:** [architecture/contracts/state-machine-base.md](../../../views/architecture/contracts/state-machine-base.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+  Partial: No static or runtime policy rejects an application that reads prohibited ambient context or `_tx.body`.
+- [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
+  Partial: Interface implemented; integrator conformance pending — Canonical field/collection ordering is application-defined and neither statically checked nor generically tested.
+- [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
+- [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+- [`REQ-SM-3-88RFP2` (Mappings only with complete deterministic key enumeration)](../../../../specification/protocol-model/state-machines.md#req-sm-3-88rfp2)
+  Partial: Integrator obligation; not generically enforced — No linter, runtime validator, or shared test harness detects incomplete or nondeterministic mapping enumeration.
+- [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
+  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
+- [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
+  Partial: Interface implemented; integrator conformance pending — Solidity mutability constrains state writes but does not prove canonical custom-data semantics or cross-runtime determinism.
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+  Partial: Interface split across contract and local adapter; engineer audit pending — Interface presence is visible in source, but completeness, atomic failure, and semantic equivalence have not been audited operation by operation.
+- [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
+- [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
 
-## Responsibility and observable boundary
+## UNIT-TEST-ASTATE-MACHINE-1-67J5W6
 
-The integrator base contract: the `stateTransition` wrapper injecting the protocol execution
-context (`_tx.header`: logical author, time, position) before dispatching to integrator logic,
-`getState`/`_setState` canonical serialization hooks, `getParticipants`, `getNextToWrite`/
-`peekNextToWrite` turn-taking, `joinChannel`/`removeParticipant` membership entry points, and the
-custom-inbound dispatch.
+Context injection and round trips
 
-## Key design decisions
+- Setup: Execute transitions reading injected vs ambient context; serialize/restore cycles
+- Oracle: Injected values govern; ambient reads detectable; byte-exact round trips
 
-Idempotence is an integrator obligation: hooks must leave state unchanged and return false for an absent target. The base delegates membership and penalty rules to the application; it does not infer them from the chain snapshot. See [AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol#L85).
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P1` — injected author field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P2` — ambient divergence detection
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P3` — round-trip + re-execution equality
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P4` — joinChannel membership entry
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P5` — injected time field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P6` — injected position field
+- [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P7` — removeParticipant membership entry
 
-1. **Context injection over ambient EVM values:** transitions read `_tx.header.*` set by the wrapper — `msg.sender`/`block.timestamp`/`msg.data` are prohibited in integrator machines because they diverge between direct execution and replay ([`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx) family).
-2. **`abi.encode` of one state struct is the reference serialization pattern** for the round-trip requirements.
+## UNIT-TEST-SM-ASTATE-1-S1YSJG
 
-## Inputs, outputs, state, and side effects
+Transition orchestration
 
-| Aspect       | Contents                                                           |
-| ------------ | ------------------------------------------------------------------ |
-| Inputs       | Transactions via the wrapper; encoded states; membership messages. |
-| Outputs      | Post-states, outbound messages, participant/turn views.            |
-| Owned state  | The integrator's application state (scratch during replay).        |
-| Side effects | None outside its own storage.                                      |
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-## Linked requirements
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P1` — Clear prior messages, inject the header, enforce the gas budget, dispatch calldata, and return success with zero outbound messages
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P2` — a successful transition returns one outbound message
+- [ ] `UNIT-TEST-SM-ASTATE-1-S1YSJG.P3` — a successful transition returns many outbound messages in order
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+## UNIT-TEST-SM-ASTATE-2-X06ZXW
 
-| Source file                                                           | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [AStateMachine.sol](../../../../../../contracts/V1/AStateMachine.sol) | [`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx), [`REQ-SM-2-PHCRFR`](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`INV-ENFSM-1-762ACD`](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd), [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8), [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf) |
+Transition rejection
 
-## Assumptions, dependencies, trust boundaries, and limits
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-- One shared deployment serves all channels in the current version — full pre-state restoration is what keeps that sound ([`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)).
+- [ ] `UNIT-TEST-SM-ASTATE-2-X06ZXW.P1` — A revert with data rejects deterministically and exposes neither partial state nor partial outbound messages
+- [ ] `UNIT-TEST-SM-ASTATE-2-X06ZXW.P2` — a revert without data rejects with the same guarantees
 
-## Specification adherence
+## UNIT-TEST-SM-ASTATE-3-W1VEFR
 
-- The injected-context contract and turn-taking surface ([`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)).
+Injected execution context
 
-## Specification contradictions
+- Specification: [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Specification tests: [`REQ-SM-1-Y72CKX.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 
-None demonstrated at the base (integrator machines can still violate — the static-check/review guidance is future work in the view).
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P1` — Only the injected participant/time and dispatched arguments affect application behavior
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P2` — ambient EVM values do not
+- [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P3` — `_tx.body` does not
 
-## Missing behavior
+## UNIT-TEST-SM-ASTATE-4-25RMFZ
 
-Automated prohibited-context static checks for integrator machines (spec future work).
+State boundary
 
-## Conformance traceability
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+- [ ] `UNIT-TEST-SM-ASTATE-4-25RMFZ.P1` — Concrete subclasses round-trip valid states through `setState`/`getState`
+- [ ] `UNIT-TEST-SM-ASTATE-4-25RMFZ.P2` — malformed encodings reject without partial mutation through `setState`
 
-| Requirement / invariant                                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                | Gap / divergence                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-SM-1-Y72CKX`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)            | Covered               | **Here:** wrapper-injected header before dispatch. **Other files:** replay context set by [execution-and-consumer](../../../../specification/enforcement/execution-and-consumer.md) paths.                                                                                                                                                              | None.                                                                                                                                                                        |
-| [`REQ-SM-5-3GS7A7`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)            | Covered               | **Here:** `getNextToWrite` as the block-author authority.                                                                                                                                                                                                                                                                                               | None.                                                                                                                                                                        |
-| [`INV-ENFSM-1-762ACD`](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd) | Covered               | **Here:** `_setState` restores the complete supplied pre-state before execution; replay derives nothing from residual storage. **Other files:** replay driver `executeStateTransition` on [StateChannelManagerProxy](./StateChannelDiamondProxy/StateChannelManagerProxy.sol.md).                                                                       | Shared single deployment for all channels (documented constraint).                                                                                                           |
-| [`REQ-ENFSM-1-DKJCY2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) | Covered               | **Here:** the wrapper injects the protocol context before dispatch. **Other files:** the gas bound applied by the manager's execution call.                                                                                                                                                                                                             | None.                                                                                                                                                                        |
-| [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)            | Covered               | **Here:** [removeParticipant](../../../../../../contracts/V1/AStateMachine.sol#L124) and [slashParticipant](../../../../../../contracts/V1/AStateMachine.sol#L116) record and return the hook exit only on success. **Other files:** MathStateMachine implements the membership and balance hooks; dispute processing consumes their returned exits.    | Successful removal now records its exit through the same wrapper contract as slashing; hooks retain their balance semantics. The dispute consumer reads returned exits once. |
-| [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)          | Covered               | **Here:** [removeParticipant](../../../../../../contracts/V1/AStateMachine.sol#L124) and [slashParticipant](../../../../../../contracts/V1/AStateMachine.sol#L116) skip recording when the hook returns false. **Other files:** MathStateMachine returns false without mutation for an absent member; the reduction consumer skips failed hook results. | Absent and repeated targets leave state, balances, messages and withdrawals unchanged, including stale chain membership.                                                     |
+## UNIT-TEST-SM-ASTATE-5-HYC257
 
-## Component test obligations
+Inbound dispatch
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
-| Unit test ID                                                                      | Obligation                        | Public entry and setup                                                            | Oracle and forbidden effects                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-astate-machine-1-67j5w6"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6` | Context injection and round trips | Execute transitions reading injected vs ambient context; serialize/restore cycles | Injected values govern; ambient reads detectable; byte-exact round trips | <a id="unit-test-astate-machine-1-67j5w6.p1"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P1` — injected author field; <a id="unit-test-astate-machine-1-67j5w6.p2"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P2` — ambient divergence detection; <a id="unit-test-astate-machine-1-67j5w6.p3"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P3` — round-trip + re-execution equality; <a id="unit-test-astate-machine-1-67j5w6.p4"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P4` — joinChannel membership entry; <a id="unit-test-astate-machine-1-67j5w6.p5"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P5` — injected time field; <a id="unit-test-astate-machine-1-67j5w6.p6"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P6` — injected position field; <a id="unit-test-astate-machine-1-67j5w6.p7"></a>`UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P7` — removeParticipant membership entry |
+- [x] `UNIT-TEST-SM-ASTATE-5-HYC257.P1` — Join messages decode and reach `_joinChannel`
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P2` — custom messages reach only the custom hook
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P3` — hook-false paths are atomic
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P4` — unknown-type messages reach only the custom hook
+- [ ] `UNIT-TEST-SM-ASTATE-5-HYC257.P5` — hook-revert paths are atomic
 
-## Related source reports
+## UNIT-TEST-SM-ASTATE-6-KJSK5V
 
-- [MathStateMachine](./examples/MathStateMachine/MathStateMachine.sol.md) (reference integration), [EvmDiamondStateMachine](../../src/evm/EvmDiamondStateMachine.ts.md).
+Removal and slashing wrappers
+
+- Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
+
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P1` — Equivalent successful removal and slashing produce one canonical exit message
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P2` — successful removal records its returned exit exactly once
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P3` — wrapper failure does not leak state or messages
+- [ ] `UNIT-TEST-SM-ASTATE-6-KJSK5V.P4` — retry after failure does not leak state or messages
+
+## UNIT-TEST-SM-ASTATE-7-BMXBKT
+
+Complete public interface
+
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
+
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P1` — The transition entry point is callable with canonical inputs, correct mutability, deterministic rejection, and no undeclared side effects
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P2` — the state hooks satisfy the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P3` — the balance hooks satisfy the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P4` — the next-writer selector satisfies the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P5` — inbound dispatch satisfies the same oracle
+- [ ] `UNIT-TEST-SM-ASTATE-7-BMXBKT.P6` — the removal/slashing wrappers satisfy the same oracle

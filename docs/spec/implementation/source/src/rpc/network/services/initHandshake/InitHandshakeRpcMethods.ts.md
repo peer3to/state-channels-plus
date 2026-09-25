@@ -1,105 +1,35 @@
-# InitHandshakeRpcMethods.ts — Source Report
+# InitHandshakeRpcMethods.ts
 
-> **Source:** [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../../../../../views/architecture/sdk/rpc/README.md), [architecture/sdk/rpc/handshake.md](../../../../../../views/architecture/sdk/rpc/handshake.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-AUTH-2-VQ6D54` (Domain separation)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54)
+- [`REQ-AUTH-1-RF901K` (Validate before signing)](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k)
+- [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
+- [`REQ-ID-4-BNEKCM` (Domain-separated signing forms)](../../../../../../../specification/protocol-model/identity.md#req-id-4-bnekcm)
+- [`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya)
+- [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
 
-## Responsibility and observable boundary
+## UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4
 
-The two wire endpoints: `onInitHandshakeRequest` (validate shape and time window, sign the
-domain-tagged challenge, arm the ack timeout) and `onInitHandshakeAck` (duplicate-ack violation
-check, mark acked, try finalize). The only unguarded endpoints in the system.
+Endpoint validation
 
-## Key design decisions
+- Setup: Send malformed shapes, NaN/inf/boundary times, valid requests, and duplicate acks
+- Oracle: Invalid input disconnects before signing; valid requests sign under the tag; duplicate ack terminates+excludes
 
-1. **Validate before signing, structurally.** Non-32-byte challenge or non-finite time is rejected
-   before any signature exists. A malformed request from an already authenticated sender is
-   excluded with a recorded verdict; a sender without proven identity is only disconnected. The NaN
-   check is load-bearing because NaN defeats window
-   comparisons ([`REQ-AUTH-1-RF901K` (Validate before signing)](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k)).
-2. **Request-time skew is bounded, not punitive.** An out-of-window request time states `allowRetry()`
-   with the policy's default bound, so clock skew costs the connection but not the sender's standing
-   until its session bound is reached. The count is keyed by the transport's Hyperswarm key before
-   proof and by the EVM address after, so a first contact with a wrong clock is refused by its key at
-   the bound
-   ([DisconnectPolicy](../../../../DisconnectPolicy.ts.md), [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
-3. **The ack's challenge parameter is diagnostic only** — never trusted for decisions ([`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya) keeps authority with the signature).
-4. **Duplicate ack = violation** (replay-rejecting class, [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents                                                                                                                               |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | Challenge+time (request); optional challenge (ack).                                                                                    |
-| Outputs      | Signature+time+transport preference; ack bookkeeping.                                                                                  |
-| Owned state  | None (per-dispatch).                                                                                                                   |
-| Side effects | Signing; counted close on request skew, exclusion with a reason on a malformed request or a duplicate acknowledgement; timeout arming. |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                                | Specification IDs                                                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [InitHandshakeRpcMethods.ts](../../../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts) | [`INV-AUTH-2-VQ6D54`](../../../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54), [`REQ-AUTH-1-RF901K`](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k), [`REQ-RPC-4-9VX0B9`](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Signing for an unauthenticated caller is safe only under the domain tag ([`INV-AUTH-2-VQ6D54` (Domain separation)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54)) plus full pre-validation.
-
-## Specification adherence
-
-- Shape+window validation precedes the signature ([`REQ-AUTH-1-RF901K` (Validate before signing)](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k)); domain-tagged signing only ([`INV-AUTH-2-VQ6D54` (Domain separation)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54)).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                     | Implementation status | Evidence                                                                                                                                                                                                                                                        | Gap / divergence                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-AUTH-1-RF901K`](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k) | Covered               | **Here:** hex-shape + finite-time gates before signing ([#L25](../../../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)). **Other files:** [InitHandshakeService](InitHandshakeService.ts.md) owns the initiator half. | None.                                                                                                                              |
-| [`INV-AUTH-2-VQ6D54`](../../../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54) | Covered               | **Here:** signing only under the versioned handshake domain tag — structurally non-colliding with raw-hash protocol signatures.                                                                                                                                 | None.                                                                                                                              |
-| [`REQ-ID-4-BNEKCM`](../../../../../../../specification/protocol-model/identity.md#req-id-4-bnekcm)          | Covered               | **Here:** the domain-tagged session form cannot cross-verify with protocol-object signatures. **Other files:** protocol-object side in [SignatureUtils](../../../../utils/SignatureUtils.ts.md).                                                                | None (cross-deployment object domains remain [`OQ-29-EFY4NF`](../../../../../../../specification/open-questions.md#oq-29-efy4nf)). |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                      | Obligation          | Public entry and setup                                                            | Oracle and forbidden effects                                                                                   | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-init-handshake-methods-1-2739t4"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4` | Endpoint validation | Send malformed shapes, NaN/inf/boundary times, valid requests, and duplicate acks | Invalid input disconnects before signing; valid requests sign under the tag; duplicate ack terminates+excludes | <a id="unit-test-init-handshake-methods-1-2739t4.p1"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P1` — non-hex challenge; <a id="unit-test-init-handshake-methods-1-2739t4.p2"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P2` — NaN time; <a id="unit-test-init-handshake-methods-1-2739t4.p3"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P3` — window boundary; <a id="unit-test-init-handshake-methods-1-2739t4.p4"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P4` — valid sign path; <a id="unit-test-init-handshake-methods-1-2739t4.p5"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P5` — duplicate ack violation; <a id="unit-test-init-handshake-methods-1-2739t4.p6"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P6` — wrong-length challenge; <a id="unit-test-init-handshake-methods-1-2739t4.p7"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P7` — infinite time; <a id="unit-test-init-handshake-methods-1-2739t4.p8"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P8` — a request time ahead of the window records one strike on an unauthenticated sender's key; <a id="unit-test-init-handshake-methods-1-2739t4.p9"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P9` — a request time behind the window records one strike on an unauthenticated sender's key; <a id="unit-test-init-handshake-methods-1-2739t4.p10"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P10` — a request time exactly on the upper window bound signs; <a id="unit-test-init-handshake-methods-1-2739t4.p11"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P11` — a request time exactly on the lower window bound signs; <a id="unit-test-init-handshake-methods-1-2739t4.p12"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P12` — an authenticated sender's skewed request is keyed by its EVM address; <a id="unit-test-init-handshake-methods-1-2739t4.p13"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P13` — the third skewed request on one key suspends it |
-
-For [`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4`](InitHandshakeRpcMethods.ts.md#unit-test-init-handshake-methods-1-2739t4), malformed challenge and time inputs
-must be rejected before signing. When the transport already carries an authenticated address, a
-malformed rejection also blacklists that peer; without identity proof it only closes the transport.
-An out-of-window request time never blacklists: it closes under the shared per-peer bound, keyed by
-the sender's transport key before proof, and suspends the sender for the session only on the close
-that reaches it.
-
-## Related source reports
-
-- [InitHandshakeService](InitHandshakeService.ts.md).
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P1` — non-hex challenge
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P2` — NaN time
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P3` — window boundary
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P4` — valid sign path
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P5` — duplicate ack violation
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P6` — wrong-length challenge
+- [ ] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P7` — infinite time
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P8` — a request time ahead of the window records one strike on an unauthenticated sender's key
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P9` — a request time behind the window records one strike on an unauthenticated sender's key
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P10` — a request time exactly on the upper window bound signs
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P11` — a request time exactly on the lower window bound signs
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P12` — an authenticated sender's skewed request is keyed by its EVM address
+- [x] `UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P13` — the third skewed request on one key suspends it

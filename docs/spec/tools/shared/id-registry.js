@@ -60,7 +60,9 @@ function addCandidate(candidates, candidate) {
         ...candidate,
         priority: layerPriority(candidate.document, candidate.id),
         kindPriority:
-            candidate.kind === "heading" || candidate.kind === "statement"
+            candidate.kind === "heading" ||
+            candidate.kind === "statement" ||
+            candidate.kind === "bullet"
                 ? 0
                 : candidate.kind === "table" || candidate.kind === "plan-root"
                   ? 1
@@ -120,8 +122,28 @@ function collectCandidates(document) {
         const heading = content.match(
             new RegExp(`^#{2,4}\\s+(${AUDITABLE_ID_PATTERN})(?:\\s|$)`)
         )?.[1];
-        if (heading && (QUESTION_RE.test(heading) || FINDING_RE.test(heading)))
+        if (
+            heading &&
+            (QUESTION_RE.test(heading) ||
+                FINDING_RE.test(heading) ||
+                REQUIREMENT_RE.test(heading) ||
+                IMPLEMENTATION_TEST_RE.test(heading))
+        )
             add(heading, index, "heading");
+
+        // A test case is a bullet under its family or requirement heading;
+        // the optional checkbox is written by `yarn spec:ids:fix`.
+        const bullet = content.match(
+            new RegExp(
+                `^\\s*-\\s+(?:\\[[ x]\\]\\s+)?\\x60(${AUDITABLE_ID_PATTERN})\\x60\\s+—`
+            )
+        )?.[1];
+        if (
+            bullet &&
+            (PERMUTATION_RE.test(bullet) ||
+                IMPLEMENTATION_PERMUTATION_RE.test(bullet))
+        )
+            add(bullet, index, "bullet");
 
         const statement = content.match(
             new RegExp(
@@ -143,8 +165,7 @@ function collectCandidates(document) {
                     header
                 )
                     ? index
-                    : /^(?:unit|integration) test id$/.test(header) ||
-                        header === "id"
+                    : header === "id"
                       ? index
                       : -1
             )
@@ -153,15 +174,14 @@ function collectCandidates(document) {
         const requirementIndex = table.headers.indexOf(
             "requirement / invariant"
         );
-        const permutationsIndex = table.headers.findIndex((header) =>
-            /^required permutations(?: and oracle)?$/.test(header)
+        const permutationsIndex = table.headers.indexOf(
+            "required permutations"
         );
         for (const row of table.rows) {
             for (const index of rootIndexes) {
                 const id = identityFromCell(row.cells[index]);
                 if (
                     REQUIREMENT_RE.test(id) ||
-                    IMPLEMENTATION_TEST_RE.test(id) ||
                     QUESTION_RE.test(id) ||
                     FINDING_RE.test(id)
                 )
@@ -182,10 +202,7 @@ function collectCandidates(document) {
                 for (const match of row.cells[permutationsIndex].matchAll(
                     new RegExp(AUDITABLE_ID_PATTERN, "g")
                 )) {
-                    if (
-                        PERMUTATION_RE.test(match[0]) ||
-                        IMPLEMENTATION_PERMUTATION_RE.test(match[0])
-                    )
+                    if (PERMUTATION_RE.test(match[0]))
                         add(match[0], row.line, "permutation-table");
                 }
             }
@@ -237,10 +254,25 @@ function buildIdRegistry() {
     return { documents, definitions, duplicates };
 }
 
+// A family heading's slug is its anchor, and a test-case bullet has no anchor
+// of its own: it links to the heading of its family or requirement. Neither
+// gets an <a id> anchor.
+function headingAnchored(definition) {
+    return (
+        definition.kind === "bullet" ||
+        (definition.kind === "heading" &&
+            IMPLEMENTATION_TEST_RE.test(definition.id))
+    );
+}
+
 function canonicalTarget(from, definition) {
     const relative = path.relative(path.dirname(from), definition.document);
     const document = relative ? relative.split(path.sep).join("/") : "";
-    return `${document}#${anchorForId(definition.id)}`;
+    const anchored =
+        definition.kind === "bullet"
+            ? definition.id.replace(/\.(?:T\d+\.)?P\d+$/, "")
+            : definition.id;
+    return `${document}#${anchorForId(anchored)}`;
 }
 
 function idMentions(markdown) {
@@ -322,6 +354,7 @@ function linkIdReferences(markdown, document, registry) {
 module.exports = {
     buildIdRegistry,
     canonicalTarget,
+    headingAnchored,
     idMentions,
     identityFromCell,
     linkIdReferences,
