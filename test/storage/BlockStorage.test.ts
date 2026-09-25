@@ -589,6 +589,22 @@ describe("BlockStorage one confirmation signature per signer", () => {
         ]).to.deep.equal([f.signature(1, 0)]);
     });
 
+    it("first store succeeds when the author signature recovers to no signer", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        const block = Block.fromBlockConfirmation({
+            signedBlock: {
+                encodedBlock: f.block.encode(),
+                signature: "0x" + "00".repeat(64) + "ff"
+            },
+            signatures: [f.signature(1, 0), f.signature(1, 1)]
+        });
+        expect(storage.storeBlock(block)).to.equal(f.block.hash);
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0)]);
+    });
+
     it("a merge with only held signers leaves the stored signatures unchanged", () => {
         const f = new QueueAdmissionFixture();
         const storage = new BlockStorage();

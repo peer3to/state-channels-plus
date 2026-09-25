@@ -260,6 +260,7 @@ describe("Unit: StoredBlockMergeService", function () {
             0
         );
 
+        await h.control(writer).stub.observeAdmission().request();
         const r = await h.transition.runStoredBlockMerge({
             peerIndex: writer.index,
             confirmation: {
@@ -267,9 +268,20 @@ describe("Unit: StoredBlockMergeService", function () {
                     writerBundle!.encodedSignedBlock,
                     Type.SignedBlock
                 ),
-                signatures: [authorVariant, ...newSignerVariants]
+                // held signatures, an author variant and two variants of
+                // the one new signer
+                signatures: [
+                    ...writerBundle!.confirmationSignatures,
+                    authorVariant,
+                    ...newSignerVariants
+                ]
             }
         });
+        const observation = await h
+            .control(writer)
+            .stub.getAdmissionObservation()
+            .request();
+        await h.control(writer).stub.restoreAdmissionObservation().request();
         expect(r.result).to.equal(BlockValidationResult.BROADCAST);
         expect(r.persistedSignatures).to.include.members([
             ...writerBundle!.confirmationSignatures,
@@ -277,6 +289,65 @@ describe("Unit: StoredBlockMergeService", function () {
         ]);
         expect(r.persistedSignatures).to.not.include(newSignerVariants[1]);
         expect(r.persistedSignatures).to.not.include(authorVariant);
+        // the relay carries only the new signer's first signature
+        expect(observation.broadcastSignatures).to.deep.include([
+            newSignerVariants[0]
+        ]);
+        expect(observation.broadcastSignatures.flat()).to.not.include.members([
+            authorVariant,
+            newSignerVariants[1]
+        ]);
+    });
+
+    it("two variants of one outsider signer from two suppliers → both suppliers are disconnected", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+        const observer = h.getPeer(0);
+        const [firstSupplier, secondSupplier] = [h.getPeer(1), h.getPeer(2)];
+        const bundle = await h
+            .control(observer)
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        const outsider = ethers.Wallet.createRandom();
+        const outsiderVariants = [0, 1].map((variant) =>
+            signBlockVariant(outsider, bundle!.hash, variant)
+        );
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+
+        // One queued entry supplied by both sources: the first supplier gave
+        // the first variant, the second supplier only the later one.
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: observer.index,
+            confirmation: { signedBlock, signatures: [] },
+            networkCopies: [
+                {
+                    sender: firstSupplier.address,
+                    signatures: [outsiderVariants[0]]
+                },
+                {
+                    sender: secondSupplier.address,
+                    signatures: [outsiderVariants[1]]
+                }
+            ]
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.not.include.members(outsiderVariants);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(firstSupplier.address)
+                .request()
+        ).to.equal(true);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(secondSupplier.address)
+                .request()
+        ).to.equal(true);
     });
 
     it("stray signature only → stripped, post-strip re-check lands DUPLICATE", async function () {

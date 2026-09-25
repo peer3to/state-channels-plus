@@ -269,23 +269,23 @@ export default class Block {
     /**
      * The incoming confirmation signatures whose recovered signer has no
      * signature on this block yet (author included), keeping the first one per
-     * signer. Values that cannot be recovered are left out. Returns normalized
+     * signer. Values that cannot be recovered are left out, and an author
+     * signature that cannot be recovered holds no signer. Returns normalized
      * signatures; this block is not changed.
      */
     newSignerSignatures(
         incoming: Signature[] | Set<Signature>
     ): Set<Signature> {
-        const heldSigners = this.deriveAllSignerAddresses();
+        const heldSigners = new Set<Address>();
+        for (const held of this.allSignatures) {
+            const signer = this.tryRecoverSigner(held);
+            if (signer) heldSigners.add(signer);
+        }
         const selected = new Set<Signature>();
         for (const signature of incoming) {
             const normalized = SignatureUtils.normalizeSignature(signature);
-            let signer: Address;
-            try {
-                signer = this.signatureToAddress(normalized);
-            } catch {
-                continue;
-            }
-            if (heldSigners.has(signer)) continue;
+            const signer = this.tryRecoverSigner(normalized);
+            if (!signer || heldSigners.has(signer)) continue;
             heldSigners.add(signer);
             selected.add(normalized);
         }
@@ -372,6 +372,14 @@ export default class Block {
             encodedBlock: this.encode(),
             signature: (await this.sign(signer)) as Bytes
         };
+    }
+
+    private tryRecoverSigner(signature: Signature): Address | undefined {
+        try {
+            return this.signatureToAddress(signature);
+        } catch {
+            return undefined;
+        }
     }
 
     private mergeOnChainTimestamp(incoming: Block): void {

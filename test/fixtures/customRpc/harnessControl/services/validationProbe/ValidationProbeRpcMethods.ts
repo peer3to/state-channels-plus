@@ -12,6 +12,7 @@ import type {
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
     ReductionChallengeProbe,
+    StoredMergeNetworkCopy,
     ValidationProbeService
 } from "./ValidationProbeService";
 
@@ -184,6 +185,7 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         encodedBlockConfirmation: string,
         options?: {
             strategy?: "active" | "dispute" | "spectating" | "calldata";
+            networkCopies?: StoredMergeNetworkCopy[];
         }
     ): Promise<{
         result: number | null;

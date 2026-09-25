@@ -27,6 +27,7 @@ import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
 import type { StateChannelManagerInterface } from "@typechain-types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct
@@ -350,6 +351,8 @@ export class StubService extends ANetworkRpcService<
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
+        // Confirmation signatures carried by each observed broadcast, in order.
+        broadcastSignatures: string[][];
         // Most confirmation values one observed network copy carried.
         largestNetworkEntry: number;
         // Outcome of each observed stored-block merge, in completion order.
@@ -671,6 +674,7 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
+            broadcastSignatures: [] as string[][],
             largestNetworkEntry: 0,
             storedMergeResults: [] as (BlockValidationResult | null)[],
             holdGossip: options.holdGossip ?? false,
@@ -759,6 +763,10 @@ export class StubService extends ANetworkRpcService<
                 rpc.method === "onBlockConfirmation"
             ) {
                 observation.broadcasts++;
+                const confirmation = rpc.params[0] as BlockConfirmationStruct;
+                observation.broadcastSignatures.push(
+                    confirmation.signatures.map(String)
+                );
                 if (observation.holdGossip) {
                     observation.heldGossip.push(() => broadcast(rpc));
                     return;
@@ -791,6 +799,9 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,
+            broadcastSignatures: (observation?.broadcastSignatures ?? []).map(
+                (signatures) => [...signatures]
+            ),
             largestNetworkEntry: observation?.largestNetworkEntry ?? 0,
             storedMergeResults: [...(observation?.storedMergeResults ?? [])],
             heldGossip: observation?.heldGossip.length ?? 0

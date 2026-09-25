@@ -9,7 +9,8 @@ import {
     assertIndependentNetworkAllowances,
     assertStoredMalformedNetworkCopy,
     assertOutsiderProofDoesNotAdmitCopy,
-    assertRepeatedStoredSignerVariants
+    assertRepeatedStoredSignerVariants,
+    assertNewBlockSignerVariantsStoredOnce
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import {
     assertSlashAdmission,
@@ -53,6 +54,10 @@ describe("E2E: BlockQueueManager", function () {
 
     it("repeated batches of a participant's alternate signatures keep one stored signature per signer and relay only the first", async () => {
         await assertRepeatedStoredSignerVariants();
+    });
+
+    it("a new block carrying alternate signatures of one participant is stored with one signature per signer", async () => {
+        await assertNewBlockSignerVariantsStoredOnce();
     });
 
     it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {
