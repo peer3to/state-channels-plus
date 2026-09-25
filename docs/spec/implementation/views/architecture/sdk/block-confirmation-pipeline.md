@@ -58,9 +58,16 @@ directly:
    [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L288):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires
-   `onPostedCalldata`, then calls `ingestBlockConfirmation` with
-   `onChainTimestamp` and a fresh
-   [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15).
+   `onPostedCalldata`, then calls
+   [`BlockQueueManager.ingestPostedBlock`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L220)
+   with the block and its `onChainTimestamp`. The work item carries the
+   timestamp, so
+   [`StateManager.getActiveValidationStrategy`](../../../../../../src/stateManager/StateManager.ts#L524)
+   selects `CalldataCommittedStrategy` for a committed participant (spectating
+   for an observer), at ingest and again under the mutex at execution.
+   `DisputeManager` (after any failed dispute upload) and
+   `ParticipantTimeoutService.onPostedCommitment` hand withheld blocks back
+   through the same entry point.
    The same handler is also reached on demand by
    `EventSyncService.tryRecoverBlockCalldataAndScheduleValidation` (timeout
    checks and time validation query the chain for missed calldata).
