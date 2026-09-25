@@ -2,6 +2,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { assertSyncPayloadKeepsGenuineSignatures } from "@test/fixtures/ChainRejectedSignatureFixture";
 import {
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
@@ -207,6 +208,12 @@ describe("Unit: SpectateService", function () {
             } finally {
                 await restore();
             }
+        });
+    });
+
+    describe("persistSyncPayload", function () {
+        it("a finalized block's chain-rejected and non-hex values are stripped and the sync completes", async function () {
+            await assertSyncPayloadKeepsGenuineSignatures();
         });
     });
 

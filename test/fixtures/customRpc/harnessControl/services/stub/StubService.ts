@@ -357,6 +357,8 @@ export class StubService extends ANetworkRpcService<
         largestNetworkEntry: number;
         // Outcome of each observed stored-block merge, in completion order.
         storedMergeResults: (BlockValidationResult | null)[];
+        // Calls to the on-chain confirmation-signature classifier.
+        signerClassificationCalls: number;
         holdGossip: boolean;
         heldGossip: (() => void)[];
         releaseMembership: () => void;
@@ -655,6 +657,8 @@ export class StubService extends ANetworkRpcService<
         const request = router.sendRpcRequest.bind(router);
         const spectate = this.p2pManager.localRpc.spectateService;
         const sync = spectate.sync.bind(spectate);
+        const localDiamond = machine.localDiamondContract;
+        const classify = localDiamond.retrieveSignerAddresses;
         const storedMerge = this.sm.storedBlockMergeService;
         const mergeStored =
             storedMerge.tryMergeStoredBlockConfirmation.bind(storedMerge);
@@ -677,6 +681,7 @@ export class StubService extends ANetworkRpcService<
             broadcastSignatures: [] as string[][],
             largestNetworkEntry: 0,
             storedMergeResults: [] as (BlockValidationResult | null)[],
+            signerClassificationCalls: 0,
             holdGossip: options.holdGossip ?? false,
             heldGossip: [] as (() => void)[],
             releaseMembership,
@@ -689,6 +694,7 @@ export class StubService extends ANetworkRpcService<
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
                 storedMerge.tryMergeStoredBlockConfirmation = mergeStored;
+                localDiamond.retrieveSignerAddresses = classify;
             }
         };
         this.admissionObservation = observation;
@@ -724,6 +730,13 @@ export class StubService extends ANetworkRpcService<
             }
             return entry;
         };
+        // Record-only: counts the real contract calls and forwards them.
+        localDiamond.retrieveSignerAddresses = new Proxy(classify, {
+            apply: (target, receiver, parameters) => {
+                observation.signerClassificationCalls++;
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
         storedMerge.tryMergeStoredBlockConfirmation = async (...args) => {
             const result = await mergeStored(...args);
             if (
@@ -804,6 +817,8 @@ export class StubService extends ANetworkRpcService<
             ),
             largestNetworkEntry: observation?.largestNetworkEntry ?? 0,
             storedMergeResults: [...(observation?.storedMergeResults ?? [])],
+            signerClassificationCalls:
+                observation?.signerClassificationCalls ?? 0,
             heldGossip: observation?.heldGossip.length ?? 0
         };
     }

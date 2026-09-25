@@ -2,6 +2,7 @@ import EventSyncService from "../eventSync/EventSyncService";
 import FraudProofService from "../utils/FraudProofService";
 import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { getChainSignatureVerdict, setChainSignatureVerdict } from "@/cache";
 
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
@@ -16,7 +17,6 @@ import {
 } from "@/types";
 import {
     Address,
-    Bytes,
     ChannelId,
     ForkId,
     Timestamp,
@@ -30,7 +30,7 @@ import type {
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
-import { ZeroAddress, ZeroHash } from "ethers";
+import { getBytes, isHexString, ZeroAddress, ZeroHash } from "ethers";
 
 export enum OnChainPostTiming {
     NOT_POSTED,
@@ -83,29 +83,54 @@ export default class ValidationService {
      * them, or they cannot be recovered at all. Re-encodings of a valid
      * signature (v = 0/1/35+, 64-byte compact, high s) land here, so they are
      * never selected or stored in place of the genuine one.
+     *
+     * Values that are not byte strings are malformed without a call (the ABI
+     * encoder would throw on them). Values the stored block already holds were
+     * classified when stored and are skipped, and each verdict is memoized per
+     * (block hash, signature), so relayed copies make no repeated call.
      */
     public async findMalformedConfirmationSignatures(
         block: Block
     ): Promise<Set<Signature>> {
-        const signatures = Array.from(block.confirmationSignatures);
         const malformed = new Set<Signature>();
-        if (signatures.length === 0) return malformed;
-        const signers =
-            await this.diamondStateMachine.localDiamondContract.retrieveSignerAddresses(
-                block.encode(),
-                signatures as Bytes[]
-            );
-        signatures.forEach((signature, index) => {
-            if (signers[index] === ZeroAddress) {
+        const held = this.storage.blocks.getBlock(
+            block.hash
+        )?.confirmationSignatures;
+        const digest = getBytes(block.hash);
+        const unclassified: string[] = [];
+        for (const signature of block.confirmationSignatures) {
+            if (
+                typeof signature !== "string" ||
+                !isHexString(signature, true)
+            ) {
                 malformed.add(signature);
-                return;
+                continue;
             }
+            if (held?.has(signature)) continue;
+            const verdict = getChainSignatureVerdict(digest, signature);
+            if (verdict === undefined) unclassified.push(signature);
+            else if (!verdict) malformed.add(signature);
+        }
+        if (unclassified.length > 0) {
+            const signers =
+                await this.diamondStateMachine.localDiamondContract.retrieveSignerAddresses(
+                    block.encode(),
+                    unclassified
+                );
+            unclassified.forEach((signature, index) => {
+                const accepted = signers[index] !== ZeroAddress;
+                setChainSignatureVerdict(digest, signature, accepted);
+                if (!accepted) malformed.add(signature);
+            });
+        }
+        for (const signature of block.confirmationSignatures) {
+            if (malformed.has(signature)) continue;
             try {
                 block.signatureToAddress(signature);
             } catch {
                 malformed.add(signature);
             }
-        });
+        }
         return malformed;
     }
 

@@ -14,7 +14,11 @@ import { verifyMessage, hexlify } from "ethers";
  */
 const cache = new Map<string, Address>();
 
-function keyOf(message: Uint8Array, signature: Signature): string {
+/** Cache key for a (message digest, signature) pair; shared by signature caches. */
+export function signatureCacheKey(
+    message: Uint8Array,
+    signature: Signature
+): string {
     return hexlify(message) + signature;
 }
 
@@ -22,7 +26,7 @@ export function recoverSigner(
     message: Uint8Array,
     signature: Signature
 ): Address {
-    const key = keyOf(message, signature);
+    const key = signatureCacheKey(message, signature);
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
 

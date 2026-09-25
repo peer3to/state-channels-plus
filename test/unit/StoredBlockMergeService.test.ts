@@ -1,5 +1,6 @@
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
+import { NON_HEX_SIGNATURE } from "@test/fixtures/ChainRejectedSignatureFixture";
 import {
     signatureReencodings,
     signBlockVariant
@@ -429,6 +430,115 @@ describe("Unit: StoredBlockMergeService", function () {
                 .query.isBlacklisted(supplier.address)
                 .request()
         ).to.equal(true);
+    });
+
+    it("a value that is not a byte string next to a genuine signature → the genuine signature merges and the supplier is blacklisted", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // silence a non-writer so the writer never holds its signature
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        const supplier = h.peers.find(
+            (p) => p.index !== writer.index && p.index !== silenced.index
+        )!;
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        await h.control(silenced).stub.restoreBroadcast().request();
+        const genuine = await silenced.signer.signMessage(
+            ethers.getBytes(writerBundle!.hash)
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: writer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    writerBundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: []
+            },
+            networkCopies: [
+                {
+                    sender: supplier.address,
+                    signatures: [NON_HEX_SIGNATURE, genuine]
+                }
+            ]
+        });
+        expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(r.persistedSignatures).to.include(genuine);
+        expect(r.persistedSignatures).to.not.include(NON_HEX_SIGNATURE);
+        expect(
+            await h
+                .control(writer)
+                .query.isBlacklisted(supplier.address)
+                .request()
+        ).to.equal(true);
+    });
+
+    it("a second identical copy makes no on-chain signature classification call", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // silence a non-writer so its genuine signature is new to the writer
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        await h.control(silenced).stub.restoreBroadcast().request();
+        const genuine = await silenced.signer.signMessage(
+            ethers.getBytes(writerBundle!.hash)
+        );
+        const signedBlock = Codec.decode(
+            writerBundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        // a chain-rejected value: after the first copy its verdict is known
+        const { v0 } = signatureReencodings(String(signedBlock.signature));
+        const copy = {
+            peerIndex: writer.index,
+            confirmation: { signedBlock, signatures: [v0, genuine] }
+        };
+
+        await h.control(writer).stub.observeAdmission().request();
+        const first = await h.transition.runStoredBlockMerge(copy);
+        const afterFirst = await h
+            .control(writer)
+            .stub.getAdmissionObservation()
+            .request();
+        const second = await h.transition.runStoredBlockMerge(copy);
+        const afterSecond = await h
+            .control(writer)
+            .stub.getAdmissionObservation()
+            .request();
+        await h.control(writer).stub.restoreAdmissionObservation().request();
+
+        expect(first.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(afterFirst.signerClassificationCalls).to.be.greaterThan(0);
+        expect(second.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(afterSecond.signerClassificationCalls).to.equal(
+            afterFirst.signerClassificationCalls
+        );
     });
 
     it("stray signature only → stripped, post-strip re-check lands DUPLICATE", async function () {

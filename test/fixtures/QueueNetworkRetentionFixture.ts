@@ -726,19 +726,13 @@ export async function assertRepeatedStoredSignerVariants() {
     try {
         // Stored merges run as separate tasks; send each batch only after
         // the previous one's merge finished, so the first is the one with a
-        // new signer. The source-filtered merge record is the completion
-        // signal: other peers' copies of this block also end in the
-        // processed event.
+        // new signer.
         for (let batch = 0; batch < 3; batch++) {
             await sendBatch(batch);
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(observer)
-                            .stub.getAdmissionObservation()
-                            .request()
-                    ).storedMergeResults.length > batch
+            await h.rpcStub.waitForStoredMergeResults(
+                observer.index,
+                authored!.hash,
+                batch + 1
             );
         }
         const observation = await h

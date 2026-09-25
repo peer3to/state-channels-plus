@@ -16,11 +16,11 @@ signature, and a `didSign` address cache that stays coherent across expand and r
 `getRelevantTimestamp` is checked per branch (signed participant, unsigned with/without
 `onChainTimestamp`, max of both), and `onChainTimestamp` is shown to be local-only metadata that
 never changes encoding, hash, or equality. Out of scope: validation, storage, and queue behavior
-around blocks (owned by the ValidationService and BlockQueueManager suites). Of the six
-[`UNIT-TEST-BLOCK-MODEL-1-037DM6`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6) permutations, four are covered by single tests here: the round trip
-(P1), duplicate-signature dedup (P2), and the author-signed (P4) and posted (P6)
-relevant-timestamp selections. P3 targets `didEveryoneSign`, which this file never calls, and
-P5's malleated-signature dedup is never exercised, so those two stay unassigned.
+around blocks (owned by the ValidationService and BlockQueueManager suites). The
+[`UNIT-TEST-BLOCK-MODEL-1-037DM6`](../../../../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6) obligation lists 14 permutations. Every one
+except P3 has a test here; the re-encoding test covers P5 (malleated-signature dedup: re-encodings
+of a signature the block already holds add no signer). P3 targets `didEveryoneSign`, which this
+file never calls, so it stays unassigned.
 
 ## Tests and covered test IDs
 

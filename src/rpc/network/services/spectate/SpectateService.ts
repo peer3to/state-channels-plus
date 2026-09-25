@@ -1047,6 +1047,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 if (this.hasAnyBlockConflict(finalizedBlocks)) {
                     return { shouldAbort: true };
                 }
+                // Classify before the first write, so a failure cannot leave
+                // the sync half-applied.
+                await this.stripChainRejectedSignatures(finalizedBlocks);
 
                 for (const dw of syncPayload.disputeWindows) {
                     for (const dispute of dw.disputeConfirmations) {
@@ -1072,7 +1075,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             .stateMachineStateHash
                     }
                 );
-                await this.persistFinalizedBlocks(finalizedBlocks);
+                this.persistFinalizedBlocks(finalizedBlocks);
                 for (const snapshot of syncPayload.milestoneSnapshots)
                     storage.stateSnapshots.storeStateSnapshot(
                         StateSnapshot.from(snapshot)
@@ -1121,17 +1124,22 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return blocks.some((block) => this.hasBlockConflict(block));
     }
 
-    private async persistFinalizedBlocks(blocks: Block[]): Promise<void> {
-        const stateManager = this.p2pManager.stateManager;
+    /** Keep only confirmation signatures the chain accepts. */
+    private async stripChainRejectedSignatures(blocks: Block[]): Promise<void> {
+        const validationService =
+            this.p2pManager.stateManager.validationService;
         for (const block of blocks) {
-            // Keep only confirmation signatures the chain accepts.
             block.removeConfirmationSignatures(
-                await stateManager.validationService.findMalformedConfirmationSignatures(
+                await validationService.findMalformedConfirmationSignatures(
                     block
                 )
             );
-            stateManager.storage.blocks.storeBlock(block);
         }
+    }
+
+    private persistFinalizedBlocks(blocks: Block[]): void {
+        const storage = this.p2pManager.stateManager.storage;
+        for (const block of blocks) storage.blocks.storeBlock(block);
     }
 
     private hasBlockConflict(block: Block): boolean {

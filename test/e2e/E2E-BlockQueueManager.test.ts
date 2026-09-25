@@ -3,6 +3,7 @@ import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { assertNonHexNewBlockCopyKeepsGenuineSignature } from "@test/fixtures/ChainRejectedSignatureFixture";
 import {
     assertStoredCopyQuota,
     assertPendingJoinAdmission,
@@ -58,6 +59,10 @@ describe("E2E: BlockQueueManager", function () {
 
     it("a new block carrying alternate signatures of one participant is stored with one signature per signer", async () => {
         await assertNewBlockSignerVariantsStoredOnce();
+    });
+
+    it("a queued new block copy carrying a non-hex value commits with the genuine signature and blacklists its supplier", async () => {
+        await assertNonHexNewBlockCopyKeepsGenuineSignature();
     });
 
     it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {

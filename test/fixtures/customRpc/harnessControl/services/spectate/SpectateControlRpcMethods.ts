@@ -92,11 +92,28 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
+    /**
+     * Persist an encoded sync payload; returns whether spectating aborted.
+     * `prependedConfirmationValues` go in front of the first milestone's first
+     * confirmation signatures after decode, so values that are not
+     * ABI-encodable can be staged.
+     */
     public async persistSyncPayload(
-        encodedSyncPayload: string
+        encodedSyncPayload: string,
+        prependedConfirmationValues?: string[]
     ): Promise<{ shouldAbort: boolean }> {
         const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
+        if (prependedConfirmationValues?.length) {
+            const confirmation =
+                payload.stateProof.milestones[0].blockConfirmations[0];
+            payload.stateProof.milestones[0].blockConfirmations[0] = {
+                signedBlock: confirmation.signedBlock,
+                signatures: [
+                    ...prependedConfirmationValues,
+                    ...confirmation.signatures
+                ]
+            };
+        }
         return this.service.spectate.persistSyncPayload(payload);
     }
 
