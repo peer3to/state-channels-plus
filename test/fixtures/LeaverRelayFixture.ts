@@ -26,14 +26,21 @@ export async function assertLeaverRelaysNothingAfterItsLeave() {
             waitForPeers: remaining,
             waitForFinalization: true
         });
-        // count only what the leaver sends after its own leave block
+        const forkId = h.activeForkId!;
+        // The leave block is the newest block the remaining peers hold now.
+        // Late confirmations of it may still be relayed by the leaver; only
+        // blocks above it must never be.
+        const leaveHeight = await h
+            .control(h.getPeer(remaining[0]))
+            .query.getLatestBlockHeight(forkId)
+            .request();
+        expect(leaveHeight, "leave block height").to.not.equal(null);
         await h.control(leaver).stub.observeAdmission().request();
         await h.transition.advanceState({
             count: 2,
             waitForPeers: remaining,
             waitForFinalization: false
         });
-        const forkId = h.activeForkId!;
         const height = await h
             .control(h.getPeer(remaining[0]))
             .query.getLatestBlockHeight(forkId)
@@ -51,10 +58,14 @@ export async function assertLeaverRelaysNothingAfterItsLeave() {
         expect(await h.control(leaver).query.getStatus().request()).to.equal(
             Status.PARTICIPATING
         );
+        const { broadcastHeights } = await h
+            .control(leaver)
+            .stub.getAdmissionObservation()
+            .request();
+        expect(height).to.be.greaterThan(leaveHeight!);
         expect(
-            (await h.control(leaver).stub.getAdmissionObservation().request())
-                .broadcasts
-        ).to.equal(0);
+            broadcastHeights.filter((relayed) => relayed > leaveHeight!)
+        ).to.deep.equal([]);
     } finally {
         await h.control(leaver).stub.restoreAdmissionObservation().request();
         await send.release();

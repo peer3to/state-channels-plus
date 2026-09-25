@@ -2,6 +2,7 @@
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
+import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type LobbyMatchingRpcMethods from "@/rpc/network/services/lobbyMatching/LobbyMatchingRpcMethods";
@@ -353,6 +354,8 @@ export class StubService extends ANetworkRpcService<
         broadcasts: number;
         // Confirmation signatures carried by each observed broadcast, in order.
         broadcastSignatures: string[][];
+        // Block height of each observed broadcast, in the same order.
+        broadcastHeights: number[];
         // Most confirmation values one observed network copy carried.
         largestNetworkEntry: number;
         // Outcome of each observed stored-block merge, in completion order.
@@ -679,6 +682,7 @@ export class StubService extends ANetworkRpcService<
             syncRequests: 0,
             broadcasts: 0,
             broadcastSignatures: [] as string[][],
+            broadcastHeights: [] as number[],
             largestNetworkEntry: 0,
             storedMergeResults: [] as (BlockValidationResult | null)[],
             signerClassificationCalls: 0,
@@ -780,6 +784,9 @@ export class StubService extends ANetworkRpcService<
                 observation.broadcastSignatures.push(
                     confirmation.signatures.map(String)
                 );
+                observation.broadcastHeights.push(
+                    Block.fromBlockConfirmation(confirmation).height
+                );
                 if (observation.holdGossip) {
                     observation.heldGossip.push(() => broadcast(rpc));
                     return;
@@ -815,6 +822,7 @@ export class StubService extends ANetworkRpcService<
             broadcastSignatures: (observation?.broadcastSignatures ?? []).map(
                 (signatures) => [...signatures]
             ),
+            broadcastHeights: [...(observation?.broadcastHeights ?? [])],
             largestNetworkEntry: observation?.largestNetworkEntry ?? 0,
             storedMergeResults: [...(observation?.storedMergeResults ?? [])],
             signerClassificationCalls:
