@@ -3,81 +3,176 @@ import Clock from "@/Clock";
 import { Block } from "@/models";
 import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
 
-export type QueueBlockOptions = {
-    senderAddress?: Address;
-};
+import { getChecksumAddress } from "@/utils/address";
+
+export enum BlockOrigin {
+    NETWORK,
+    CALLDATA,
+    PROOF
+}
+
+export type QueueBlockOptions =
+    | { origin: BlockOrigin.NETWORK; senderAddress: Address }
+    | { origin: BlockOrigin.CALLDATA | BlockOrigin.PROOF };
 
 export type QueuedBlockEntry = {
     block: Block;
     firstSeenAt: number;
-    sourcePeers: Set<Address>;
-    signatureSources: Map<Signature, Set<Address>>;
-    // Set once a structural cap was hit: a peer flooded unique junk signatures
-    // for this hash. Attribution/rate-limiting hint only - never a validity
-    // decision (a later valid copy still processes).
-    overflowedSources?: boolean;
+    origin: QueueBlockOptions["origin"];
+    sourcesToSignatures: Map<Address, Set<Signature>>;
 };
 
-export function sourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
-    const peers = new Set(entry.sourcePeers);
-    peers.add(entry.block.author);
-    return peers;
+export function getSourcePeers(entry: QueuedBlockEntry): Set<Address> {
+    return new Set(entry.sourcesToSignatures.keys());
 }
 
+export function getSourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
+    return new Set([...entry.sourcesToSignatures.keys(), entry.block.author]);
+}
+
+export function getSignatureSuppliers(
+    entry: QueuedBlockEntry,
+    signatures: Set<Signature>
+): Set<Address> {
+    return new Set(
+        [...entry.sourcesToSignatures]
+            .filter(([, supplied]) =>
+                [...signatures].some((signature) => supplied.has(signature))
+            )
+            .map(([source]) => source)
+    );
+}
+
+// Production injects the deployed maximum.
+const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
+
 export class QueueStorage {
-    // Structural per-entry retention caps: bound memory against a peer flooding
-    // unique junk signatures/sources for one block hash. Far above any real
-    // participant union; overflow is retained as a marker, never rejected.
-    private static readonly MAX_ENTRY_SOURCES = 128;
+    public readonly maxChannelParticipants: number;
+    private readonly queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
+    private readonly blocksByCoordinates: Map<CoordinateKey, Set<Hash>> =
+        new Map();
 
-    private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
+    constructor(maxChannelParticipants = DEFAULT_MAX_CHANNEL_PARTICIPANTS) {
+        if (
+            !Number.isSafeInteger(maxChannelParticipants) ||
+            maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                `QueueStorage: maxChannelParticipants must be a positive safe integer, got ${maxChannelParticipants}`
+            );
+        }
+        this.maxChannelParticipants = maxChannelParticipants;
+    }
 
-    // Secondary index for efficient queries by coordinates
-    private blocksByCoordinates: Map<CoordinateKey, Set<Hash>> = new Map();
-
-    /**
-     * Build a standalone entry for a block copy — the unit of work the
-     * pipeline consumes. Same construction the queue uses, without queueing.
-     */
-    createEntry(block: Block, options?: QueueBlockOptions): QueuedBlockEntry {
+    createEntry(block: Block, options: QueueBlockOptions): QueuedBlockEntry {
         const entry: QueuedBlockEntry = {
-            block,
+            block: Block.fromSignedBlock(
+                block.signedBlock,
+                block.onChainTimestamp
+            ),
             firstSeenAt: Clock.getTimeInSeconds(),
-            sourcePeers: new Set(),
-            signatureSources: new Map()
+            origin: options.origin,
+            sourcesToSignatures: new Map()
         };
-        this.trackSource(entry, block.allSignatures, options?.senderAddress);
+        // Each source gets N values including the author: at most N² across N sources.
+        // Count policy: docs/spec/specification/storage/queue.md (REQ-QSTORE-2).
+        this.mergeEntry(entry, {
+            ...entry,
+            block,
+            sourcesToSignatures:
+                options.origin === BlockOrigin.NETWORK
+                    ? new Map([
+                          [
+                              getChecksumAddress(options.senderAddress),
+                              new Set([
+                                  block.originalSignature,
+                                  ...block.confirmationSignatures
+                              ])
+                          ]
+                      ])
+                    : new Map()
+        });
         return entry;
     }
 
-    /** Queue a block for future processing */
-    queueBlock(block: Block, options?: QueueBlockOptions): Hash {
-        // Check if block already exists in queue
-        const existingEntry = this.queuedBlocks.get(block.hash);
-
-        if (existingEntry) {
-            // Attribute only the signatures this copy carried to its sender,
-            // never signatures pooled from earlier copies.
-            this.trackSource(
-                existingEntry,
-                block.allSignatures,
-                options?.senderAddress
+    queueBlock(block: Block, options: QueueBlockOptions): Hash | undefined {
+        const incoming = this.createEntry(block, options);
+        const existing = this.queuedBlocks.get(block.hash);
+        if (existing) {
+            if (!this.mergeEntry(existing, incoming)) return undefined;
+        } else {
+            this.queuedBlocks.set(block.hash, incoming);
+            this.addHashToCoordinateIndex(
+                block.hash,
+                block.forkId,
+                block.height
             );
-            existingEntry.block.mergeFrom(block);
-            this.queuedBlocks.set(block.hash, existingEntry);
-            return block.hash;
         }
-
-        const entry = this.createEntry(block, options);
-
-        // Store the new block confirmation
-        this.queuedBlocks.set(block.hash, entry);
-        this.addHashToCoordinateIndex(block.hash, block.forkId, block.height);
-
         return block.hash;
     }
 
-    /** Try to dequeue confirmations for a specific fork/height */
+    restoreEntry(entry: QueuedBlockEntry): void {
+        const existing = this.queuedBlocks.get(entry.block.hash);
+        if (existing) {
+            this.mergeEntry(existing, entry);
+            existing.firstSeenAt = Math.min(
+                existing.firstSeenAt,
+                entry.firstSeenAt
+            );
+        } else {
+            this.queuedBlocks.set(entry.block.hash, entry);
+            this.addHashToCoordinateIndex(
+                entry.block.hash,
+                entry.block.forkId,
+                entry.block.height
+            );
+        }
+    }
+
+    private mergeEntry(
+        target: QueuedBlockEntry,
+        incoming: QueuedBlockEntry
+    ): boolean {
+        if (!incoming.sourcesToSignatures.size) {
+            target.block.mergeFrom(incoming.block);
+            return true;
+        }
+        const signatures = new Set<Signature>();
+        const liveSignatures = incoming.block.allSignatures;
+        let acceptedSource = false;
+        for (const [source, offered] of incoming.sourcesToSignatures) {
+            let supplied = target.sourcesToSignatures.get(source);
+            if (!supplied) {
+                // At most maxChannelParticipants sources
+                if (
+                    target.sourcesToSignatures.size >=
+                    this.maxChannelParticipants
+                )
+                    continue;
+                supplied = new Set();
+                target.sourcesToSignatures.set(source, supplied);
+            }
+            acceptedSource = true;
+            for (const signature of offered) {
+                if (!supplied.has(signature)) {
+                    // At most maxChannelParticipants signatures per source
+                    if (supplied.size >= this.maxChannelParticipants) continue;
+                    supplied.add(signature);
+                }
+                if (liveSignatures.has(signature)) signatures.add(signature);
+            }
+        }
+        if (!acceptedSource) return false;
+        signatures.delete(target.block.originalSignature);
+        const admitted = Block.fromSignedBlock(
+            target.block.signedBlock,
+            incoming.block.onChainTimestamp
+        );
+        admitted.expandSignatures(signatures);
+        target.block.mergeFrom(admitted);
+        return true;
+    }
+
     tryDequeueAt(forkId: ForkId, height: BlockHeight): QueuedBlockEntry[] {
         const key = coordinateKey(forkId, height);
         const hashSet = this.blocksByCoordinates.get(key);
@@ -135,39 +230,6 @@ export class QueueStorage {
         return this.queuedBlocks.get(blockHash);
     }
 
-    /**
-     * Re-insert a previously dequeued entry, merging its signatures and
-     * source attribution into any entry queued for the same block meanwhile.
-     * Storage only mutates data - it never schedules or fires timeouts;
-     * `BlockQueueManager` reads the entry back (`getQueuedEntry`) to (re)schedule.
-     */
-    restoreEntry(entry: QueuedBlockEntry): void {
-        const existing = this.queuedBlocks.get(entry.block.hash);
-        if (!existing) {
-            this.queuedBlocks.set(entry.block.hash, entry);
-            this.addHashToCoordinateIndex(
-                entry.block.hash,
-                entry.block.forkId,
-                entry.block.height
-            );
-            return;
-        }
-
-        existing.block.mergeFrom(entry.block);
-        existing.firstSeenAt = Math.min(
-            existing.firstSeenAt,
-            entry.firstSeenAt
-        );
-        if (entry.overflowedSources) existing.overflowedSources = true;
-        for (const peer of entry.sourcePeers)
-            this.addSourcePeer(existing, peer);
-        for (const [signature, peers] of entry.signatureSources) {
-            for (const peer of peers) {
-                this.addSignatureSource(existing, signature, peer);
-            }
-        }
-    }
-
     removeBlock(blockHash: Hash): QueuedBlockEntry | undefined {
         const entry = this.queuedBlocks.get(blockHash);
         if (!entry) return undefined;
@@ -197,9 +259,10 @@ export class QueueStorage {
         return removedHashes;
     }
 
-    // ====================================
-    // PRIVATE HELPERS
-    // ====================================
+    clear(): void {
+        this.queuedBlocks.clear();
+        this.blocksByCoordinates.clear();
+    }
 
     private addHashToCoordinateIndex(
         hash: Hash,
@@ -226,54 +289,6 @@ export class QueueStorage {
         }
 
         return entries;
-    }
-
-    private trackSource(
-        entry: QueuedBlockEntry,
-        signatures: Iterable<Signature>,
-        senderAddress?: Address
-    ): void {
-        if (!senderAddress) return;
-
-        this.addSourcePeer(entry, senderAddress);
-        for (const signature of signatures) {
-            this.addSignatureSource(entry, signature, senderAddress);
-        }
-    }
-
-    // Capped inserts: retention stops at MAX_ENTRY_SOURCES and flips the
-    // overflow marker; existing members are never evicted, so a junk-first
-    // flood can't crowd out an already-tracked honest source, and a later
-    // valid copy is never rejected for it.
-    private addSourcePeer(entry: QueuedBlockEntry, peer: Address): void {
-        if (entry.sourcePeers.has(peer)) return;
-        if (entry.sourcePeers.size >= QueueStorage.MAX_ENTRY_SOURCES) {
-            entry.overflowedSources = true;
-            return;
-        }
-        entry.sourcePeers.add(peer);
-    }
-
-    private addSignatureSource(
-        entry: QueuedBlockEntry,
-        signature: Signature,
-        peer: Address
-    ): void {
-        let peers = entry.signatureSources.get(signature);
-        if (!peers) {
-            if (entry.signatureSources.size >= QueueStorage.MAX_ENTRY_SOURCES) {
-                entry.overflowedSources = true;
-                return;
-            }
-            peers = new Set();
-            entry.signatureSources.set(signature, peers);
-        }
-        if (peers.has(peer)) return;
-        if (peers.size >= QueueStorage.MAX_ENTRY_SOURCES) {
-            entry.overflowedSources = true;
-            return;
-        }
-        peers.add(peer);
     }
 
     private keyToCoordinates(key: string): {

@@ -34,6 +34,7 @@ The inline signer facade: local key-backed signing plus the join-collection entr
 Lobby input checks delegate to the shared topic/timeout validators, then the application state machine checks positive balance. Validation order and the original messages stay unchanged. See [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L283).
 
 1. **One facade for signing + protocol collection** so integrators never touch services directly.
+   `connectToChannel` answers `false` when an error surfaces after the runtime was aborted or disposed, logging the suppressed error at debug level: the abort is the connect's outcome, not the error a torn-down dependency raised on the way out.
 2. **Host-owned composition** keeps live profiles, attempts, timers, and retry state out of the runtime port.
 
 ## Inputs, outputs, state, and side effects

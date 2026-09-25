@@ -202,11 +202,18 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
-        require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
+        // `if (!...) revert` because the committed list is a storage read
+        // `areDisputesCommitted` makes internally and the submitted hashes are
+        // only worth computing once the comparison has already failed (P4).
+        if (!areDisputesCommitted(disputeWindow, disputes)) {
+            revert ErrorDisputeCommitmentNotAvailable(
+                channelId, forkId, disputeWindow.evidence.disputeCommitments, _disputeCommitmentHashes(disputes)
+            );
+        }
         //require reduce challenge period is not expired - this also assures it's committed
-        require(
-            !_isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
-        );
+        (bool challengePeriodExpired, uint256 challengePeriodEnd) =
+            _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        require(!challengePeriodExpired, ErrorDisputeChallengePeriodExpired(challengePeriodEnd, block.timestamp));
 
         ReduceOutput memory reducedOutput = reduce(disputes);
 
@@ -258,9 +265,15 @@ contract DisputeVerificationFacet is StateChannelCommon {
             return;
         }
 
-        // require(_canParticipateInDisputesNow(channelId, msg.sender), ErrorCantParticipateInDispute());
         // require that provided disputes correspond to committed set
-        require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
+        // `if (!...) revert` because the committed list is a storage read
+        // `areDisputesCommitted` makes internally and the submitted hashes are
+        // only worth computing once the comparison has already failed (P4).
+        if (!areDisputesCommitted(disputeWindow, disputes)) {
+            revert ErrorDisputeCommitmentNotAvailable(
+                channelId, forkId, disputeWindow.evidence.disputeCommitments, _disputeCommitmentHashes(disputes)
+            );
+        }
 
         // compute reduced output and derive snapshot data
         ReduceOutput memory reducedOutput = reduce(disputes);
@@ -296,11 +309,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         if (latestBlock.transaction.header.forkId == bytes32(0)) {
             //no blocks in reducedOutput - must be genesis
             // TODO - think - this ensures that snapshotData is correct, not the snapshot, which means someone can lie about the time, but it shouldn't matter here - we just care to perform the correct State Transition
-            require(keccak256(abi.encode(latestStateSnapshot.snapshotData)) == forkId, ErrorInvalidStateSnapshot());
+            bytes32 actualForkId = keccak256(abi.encode(latestStateSnapshot.snapshotData));
+            require(actualForkId == forkId, ErrorSnapshotDataForkMismatch(forkId, actualForkId));
         } else {
             // reducedOutput.latestBlock is a defined block - verify it links to the snapshot
+            bytes32 actualStateSnapshotHash = keccak256(abi.encode(latestStateSnapshot));
             require(
-                latestBlock.stateSnapshotHash == keccak256(abi.encode(latestStateSnapshot)), ErrorInvalidStateSnapshot()
+                latestBlock.stateSnapshotHash == actualStateSnapshotHash,
+                ErrorInvalidStateSnapshotHash(latestBlock.stateSnapshotHash, actualStateSnapshotHash)
             );
         }
         //verify encodedStateMachineState linked to snapshot
@@ -515,9 +531,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
 
         // require that the dispute window exists and is not expired
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
-        require(!isExpired, RaceConditionDisputeKillPeriodExpired());
-        bytes32 commitment = keccak256(abi.encode(dispute));
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
+        bytes32 commitment = _disputeCommitmentHash(dispute);
         bool isFound = false;
         uint256 foundIndex;
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
@@ -528,7 +544,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
         // require that the dispute commitment exists
-        require(isFound, ErrorDisputeCommitmentNotAvailable());
+        require(isFound, ErrorDisputeCommitmentNotFound(dispute.input.channelId, forkId, commitment));
 
         // add the disputer to on-chain slashes
         addOnChainSlashedParticipant(dispute.input.channelId, dispute.input.disputer);

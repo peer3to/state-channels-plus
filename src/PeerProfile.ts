@@ -4,6 +4,8 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 
 export interface BannablePeerInfo {
+    /** The remote's Hyperswarm public key, known before any handshake. */
+    readonly publicKey?: Uint8Array | string;
     ban(value?: boolean): void;
 }
 
@@ -143,6 +145,9 @@ class PeerProfile {
     }
     public getHpAddress() {
         return this.hpAddress;
+    }
+    public setHpAddress(hpAddress: string) {
+        this.hpAddress = hpAddress;
     }
     public setIsLeader(value: boolean) {
         this.isLeader = value;

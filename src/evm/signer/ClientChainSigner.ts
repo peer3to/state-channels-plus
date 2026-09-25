@@ -3,8 +3,10 @@ import {
     deserializeTransactionResponse,
     serializeTransactionRequest
 } from "../../rpc/internal/services/chainSigner/chainSignerSerialization";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { serializeSignerMessage } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
+import { withGasHeadroom } from "@/utils/gas";
 import {
     AbstractSigner,
     Provider,
@@ -55,6 +57,12 @@ class ClientChainSigner extends AbstractSigner {
             .request();
     }
 
+    // Overrides AbstractSigner.estimateGas: adds the same withGasHeadroom as the
+    // host signer, which fills the gas of every send without a limit.
+    override async estimateGas(tx: TransactionRequest): Promise<bigint> {
+        return withGasHeadroom(await super.estimateGas(tx));
+    }
+
     // Overrides AbstractSigner.sendTransaction: broadcasting runs through the host.
     override async sendTransaction(
         tx: TransactionRequest
@@ -72,6 +80,14 @@ class ClientChainSigner extends AbstractSigner {
             serializedResponse,
             this.provider!
         );
+    }
+
+    /** Gas used per contract function by the transactions the host sent. */
+    async getGasUsageTable(): Promise<GasUsageRow[]> {
+        const { gasUsage } = await this.requester.chainSigner
+            .getGasUsageTable()
+            .request();
+        return gasUsage;
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {

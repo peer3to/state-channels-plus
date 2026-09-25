@@ -377,7 +377,21 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         d.postedAuditingData = true;
                     });
 
-                    await h.byzantine.submitDoubleSignBlock(1);
+                    const replay = await h.rpcStub.holdBlockWork(
+                        disconnectedAuditorIndex,
+                        "proofConfirmationValidation"
+                    );
+                    try {
+                        await h.byzantine.submitDoubleSignBlock(1);
+                        await replay.waitUntilEntered();
+                        // A concurrent dispute/calldata event clears gossip for this fork.
+                        await h.execOnHost(
+                            h.getPeer(disconnectedAuditorIndex),
+                            (sm) => sm.blockQueueManager.clearFork(sm.forkId)
+                        );
+                    } finally {
+                        await replay.release();
+                    }
 
                     await h.assert.dispute.initiatedWait({
                         peersIndices: [3],

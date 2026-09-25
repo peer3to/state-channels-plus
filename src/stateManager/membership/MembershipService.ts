@@ -5,15 +5,36 @@ import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
-import { Address, ChannelId, ForkId, Hash } from "@/types/types";
-import { addressesEqual, Logger, union } from "@/utils";
+import {
+    Address,
+    ChannelId,
+    ChecksumAddress,
+    ForkId,
+    Hash
+} from "@/types/types";
+import {
+    addressesEqual,
+    getChecksumAddress,
+    Logger,
+    union,
+    Codec,
+    Type
+} from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
     JoinChannelConfirmationStruct,
-    MessageBlockStruct
+    MessageBlockStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { isError } from "ethers";
+import { id, isError } from "ethers";
+
+export enum SourceEligibility {
+    ELIGIBLE,
+    SLASHED,
+    ABSENT
+}
 
 /**
  * The membership domain: the channel's participant union (on-chain current +
@@ -23,12 +44,126 @@ import { isError } from "ethers";
  */
 export default class MembershipService {
     private readonly logger: Logger;
+    private eligibilityRefresh?: Promise<boolean>;
+    private onChainEligibility: Set<ChecksumAddress> = new Set();
+    private offChainEligibility: Set<ChecksumAddress> = new Set();
+    private readonly knownSlashes: Set<ChecksumAddress> = new Set();
 
     constructor(
         private readonly stateManager: StateManager,
         logger: Logger
     ) {
         this.logger = logger.child({ component: "Membership" });
+    }
+
+    // Whether I belong to this block's previous/resulting participant union:
+    // the set that may sign and relay it. A leaver stays PARTICIPATING until
+    // its exit snapshot lands but is outside the union of every later block;
+    // signing or relaying those would present it to peers that already
+    // applied its exit as a signer or source they no longer admit.
+    public isSignerInBlockUnion(block: Block): boolean {
+        const union = this.stateManager.storage.getParticipantsUnion(
+            block.coordinates,
+            block.stateSnapshotHash
+        );
+        return union.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
+    }
+
+    public getCachedSourceEligibility(source: Address): SourceEligibility {
+        const address = getChecksumAddress(source);
+        if (this.knownSlashes.has(address)) return SourceEligibility.SLASHED;
+        if (
+            this.onChainEligibility.has(address) ||
+            this.offChainEligibility.has(address)
+        )
+            return SourceEligibility.ELIGIBLE;
+        return SourceEligibility.ABSENT;
+    }
+
+    public async resolveSourceEligibility(
+        source: Address
+    ): Promise<SourceEligibility> {
+        const cached = this.getCachedSourceEligibility(source);
+        if (cached !== SourceEligibility.ABSENT) return cached;
+        await this.refreshOnChainEligibility();
+        return this.getCachedSourceEligibility(source);
+    }
+
+    public publishOnChainSnapshot(snapshot: StateSnapshotStruct): void {
+        this.onChainEligibility = new Set(
+            snapshot.snapshotData.participants.map((participant) =>
+                getChecksumAddress(String(participant))
+            )
+        );
+        const inbound = this.stateManager.storage.inboundMessages;
+        const lowerBlockHash =
+            snapshot.snapshotData.latestInboundMessageBlockHash;
+        const head = inbound.headNotBehind(
+            lowerBlockHash,
+            Number(snapshot.snapshotData.latestInboundMessageBlockHeight)
+        );
+        const pending = inbound.tryGetMessageBlocksInRange({
+            upperBlockHash: head.hash,
+            lowerBlockHash
+        });
+        for (const block of pending.blocks)
+            this.observeInboundMembership(block);
+    }
+
+    public observeInboundMembership(block: MessageBlockStruct): void {
+        for (const message of block.messages) {
+            if (message.messageType !== id("JOIN_CHANNEL_MESSAGE")) continue;
+            const join = Codec.decode(message.data, Type.JoinChannel);
+            this.onChainEligibility.add(getChecksumAddress(join.participant));
+        }
+    }
+
+    public publishOffChainEligibility(participants: readonly Address[]): void {
+        this.offChainEligibility = new Set(
+            participants.map(getChecksumAddress)
+        );
+    }
+
+    public observeOnChainSlash(participant: Address): void {
+        this.knownSlashes.add(getChecksumAddress(participant));
+    }
+
+    public resetEligibility(): void {
+        this.onChainEligibility.clear();
+        this.offChainEligibility.clear();
+        this.knownSlashes.clear();
+    }
+
+    public async refreshOnChainEligibility(): Promise<boolean> {
+        if (this.eligibilityRefresh) return this.eligibilityRefresh;
+        this.eligibilityRefresh = (async () => {
+            const sm = this.stateManager;
+            try {
+                const membership =
+                    await sm.eventSyncService.readPinnedChainMembership(
+                        sm.channelId
+                    );
+                for (const participant of membership.slashed)
+                    this.observeOnChainSlash(participant);
+                await sm.eventSyncService.synchronizeChainMembership(
+                    sm.channelId,
+                    membership
+                );
+                return true;
+            } catch (error) {
+                this.logger.warn("Source eligibility refresh unavailable", {
+                    error: errorMessage(error)
+                });
+                return false;
+            }
+        })();
+        try {
+            return await this.eligibilityRefresh;
+        } finally {
+            this.eligibilityRefresh = undefined;
+        }
     }
 
     public async getOnChainParticipantUnion(
@@ -163,11 +298,12 @@ export default class MembershipService {
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionJoinChannelForkDisputed":
                 case "ErrorJoinChannelInvalidSignature":
+                case "ErrorJoinChannelConfirmationNotThresholdSigned":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
-                            name: custom.name,
-                            args: custom.errorDescription.args
+                            customError:
+                                LoggerUtils.getCustomEvmErrorMetadata(custom)
                         }
                     );
                     sm.abort();
@@ -204,8 +340,7 @@ export default class MembershipService {
             const custom = tryDecodeCustomError(error);
             if (custom) {
                 this.logger.warn(`topUpBalance failed: ${custom.name}`, {
-                    name: custom.name,
-                    args: custom.errorDescription.args
+                    customError: LoggerUtils.getCustomEvmErrorMetadata(custom)
                 });
                 return false;
             }

@@ -13,6 +13,7 @@ import type {
     EvmFactoryOptions,
     EvmNativeCustomPrecompile
 } from "./EvmFactory";
+import type { GasUsageRow } from "./gasUsage/GasUsageTable";
 import P2pInstance from "./P2pInstance";
 import ClientChainSigner from "./signer/ClientChainSigner";
 import type { ConnectToChannelOptions } from "./signer/ConnectToChannelOptions";
@@ -42,5 +43,6 @@ export type {
     EvmFactoryOptions,
     EvmNativeCustomPrecompile,
     LocalStateMachineDeployer,
-    ConnectToChannelOptions
+    ConnectToChannelOptions,
+    GasUsageRow
 };

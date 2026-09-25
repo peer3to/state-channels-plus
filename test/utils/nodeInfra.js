@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared runner and test infrastructure for node provisioning; executable evidence belongs to the calling runner and session tests
 /* eslint-disable no-console */
 // Common node infrastructure for e2e: start hardhat nodes / discovery
 // registries, provision slot pools, JSON-RPC, gas monitoring. ONE file used the
@@ -92,6 +93,14 @@ function pipeLogs(child, logPath) {
  * and return `{ proc, url, stop }`. Inherits process.env so hardhat.config's
  * e2e mining / gas-limit / accounts apply.
  */
+// Extra node flags for the infra processes (hardhat node, discovery registry),
+// e.g. TEST_INFRA_NODE_FLAGS="--cpu-prof --cpu-prof-dir=/tmp/prof" to profile
+// the chain the tests hit. Empty by default.
+function infraNodeFlags() {
+    const flags = process.env.TEST_INFRA_NODE_FLAGS;
+    return flags ? flags.split(" ").filter(Boolean) : [];
+}
+
 async function startHardhatNode({
     port,
     logPath,
@@ -102,6 +111,7 @@ async function startHardhatNode({
     const proc = spawn(
         process.execPath,
         [
+            ...infraNodeFlags(),
             HARDHAT_CLI,
             "node",
             "--hostname",
@@ -176,15 +186,19 @@ async function startDiscoveryRegistry({
     label = "discovery"
 } = {}) {
     const discPort = port ?? (await getFreePort());
-    const child = spawn(process.execPath, [DISCOVERY_SCRIPT], {
-        cwd: PROJECT_ROOT,
-        env: {
-            ...process.env,
-            LOCAL_DISCOVERY_HOST: "127.0.0.1",
-            LOCAL_DISCOVERY_PORT: String(discPort)
-        },
-        stdio: ["ignore", "pipe", "pipe"]
-    });
+    const child = spawn(
+        process.execPath,
+        [...infraNodeFlags(), DISCOVERY_SCRIPT],
+        {
+            cwd: PROJECT_ROOT,
+            env: {
+                ...process.env,
+                LOCAL_DISCOVERY_HOST: "127.0.0.1",
+                LOCAL_DISCOVERY_PORT: String(discPort)
+            },
+            stdio: ["ignore", "pipe", "pipe"]
+        }
+    );
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;

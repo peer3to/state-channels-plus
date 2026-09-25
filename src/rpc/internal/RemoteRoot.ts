@@ -76,6 +76,14 @@ export class RemoteRoot<T extends AInternalRpcRoot> {
         this.transport.closeWithReason(reason);
     }
 
+    /** Wait for the owner's handlers of this connection's requests to reply. */
+    public drainInFlightHandlers(timeoutMs: number): Promise<void> {
+        return this.owner.router.drainInFlightHandlers(
+            this.transport,
+            timeoutMs
+        );
+    }
+
     public fail(error: Error): void {
         this.owner.errors.failChild(this.transport, error);
     }

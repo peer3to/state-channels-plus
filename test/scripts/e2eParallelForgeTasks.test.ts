@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
@@ -140,7 +141,7 @@ const { runForge } =
         ) => Promise<number>;
     };
 
-const REPO_TEST_DIR = path.resolve(__dirname, "..");
+const REPO_TEST_DIR = path.join(repoRoot(), "test");
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 const FORGE_TASK = {
@@ -226,7 +227,7 @@ contract InvariantCases {
 }
 `;
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const REPO_ROOT = repoRoot();
 
 function newestFileMtime(root: string, include: (file: string) => boolean) {
     if (!fs.existsSync(root)) return null;
@@ -399,6 +400,7 @@ describe("parallel forge task discovery", function () {
     it("discovers one task per Foundry test contract in the repository test tree", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
+            "DisputeFraudProofFacetPayloadsTest",
             "DisputeVerificationFacetTest",
             "DisputeWindowAdmissionTest",
             "DisputeUtilsTest",
@@ -410,9 +412,11 @@ describe("parallel forge task discovery", function () {
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
             "StateSnapshotFacetOpenChannelRegistryTest",
+            "StateSnapshotFacetSameForkTest",
+            "StateSnapshotFacetUpdateForkTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(12);
+        expect(tasks).to.have.lengthOf(15);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

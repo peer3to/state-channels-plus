@@ -46,6 +46,17 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         // not ready
         return this.blockValidationStrategy.channelNotOpened(entry);
     }
+    public async malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult> {
+        // a queued calldata copy merges gossip copies' signatures -> judged as gossip
+        return this.blockValidationStrategy.malformedConfirmationSignatures(
+            entry,
+            signatures
+        );
+    }
+
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
         unexpectedSignatures: Set<Signature>,

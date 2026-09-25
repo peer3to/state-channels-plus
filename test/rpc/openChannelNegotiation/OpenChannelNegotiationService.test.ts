@@ -128,9 +128,66 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.responseBeforeInitialization).to.equal(false);
         expect(result.responseAfterInitialization).to.equal(true);
         expect(result.selectedChannelId).not.to.equal(ethers.ZeroHash);
-        expect(result.peerBlacklistedAfterLoss).to.equal(true);
         expect(result.channelIdAfterLoss).to.equal(ethers.ZeroHash);
         expect(result.statusAfterLoss).to.equal(Status.DISCOVERING);
+    });
+
+    it("strikes a lost committed peer instead of blacklisting it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeMatchedNegotiationAdmission()
+            .request();
+        expect(result.peerBlacklistedAfterLoss).to.equal(false);
+        expect(result.peerStrikesAfterLoss).to.equal(1);
+    });
+
+    it("treats an unsigned remote abort as a lifecycle exit with no verdict and no strike", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeNegotiationAbort("unsigned")
+            .request();
+
+        expect(result.attemptCleared).to.equal(true);
+        expect(result.outcomeStatus).to.equal("retry");
+        expect(result.peerBlacklisted).to.equal(false);
+        expect(result.strikes).to.equal(0);
+        expect(result.transportClosed).to.equal(true);
+    });
+
+    it("keeps a locally signed attempt observed after a remote abort", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeNegotiationAbort("signed")
+            .request();
+
+        expect(result.attemptCleared).to.equal(false);
+        expect(result.peerBlacklisted).to.equal(false);
+        expect(result.strikes).to.equal(0);
+        expect(result.transportClosed).to.equal(true);
+    });
+
+    it("ends a targeted attempt on a remote abort without penalizing the peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeNegotiationAbort("targeted")
+            .request();
+
+        expect(result.attemptCleared).to.equal(true);
+        expect(result.outcomeStatus).to.equal("targeted-failed");
+        expect(result.peerBlacklisted).to.equal(false);
+        expect(result.strikes).to.equal(0);
+    });
+
+    it("rejects a duplicate abort for an attempt that already ended", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeNegotiationAbort("duplicate")
+            .request();
+
+        expect(result.attemptCleared).to.equal(true);
+        expect(result.duplicateRejected).to.equal(true);
+        expect(result.peerBlacklisted).to.equal(false);
+        expect(result.strikes).to.equal(0);
     });
 
     it("rejects a non-finite opening amount and clears the attempt", async function () {
@@ -148,15 +205,17 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.oldLobbyTransportClosed).to.equal(true);
     });
 
-    it("punishes a silent lower-address initiator and clears the attempt", async function () {
+    it("strikes a silent lower-address initiator and clears the attempt", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeNegotiationFailure("initiator-timeout")
             .request();
 
+        // Silence is not proven misbehaviour: one strike, no verdict.
         expect(result).to.deep.equal({
             channelIdAfterHigherInit: ethers.ZeroHash,
-            initiatorTimeoutBlacklisted: true,
+            initiatorTimeoutBlacklisted: false,
+            initiatorTimeoutStrikes: 1,
             initiatorTimeoutCleared: true
         });
     });
@@ -215,10 +274,13 @@ describe("OpenChannelNegotiationService", function () {
             .p2pManagerProbe.probeNegotiationFailure("already-open")
             .request();
 
+        // A stale view of the chain is not a fault, so the peer keeps its
+        // standing: no verdict and no strike.
         expect(result).to.deep.equal({
             alreadyOpenRejected: true,
-            alreadyOpenBlacklisted: true,
-            alreadyOpenKeptZeroId: true
+            alreadyOpenBlacklisted: false,
+            alreadyOpenKeptZeroId: true,
+            alreadyOpenStrikes: 0
         });
     });
 
@@ -241,10 +303,12 @@ describe("OpenChannelNegotiationService", function () {
             higherDidNotBlacklistLowerAfterSubmissionFailure: true,
             higherDidNotBlacklistLowerAfterExpiry: true,
             lowerDidNotBlacklistHigherBeforeExpiry: true,
-            lowerBlacklistedHigherAfterExpiry: true,
+            // A burned opening window is one strike, never a fault ban.
+            lowerBlacklistedHigherAfterExpiry: false,
+            expiredWindowStrikes: 1,
             signedDisposeOutcomeCancelled: true,
             signedAttemptClearedOnDispose: true,
-            signedPeerBlacklistedOnFinalLoss: true,
+            signedPeerBlacklistedOnFinalLoss: false,
             signedAttemptRetainedAfterFinalLoss: true,
             signedAttemptClearedAfterExpiry: true,
             signedAttemptIdClearedAfterExpiry: true,
@@ -319,7 +383,10 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.ordinaryReceiptError).to.contain(
             "ordinary receipt failure"
         );
-        expect(result.ordinaryReceiptPeerBlacklisted).to.equal(true);
+        // The receipt may have failed on our own chain provider, so the peer
+        // keeps its standing: no verdict and no strike.
+        expect(result.ordinaryReceiptPeerBlacklisted).to.equal(false);
+        expect(result.ordinaryReceiptStrikes).to.equal(0);
         expect(result.ordinaryReceiptChannelCleared).to.equal(true);
     });
 

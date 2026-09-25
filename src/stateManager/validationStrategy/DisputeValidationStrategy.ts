@@ -132,6 +132,14 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             "DisputeValidationStrategy - channelNotOpened should not be called"
         );
     }
+    public async malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult> {
+        entry.block.removeConfirmationSignatures(signatures);
+        return BlockValidationResult.SUCCESS;
+    }
+
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
         unexpectedSignatures: Set<Signature>,

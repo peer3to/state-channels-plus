@@ -86,9 +86,13 @@ function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory state
     return blockConfirmations;
 }
 
-function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime
-        && _isDisputeWidnowCreated(disputeWindow);
+function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
+    view
+    returns (bool, uint256 periodEnd)
+{
+    uint256 evidencePeriodEnd = disputeWindow.evidence.creationTimestamp + evidenceTime;
+    bool isExpired = block.timestamp >= evidencePeriodEnd && _isDisputeWidnowCreated(disputeWindow);
+    return (isExpired, evidencePeriodEnd);
 }
 
 function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool, uint256) {
@@ -99,14 +103,30 @@ function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evide
 
 function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
     view
-    returns (bool)
+    returns (bool, uint256 periodEnd)
 {
-    return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime
-        && disputeWindow.reducedResult.timestamp != 0 && _isDisputeWidnowCreated(disputeWindow);
+    uint256 challengePeriodEnd = disputeWindow.reducedResult.timestamp + evidenceTime;
+    bool isExpired = block.timestamp >= challengePeriodEnd && disputeWindow.reducedResult.timestamp != 0
+        && _isDisputeWidnowCreated(disputeWindow);
+    return (isExpired, challengePeriodEnd);
 }
 
 function _isDisputeWidnowCreated(DisputeWindow storage disputeWindow) view returns (bool) {
     return disputeWindow.evidence.creationTimestamp != 0;
+}
+
+/// The single owner of the dispute-commitment preimage. Everything that
+/// commits, looks up, or reports a dispute commitment hashes it through here,
+/// so the window contents and an error payload can never drift apart.
+function _disputeCommitmentHash(Dispute memory dispute) pure returns (bytes32) {
+    return keccak256(abi.encode(dispute));
+}
+
+function _disputeCommitmentHashes(Dispute[] memory disputes) pure returns (bytes32[] memory commitments) {
+    commitments = new bytes32[](disputes.length);
+    for (uint256 i = 0; i < disputes.length; i++) {
+        commitments[i] = _disputeCommitmentHash(disputes[i]);
+    }
 }
 
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {
@@ -114,7 +134,7 @@ function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] mem
         return false;
     }
     for (uint256 i = 0; i < disputes.length; i++) {
-        bytes32 commitment = keccak256(abi.encode(disputes[i]));
+        bytes32 commitment = _disputeCommitmentHash(disputes[i]);
         // off-chain client puts the disputes in correct order - save on gas
         if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
             return false;

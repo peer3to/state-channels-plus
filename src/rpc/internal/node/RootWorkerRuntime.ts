@@ -6,18 +6,15 @@ import { createWorkerShutdown } from "@/evm/node/workerShutdown";
 import { instrumentWorkerStartup } from "@/evm/node/workerStartupTiming";
 import type { WorkerBootstrapMessage } from "@/evm/p2pRuntime/types";
 import type { RuntimePort } from "@/transport/RuntimePort";
+import { resolveRuntimeModulePath } from "@/utils/moduleLoader/node/resolveRuntimeModulePath";
 import { adaptPort } from "@platform/p2pRuntimeChannel";
-import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parentPort, Worker, type MessagePort } from "node:worker_threads";
 
 /** Resolve a package root module for compiled Node or the source test runner. */
 export function rootWorkerUrl(file: string): string {
-    const compiled = path.join(__dirname, "../roots", file);
-    return fs.existsSync(compiled)
-        ? compiled
-        : compiled.replace(/\.js$/, ".ts");
+    return resolveRuntimeModulePath(path.join(__dirname, "../roots", file));
 }
 
 export function createRootWorker(
@@ -25,12 +22,22 @@ export function createRootWorker(
     onError: (error: Error) => void,
     threadName?: string
 ): RootWorker & { shutdown(): Promise<void> } {
-    const workerPath = url instanceof URL ? fileURLToPath(url) : url;
+    // A caller may name the source entry while the compiled tree runs (or
+    // the reverse); the twin that exists is the one to start.
+    const workerPath = resolveRuntimeModulePath(
+        url instanceof URL ? fileURLToPath(url) : url
+    );
     // Transpile-only (swc via tsconfig's ts-node.swc): each worker re-loads the
     // import graph, and full ts-node type-checks it (seconds + a retained TS
     // program per worker). Types are already checked by `yarn tsc`.
+    // An explicit execArgv replaces the inherited one, so keep the parent's
+    // CPU-profiler flags: a `node --cpu-prof` run then profiles every root
+    // thread, not only the main thread.
     const execArgv = workerPath.endsWith(".ts")
         ? [
+              ...process.execArgv.filter((flag) =>
+                  flag.startsWith("--cpu-prof")
+              ),
               "-r",
               "ts-node/register/transpile-only",
               "-r",

@@ -3,6 +3,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import {
     encodeMathState,
     type MathStateDecoded
@@ -65,11 +66,27 @@ describe("E2E: Join channel race conditions", function () {
                 revertError = e;
             }
 
-            const customError = tryDecodeCustomError(revertError);
-            expect(customError).to.not.be.null;
-            expect(customError!.errorDescription.name).to.equal(
-                "RaceConditionJoinChannelSnapshotMismatch"
+            const customError = expectDecodedError(
+                revertError,
+                "RaceConditionJoinChannelSnapshotMismatch",
+                "joinChannel must reject the stale snapshot pin by name"
             );
+            // Both operands are derived here, independently of the revert: the
+            // submitted hash is the pin this test handed to joinChannel, the
+            // current hash is the on-chain snapshot S' read back above. They are
+            // the two sides of the mismatch, so a payload that swapped them, or
+            // that reported the same hash twice, fails.
+            const currentSnapshotHash =
+                StateSnapshot.from(stateSnapshot_b).hash;
+            expect(currentSnapshotHash).to.not.equal(expectedSnapshotHash);
+            expect(
+                customError.errorDescription.args.submittedSnapshotHash,
+                "submittedSnapshotHash must be the stale pin the joiner sent"
+            ).to.equal(expectedSnapshotHash);
+            expect(
+                customError.errorDescription.args.currentSnapshotHash,
+                "currentSnapshotHash must be the new on-chain snapshot S'"
+            ).to.equal(currentSnapshotHash);
 
             expect(
                 await h

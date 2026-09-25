@@ -2,18 +2,13 @@ const { execFile } = require("child_process");
 const os = require("os");
 const { promisify } = require("util");
 const { PER_TEST_MEM_GB } = require("./constants");
+const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
 
 const execFileAsync = promisify(execFile);
 let warnedAboutPs = false;
 
 function cpuTimes() {
-    let idle = 0;
-    let total = 0;
-    for (const cpu of os.cpus()) {
-        for (const value of Object.values(cpu.times)) total += value;
-        idle += cpu.times.idle;
-    }
-    return { idle, total };
+    return osTimes();
 }
 
 function systemOccupiedGb() {
@@ -123,10 +118,28 @@ class ResourceGate {
         this.targetLoad = targetLoad;
         this.memBoundGb = memBoundGb;
         this.sampleOptions = sampleOptions;
-        this.lastCpu = cpuTimes();
+        this.lastCpuSnapshot = readCpuSnapshot(sampleOptions);
+        this.cpuSource = this.lastCpuSnapshot.source;
+        this.cpuCores = this.lastCpuSnapshot.cores;
+        // Admission uses the machine's busy share (everything on the box,
+        // hypervisor steal included) so a core occupied by anything counts
+        // as occupied. What this cgroup itself consumed is kept beside it.
         this.cpuUtil = 0;
         this.peakCpu = 0;
         this.cpuSamples = [];
+        this.containerCpuUtil = undefined;
+        this.peakContainerCpu = 0;
+        this.containerCpuSamples = [];
+        this.peakHostSteal = 0;
+        // kernel stall accounting: share of the interval with a runnable
+        // task waiting for a CPU ("some") and with every task waiting ("full")
+        this.cpuPressure = undefined;
+        this.peakCpuPressure = 0;
+        this.cpuPressureSamples = [];
+        this.peakCpuPressureFull = 0;
+        // CFS quota throttling of this cgroup; stays zero without a quota
+        this.throttledMs = 0;
+        this.nrThrottled = 0;
         this.avgPerTestGb = PER_TEST_MEM_GB;
         this.memSampleSum = 0;
         this.memSampleCount = 0;
@@ -135,15 +148,42 @@ class ResourceGate {
     }
 
     async sample() {
-        const now = cpuTimes();
-        const idleDelta = now.idle - this.lastCpu.idle;
-        const totalDelta = now.total - this.lastCpu.total;
-        this.lastCpu = now;
-        if (totalDelta > 0) {
-            this.cpuUtil = Math.max(0, Math.min(1, 1 - idleDelta / totalDelta));
-        }
+        const snapshot = readCpuSnapshot(this.sampleOptions);
+        const delta = cpuDelta(this.lastCpuSnapshot, snapshot);
+        this.lastCpuSnapshot = snapshot;
+        this.cpuSource = snapshot.source;
+        this.cpuCores = snapshot.cores;
+        const machineUtil = delta.hostCpuUtil ?? delta.cpuUtil;
+        if (machineUtil !== undefined) this.cpuUtil = machineUtil;
         this.peakCpu = Math.max(this.peakCpu, this.cpuUtil);
         this.cpuSamples.push(this.cpuUtil);
+        if (snapshot.source === "cgroup" && delta.cpuUtil !== undefined) {
+            this.containerCpuUtil = delta.cpuUtil;
+            this.peakContainerCpu = Math.max(
+                this.peakContainerCpu,
+                delta.cpuUtil
+            );
+            this.containerCpuSamples.push(delta.cpuUtil);
+        }
+        if (delta.hostSteal !== undefined)
+            this.peakHostSteal = Math.max(this.peakHostSteal, delta.hostSteal);
+        if (delta.cpuPressure !== undefined) {
+            this.cpuPressure = delta.cpuPressure;
+            this.peakCpuPressure = Math.max(
+                this.peakCpuPressure,
+                delta.cpuPressure
+            );
+            this.cpuPressureSamples.push(delta.cpuPressure);
+        }
+        if (delta.cpuPressureFull !== undefined)
+            this.peakCpuPressureFull = Math.max(
+                this.peakCpuPressureFull,
+                delta.cpuPressureFull
+            );
+        if (delta.throttledMs !== undefined) {
+            this.throttledMs += Math.max(0, delta.throttledMs);
+            this.nrThrottled += Math.max(0, delta.nrThrottled);
+        }
 
         const testPids = this.testPids();
         const infraPids = this.infraPids();
@@ -194,12 +234,39 @@ class ResourceGate {
                   this.cpuSamples.length
                 : 0,
             cpuSampleCount: this.cpuSamples.length,
+            cpuSource: this.cpuSource,
+            cpuCores: this.cpuCores,
+            ...(this.containerCpuSamples.length
+                ? {
+                      peakContainerCpu: this.peakContainerCpu,
+                      avgContainerCpu: average(this.containerCpuSamples),
+                      peakHostSteal: this.peakHostSteal
+                  }
+                : {}),
+            ...(this.cpuPressureSamples.length
+                ? {
+                      peakCpuPressure: this.peakCpuPressure,
+                      avgCpuPressure: average(this.cpuPressureSamples),
+                      cpuPressureSampleCount: this.cpuPressureSamples.length,
+                      peakCpuPressureFull: this.peakCpuPressureFull
+                  }
+                : {}),
+            ...(this.cpuSource === "cgroup"
+                ? {
+                      throttledMs: this.throttledMs,
+                      nrThrottled: this.nrThrottled
+                  }
+                : {}),
             peakOccupiedGb: this.peakOccupiedGb,
             avgPerTestGb: this.avgPerTestGb,
             memorySampleCount: this.memSampleCount,
             memBoundGb: this.memBoundGb
         };
     }
+}
+
+function average(values) {
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function resetResourceGateWarnings() {

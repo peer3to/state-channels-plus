@@ -51,9 +51,6 @@ export type ConstructDisputeResult = {
 // anyone's fraud. named so callers can tell it from a real construction failure
 export class PartialAuditingDataError extends Error {}
 
-// Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
-// generous headroom for larger disputes while freeing block gas under concurrency.
-const DEFAULT_GAS_LIMIT = 2_500_000;
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -145,6 +142,10 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
+            // No gas limit is passed: the chain signer sends each upload with
+            // its estimate plus headroom (see GAS_ESTIMATE_HEADROOM_PERCENT for
+            // the concurrent-dispute race this protects against).
+
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
                 // 1) apply fraud proofs
@@ -188,8 +189,7 @@ class DisputeManager {
                 } else {
                     txResponse =
                         await this.stateChannelManagerContract.uploadDispute(
-                            disputeConfirmation,
-                            { gasLimit: DEFAULT_GAS_LIMIT }
+                            disputeConfirmation
                         );
                 }
             }

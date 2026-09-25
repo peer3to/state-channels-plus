@@ -12,6 +12,7 @@
     "ethers": "6.13.7"
   },
   "devDependencies": {
+    "@noble/curves": "1.4.2",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
     "@nomicfoundation/hardhat-foundry": "^1.1.3",
@@ -128,7 +129,8 @@
     "test:parallel:docker:integration": "node scripts/e2e-parallel/distributed/dockerIntegration.js",
     "test:parallel:docker:benchmark": "node scripts/e2e-parallel/distributed/isolatedEnvironmentBenchmark.js",
     "test:parallel:prepare": "hardhat clean && hardhat compile --force && hardhat typechain && node scripts/generate-artifacts.js && yarn test:parallel:prepare:cached-contracts",
-    "test:parallel:prepare:cached-contracts": "ts-node scripts/generate-enums.ts && rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && forge build",
+    "test:parallel:prepare:cached-contracts": "ts-node scripts/generate-enums.ts && yarn test:parallel:build && forge build",
+    "test:parallel:build": "rimraf dist && mkdir -p dist && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js",
     "test:parallel:debug": "LOG_LEVEL=debug node scripts/test-e2e-parallel.js",
     "test:parallel:verbose": "LOG_LEVEL=verbose node scripts/test-e2e-parallel.js",
     "test:coverage": "nyc --reporter=html yarn test",
@@ -152,7 +154,13 @@
     "lint:fix-only": "eslint src/**/*.ts test/**/*.ts --fix --quiet || true",
     "prepare": "husky install",
     "lint:imports": "eslint --config eslint.import-order.config.mjs src test",
-    "lint:imports:fix": "eslint --config eslint.import-order.config.mjs --fix"
+    "lint:imports:fix": "eslint --config eslint.import-order.config.mjs --fix",
+    "review-bot:test": "mocha --no-config --no-package --timeout 60000 \"scripts/bot/tests/logic/**/*.test.js\" \"scripts/bot/tests/integration/**/*.test.js\"",
+    "review-bot:test:e2e": "mocha --no-config --no-package --timeout 60000 \"scripts/bot/tests/**/*.e2e.js\"",
+    "review-bot:review": "node scripts/bot/client.js",
+    "review-bot:fetch-assessment": "node scripts/bot/fetch-assessment.js",
+    "review-bot:publish": "node scripts/bot/publish.js",
+    "review-bot:cleanup": "node scripts/bot/cleanup.js"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx,mjs}": [

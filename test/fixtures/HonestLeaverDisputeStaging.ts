@@ -366,12 +366,15 @@ export async function assertHonestLeaverKillPeriodRefusal(
                 )
             ).to.equal(false);
         }
-        // the leaver's parked reduction submit settles before quiesce
-        await leaverReduction.release();
+        // the leaver's parked reduction submit settles before quiesce; the
+        // reduced state's terminal abort may already have removed its host
+        if (!runtimeIsClosed(leaver.p2pInstance))
+            await leaverReduction.release();
         expect(
             (await h.quiesceHosts()).map((error) => error.message)
         ).to.deep.equal([]);
     } finally {
-        await leaverReduction.release();
+        if (!runtimeIsClosed(leaver.p2pInstance))
+            await leaverReduction.release();
     }
 }

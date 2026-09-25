@@ -1,582 +1,644 @@
-import * as factory from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
 import Clock from "@/Clock";
-import { Block } from "@/models";
 import Storage from "@/storage";
-import { QueueStorage } from "@/storage/QueueStorage";
-import { ForkId, BlockHeight, Hash } from "@/types/types";
 import {
-    BlockConfirmationStruct,
-    SignedBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+    BlockOrigin,
+    QueueStorage,
+    getSignatureSuppliers
+} from "@/storage/QueueStorage";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { describe, it, before, beforeEach } from "mocha";
-
-const sig = () => ethers.hexlify(ethers.randomBytes(65));
+import { before, describe, it } from "mocha";
 
 describe("QueueStorage", () => {
-    let storage: QueueStorage;
-    let mockSignedBlock: SignedBlockStruct;
-    let mockBlockConfirmation: BlockConfirmationStruct;
-    let mockBlock: Block;
-    let mockForkId: ForkId;
-    let mockHeight: BlockHeight;
-
     before(async () => {
         await Clock.init(ethers.provider);
     });
-
-    beforeEach(() => {
-        storage = new QueueStorage();
-        mockSignedBlock = factory.signedBlock();
-        mockBlockConfirmation = factory.blockConfirmation({
-            signedBlock: mockSignedBlock
-        });
-
-        mockBlock = Block.fromSignedBlock(mockSignedBlock);
-        const { forkId, height } = mockBlock.coordinates;
-        mockForkId = forkId;
-        mockHeight = height;
+    it("counts the author first with maximum one", () => {
+        const f = new QueueAdmissionFixture(1);
+        f.offer(0, [f.signature()]);
+        expect([
+            ...f.entry().sourcesToSignatures.get(f.wallets[0].address)!
+        ]).to.deep.equal([f.block.originalSignature]);
+        expect(f.entry().block.confirmationSignatures.size).to.equal(0);
     });
 
-    it("restoring a copy without time preserves the queued timestamp", () => {
-        storage.queueBlock(Block.fromBlockConfirmation(mockBlockConfirmation));
-        const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
-        storage.queueBlock(
-            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
-        );
-        storage.restoreEntry(entry);
+    it("keeps an empty-confirmation source with its author charge", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1);
+        expect([...f.entry().sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[1].address
+        ]);
         expect(
-            storage.getQueuedEntry(mockBlock.hash)?.block.onChainTimestamp
-        ).to.equal(17);
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(1);
     });
-    it("restoring a copy with zero time replaces the queued timestamp", () => {
-        storage.queueBlock(
-            Block.fromBlockConfirmation(mockBlockConfirmation, 0)
+
+    it("admits exact values below the source signature boundary", () => {
+        const f = new QueueAdmissionFixture(3);
+        const offered = Array.from({ length: 1 }, (_, i) => f.signature(1, i));
+        f.offer(1, offered);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal(
+            offered.slice(0, 2)
         );
-        const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
-        storage.queueBlock(
-            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
-        );
-        storage.restoreEntry(entry);
         expect(
-            storage.getQueuedEntry(mockBlock.hash)?.block.onChainTimestamp
-        ).to.equal(0);
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
     });
 
-    it("duplicate queue insertion preserves time when the incoming copy has none", () => {
-        storage.queueBlock(
-            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
+    it("admits exact values at the source signature boundary", () => {
+        const f = new QueueAdmissionFixture(3);
+        const offered = Array.from({ length: 2 }, (_, i) => f.signature(1, i));
+        f.offer(1, offered);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal(
+            offered.slice(0, 2)
         );
-        storage.queueBlock(Block.fromBlockConfirmation(mockBlockConfirmation));
-        const entry = storage.tryDequeueAt(mockForkId, mockHeight);
-        expect(entry[0]?.block.onChainTimestamp).to.equal(17);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(3);
     });
 
-    describe("Queue Operations", () => {
-        it("should queue blocks", () => {
-            const hash = storage.queueBlock(mockBlock);
-            expect(storage.isBlockQueued(mockBlock)).to.be.true;
-            expect(storage.isBlockQueued(mockBlock, { hash })).to.be.true;
-        });
-
-        it("should queue multiple blocks on same coordinates", () => {
-            const block1 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            const block2 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            storage.queueBlock(block1);
-            storage.queueBlock(block2);
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(2);
-            expect(dequeued.map((entry) => entry.block.hash)).to.have.members([
-                block1.hash,
-                block2.hash
-            ]);
-        });
+    it("admits exact values above the source signature boundary", () => {
+        const f = new QueueAdmissionFixture(3);
+        const offered = Array.from({ length: 3 }, (_, i) => f.signature(1, i));
+        f.offer(1, offered);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal(
+            offered.slice(0, 2)
+        );
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(3);
     });
 
-    describe("Signature Merging", () => {
-        it("should merge signatures when queueing same block multiple times", () => {
-            const sharedSig = sig();
-            const uniqueSig1 = sig();
-            const uniqueSig2 = sig();
-
-            // First confirmation
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sharedSig, uniqueSig1]
-                })
-            );
-
-            // Second confirmation with shared signature
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sharedSig, uniqueSig2]
-                })
-            );
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.confirmationSignatures.size).to.equal(3);
-            expect(dequeued[0].block.confirmationSignatures).to.deep.equal(
-                new Set([sharedSig, uniqueSig1, uniqueSig2])
-            );
-        });
-
-        it("should merge signatures with existing queued block", () => {
-            storage.queueBlock(mockBlock);
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sig(), sig()]
-                })
-            );
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.confirmationSignatures.size).to.equal(2);
-        });
-
-        it("should merge on-chain timestamp when queueing same block again", () => {
-            const onChainTimestamp = 1234567890;
-            storage.queueBlock(mockBlock);
-
-            storage.queueBlock(
-                Block.fromSignedBlock(mockSignedBlock, onChainTimestamp)
-            );
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.onChainTimestamp).to.equal(
-                onChainTimestamp
-            );
-        });
-
-        it("bounds attribution and retains an early-tracked source under a later junk flood", () => {
-            // An honest supplier is tracked first, then a byzantine peer floods
-            // the same hash from many distinct addresses.
-            const honest = factory.randomAddress();
-            const hash = storage.queueBlock(mockBlock, {
-                senderAddress: honest
-            });
-            for (let i = 0; i < 300; i++) {
-                storage.queueBlock(mockBlock, {
-                    senderAddress: factory.randomAddress()
-                });
-            }
-
-            const entry = storage.getQueuedEntry(hash)!;
-            // Bounded retention: the maps can't grow past the structural cap.
-            expect(entry.sourcePeers.size).to.be.at.most(128);
-            for (const peers of entry.signatureSources.values()) {
-                expect(peers.size).to.be.at.most(128);
-            }
-            // Overflow is a marker, not a validity decision.
-            expect(entry.overflowedSources).to.equal(true);
-            // The early honest source is never evicted by later junk...
-            expect(entry.sourcePeers.has(honest)).to.equal(true);
-            // ...and the block itself is still queued (never invalidated).
-            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
-        });
-
-        it("junk-first: a flood that fills the cap first still lets a later valid copy process", () => {
-            // Byzantine peer floods the hash to the cap BEFORE any honest copy.
-            let hash!: Hash;
-            for (let i = 0; i < 300; i++) {
-                hash = storage.queueBlock(mockBlock, {
-                    senderAddress: factory.randomAddress()
-                });
-            }
-            const entry = storage.getQueuedEntry(hash)!;
-            expect(entry.overflowedSources).to.equal(true);
-            expect(entry.sourcePeers.size).to.be.at.most(128);
-
-            // A valid copy now arrives. The block must NOT be invalidated by the
-            // prior overflow - it stays queued and dequeueable. (Known
-            // limitation of the structural-only cap: the late source may not be
-            // retained once the cap is full; participant-aware attribution
-            // selection is a documented follow-up, not shipped here.)
-            const honest = factory.randomAddress();
-            storage.queueBlock(mockBlock, { senderAddress: honest });
-            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.hash).to.equal(mockBlock.hash);
-        });
-
-        it("should overwrite on-chain timestamp when queueing same block again", () => {
-            storage.queueBlock(mockBlock);
-
-            storage.queueBlock(Block.fromSignedBlock(mockSignedBlock, 20));
-            storage.queueBlock(Block.fromSignedBlock(mockSignedBlock, 30));
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.onChainTimestamp).to.equal(30);
-        });
-
-        it("should not mutate queue when checking queued duplicate", () => {
-            const onChainTimestamp = 1234567890;
-            storage.queueBlock(mockBlock);
-
-            const blockPostedOnChain = Block.fromSignedBlock(
-                mockSignedBlock,
-                onChainTimestamp
-            );
-            expect(storage.isBlockQueued(blockPostedOnChain)).to.be.true;
-
-            const dequeued = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.onChainTimestamp).to.equal(undefined);
-        });
-
-        it("should merge on-chain timestamp through storage proxy", () => {
-            const storageWithProxy = new Storage();
-            const onChainTimestamp = 1234567890;
-            storageWithProxy.queues.queueBlock(mockBlock);
-
-            const blockPostedOnChain = Block.fromSignedBlock(
-                mockSignedBlock,
-                onChainTimestamp
-            );
-            storageWithProxy.queues.queueBlock(blockPostedOnChain);
-
-            const dequeued = storageWithProxy.queues.tryDequeueAt(
-                mockForkId,
-                mockHeight
-            );
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.onChainTimestamp).to.equal(
-                onChainTimestamp
-            );
-        });
+    it("repeated copies do not refill the same source allowance", () => {
+        const f = new QueueAdmissionFixture(2);
+        const first = f.signature(1, 0),
+            second = f.signature(1, 1);
+        f.offer(1, [first]);
+        f.offer(1, [second]);
+        f.offer(1, [first]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            first
+        ]);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
     });
 
-    describe("Dequeue Operations", () => {
-        it("should allow multiple dequeues on different coordinates", () => {
-            const block1 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            const block2 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight + 1
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            storage.queueBlock(block1);
-            storage.queueBlock(block2);
-
-            const dequeued1 = storage.tryDequeueAt(mockForkId, mockHeight);
-            const dequeued2 = storage.tryDequeueAt(mockForkId, mockHeight + 1);
-
-            expect(dequeued1).to.have.lengthOf(1);
-            expect(dequeued2).to.have.lengthOf(1);
-            expect(dequeued1[0].block.equals(block1)).to.be.true;
-            expect(dequeued2[0].block.equals(block2)).to.be.true;
+    it("lowercase and checksummed sources share one signature allowance", () => {
+        const f = new QueueAdmissionFixture(2);
+        const first = f.signature(1, 0);
+        f.queue.queueBlock(f.copy([first]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address.toLowerCase()
         });
-
-        it("should dequeue the lowest eligible height by priority", () => {
-            const block1 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight + 1
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            const block2 = Block.fromSignedBlock(
-                factory.signedBlock({
-                    encodedBlock: factory
-                        .block({
-                            transaction: factory.transaction({
-                                header: factory.transactionHeader({
-                                    forkId: mockForkId,
-                                    transactionCnt: mockHeight + 2
-                                })
-                            })
-                        })
-                        .encode()
-                })
-            );
-
-            storage.queueBlock(block2);
-            storage.queueBlock(block1);
-
-            const dequeued = storage.tryDequeuePriority(
-                mockForkId,
-                mockHeight + 2
-            );
-
-            expect(dequeued).to.have.lengthOf(1);
-            expect(dequeued[0].block.equals(block1)).to.be.true;
-        });
-
-        it("should track source peers and signature attribution", () => {
-            const peerAddress = ethers.Wallet.createRandom().address;
-            const confirmationSignature = sig();
-            const block = Block.fromBlockConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [confirmationSignature]
-            });
-
-            storage.queueBlock(block, { senderAddress: peerAddress });
-
-            const entry = storage.getQueuedEntry(block.hash);
-            expect(entry).to.not.be.undefined;
-            expect(entry!.sourcePeers.has(peerAddress)).to.equal(true);
-            expect(
-                entry!.signatureSources
-                    .get(confirmationSignature)
-                    ?.has(peerAddress)
-            ).to.equal(true);
-        });
-
-        it("should attribute only the signatures each sender's copy carried", () => {
-            const senderA = ethers.Wallet.createRandom().address;
-            const senderB = ethers.Wallet.createRandom().address;
-            const straySig = sig();
-            const honestSig = sig();
-
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [straySig]
-                }),
-                { senderAddress: senderA }
-            );
-            // B's copy pools into A's entry but carries only the honest sig —
-            // B must not inherit A's stray signature.
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [honestSig]
-                }),
-                { senderAddress: senderB }
-            );
-
-            const entry = storage.getQueuedEntry(mockBlock.hash)!;
-            expect(entry.block.confirmationSignatures).to.deep.equal(
-                new Set([straySig, honestSig])
-            );
-            expect(entry.sourcePeers).to.deep.equal(
-                new Set([senderA, senderB])
-            );
-            expect(entry.signatureSources.get(straySig)).to.deep.equal(
-                new Set([senderA])
-            );
-            expect(entry.signatureSources.get(honestSig)).to.deep.equal(
-                new Set([senderB])
-            );
-        });
-
-        it("should return empty on subsequent dequeues", () => {
-            storage.queueBlock(mockBlock);
-            expect(
-                storage.tryDequeueAt(mockForkId, mockHeight)
-            ).to.have.lengthOf(1);
-            expect(storage.tryDequeueAt(mockForkId, mockHeight)).to.deep.equal(
-                []
-            );
-        });
+        f.offer(1, [f.signature(1, 1)]);
+        expect([...f.entry().sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect([
+            ...f.entry().sourcesToSignatures.get(f.wallets[1].address)!
+        ]).to.deep.equal([f.block.originalSignature, first]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            first
+        ]);
     });
 
-    describe("Restore Entry", () => {
-        it("should restore a dequeued entry with its attribution intact", () => {
-            const senderAddress = ethers.Wallet.createRandom().address;
-            const confirmationSignature = sig();
-            const block = Block.fromBlockConfirmation({
-                ...mockBlockConfirmation,
-                signatures: [confirmationSignature]
-            });
-
-            storage.queueBlock(block, { senderAddress });
-            const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
-            expect(storage.isBlockQueued(block)).to.be.false;
-
-            storage.restoreEntry(entry);
-
-            expect(storage.isBlockQueued(block)).to.be.true;
-            const restored = storage.getQueuedEntry(block.hash)!;
-            expect(restored.sourcePeers.has(senderAddress)).to.equal(true);
-            expect(
-                restored.signatureSources
-                    .get(confirmationSignature)
-                    ?.has(senderAddress)
-            ).to.equal(true);
-            // Back in the coordinate index too - dequeueable again
-            expect(
-                storage.tryDequeueAt(mockForkId, mockHeight)
-            ).to.have.lengthOf(1);
-        });
-
-        it("should merge a restored entry with a copy queued meanwhile", () => {
-            const senderA = ethers.Wallet.createRandom().address;
-            const senderB = ethers.Wallet.createRandom().address;
-            const sigA = sig();
-            const sigB = sig();
-
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sigA]
-                }),
-                { senderAddress: senderA }
-            );
-            const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
-            entry.firstSeenAt -= 100;
-
-            storage.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sigB]
-                }),
-                { senderAddress: senderB }
-            );
-            storage.restoreEntry(entry);
-
-            const merged = storage.getQueuedEntry(mockBlock.hash)!;
-            expect(merged.block.confirmationSignatures).to.deep.equal(
-                new Set([sigA, sigB])
-            );
-            expect(merged.sourcePeers).to.deep.equal(
-                new Set([senderA, senderB])
-            );
-            expect(merged.signatureSources.get(sigA)).to.deep.equal(
-                new Set([senderA])
-            );
-            expect(merged.signatureSources.get(sigB)).to.deep.equal(
-                new Set([senderB])
-            );
-            expect(merged.firstSeenAt).to.equal(entry.firstSeenAt);
-        });
+    it("another admitted source keeps its own allowance", () => {
+        const f = new QueueAdmissionFixture(2);
+        const a = f.signature(1),
+            b = f.signature(2);
+        f.offer(1, [a]);
+        f.offer(1, [f.signature(1, 1)]);
+        f.offer(2, [b]);
+        expect([...f.entry().block.confirmationSignatures]).to.have.members([
+            a,
+            b
+        ]);
+        expect(
+            [...f.entry().sourcesToSignatures.values()].map((x) => x.size)
+        ).to.deep.equal([2, 2]);
     });
 
-    describe("Deep Copy Isolation", () => {
-        let storageWithProxy: Storage;
-        beforeEach(() => {
-            storageWithProxy = new Storage();
+    it("distinct signatures from the same signer consume distinct slots", () => {
+        const f = new QueueAdmissionFixture(3);
+        const values = [
+            f.signature(1, 0),
+            f.signature(1, 1),
+            f.signature(1, 2)
+        ];
+        expect(new Set(values).size).to.equal(3);
+        expect(values.map((s) => f.block.signatureToAddress(s))).to.deep.equal(
+            Array(3).fill(f.wallets[1].address)
+        );
+        f.offer(1, values);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal(
+            values.slice(0, 2)
+        );
+    });
+
+    it("shared signatures charge each actual supplier independently", () => {
+        const f = new QueueAdmissionFixture(2);
+        const signature = f.signature(1);
+        f.offer(1, [signature]);
+        f.offer(2, [signature]);
+        expect(f.entry().block.confirmationSignatures.size).to.equal(1);
+        expect([
+            ...getSignatureSuppliers(f.entry(), new Set([signature]))
+        ]).to.have.members([f.wallets[1].address, f.wallets[2].address]);
+        expect(
+            [...f.entry().sourcesToSignatures.values()].map((x) => x.size)
+        ).to.deep.equal([2, 2]);
+    });
+
+    it("an author repeated in confirmations spends only one slot", () => {
+        const f = new QueueAdmissionFixture(2);
+        const signature = f.signature(1);
+        f.offer(1, [f.block.originalSignature, signature]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            signature
+        ]);
+    });
+
+    it("equivalent signature encodings deduplicate", () => {
+        const f = new QueueAdmissionFixture(2);
+        const signature = f.signature(1);
+        f.offer(1, [signature]);
+        f.queue.queueBlock(f.copy(["0x" + signature.slice(2).toUpperCase()]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address
         });
+        expect(f.entry().sourcesToSignatures.size).to.equal(1);
+        expect(f.entry().block.confirmationSignatures.size).to.equal(1);
+    });
 
-        it("should isolate modifications from outside objects", () => {
-            const originalConfirmation = factory.blockConfirmation({
-                signedBlock: mockSignedBlock,
-                signatures: [sig(), sig()]
-            });
-            const originalCount = originalConfirmation.signatures.length;
+    it("source capacity rejects a new identity without timestamp mutation", () => {
+        const f = new QueueAdmissionFixture(2);
+        f.offer(0, [], 17);
+        f.offer(1, []);
+        const before = f.entry().firstSeenAt;
+        expect(f.offer(2, [f.signature(2)], 0)).to.equal(undefined);
+        expect(f.entry().sourcesToSignatures.size).to.equal(2);
+        expect(f.entry().block.onChainTimestamp).to.equal(17);
+        expect(f.entry().firstSeenAt).to.equal(before);
+    });
 
-            storageWithProxy.queues.queueBlock(
-                Block.fromBlockConfirmation(originalConfirmation)
-            );
-            storageWithProxy.queues.queueBlock(
-                Block.fromBlockConfirmation({
-                    ...mockBlockConfirmation,
-                    signatures: [sig()]
-                })
-            );
+    it("an existing source can fill remaining slots after source capacity", () => {
+        const f = new QueueAdmissionFixture(2);
+        f.offer(0);
+        f.offer(1);
+        const signature = f.signature(1);
+        f.offer(1, [signature]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            signature
+        ]);
+    });
 
-            // Original object should be unchanged
-            expect(originalConfirmation.signatures).to.have.lengthOf(
-                originalCount
-            );
+    it("short signature values consume only their source budget", () => {
+        const f = new QueueAdmissionFixture(2);
+        const valid = f.signature(1);
+        f.offer(1, ["0x01", valid]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            "0x01"
+        ]);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
+    });
 
-            const dequeued = storageWithProxy.queues.tryDequeueAt(
-                mockForkId,
-                mockHeight
-            );
-            expect(
-                dequeued[0].block.confirmationSignatures.size
-            ).to.be.greaterThan(originalCount);
+    it("empty signature values consume only their source budget", () => {
+        const f = new QueueAdmissionFixture(2);
+        const valid = f.signature(1);
+        f.offer(1, ["0x", valid]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            "0x"
+        ]);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
+    });
+
+    it("oversized signature values consume only their source budget", () => {
+        const f = new QueueAdmissionFixture(2);
+        const valid = f.signature(1);
+        f.offer(1, ["0x" + "ab".repeat(4096), valid]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            "0x" + "ab".repeat(4096)
+        ]);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
+    });
+
+    it("nonhex signature values consume only their source budget", () => {
+        const f = new QueueAdmissionFixture(2);
+        const valid = f.signature(1);
+        f.offer(1, ["0x" + "zz".repeat(65), valid]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            "0x" + "zz".repeat(65)
+        ]);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
+    });
+
+    it("retains fixed-size unrecoverable bytes within the supplier quota", () => {
+        const f = new QueueAdmissionFixture(2);
+        const invalid = "0x" + "00".repeat(64) + "1b";
+        f.offer(1, [invalid, f.signature(1)]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            invalid
+        ]);
+        expect(() => f.entry().block.signatureToAddress(invalid)).to.throw();
+    });
+
+    it("removing invalid confirmations does not refund their charge", () => {
+        const f = new QueueAdmissionFixture(2);
+        const invalid = "0x" + "00".repeat(64) + "1b";
+        f.offer(1, [invalid]);
+        const work = f.take();
+        work.block.removeConfirmationSignatures(new Set([invalid]));
+        f.queue.restoreEntry(work);
+        f.offer(1, [f.signature(1)]);
+        expect(f.entry().block.confirmationSignatures.size).to.equal(0);
+        expect(
+            f.entry().sourcesToSignatures.get(f.wallets[1].address)!.size
+        ).to.equal(2);
+        const honest = f.signature(2);
+        f.offer(2, [honest]);
+        expect([...f.entry().block.confirmationSignatures]).to.deep.equal([
+            honest
+        ]);
+    });
+
+    it("restore merges concurrent copies within each source allowance", () => {
+        const f = new QueueAdmissionFixture(2);
+        const a = f.signature(1),
+            b = f.signature(2);
+        f.offer(1, [a]);
+        const work = f.take();
+        f.offer(1, [f.signature(1, 1)]);
+        f.offer(2, [b]);
+        expect(f.entry().sourcesToSignatures.size).to.equal(2);
+        f.queue.restoreEntry(work);
+        const restored = f.take();
+        expect([...restored.block.confirmationSignatures]).to.have.members([
+            f.signature(1, 1),
+            b
+        ]);
+        expect(
+            [...restored.sourcesToSignatures.values()].map(
+                (values) => values.size
+            )
+        ).to.deep.equal([2, 2]);
+        expect([
+            ...restored.sourcesToSignatures.get(f.wallets[1].address)!
+        ]).to.deep.equal([f.block.originalSignature, f.signature(1, 1)]);
+        expect([
+            ...restored.sourcesToSignatures.get(f.wallets[2].address)!
+        ]).to.deep.equal([f.block.originalSignature, b]);
+        expect(restored.block.confirmationSignatures.has(a)).to.equal(false);
+    });
+
+    it("copies after dequeue form an independent queued entry", () => {
+        const f = new QueueAdmissionFixture(1);
+        f.offer(0);
+        const processing = f.take();
+        f.offer(1);
+        expect([...f.entry().sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect([...processing.sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[0].address
+        ]);
+    });
+
+    it("dequeued entries restore attribution through the Storage proxy", () => {
+        const f = new QueueAdmissionFixture(2);
+        const storage = new Storage(2);
+        storage.queues.queueBlock(f.copy([f.signature(1)]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address
         });
+        const entry = storage.queues.tryDequeueAt(
+            f.block.forkId,
+            f.block.height
+        )[0];
+        expect(storage.queues.getQueuedEntry(f.block.hash)).to.equal(undefined);
+        storage.queues.restoreEntry(entry);
+        const restored = storage.queues.tryDequeueAt(
+            f.block.forkId,
+            f.block.height
+        )[0];
+        expect([
+            ...restored.sourcesToSignatures.get(f.wallets[1].address)!
+        ]).to.deep.equal([
+            ...entry.sourcesToSignatures.get(f.wallets[1].address)!
+        ]);
+        expect(restored.firstSeenAt).to.equal(entry.firstSeenAt);
+    });
 
-        it("should isolate modifications to dequeued objects", () => {
-            const confirmation = factory.blockConfirmation({
-                signedBlock: mockSignedBlock,
-                signatures: [sig()]
-            });
-
-            storageWithProxy.queues.queueBlock(
-                Block.fromBlockConfirmation(confirmation)
-            );
-            const dequeued = storageWithProxy.queues.tryDequeueAt(
-                mockForkId,
-                mockHeight
-            );
-            const originalCount = dequeued[0].block.confirmationSignatures.size;
-
-            // Modify dequeued object
-            dequeued[0].block.expandSignatures([sig()]);
-
-            // Queue same confirmation again
-            storageWithProxy.queues.queueBlock(
-                Block.fromBlockConfirmation(confirmation)
-            );
-            const dequeued2 = storageWithProxy.queues.tryDequeueAt(
-                mockForkId,
-                mockHeight
-            );
-
-            // Storage should not be affected
-            expect(dequeued2[0].block.confirmationSignatures.size).to.equal(
-                originalCount
-            );
+    it("Storage isolates returned block and source maps", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new Storage(3);
+        const signature = f.signature(1);
+        storage.queues.queueBlock(f.copy([signature]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address
         });
+        const copy = storage.queues.getQueuedEntry(f.block.hash)!;
+        copy.block.removeConfirmationSignatures(new Set([signature]));
+        copy.sourcesToSignatures.clear();
+        const stored = storage.queues.getQueuedEntry(f.block.hash)!;
+        expect([...stored.block.confirmationSignatures]).to.deep.equal([
+            signature
+        ]);
+        expect(stored.sourcesToSignatures.size).to.equal(1);
+    });
+
+    it("merge preserves the existing rule for missing timestamp", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1, [], 17);
+        f.offer(1, [], undefined);
+        expect(f.entry().block.onChainTimestamp).to.equal(17);
+    });
+
+    it("merge preserves the existing rule for zero timestamp", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1, [], 17);
+        f.offer(1, [], 0);
+        expect(f.entry().block.onChainTimestamp).to.equal(0);
+    });
+
+    it("merge preserves the existing rule for defined timestamp", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1, [], 0);
+        f.offer(1, [], 17);
+        expect(f.entry().block.onChainTimestamp).to.equal(17);
+    });
+
+    it("restore with zero timestamp replaces a concurrently supplied timestamp", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1, [], 0);
+        const work = f.take();
+        f.offer(2, [], 17);
+        f.queue.restoreEntry(work);
+        expect(f.entry().block.onChainTimestamp).to.equal(0);
+    });
+
+    it("restore without timestamp preserves a concurrently supplied timestamp", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1);
+        const work = f.take();
+        f.offer(2, [], 17);
+        f.queue.restoreEntry(work);
+        expect(f.entry().block.onChainTimestamp).to.equal(17);
+    });
+
+    it("exact dequeue removes the entry and returns its attribution", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1, [f.signature(1)]);
+        const entry = f.take();
+        expect(f.queue.isBlockQueued(f.block)).to.equal(false);
+        expect(f.take()).to.equal(undefined);
+        expect([...entry.sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+        expect([...entry.block.confirmationSignatures]).to.deep.equal([
+            f.signature(1)
+        ]);
+    });
+
+    it("priority dequeue chooses the lowest eligible height", () => {
+        const low = new QueueAdmissionFixture(3, 1),
+            high = new QueueAdmissionFixture(3, 3);
+        const queue = low.queue;
+        queue.queueBlock(high.copy(), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: high.wallets[1].address
+        });
+        low.offer(1);
+        expect(
+            queue
+                .tryDequeuePriority(low.block.forkId, 2)
+                .map((x) => x.block.height)
+        ).to.deep.equal([1]);
+        expect(queue.tryDequeuePriority(low.block.forkId, 2)).to.have.lengthOf(
+            0
+        );
+        expect(
+            queue
+                .tryDequeuePriority(high.block.forkId, 3)
+                .map((x) => x.block.height)
+        ).to.deep.equal([3]);
+    });
+
+    it("two hashes at the same coordinates remain separate", () => {
+        const first = new QueueAdmissionFixture(),
+            second = new QueueAdmissionFixture();
+        first.offer(1);
+        first.queue.queueBlock(second.copy(), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: second.wallets[1].address
+        });
+        expect(
+            first.queue
+                .tryDequeueAt(first.block.forkId, 0)
+                .map((x) => x.block.hash)
+        ).to.have.members([first.block.hash, second.block.hash]);
+    });
+
+    it("standalone proof input preserves signatures without inventing a source", () => {
+        const f = new QueueAdmissionFixture(1);
+        f.offer(1);
+        const signatures = [f.signature(1), f.signature(2), f.signature(3)];
+        const proof = f.queue.createEntry(f.copy(signatures), {
+            origin: BlockOrigin.PROOF
+        });
+        expect([...proof.block.confirmationSignatures]).to.have.members(
+            signatures
+        );
+        expect(proof.sourcesToSignatures.size).to.equal(0);
+        expect(f.entry().block.confirmationSignatures.size).to.equal(0);
+    });
+
+    it("calldata updates trusted time without inventing a supplier", () => {
+        const f = new QueueAdmissionFixture(1);
+        f.offer(1);
+        f.queue.queueBlock(f.copy([], 0), { origin: BlockOrigin.CALLDATA });
+        const network = f.entry();
+        expect(network.block.onChainTimestamp).to.equal(0);
+        expect([...network.sourcesToSignatures.keys()]).to.deep.equal([
+            f.wallets[1].address
+        ]);
+    });
+
+    it("clear removes queued entries and their coordinate index", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1);
+        f.queue.clear();
+        expect(f.queue.getQueuedEntry(f.block.hash)).to.equal(undefined);
+        expect(
+            f.queue.tryDequeueAt(f.block.forkId, f.block.height)
+        ).to.deep.equal([]);
+    });
+
+    it("rejects a zero participant maximum", () => {
+        expect(() => new QueueStorage(0)).to.throw("positive safe integer");
+    });
+
+    it("rejects a negative participant maximum", () => {
+        expect(() => new QueueStorage(-1)).to.throw("positive safe integer");
+    });
+
+    it("rejects a fractional participant maximum", () => {
+        expect(() => new QueueStorage(1.5)).to.throw("positive safe integer");
+    });
+
+    it("rejects a NaN participant maximum", () => {
+        expect(() => new QueueStorage(NaN)).to.throw("positive safe integer");
+    });
+
+    it("rejects a infinite participant maximum", () => {
+        expect(() => new QueueStorage(Infinity)).to.throw(
+            "positive safe integer"
+        );
+    });
+
+    it("rejects a unsafe integer participant maximum", () => {
+        expect(() => new QueueStorage(Number.MAX_SAFE_INTEGER + 1)).to.throw(
+            "positive safe integer"
+        );
+    });
+
+    it("standalone default and explicit maxima are observable", () => {
+        expect(new QueueStorage().maxChannelParticipants).to.equal(32);
+        expect(new Storage(4).queues.maxChannelParticipants).to.equal(4);
+    });
+    it("keeps the first author envelope and attributes an alternative only to its supplier", () => {
+        const f = new QueueAdmissionFixture(2);
+        f.offer(0);
+        const alternative = f.alternateEnvelope(1);
+        f.queue.queueBlock(alternative, {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address
+        });
+        expect(f.entry().block.originalSignature).to.equal(
+            f.block.originalSignature
+        );
+        expect([
+            ...f.entry().sourcesToSignatures.get(f.wallets[1].address)!
+        ]).to.deep.equal([alternative.originalSignature]);
+        expect([
+            ...getSignatureSuppliers(
+                f.entry(),
+                new Set([f.block.originalSignature])
+            )
+        ]).to.deep.equal([f.wallets[0].address]);
+    });
+
+    it("retains exactly N squared values when N sources supply disjoint envelopes and confirmations", () => {
+        const f = new QueueAdmissionFixture(3);
+        const supplied = [0, 1, 2].map((source) =>
+            f.alternateEnvelope(source, [
+                f.signature(source + 1, 10),
+                f.signature(source + 1, 11)
+            ])
+        );
+        supplied.forEach((copy, source) =>
+            f.queue.queueBlock(copy, {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: f.wallets[source].address
+            })
+        );
+        const entry = f.entry();
+        expect(entry.sourcesToSignatures.size).to.equal(3);
+        expect(
+            [...entry.sourcesToSignatures.values()].map((values) => values.size)
+        ).to.deep.equal([3, 3, 3]);
+        expect(
+            new Set(
+                [...entry.sourcesToSignatures.values()].flatMap((values) => [
+                    ...values
+                ])
+            ).size
+        ).to.equal(9);
+        expect(entry.block.allSignatures.size).to.equal(9);
+    });
+
+    it("reversing below-limit copies preserves the union and exact supplier attribution", () => {
+        const f = new QueueAdmissionFixture(3);
+        const reverse = new QueueStorage(3);
+        const first = f.signature(1),
+            second = f.signature(2);
+        f.offer(1, [first]);
+        f.offer(2, [second]);
+        reverse.queueBlock(f.copy([second]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[2].address
+        });
+        reverse.queueBlock(f.copy([first]), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: f.wallets[1].address
+        });
+        const reversed = reverse.getQueuedEntry(f.block.hash)!;
+        expect([...reversed.block.confirmationSignatures]).to.have.members([
+            ...f.entry().block.confirmationSignatures
+        ]);
+        expect([
+            ...getSignatureSuppliers(reversed, new Set([first]))
+        ]).to.deep.equal([f.wallets[1].address]);
+        expect([
+            ...getSignatureSuppliers(reversed, new Set([second]))
+        ]).to.deep.equal([f.wallets[2].address]);
+        expect([
+            ...f.entry().sourcesToSignatures.get(f.wallets[1].address)!
+        ]).to.have.members([
+            ...reversed.sourcesToSignatures.get(f.wallets[1].address)!
+        ]);
+        expect([
+            ...f.entry().sourcesToSignatures.get(f.wallets[2].address)!
+        ]).to.have.members([
+            ...reversed.sourcesToSignatures.get(f.wallets[2].address)!
+        ]);
+    });
+    it("fork cleanup removes only queued entries on the selected fork", () => {
+        const first = new QueueAdmissionFixture();
+        const other = new QueueAdmissionFixture(
+            3,
+            0,
+            ethers.hexlify(ethers.randomBytes(32))
+        );
+        first.offer(1);
+        first.queue.queueBlock(other.copy(), {
+            origin: BlockOrigin.NETWORK,
+            senderAddress: other.wallets[1].address
+        });
+        expect(first.queue.clearFork(first.block.forkId)).to.have.members([
+            first.block.hash
+        ]);
+        expect(first.queue.getQueuedEntry(first.block.hash)).to.equal(
+            undefined
+        );
+        expect(
+            first.queue.tryDequeueAt(first.block.forkId, first.block.height)
+        ).to.deep.equal([]);
+        expect(
+            first.queue.getQueuedEntry(other.block.hash)?.block.hash
+        ).to.equal(other.block.hash);
+    });
+
+    it("restore preserves the earliest first seen time when concurrent copies arrive", () => {
+        const f = new QueueAdmissionFixture();
+        f.offer(1);
+        const processing = f.take();
+        processing.firstSeenAt -= 1;
+        f.offer(2);
+        f.queue.restoreEntry(processing);
+        expect(f.entry().firstSeenAt).to.equal(processing.firstSeenAt);
+        expect([...f.entry().sourcesToSignatures.keys()]).to.have.members([
+            f.wallets[1].address,
+            f.wallets[2].address
+        ]);
     });
 });

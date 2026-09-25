@@ -15,20 +15,28 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
         if (currentStateSnapshot.forkId == targetForkId) return; // already on the correct fork
+        // error args are evaluated eagerly, so the snapshot-data hash is raised
+        // inside the failure branch and never computed on the happy path
+        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot)) {
+            revert ErrorNotGenesisSnapshot(
+                keccak256(abi.encode(newStateSnapshot.snapshotData)),
+                newStateSnapshot.forkId,
+                newStateSnapshot.blockHeight
+            );
+        }
+        bytes32 originForkId = newStateSnapshot.snapshotData.originForkId;
+        (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(channelId, originForkId, targetForkId);
+        require(hasGenesis, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, targetForkId));
         require(
-            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot),
-            ErrorInvalidStateSnapshot()
+            newStateSnapshot.timestamp == genesisTimestamp,
+            ErrorSnapshotGenesisTimestampMismatch(genesisTimestamp, newStateSnapshot.timestamp)
         );
-        (bool hasGenesis, uint256 genesisTimestamp) =
-            _getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
-        require(hasGenesis && newStateSnapshot.timestamp == genesisTimestamp, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
-        while (
-            disputeWindow.reducedResult.forkId != bytes32(0)
-                && _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime())
-        ) {
+        while (disputeWindow.reducedResult.forkId != bytes32(0)) {
+            (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+            if (!challengePeriodExpired) break;
             if (disputeWindow.reducedResult.forkId == targetForkId) {
                 DisputeWindow storage targetWindow = disputeWindowMap[targetForkId];
                 (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(targetWindow, _getEvidenceTime());
@@ -42,7 +50,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             }
             disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
         }
-        require(updated, ErrorStateSnapshotNotValid());
+        require(updated, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
     }
 
     function updateStateSnapshotSameFork(
@@ -61,11 +69,11 @@ contract StateSnapshotFacet is StateChannelCommon {
         );
         require(
             UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
-            RaceConditionBlockHeightTooOld()
+            RaceConditionBlockHeightTooOld(currentStateSnapshot.blockHeight, newStateSnapshot.blockHeight)
         );
         require(
             _verifyMilestones(currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot),
-            ErrorInvalidStateProof()
+            ErrorInvalidStateProof(currentStateSnapshot.forkId, milestoneProofs.length, milestoneSnapshots.length)
         );
         require(
             newStateSnapshot.snapshotData.latestInboundMessageBlockHash
@@ -101,7 +109,11 @@ contract StateSnapshotFacet is StateChannelCommon {
             _verifyOutboundMessageBlocks(
                 outboundMessageBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData
             ),
-            ErrorOutboundMessageBlocksInvalid()
+            ErrorOutboundMessageBlocksInvalid(
+                currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHash,
+                currentOnChainSnapshot.snapshotData.latestOutboundMessageBlockHeight,
+                outboundMessageBlocks.length
+            )
         );
         _applyOutboundMessageBlocks(channelId, outboundMessageBlocks, newSnapshot.snapshotData);
 
@@ -151,7 +163,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
                 bool success = _processOutboundMessage(outboundMessageBlocks[i].messages[j]);
-                require(success, ErrorWithdrawalFailed());
+                require(success, ErrorWithdrawalFailed(i, j, outboundMessageBlocks[i].messages[j].participant));
 
                 totalWithdrawals = stateMachineImplementation.addBalance(
                     totalWithdrawals, outboundMessageBlocks[i].messages[j].balance
@@ -159,7 +171,9 @@ contract StateSnapshotFacet is StateChannelCommon {
                 //require withdrawals <= deposits
                 bool isLessThan = stateMachineImplementation.isBalanceLesserThan(totalWithdrawals, totalDeposits);
                 bool isEqual = stateMachineImplementation.areBalancesEqual(totalWithdrawals, totalDeposits);
-                require(isLessThan || isEqual, CantWithdrawMoreThanDeposits());
+                require(
+                    isLessThan || isEqual, CantWithdrawMoreThanDeposits(totalDeposits.amount, totalWithdrawals.amount)
+                );
             }
             // TODO - this event is not used
             emit OutboundMessagesProcessed(channelId, outboundMessageBlocks[i], block.timestamp, totalWithdrawals);

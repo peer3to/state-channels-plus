@@ -10,6 +10,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [ATransport.ts](./ATransport.ts.md)
 - [BrowserLocalTransport.ts](./BrowserLocalTransport.ts.md)
 - [HolepunchTransport.ts](./HolepunchTransport.ts.md)
+- [LocalPeerInfo.ts](./LocalPeerInfo.ts.md)
 - [LocalTransport.ts](./LocalTransport.ts.md)
 - [LoopbackTransport.ts](./LoopbackTransport.ts.md)
 - [TransportType.ts](./TransportType.ts.md)

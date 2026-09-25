@@ -7,6 +7,33 @@ import "./tasks/forgeTest";
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more
 
+// Keep in sync with test/harness/core/slotAccounts.ts (SLOT_STRIDE) and the
+// pool cap in scripts/e2e-parallel/shared/constants.js (ACCOUNT_POOL_SIZE).
+const SLOT_STRIDE = 10;
+const ACCOUNT_POOL_SIZE = 400;
+const HARDHAT_MNEMONIC =
+    "test test test test test test test test test test test junk";
+
+/**
+ * The parallel runner injects E2E_SLOT_INDEX and a test process only ever
+ * touches its own slot window (slot × SLOT_STRIDE … + SLOT_STRIDE − 1), so it
+ * derives just that window: hardhat runs the mnemonic's PBKDF2 once per
+ * account, and the full 400-account pool costs ~2 s of main-thread CPU per
+ * process. The shared node (`hardhat node`) and direct hardhat commands carry
+ * no slot index and keep the whole pool, so every partition stays funded and
+ * account N derives the same address everywhere.
+ */
+function hdAccounts() {
+    const slot = Number(process.env.E2E_SLOT_INDEX);
+    if (process.env.E2E_SLOT_INDEX === undefined || !Number.isFinite(slot))
+        return { mnemonic: HARDHAT_MNEMONIC, count: ACCOUNT_POOL_SIZE };
+    return {
+        mnemonic: HARDHAT_MNEMONIC,
+        initialIndex: slot * SLOT_STRIDE,
+        count: SLOT_STRIDE
+    };
+}
+
 /**
  * @type {HardhatUserConfig}
  */
@@ -26,14 +53,9 @@ const config: HardhatUserConfig = {
                     ? 1_000_000_000
                     : 30_000_000,
             initialDate: new Date().toISOString(),
-            // 400 accounts = 40 concurrent slots × SLOT_STRIDE(10).
-            // Keep in sync with SLOT_STRIDE in test/harness/core/slotAccounts.ts
-            // and the pool cap in scripts/test-e2e-parallel.js.
-            accounts: {
-                mnemonic:
-                    "test test test test test test test test test test test junk",
-                count: 400
-            },
+            // 400 accounts = 40 concurrent slots × SLOT_STRIDE(10), or one
+            // slot window under the parallel runner (see hdAccounts).
+            accounts: hdAccounts(),
             // Interval-mined runs set E2E_INTERVAL_MINING=1 → automine OFF + a
             // 1s interval, so block-time tracks wall-clock, ordered nonce batches
             // can enter the mempool together, and the SDK's real-time dispute
@@ -49,13 +71,9 @@ const config: HardhatUserConfig = {
             // Env-driven so the worker-mode e2e run can point hardhat's deploy
             // network, the worker's PROVIDER_URL, and the external node at one URL.
             url: process.env.HARDHAT_NODE_URL ?? "http://127.0.0.1:8545",
-            // count: 400 matches the hardhat network above so account N derives
+            // Same derivation as the hardhat network above, so account N derives
             // the same address whether running in-process or against an external node.
-            accounts: {
-                mnemonic:
-                    "test test test test test test test test test test test junk",
-                count: 400
-            }
+            accounts: hdAccounts()
         },
         node: {
             url: "http://srbpi.duckdns.org:8545"
