@@ -12,6 +12,15 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
+/** The signatures over `blockHash` that recover to `signer`. */
+function signaturesBy(blockHash: string, signer: string, signatures: string[]) {
+    return signatures.filter(
+        (signature) =>
+            ethers.verifyMessage(ethers.getBytes(blockHash), signature) ===
+            signer
+    );
+}
+
 export async function assertIndependentNetworkAllowances(
     validVariants = false
 ) {
@@ -126,12 +135,10 @@ export async function assertIndependentNetworkAllowances(
         else
             // The stored block keeps one of the supplier's variants for it.
             expect(
-                stored!.confirmationSignatures.filter(
-                    (signature) =>
-                        ethers.verifyMessage(
-                            ethers.getBytes(authored.hash),
-                            signature
-                        ) === badSource.address
+                signaturesBy(
+                    authored.hash,
+                    badSource.address,
+                    stored!.confirmationSignatures
                 )
             ).to.have.lengthOf(1);
         expect(
@@ -686,13 +693,7 @@ export async function assertRepeatedStoredSignerVariants() {
         Type.BlockConfirmation
     );
     const sourceSignatures = (signatures: string[]) =>
-        signatures.filter(
-            (signature) =>
-                ethers.verifyMessage(
-                    ethers.getBytes(authored.hash),
-                    signature
-                ) === source.address
-        );
+        signaturesBy(authored.hash, source.address, signatures);
     await h
         .control(observer)
         .stub.observeAdmission({ source: source.address })

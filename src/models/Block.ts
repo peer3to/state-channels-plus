@@ -296,12 +296,10 @@ export default class Block {
      * Keep at most one confirmation signature per recovered signer: the first
      * one per signer, none for the author, none that cannot be recovered.
      */
-    retainOneSignaturePerSigner(): Block {
+    retainOneSignaturePerSigner(): void {
         const confirmationSignatures = this._confirmationSignatures;
         this._confirmationSignatures = new Set();
-        return this.expandSignatures(
-            this.newSignerSignatures(confirmationSignatures)
-        );
+        this.expandSignatures(this.newSignerSignatures(confirmationSignatures));
     }
 
     /** Drop confirmation signatures (the author's original signature is kept). */
