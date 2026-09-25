@@ -818,6 +818,12 @@ Specification cases tested: 0/5.
 [`REQ-SDK-ARCH-4-GTN7QN` (Execution isolation)](../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn)
 Specification cases tested: 0/4.
 
+[`REQ-SDK-ARCH-5-AAM7YK` (Chain submissions survive concurrent inclusion)](../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk)
+Specification cases tested: 6/6.
+
+[`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
+Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
+
 [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 Specification cases tested: 0/21.
 

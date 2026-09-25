@@ -35,6 +35,7 @@
 - [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 - [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 
 ## UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE
 

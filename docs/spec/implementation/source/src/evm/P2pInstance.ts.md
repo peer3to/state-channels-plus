@@ -11,6 +11,7 @@
 - [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 
 ## UNIT-TEST-P2P-INSTANCE-1-AN3Y94
 

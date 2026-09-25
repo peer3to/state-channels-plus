@@ -12,6 +12,7 @@
 - [`REQ-IX-8-FY54AV` (Execution equivalence)](../../../../../../specification/interactions.md#req-ix-8-fy54av)
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
+- [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 
