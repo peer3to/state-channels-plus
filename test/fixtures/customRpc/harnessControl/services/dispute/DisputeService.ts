@@ -640,7 +640,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
     }
 
     /** Run the real persist; project each item's storage presence before/after. */
-    persistDisputeDataWithoutAudit(
+    async persistDisputeDataWithoutAudit(
         encodedDispute: string,
         options: {
             encodedAuditingData?: string;
@@ -652,7 +652,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
              */
             latestFinalizedStateStateMachineStateOverride?: string;
         }
-    ): PersistDisputeDataProjection {
+    ): Promise<PersistDisputeDataProjection> {
         const dispute = Codec.decode(encodedDispute, Type.Dispute);
         const auditingData = options.encodedAuditingData
             ? Codec.decode(
@@ -730,7 +730,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
 
         let threwMessage: string | undefined;
         try {
-            this.sm.disputeValidationService.persistDisputeDataWithoutAudit(
+            await this.sm.disputeValidationService.persistDisputeDataWithoutAudit(
                 dispute,
                 auditingData,
                 { includeUnfinalizedBlocks: options.includeUnfinalizedBlocks }

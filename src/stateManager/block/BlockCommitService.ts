@@ -78,6 +78,9 @@ export default class BlockCommitService {
             });
             block.expandSignatures([signature]);
         }
+        // Storage bounds only its own copy; bound this one too, so the relay
+        // in step 7 carries one confirmation signature per signer.
+        block.retainOneSignaturePerSigner();
 
         // step 4 - persist the block // TODO - quick hack - cleaner code later
         sm.storage.blocks.storeBlock(block, {

@@ -96,7 +96,8 @@ in-protocol recovery in this version.
 **<a id="req-id-1-3q2kb9"></a>`REQ-ID-1-3Q2KB9` — Recoverable signatures over canonical targets.** Protocol signatures MUST support
 public-key recovery, and MUST be made over the 32-byte hash of the object's canonical encoding
 under the chain account model's standard signing envelope. On-chain and off-chain verification of
-the same (message, signature) pair MUST recover the same address.
+the same (message, signature) pair MUST recover the same address; an encoding that on-chain
+recovery rejects MUST NOT recover any address off-chain either.
 
 **<a id="req-id-2-f3y8j4"></a>`REQ-ID-2-F3Y8J4` — Normalized identity comparison.** Every identity comparison and identity-keyed
 structure MUST use the normalized address form; case or checksum variance MUST NOT create distinct

@@ -1,6 +1,9 @@
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
-import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
+import {
+    signatureReencodings,
+    signBlockVariant
+} from "@test/fixtures/QueueAdmissionFixture";
 import {
     assertStoredCopyQuota,
     assertStoredMalformedNetworkCopy
@@ -346,6 +349,84 @@ describe("Unit: StoredBlockMergeService", function () {
             await h
                 .control(observer)
                 .query.isBlacklisted(secondSupplier.address)
+                .request()
+        ).to.equal(true);
+    });
+
+    it("re-encoded copies arriving before a signer's genuine signature → only the genuine signature is stored", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // silence a non-writer so the writer never holds its signature
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        await h.control(silenced).stub.restoreBroadcast().request();
+        expect(writerBundle!.confirmationSignerAddresses).to.not.include(
+            silenced.address
+        );
+        const genuine = await silenced.signer.signMessage(
+            ethers.getBytes(writerBundle!.hash)
+        );
+        const reencoded = Object.values(signatureReencodings(genuine));
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: writer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    writerBundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...reencoded, genuine]
+            }
+        });
+        expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(r.persistedSignatures).to.include(genuine);
+        expect(r.persistedSignatures).to.not.include.members(reencoded);
+    });
+
+    it("a stored merge of a re-encoded copy disconnects its supplier", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+        const observer = h.getPeer(0);
+        const supplier = h.getPeer(1);
+        const bundle = await h
+            .control(observer)
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        const { v0 } = signatureReencodings(bundle!.confirmationSignatures[0]);
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: observer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: []
+            },
+            networkCopies: [{ sender: supplier.address, signatures: [v0] }]
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.have.members(
+            bundle!.confirmationSignatures
+        );
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(supplier.address)
                 .request()
         ).to.equal(true);
     });

@@ -91,7 +91,7 @@ built on this hook.
 **<a id="req-con-7-dxvw98"></a>`REQ-CON-7-DXVW98`.** Turn authorization is enforced by the protocol layer, not by the state machine:
 the SDK validation pipeline rejects a block whose author (`_tx.header.participant`) is not
 `getNextToWrite()` for the pre-state before executing it, generically for every state machine
-([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L26) leader check). The base
+([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L27) leader check). The base
 contract does not enforce it either — `stateTransition` executes whatever calldata it is given.
 In-contract wrong-turn `require`s (as in the examples) are optional defense in depth, never a
 soundness requirement. _(Corrected 2026-08-10 on engineer review; previously stated as a

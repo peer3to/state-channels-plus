@@ -1072,7 +1072,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             .stateMachineStateHash
                     }
                 );
-                this.persistFinalizedBlocks(finalizedBlocks);
+                await this.persistFinalizedBlocks(finalizedBlocks);
                 for (const snapshot of syncPayload.milestoneSnapshots)
                     storage.stateSnapshots.storeStateSnapshot(
                         StateSnapshot.from(snapshot)
@@ -1121,9 +1121,17 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return blocks.some((block) => this.hasBlockConflict(block));
     }
 
-    private persistFinalizedBlocks(blocks: Block[]): void {
-        const storage = this.p2pManager.stateManager.storage;
-        for (const block of blocks) storage.blocks.storeBlock(block);
+    private async persistFinalizedBlocks(blocks: Block[]): Promise<void> {
+        const stateManager = this.p2pManager.stateManager;
+        for (const block of blocks) {
+            // Keep only confirmation signatures the chain accepts.
+            block.removeConfirmationSignatures(
+                await stateManager.validationService.findMalformedConfirmationSignatures(
+                    block
+                )
+            );
+            stateManager.storage.blocks.storeBlock(block);
+        }
     }
 
     private hasBlockConflict(block: Block): boolean {

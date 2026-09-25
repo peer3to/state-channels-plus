@@ -1,5 +1,8 @@
 import { block as blockFactory } from "../factory";
-import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
+import {
+    QueueAdmissionFixture,
+    signatureReencodings
+} from "../fixtures/QueueAdmissionFixture";
 import {
     __resetSignerRecoveryCache,
     __signerRecoveryCacheSize
@@ -607,6 +610,17 @@ describe("Block Model canonical signature bytes", () => {
         expect([...f.block.confirmationSignatures]).to.deep.equal([
             f.signature(1, 0)
         ]);
+    });
+
+    it("newSignerSignatures drops re-encodings of a signature the block already holds", () => {
+        const f = new QueueAdmissionFixture();
+        const genuine = f.signature(1, 0);
+        f.block.expandSignatures([genuine]);
+        const { v0, v35, compact, highS } = signatureReencodings(genuine);
+        expect([
+            ...f.block.newSignerSignatures([v0, v35, compact, highS])
+        ]).to.deep.equal([]);
+        expect([...f.block.confirmationSignatures]).to.deep.equal([genuine]);
     });
 
     it("mergeFrom still carries every signature variant of one signer for queued copies", () => {

@@ -143,7 +143,7 @@ export default class DisputeValidationService {
                 return false;
             }
 
-            this.persistDisputeDataWithoutAudit(
+            await this.persistDisputeDataWithoutAudit(
                 dispute,
                 onChainDisputeAuditingData,
                 { includeUnfinalizedBlocks: false }
@@ -170,11 +170,11 @@ export default class DisputeValidationService {
         );
     }
 
-    public persistDisputeDataWithoutAudit(
+    public async persistDisputeDataWithoutAudit(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct | undefined,
         options: { includeUnfinalizedBlocks: boolean }
-    ): void {
+    ): Promise<void> {
         if (disputeAuditingData) {
             if (options.includeUnfinalizedBlocks) {
                 this.storage.stateSnapshots.storeStateSnapshot(
@@ -220,6 +220,13 @@ export default class DisputeValidationService {
             for (const blockConfirmation of blockConfirmations) {
                 const block = Block.tryFromBlockConfirmation(blockConfirmation);
                 if (!block) continue;
+                // No supplier to punish here: the disputer's proof is not
+                // audited on this path, so only keep what the chain accepts.
+                block.removeConfirmationSignatures(
+                    await this.stateManager.validationService.findMalformedConfirmationSignatures(
+                        block
+                    )
+                );
                 this.storage.blocks.storeBlock(block, {
                     hash: block.hash,
                     coordinates: block.coordinates,

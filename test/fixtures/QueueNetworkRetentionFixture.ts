@@ -719,30 +719,28 @@ export async function assertRepeatedStoredSignerVariants() {
             )
             .request();
     };
-    const observerBefore = h.event.blockConfirmationsProcessed(
-        observer.index,
-        authored!.hash
-    );
     const bystanderBefore = h.event.blockConfirmationsProcessed(
         bystander.index,
         authored!.hash
     );
     try {
-        // The first batch must be merged first: it is the one with a new signer.
-        await sendBatch(0);
-        await h.event.waitForBlockConfirmationProcessed({
-            peerIndex: observer.index,
-            blockHash: authored!.hash,
-            minCalls: observerBefore + 1
-        });
-        await sendBatch(1);
-        await sendBatch(2);
-        // three source batches plus the bystander relaying the new signature
-        await h.event.waitForBlockConfirmationProcessed({
-            peerIndex: observer.index,
-            blockHash: authored!.hash,
-            minCalls: observerBefore + 4
-        });
+        // Stored merges run as separate tasks; send each batch only after
+        // the previous one's merge finished, so the first is the one with a
+        // new signer. The source-filtered merge record is the completion
+        // signal: other peers' copies of this block also end in the
+        // processed event.
+        for (let batch = 0; batch < 3; batch++) {
+            await sendBatch(batch);
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).storedMergeResults.length > batch
+            );
+        }
         const observation = await h
             .control(observer)
             .stub.getAdmissionObservation()
@@ -767,6 +765,37 @@ export async function assertRepeatedStoredSignerVariants() {
         expect(observed!.confirmationSignatures).to.have.lengthOf(
             observed!.confirmationSignerAddresses.length
         );
+
+        // Timeout-threshold evidence carries the stored confirmation as its
+        // threshold block; the chain prepends the author signature.
+        const evidence = Codec.decode(
+            observed!.encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        // Decoded and returned ethers Results are frozen; ethers mutates call
+        // arguments, so pass plain copies.
+        const encodedEvidenceBlock = String(evidence.signedBlock.encodedBlock);
+        const evidenceSignatures = [
+            ...(await h.utilityFacet.insertBytesInByteArray(
+                String(evidence.signedBlock.signature),
+                evidence.signatures.map(String)
+            ))
+        ];
+        const participants = h.peers.map((peer) => peer.address);
+        const evidenceSigners = await h.utilityFacet.retrieveSignerAddresses(
+            encodedEvidenceBlock,
+            evidenceSignatures
+        );
+        expect([...evidenceSigners]).to.have.members(participants);
+        expect(evidenceSignatures).to.have.lengthOf(participants.length);
+        const [thresholdSigned, reason] =
+            await h.utilityFacet.verifyThresholdSigned(
+                participants,
+                encodedEvidenceBlock,
+                evidenceSignatures
+            );
+        expect(thresholdSigned).to.equal(true);
+        expect(reason).to.equal("");
 
         // The relayed first signature reaches the bystander, and nothing else
         // from the source does.
@@ -820,6 +849,7 @@ export async function assertNewBlockSignerVariantsStoredOnce() {
         leader.index,
         authored.hash
     );
+    await h.control(observer).stub.observeAdmission().request();
     await h
         .control(source)
         .byzantine.sendBlockConfirmation(
@@ -853,6 +883,20 @@ export async function assertNewBlockSignerVariantsStoredOnce() {
     expect(stored!.confirmationSignatures).to.have.lengthOf(
         stored!.confirmationSignerAddresses.length
     );
+    // The post-commit relay carries one signature of the source too.
+    const observation = await h
+        .control(observer)
+        .stub.getAdmissionObservation()
+        .request();
+    await h.control(observer).stub.restoreAdmissionObservation().request();
+    expect(observation.broadcastSignatures).to.have.lengthOf(1);
+    expect(
+        signaturesBy(
+            authored.hash,
+            source.address,
+            observation.broadcastSignatures[0]
+        )
+    ).to.deep.equal([variants[0]]);
 
     // The leader, which authored the block, keeps one signature of the
     // source, whichever copy reaches it first.
