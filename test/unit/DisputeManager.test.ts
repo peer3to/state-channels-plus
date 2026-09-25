@@ -1206,6 +1206,84 @@ describe("Unit: DisputeManager", function () {
             }
         });
 
+        it("a refusal other than the posted-calldata race while a posted block lands → the withheld block is handed back and stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            // no timeout check runs -> only the failed upload can hand the block back
+            await h.rpcStub.suppressTimeoutCheck(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // a refusal the contract raises before its posted-calldata check
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError: "ErrorCantParticipateInDispute",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { authored } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the handler finished: its ingest met the marker and dropped the block
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                const inPipeline = async () =>
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.queues.getQueuedEntry(args.blockHash) !==
+                                undefined ||
+                            sm.storage.blocks.getBlock(args.blockHash) !==
+                                undefined,
+                        { blockHash: authored.hash }
+                    );
+                expect(await inPipeline()).to.equal(false);
+
+                await recorder.release();
+                await refused;
+                // the failed upload handed it back: it lands within a task tick.
+                // Timeout checks are suppressed, and any chain redelivery is
+                // seconds away, so this short bound is the attribution.
+                await waitFor(async () => await inPipeline(), 3000);
+                expect(
+                    (await tasks.tasks()).filter(
+                        (task) =>
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterEarlySubmission"
+                            ) ||
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterPostedBlockRejected"
+                            )
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
         it("RaceConditionDisputeTimeoutNotMinTimestamp while a posted block lands → the refusal re-arms the check and the withheld block is stored", async function () {
             // outcome test: the re-armed check hands the block back. A chain
             // event redelivery would store it too, so the stored block alone
