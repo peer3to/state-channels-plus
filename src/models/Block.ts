@@ -252,8 +252,56 @@ export default class Block {
     /** Merge another copy after the caller has established the same block identity. */
     mergeFrom(incoming: Block): void {
         this.expandSignatures(incoming.confirmationSignatures);
-        const timestamp = incoming.onChainTimestamp;
-        if (timestamp !== undefined) this.onChainTimestamp = timestamp;
+        this.mergeOnChainTimestamp(incoming);
+    }
+
+    /**
+     * Like `mergeFrom`, but adds only signatures from signers this block does
+     * not hold yet (see `newSignerSignatures`).
+     */
+    mergeNewSignersFrom(incoming: Block): void {
+        this.expandSignatures(
+            this.newSignerSignatures(incoming.confirmationSignatures)
+        );
+        this.mergeOnChainTimestamp(incoming);
+    }
+
+    /**
+     * The incoming confirmation signatures whose recovered signer has no
+     * signature on this block yet (author included), keeping the first one per
+     * signer. Values that cannot be recovered are left out. Returns normalized
+     * signatures; this block is not changed.
+     */
+    newSignerSignatures(
+        incoming: Signature[] | Set<Signature>
+    ): Set<Signature> {
+        const heldSigners = this.deriveAllSignerAddresses();
+        const selected = new Set<Signature>();
+        for (const signature of incoming) {
+            const normalized = SignatureUtils.normalizeSignature(signature);
+            let signer: Address;
+            try {
+                signer = this.signatureToAddress(normalized);
+            } catch {
+                continue;
+            }
+            if (heldSigners.has(signer)) continue;
+            heldSigners.add(signer);
+            selected.add(normalized);
+        }
+        return selected;
+    }
+
+    /**
+     * Keep at most one confirmation signature per recovered signer: the first
+     * one per signer, none for the author, none that cannot be recovered.
+     */
+    retainOneSignaturePerSigner(): Block {
+        const confirmationSignatures = this._confirmationSignatures;
+        this._confirmationSignatures = new Set();
+        return this.expandSignatures(
+            this.newSignerSignatures(confirmationSignatures)
+        );
     }
 
     /** Drop confirmation signatures (the author's original signature is kept). */
@@ -326,6 +374,11 @@ export default class Block {
             encodedBlock: this.encode(),
             signature: (await this.sign(signer)) as Bytes
         };
+    }
+
+    private mergeOnChainTimestamp(incoming: Block): void {
+        const timestamp = incoming.onChainTimestamp;
+        if (timestamp !== undefined) this.onChainTimestamp = timestamp;
     }
 
     private getHashBytes(): Uint8Array {

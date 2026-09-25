@@ -1,11 +1,13 @@
 import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
+import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
 import {
     assertStoredCopyQuota,
     assertStoredMalformedNetworkCopy
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import { assertSpectatorStoredMerge } from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -156,6 +158,125 @@ describe("Unit: StoredBlockMergeService", function () {
         });
         expect(r.result).to.equal(BlockValidationResult.BROADCAST);
         expect(r.persistedSignatures).to.include.members(newSignatures);
+    });
+
+    it("alternate signatures from a signer the block already holds → DUPLICATE, stored signatures unchanged", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+        const bundle = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        const held = h.peers.find((peer) =>
+            bundle!.confirmationSignerAddresses.includes(peer.address)
+        )!;
+        const wallet = h.signerFor(slotAccountIndex(held.index));
+        const variants = [0, 1, 2].map((variant) =>
+            signBlockVariant(wallet, bundle!.hash, variant)
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: 0,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: variants
+            }
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.have.members(
+            bundle!.confirmationSignatures
+        );
+        expect(r.persistedSignatures).to.have.lengthOf(
+            bundle!.confirmationSignatures.length
+        );
+    });
+
+    it("an alternate signature that recovers to the block author → DUPLICATE, not stored", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
+        const bundle = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockBundle(h.activeForkId!)
+            .request();
+        const author = h.peers.find((peer) => peer.address === bundle!.author)!;
+        const authorVariant = signBlockVariant(
+            h.signerFor(slotAccountIndex(author.index)),
+            bundle!.hash,
+            0
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: 0,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [authorVariant]
+            }
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.not.include(authorVariant);
+        expect(r.persistedSignatures).to.have.members(
+            bundle!.confirmationSignatures
+        );
+    });
+
+    it("a mixed batch stores only the first signature of the new signer → BROADCAST", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
+        const forkId = h.activeForkId!;
+
+        // silence a non-writer so the writer never holds its signature
+        const writer = await h.query.getNextPeerToWrite();
+        const silenced = h.peers.find((p) => p.index !== writer.index)!;
+        await h.byzantine.stubBroadcast(silenced.index);
+        await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+        const writerBundle = await h
+            .control(writer)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: silenced.index,
+            blockHash: writerBundle!.hash,
+            keepConnection: true
+        });
+        await h.control(silenced).stub.restoreBroadcast().request();
+        expect(writerBundle!.confirmationSignerAddresses).to.not.include(
+            silenced.address
+        );
+        const silencedWallet = h.signerFor(slotAccountIndex(silenced.index));
+        const newSignerVariants = [0, 1].map((variant) =>
+            signBlockVariant(silencedWallet, writerBundle!.hash, variant)
+        );
+        const authorVariant = signBlockVariant(
+            h.signerFor(slotAccountIndex(writer.index)),
+            writerBundle!.hash,
+            0
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: writer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    writerBundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [authorVariant, ...newSignerVariants]
+            }
+        });
+        expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(r.persistedSignatures).to.include.members([
+            ...writerBundle!.confirmationSignatures,
+            newSignerVariants[0]
+        ]);
+        expect(r.persistedSignatures).to.not.include(newSignerVariants[1]);
+        expect(r.persistedSignatures).to.not.include(authorVariant);
     });
 
     it("stray signature only → stripped, post-strip re-check lands DUPLICATE", async function () {

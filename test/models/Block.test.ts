@@ -589,6 +589,35 @@ describe("Block Model canonical signature bytes", () => {
         expect(f.block.confirmationSignatures.size).to.equal(0);
     });
 
+    it("newSignerSignatures picks the first value of each signer the block does not hold", () => {
+        const f = new QueueAdmissionFixture();
+        f.block.expandSignatures([f.signature(1, 0)]);
+        const selected = f.block.newSignerSignatures([
+            f.signature(1, 1),
+            f.signature(0, 1),
+            f.signature(2, 0),
+            f.signature(2, 1),
+            "0x" + "00".repeat(64) + "ff",
+            f.signature(3, 0)
+        ]);
+        expect([...selected]).to.deep.equal([
+            f.signature(2, 0),
+            f.signature(3, 0)
+        ]);
+        expect([...f.block.confirmationSignatures]).to.deep.equal([
+            f.signature(1, 0)
+        ]);
+    });
+
+    it("mergeFrom still carries every signature variant of one signer for queued copies", () => {
+        const f = new QueueAdmissionFixture();
+        f.block.mergeFrom(f.copy([f.signature(1, 0), f.signature(1, 1)]));
+        expect([...f.block.confirmationSignatures]).to.deep.equal([
+            f.signature(1, 0),
+            f.signature(1, 1)
+        ]);
+    });
+
     it("keeps malformed envelopes unchanged for authentication failure", () => {
         const f = new QueueAdmissionFixture();
         const signature = "0x" + "00".repeat(64) + "ff";

@@ -9,7 +9,8 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
 /**
  * Merges an incoming confirmation into a block we already store: accumulates
- * new signatures, cuts signers outside the participant union, and re-gossips.
+ * signatures from new signers (one per signer), cuts signers outside the
+ * participant union, and re-gossips.
  * Scheduled by `BlockQueueManager` when ingest finds the block already stored.
  */
 export default class StoredBlockMergeService {
@@ -46,11 +47,14 @@ export default class StoredBlockMergeService {
         if (normalization !== BlockValidationResult.SUCCESS)
             return normalization;
 
-        const existingSignatures = existingBlock.confirmationSignatures;
-        const incomingSignatures = block.confirmationSignatures;
-        const newSignatures = difference(
-            incomingSignatures,
-            existingSignatures
+        // Only a signer the stored block does not hold yet brings something
+        // new: one signature per signer, the held one is kept. Cut the copy
+        // down to those so it is the only growth stored and relayed.
+        const newSignatures = existingBlock.newSignerSignatures(
+            block.confirmationSignatures
+        );
+        block.removeConfirmationSignatures(
+            difference(block.confirmationSignatures, newSignatures)
         );
 
         if (newSignatures.size === 0) {
@@ -114,10 +118,7 @@ export default class StoredBlockMergeService {
             }
             // SUCCESS: the strategy stripped the stray signatures and cut
             // their byzantine sender.
-            if (
-                difference(block.confirmationSignatures, existingSignatures)
-                    .size === 0
-            ) {
+            if (block.confirmationSignatures.size === 0) {
                 return strategy.noNewSignaturesOnExistingBlock(block);
             }
         }

@@ -1,4 +1,5 @@
 import * as factory from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
 import { Block } from "@/models";
 import Storage, { SortOrder } from "@/storage";
 import { BlockStorage } from "@/storage/BlockStorage";
@@ -11,8 +12,6 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
 
-const sig = () => ethers.hexlify(ethers.randomBytes(65));
-
 describe("BlockStorage", () => {
     let storage: BlockStorage;
     let mockSignedBlock: SignedBlockStruct;
@@ -21,6 +20,11 @@ describe("BlockStorage", () => {
     let mockBlockHash: Hash;
     let mockForkId: ForkId;
     let mockHeight: BlockHeight;
+    // A real confirmation signature over the stored block from a fresh signer.
+    const sig = () =>
+        ethers.Wallet.createRandom().signMessageSync(
+            ethers.getBytes(mockBlockHash)
+        );
 
     beforeEach(() => {
         storage = new BlockStorage();
@@ -543,6 +547,101 @@ describe("BlockStorage", () => {
                 expect(blockByHash).to.equal(blockByCoords);
             });
         });
+    });
+});
+
+describe("BlockStorage one confirmation signature per signer", () => {
+    // wallets[0] authors the fixture block; f.signature(signer, variant) is a
+    // distinct valid signature by that signer over the block hash.
+    it("first store keeps the first confirmation signature of each signer", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(
+            f.copy([
+                f.signature(1, 0),
+                f.signature(1, 1),
+                f.signature(2, 0),
+                f.signature(1, 2)
+            ])
+        );
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0), f.signature(2, 0)]);
+    });
+
+    it("first store drops a confirmation signature that recovers to the block author", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(f.copy([f.signature(0, 1), f.signature(1, 0)]));
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0)]);
+    });
+
+    it("first store drops a confirmation value that recovers to no signer", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(
+            f.copy(["0x" + "00".repeat(64) + "ff", f.signature(1, 0)])
+        );
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0)]);
+    });
+
+    it("a merge with only held signers leaves the stored signatures unchanged", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(f.copy([f.signature(1, 0)]));
+        const hash = storage.storeBlock(
+            f.copy([f.signature(1, 1), f.signature(1, 2), f.signature(0, 1)])
+        );
+        expect(hash).to.equal(f.block.hash);
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0)]);
+    });
+
+    it("a merge keeps the held signature of a signer instead of replacing it", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(f.copy([f.signature(1, 3)]));
+        storage.storeBlock(f.copy([f.signature(1, 0)]));
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 3)]);
+    });
+
+    it("a mixed merge adds only the first signature of each new signer", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(f.copy([f.signature(1, 0)]));
+        storage.storeBlock(
+            f.copy([
+                f.signature(1, 1),
+                f.signature(2, 0),
+                f.signature(2, 1),
+                f.signature(3, 0)
+            ])
+        );
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([
+            f.signature(1, 0),
+            f.signature(2, 0),
+            f.signature(3, 0)
+        ]);
+    });
+
+    it("insertSignature ignores another signature from a held signer", () => {
+        const f = new QueueAdmissionFixture();
+        const storage = new BlockStorage();
+        storage.storeBlock(f.copy([f.signature(1, 0)]));
+        storage.insertSignature(f.signature(1, 1), f.block.hash);
+        storage.insertSignature(f.signature(2, 0), f.block.hash);
+        expect([
+            ...storage.getBlock(f.block.hash)!.confirmationSignatures
+        ]).to.deep.equal([f.signature(1, 0), f.signature(2, 0)]);
     });
 });
 

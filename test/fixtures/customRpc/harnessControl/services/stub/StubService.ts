@@ -14,6 +14,7 @@ import type {
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import { BlockValidationResult } from "@/types";
 import type { Address, ForkId, Hash } from "@/types/types";
 import {
     Codec,
@@ -349,6 +350,10 @@ export class StubService extends ANetworkRpcService<
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
+        // Most confirmation values one observed network copy carried.
+        largestNetworkEntry: number;
+        // Outcome of each observed stored-block merge, in completion order.
+        storedMergeResults: (BlockValidationResult | null)[];
         holdGossip: boolean;
         heldGossip: (() => void)[];
         releaseMembership: () => void;
@@ -647,6 +652,9 @@ export class StubService extends ANetworkRpcService<
         const request = router.sendRpcRequest.bind(router);
         const spectate = this.p2pManager.localRpc.spectateService;
         const sync = spectate.sync.bind(spectate);
+        const storedMerge = this.sm.storedBlockMergeService;
+        const mergeStored =
+            storedMerge.tryMergeStoredBlockConfirmation.bind(storedMerge);
         let releaseMembership: () => void = () => {};
         const gate = new Promise<void>((resolve) => {
             releaseMembership = resolve;
@@ -663,6 +671,8 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
+            largestNetworkEntry: 0,
+            storedMergeResults: [] as (BlockValidationResult | null)[],
             holdGossip: options.holdGossip ?? false,
             heldGossip: [] as (() => void)[],
             releaseMembership,
@@ -674,6 +684,7 @@ export class StubService extends ANetworkRpcService<
                 machine.getParticipants = participants;
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
+                storedMerge.tryMergeStoredBlockConfirmation = mergeStored;
             }
         };
         this.admissionObservation = observation;
@@ -696,13 +707,27 @@ export class StubService extends ANetworkRpcService<
                 (!options.source ||
                     (args[1].origin === BlockOrigin.NETWORK &&
                         args[1].senderAddress === options.source))
-            )
+            ) {
                 observation.networkEntries++;
+                observation.largestNetworkEntry = Math.max(
+                    observation.largestNetworkEntry,
+                    entry.block.confirmationSignatures.size
+                );
+            }
             if (entry.origin === BlockOrigin.PROOF) {
                 observation.proofEntries++;
                 observation.proofSources += entry.sourcesToSignatures.size;
             }
             return entry;
+        };
+        storedMerge.tryMergeStoredBlockConfirmation = async (...args) => {
+            const result = await mergeStored(...args);
+            if (
+                !options.source ||
+                args[0].sourcesToSignatures.has(options.source)
+            )
+                observation.storedMergeResults.push(result ?? null);
+            return result;
         };
         queue.ingestBlockConfirmation = async (...args) => {
             try {
@@ -766,6 +791,8 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,
+            largestNetworkEntry: observation?.largestNetworkEntry ?? 0,
+            storedMergeResults: [...(observation?.storedMergeResults ?? [])],
             heldGossip: observation?.heldGossip.length ?? 0
         };
     }

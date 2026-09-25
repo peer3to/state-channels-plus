@@ -4,6 +4,7 @@ import { signBlockVariant } from "./QueueAdmissionFixture";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { BlockValidationResult } from "@/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -123,9 +124,16 @@ export async function assertIndependentNetworkAllowances(
                 badValues
             );
         else
-            expect(stored?.confirmationSignatures).to.include.members(
-                badValues.slice(0, 2)
-            );
+            // The stored block keeps one of the supplier's variants for it.
+            expect(
+                stored!.confirmationSignatures.filter(
+                    (signature) =>
+                        ethers.verifyMessage(
+                            ethers.getBytes(authored.hash),
+                            signature
+                        ) === badSource.address
+                )
+            ).to.have.lengthOf(1);
         expect(
             await h
                 .control(observer)
@@ -484,6 +492,8 @@ export async function assertPendingJoinAdmission(dropEvent: boolean) {
 export async function assertStoredCopyQuota(network: boolean) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(3, 1, { maxChannelParticipants: 3 });
+    // Finalized: every participant already holds a signature on the block.
+    await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
     const observer = h.getPeer(0),
         source = h.getPeer(1);
     const block = await h
@@ -569,28 +579,38 @@ export async function assertStoredCopyQuota(network: boolean) {
                 (
                     await h
                         .control(observer)
-                        .query.getBlockByHash(block.hash)
+                        .stub.getAdmissionObservation()
                         .request()
-                )?.confirmationSignatures.includes(variants[1]) ?? false
+                ).storedMergeResults.length >= 2
         );
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .query.getQueuedRetention(block.hash)
-                    .request()) === null
-        );
+        const observation = await h
+            .control(observer)
+            .stub.getAdmissionObservation()
+            .request();
+        // N = 3 values per copy, one of them the author envelope.
+        expect(observation.largestNetworkEntry).to.equal(2);
+        // The source already holds a signature, so neither copy adds one.
+        expect(observation.storedMergeResults).to.deep.equal([
+            BlockValidationResult.DUPLICATE,
+            BlockValidationResult.DUPLICATE
+        ]);
+        expect(observation.broadcasts).to.equal(0);
+        expect(
+            await h
+                .control(observer)
+                .query.getQueuedRetention(block.hash)
+                .request()
+        ).to.equal(null);
         const after = await h
             .control(observer)
             .query.getBlockByHash(block.hash)
             .request();
-        expect(after?.confirmationSignatures).to.have.members([
-            ...new Set([
-                ...block.confirmationSignatures,
-                ...variants.slice(0, 2),
-                ...variants.slice(8, 10)
-            ])
-        ]);
+        expect(after?.confirmationSignatures).to.have.members(
+            block.confirmationSignatures
+        );
+        expect(after?.confirmationSignatures).to.have.lengthOf(
+            block.confirmationSignatures.length
+        );
         expect(after?.height).to.equal(block.height);
         expect(
             await h
@@ -600,6 +620,162 @@ export async function assertStoredCopyQuota(network: boolean) {
         ).to.equal(false);
     } finally {
         await hold.release();
+        await h.control(observer).stub.restoreAdmissionObservation().request();
+    }
+}
+
+/**
+ * A participant whose honest confirmation never reached the others sends
+ * repeated batches of its own alternate signatures for the stored block.
+ */
+export async function assertRepeatedStoredSignerVariants() {
+    const h = MathTestSession.getHarness();
+    // long chainFallbackTime keeps timeout disputes away while the source's
+    // broadcast is suppressed to stage its missing signature
+    await h.lifecycle.start(3, 1, {
+        maxChannelParticipants: 3,
+        timeConfig: {
+            p2pTime: 4,
+            agreementTime: 8,
+            chainFallbackTime: 30,
+            evidenceTime: 6
+        }
+    });
+    const forkId = h.activeForkId!;
+    const observer = await h.query.getNextPeerToWrite();
+    const [source, bystander] = h.peers.filter(
+        (peer) => peer.index !== observer.index
+    );
+    await h.byzantine.stubBroadcast(source.index);
+    // add() resolves after the writer's own commit, so the block is stored
+    await h.getPeer(observer.index).p2pInstance.p2pContractInstance.add(1);
+    const authored = await h
+        .control(observer)
+        .query.getLatestBlockBundle(forkId)
+        .request();
+    if (!authored) throw new Error("Expected an authored block");
+    await h.event.waitForBlockConfirmationProcessed({
+        peerIndex: source.index,
+        blockHash: authored.hash,
+        keepConnection: true
+    });
+    await h.control(source).stub.restoreBroadcast().request();
+    const signedByAllButSource = async (peerIndex: number) => {
+        const stored = await h
+            .control(h.getPeer(peerIndex))
+            .query.getBlockByHash(authored.hash)
+            .request();
+        const signers = stored
+            ? [stored.author, ...stored.confirmationSignerAddresses]
+            : [];
+        return (
+            signers.includes(observer.address) &&
+            signers.includes(bystander.address) &&
+            !signers.includes(source.address)
+        );
+    };
+    await waitFor(() => signedByAllButSource(observer.index));
+    await waitFor(() => signedByAllButSource(bystander.index));
+
+    const wallet = h.signerFor(slotAccountIndex(source.index));
+    const variants = Array.from({ length: 6 }, (_, index) =>
+        signBlockVariant(wallet, authored.hash, index)
+    );
+    const confirmation = Codec.decode(
+        authored.encodedBlockConfirmation,
+        Type.BlockConfirmation
+    );
+    const sourceSignatures = (signatures: string[]) =>
+        signatures.filter(
+            (signature) =>
+                ethers.verifyMessage(
+                    ethers.getBytes(authored.hash),
+                    signature
+                ) === source.address
+        );
+    await h
+        .control(observer)
+        .stub.observeAdmission({ source: source.address })
+        .request();
+    try {
+        for (let batch = 0; batch < 3; batch++) {
+            await h
+                .control(source)
+                .byzantine.sendBlockConfirmation(
+                    String(
+                        Codec.encode(
+                            {
+                                signedBlock: confirmation.signedBlock,
+                                signatures: variants.slice(
+                                    batch * 2,
+                                    batch * 2 + 2
+                                )
+                            },
+                            Type.BlockConfirmation
+                        )
+                    ),
+                    observer.address
+                )
+                .request();
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).storedMergeResults.length > batch
+            );
+        }
+        const observation = await h
+            .control(observer)
+            .stub.getAdmissionObservation()
+            .request();
+        // Only the first batch brings a new signer, so only it is relayed.
+        expect(observation.storedMergeResults).to.deep.equal([
+            BlockValidationResult.BROADCAST,
+            BlockValidationResult.DUPLICATE,
+            BlockValidationResult.DUPLICATE
+        ]);
+        expect(observation.broadcasts).to.equal(1);
+
+        const observed = await h
+            .control(observer)
+            .query.getBlockByHash(authored.hash)
+            .request();
+        expect(
+            sourceSignatures(observed!.confirmationSignatures)
+        ).to.deep.equal([variants[0]]);
+        expect(observed!.confirmationSignatures).to.have.lengthOf(
+            observed!.confirmationSignerAddresses.length
+        );
+
+        // The relayed first signature reaches the bystander, and nothing else
+        // from the source does.
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(bystander)
+                        .query.getBlockByHash(authored.hash)
+                        .request()
+                )?.confirmationSignatures.includes(variants[0]) ?? false
+        );
+        const relayed = await h
+            .control(bystander)
+            .query.getBlockByHash(authored.hash)
+            .request();
+        expect(sourceSignatures(relayed!.confirmationSignatures)).to.deep.equal(
+            [variants[0]]
+        );
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(source.address)
+                .request()
+        ).to.equal(false);
+        h.assert.dispute.noDisputes();
+    } finally {
         await h.control(observer).stub.restoreAdmissionObservation().request();
     }
 }

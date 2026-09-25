@@ -8,7 +8,8 @@ import {
     assertPendingJoinAdmission,
     assertIndependentNetworkAllowances,
     assertStoredMalformedNetworkCopy,
-    assertOutsiderProofDoesNotAdmitCopy
+    assertOutsiderProofDoesNotAdmitCopy,
+    assertRepeatedStoredSignerVariants
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import {
     assertSlashAdmission,
@@ -48,6 +49,10 @@ describe("E2E: BlockQueueManager", function () {
 
     it("stored network copies are bounded before each ordinary merge", async () => {
         await assertStoredCopyQuota(true);
+    });
+
+    it("repeated batches of a participant's alternate signatures keep one stored signature per signer and relay only the first", async () => {
+        await assertRepeatedStoredSignerVariants();
     });
 
     it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {
