@@ -258,7 +258,12 @@ export async function assertHonestLeaverKillPeriodRefusal(
     const releaseReduction = async () => {
         if (reductionReleased || runtimeIsClosed(leaver.p2pInstance)) return;
         reductionReleased = true;
-        await leaverReduction.release();
+        try {
+            await leaverReduction.release();
+        } catch (error) {
+            // the abort can dispose the host while the release is in flight
+            if (!runtimeIsClosed(leaver.p2pInstance)) throw error;
+        }
     };
     let signedAtDispute: { height: number } | null = null;
     let offender: number | undefined;
