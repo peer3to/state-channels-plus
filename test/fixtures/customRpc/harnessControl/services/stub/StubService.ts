@@ -14,7 +14,7 @@ import type {
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, ForkId, Hash } from "@/types/types";
+import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -31,7 +31,11 @@ import type {
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { hexlify, resolveAddress } from "ethers";
+import {
+    type ContractTransactionResponse,
+    hexlify,
+    resolveAddress
+} from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
 
@@ -42,6 +46,7 @@ export type BlockWorkHoldPoint =
     | "authoring"
     | "commit"
     | "signature"
+    | "confirmation"
     | "confirmationValidation"
     | "proofConfirmationValidation"
     | "storedMerge"
@@ -235,6 +240,8 @@ export type RecordedDisputeSubmission = {
     gasLimit: string | null;
     /** Set once `dispute()` awaited the returned transaction. */
     waited: boolean;
+    /** Custom error a forwarded send or its `wait()` reverted with, or null. */
+    revert: { name: string; args: string[] } | null;
 };
 
 export type DisputeSubmissionFailureSpec = {
@@ -517,6 +524,8 @@ export class StubService extends ANetworkRpcService<
     heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
     /** State for the hold on this peer's snapshot post at its send. */
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
+    /** The first parked send's custom revert name once released, or null when it was mined. */
+    snapshotPostSendOutcome?: Promise<string | null>;
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
@@ -1391,10 +1400,13 @@ export class StubService extends ANetworkRpcService<
         this.originalQueueProbe = undefined;
     }
 
-    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+    public async startTimeoutConstruction(
+        writer: string,
+        height: BlockHeight = 1
+    ): Promise<boolean> {
         await this.sm.participantTimeoutService["createTimeOutDispute"](
             this.sm.forkId,
-            1,
+            height,
             writer,
             0
         );
@@ -1692,6 +1704,19 @@ export class StubService extends ANetworkRpcService<
             };
             owner.success = async (...args) => {
                 await enter();
+                return original.apply(owner, args);
+            };
+        } else if (point === "confirmation") {
+            // parks every queued confirmation until release, so a timeout
+            // check meets the posted block still in flight
+            const owner = this.sm.blockIngestService;
+            const original = owner.onBlockConfirmation;
+            this.blockWorkRestore = () => {
+                owner.onBlockConfirmation = original;
+            };
+            owner.onBlockConfirmation = async (...args) => {
+                this.blockWorkEntered += 1;
+                await gate;
                 return original.apply(owner, args);
             };
         } else {
@@ -2147,16 +2172,29 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldSnapshotPostSend = held;
+        this.snapshotPostSendOutcome = undefined;
         // Only the send is held; simulation and population keep the real
         // contract method's properties, including when another hold wraps it.
         contract.multicall = new Proxy(original, {
-            apply: async (target, receiver, parameters) => {
+            apply: (target, receiver, parameters) => {
                 held.entered += 1;
                 this.heldSnapshotPostSendWaiters
                     .splice(0)
                     .forEach((resolve) => resolve());
-                await gate;
-                return Reflect.apply(target, receiver, parameters);
+                const sent = gate.then(
+                    (): ReturnType<typeof original> =>
+                        Reflect.apply(target, receiver, parameters)
+                );
+                if (held.entered === 1)
+                    this.snapshotPostSendOutcome = sent
+                        .then((response) => response.wait())
+                        .then(
+                            () => null,
+                            (error) =>
+                                tryDecodeCustomError(error)?.name ??
+                                String(error)
+                        );
+                return sent;
             }
         });
     }
@@ -2438,12 +2476,13 @@ export class StubService extends ANetworkRpcService<
 
         let failuresRemaining = failure?.times ?? Infinity;
         const record = async (
-            submission: Omit<RecordedDisputeSubmission, "waited">,
+            submission: Omit<RecordedDisputeSubmission, "waited" | "revert">,
             send: () => Promise<unknown>
         ) => {
             const entry: RecordedDisputeSubmission = {
                 ...submission,
-                waited: false
+                waited: false,
+                revert: null
             };
             this.recordedDisputeSubmissions.push(entry);
             const hold = this.disputeSubmissionHold;
@@ -2455,7 +2494,34 @@ export class StubService extends ANetworkRpcService<
             if (activeFailure) failuresRemaining -= 1;
             if (activeFailure?.at === "send")
                 throw this.submissionFailure(activeFailure);
-            if (forward && !activeFailure) return send();
+            if (forward && !activeFailure) {
+                const recordRevert = (error: unknown) => {
+                    const decoded = tryDecodeCustomError(error);
+                    entry.revert = decoded && {
+                        name: decoded.name,
+                        args: decoded.errorDescription.args.map(String)
+                    };
+                };
+                let tx: ContractTransactionResponse;
+                try {
+                    tx = (await send()) as ContractTransactionResponse;
+                } catch (error) {
+                    recordRevert(error);
+                    throw error;
+                }
+                const originalWait = tx.wait.bind(tx);
+                tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                    try {
+                        const receipt = await originalWait(...args);
+                        entry.waited = true;
+                        return receipt;
+                    } catch (error) {
+                        recordRevert(error);
+                        throw error;
+                    }
+                }) as typeof tx.wait;
+                return tx;
+            }
             return {
                 // a tx that reverts also reverts the preflight `call` that
                 // tryHandleEvmError retries through
@@ -2571,7 +2637,10 @@ export class StubService extends ANetworkRpcService<
     /** Decode a dispute multicall's legs into the fields a test asserts on. */
     private describeMulticall(
         calls: string[]
-    ): Omit<RecordedDisputeSubmission, "waited" | "method" | "gasLimit"> {
+    ): Omit<
+        RecordedDisputeSubmission,
+        "waited" | "revert" | "method" | "gasLimit"
+    > {
         const contract = this.sm.stateChannelManagerContract;
         const innerMethods: string[] = [];
         let encodedDispute = "";

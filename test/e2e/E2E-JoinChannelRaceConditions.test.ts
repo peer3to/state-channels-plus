@@ -422,7 +422,8 @@ describe("E2E: Join channel race conditions", function () {
             ).to.not.include(joiner.address.toLowerCase());
         });
 
-        it("omitting the newest pending join from a self-removal dispute is killed", async function () {
+        // an anchor below the newest pending join is refused at upload (disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts)
+        it.skip("omitting the newest pending join from a self-removal dispute is killed", async function () {
             const h = TestSession.getHarness();
             const {
                 joiner,
@@ -465,7 +466,7 @@ describe("E2E: Join channel race conditions", function () {
             });
         });
 
-        it("allows existing and pending participants to top up during a dispute and converge after reduction", async function () {
+        it("refuses existing and pending participants' top-ups during a dispute and converges after reduction", async function () {
             const h = TestSession.getHarness();
             const {
                 joiner,
@@ -518,11 +519,28 @@ describe("E2E: Join channel race conditions", function () {
                         )
                     }
                 );
-            await existingParticipant.p2pInstance.p2pSigner.topUpBalance(
-                existingPrepared.confirmation,
-                existingPrepared.expectedSnapshotHash,
-                existingPrepared.expectedForkId
-            );
+            expect(
+                await existingParticipant.p2pInstance.p2pSigner.topUpBalance(
+                    existingPrepared.confirmation,
+                    existingPrepared.expectedSnapshotHash,
+                    existingPrepared.expectedForkId
+                )
+            ).to.equal(false);
+            // pin why the chain refuses: the disputed-fork gate, not another check
+            let existingRevert: unknown;
+            try {
+                await existingParticipant.p2pInstance.stateChannelManagerContract.topUpBalance.staticCall(
+                    existingPrepared.confirmation,
+                    existingPrepared.expectedSnapshotHash,
+                    existingPrepared.expectedForkId
+                );
+                expect.fail("expected the disputed fork to refuse the top-up");
+            } catch (error) {
+                existingRevert = error;
+            }
+            expect(
+                tryDecodeCustomError(existingRevert)?.errorDescription.name
+            ).to.equal("RaceConditionJoinChannelForkDisputed");
 
             const pendingTopUpAmount = 222n;
             const pendingPrepared =
@@ -536,11 +554,34 @@ describe("E2E: Join channel race conditions", function () {
                         )
                     }
                 );
-            await joiner.p2pInstance.p2pSigner.topUpBalance(
-                pendingPrepared.confirmation,
-                pendingPrepared.expectedSnapshotHash,
-                pendingPrepared.expectedForkId
-            );
+            expect(
+                await joiner.p2pInstance.p2pSigner.topUpBalance(
+                    pendingPrepared.confirmation,
+                    pendingPrepared.expectedSnapshotHash,
+                    pendingPrepared.expectedForkId
+                )
+            ).to.equal(false);
+            let pendingRevert: unknown;
+            try {
+                await joiner.p2pInstance.stateChannelManagerContract.topUpBalance.staticCall(
+                    pendingPrepared.confirmation,
+                    pendingPrepared.expectedSnapshotHash,
+                    pendingPrepared.expectedForkId
+                );
+                expect.fail("expected the disputed fork to refuse the top-up");
+            } catch (error) {
+                pendingRevert = error;
+            }
+            expect(
+                tryDecodeCustomError(pendingRevert)?.errorDescription.name
+            ).to.equal("RaceConditionJoinChannelForkDisputed");
+            // both refusals left the channel's deposits untouched
+            expect(
+                BigInt(
+                    (await h.channelManager.getChannelBalance(h.channelId))
+                        .totalDeposits.amount
+                )
+            ).to.equal(depositsBefore);
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,
@@ -569,9 +610,7 @@ describe("E2E: Join channel race conditions", function () {
                     (await h.channelManager.getChannelBalance(h.channelId))
                         .totalDeposits.amount
                 )
-            ).to.equal(
-                depositsBefore + existingTopUpAmount + pendingTopUpAmount
-            );
+            ).to.equal(depositsBefore);
             expect(
                 await h.control(existingParticipant).query.getStatus().request()
             ).to.equal(Status.PARTICIPATING);

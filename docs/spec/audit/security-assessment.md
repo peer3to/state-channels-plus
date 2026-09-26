@@ -306,7 +306,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still verifies neither the posted block's author signature nor its linkage, so a crafted writer can kill a justified forced timeout and slash the honest forcer ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -318,7 +318,12 @@ This is the recorded owner policy under [channel leave and runtime reuse](../spe
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
-retain their historical walk. See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+retain their historical pending walk, and the milestone-finality read is judged against the dispute's historic threshold:
+a participant set no adoption can change while its disputes can be killed (same-fork advances refused on a disputed
+fork, successor-fork updates during the target's kill period, joins and top-ups refused on a disputed fork, and uploads
+admitted only when anchored exactly at the chain's inbound head), minus only the slashes the dispute lists
+([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the freeze after the
+evidence period ends waits for that window's settlement instead of rejecting ([`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq), resolved). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 
 The accepted-lease liability policy is retained. [Profile-loss recovery](../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)

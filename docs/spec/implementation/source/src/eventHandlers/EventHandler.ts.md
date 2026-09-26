@@ -20,7 +20,7 @@
 ## Responsibility and observable boundary
 
 The chain-intake brain: per-event handlers that first replicate into the mirror, then act —
-`onBlockCalldataPosted` (store record before first await, ingest with the calldata strategy),
+`onBlockCalldataPosted` (store record before first await, then hand the posted block to the block pipeline's posted-block entry point, which carries the chain commitment on the work item),
 `onDisputeCommitted` (dedup by dispute hash, relevance gate, queue purge, ack round, audit
 dispatch, final/expired/auditable branches, evidence-improvement comparison),
 `onDisputeKilled` (record slash, exclude disputer, replacement evidence when the window empties),
@@ -81,7 +81,7 @@ claims complete conformance for a requirement that depends on other files.
 
 - Chain-only dispute intake with dedup and exact binding ([`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)); adopt-or-challenge on foreign reductions.
 
-- `reset()` drops the in-flight dispute dedupe map ([#L65](../../../../../../src/eventHandlers/EventHandler.ts#L65)), so a dispute hash seen on the channel just left cannot suppress handling of the same hash on the next one; this is the event-handler share of the ordered non-terminal release in [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+- `reset()` drops the in-flight dispute dedupe map ([#L62](../../../../../../src/eventHandlers/EventHandler.ts#L62)), so a dispute hash seen on the channel just left cannot suppress handling of the same hash on the next one; this is the event-handler share of the ordered non-terminal release in [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
 
 ## Specification contradictions
 

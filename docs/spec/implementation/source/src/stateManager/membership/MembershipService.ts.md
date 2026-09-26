@@ -16,7 +16,7 @@ Source eligibility is the inclusive OR of the chain current/pending cache and th
 
 A refresh can outlive its channel: its chain read is an await a channel reset can land in. It captures the channel ID and `stateManager.channelGeneration` before the read ([#L147](../../../../../../../src/stateManager/membership/MembershipService.ts#L147)) and returns `false` when the generation moved, before observing any slash or synchronizing any membership ([#L155](../../../../../../../src/stateManager/membership/MembershipService.ts#L155)); the synchronization it does run uses the captured ID, never one re-read after the await. `resetEligibility()` also drops the shared refresh promise ([#L133](../../../../../../../src/stateManager/membership/MembershipService.ts#L133)), so a caller in the next channel starts its own refresh instead of awaiting the old one, and the old refresh clears the shared slot only while it still holds it ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 
-Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute; only failure of that fallback rejects pending leave.
+Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A snapshot post that resolves `false` (the chain refused it on a disputed fork, already logged at warn by the post) or throws (logged at error) first attempts the dispute; a failure of that fallback rejects pending leave, except an evidence-expired refusal, which leaves it awaiting settlement.
 
 startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. The channel leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L198).
 
@@ -34,7 +34,7 @@ Committed membership classification uses the shared two-status predicate. Force-
    names abort the state manager after restoring `SYNCED` and clearing the force-join marker
    ([#L162](../../../../../../../src/stateManager/membership/MembershipService.ts#L162)):
    `RaceConditionJoinChannelExpired`, `RaceConditionSnapshotForkMismatch`,
-   `RaceConditionJoinChannelSnapshotMismatch`, `RaceConditionForceInboundJoinForkDisputed`,
+   `RaceConditionJoinChannelSnapshotMismatch`, `RaceConditionJoinChannelForkDisputed`,
    `ErrorJoinChannelInvalidSignature` and `ErrorJoinChannelConfirmationNotThresholdSigned`. Each
    says the confirmation the joiner already signed can never be accepted — the deadline passed, the
    snapshot or fork it pinned is gone, the fork is disputed, the joiner's own signature does not
@@ -117,7 +117,9 @@ commitment exists. An uncertain outcome keeps pending status and the force-join 
 on-chain membership read can reconcile it as success. A duplicate result proving the participant already
 exists returns success while preserving pending state.
 `topUpBalance` is the one receipt-gated update
-for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
+for a supplied balance on pending or participating state; failure preserves that committed runtime. A first join refused
+with `RaceConditionJoinChannelForkDisputed` ([#L173](../../../../../../src/stateManager/membership/MembershipService.ts#L173)) aborts and returns `false`; a top-up refused on a
+disputed fork with the same error returns `false` through its decoded-error branch ([#L216](../../../../../../src/stateManager/membership/MembershipService.ts#L216)). Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
 
 # Channel leave contribution

@@ -159,14 +159,14 @@ describe("Unit: ValidationService", function () {
         expect(result.authorBlacklisted).to.equal(false);
     });
 
-    it("calldata strategy rejects the impossible confirmation-bearing shape", async () => {
+    it("calldata strategy strips a merged malformed confirmation as the live strategy does", async () => {
         const result = await normalizeRealConfirmations({
             strategy: "calldata",
             internal: true
         });
-        expect(result.result).to.include(
-            "throw: Calldata confirmations contain no confirmation signatures"
-        );
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
         expect(result.sources).to.deep.equal([]);
         expect(result.authorBlacklisted).to.equal(false);
     });
@@ -318,6 +318,34 @@ describe("Unit: ValidationService", function () {
             // no transport supplied this copy -> the author is the whole
             // attribution set
             expect(r.sourcePeers).to.deep.equal([]);
+            expect(r.disconnectedAddresses).to.deep.equal([outsider.address]);
+        });
+
+        it("under CalldataCommittedStrategy an author outside the participant set → blockAuthorIsNotParticipant → DISCONNECT, as the live strategy", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const observer = h.getPeer(0);
+
+            const outsider = factory.randomWallet();
+            const encoded = await factory.buildAndEncodeBlock(outsider, {
+                header: {
+                    channelId: h.channelId,
+                    forkId: h.activeForkId!,
+                    transactionCnt: 0,
+                    participant: outsider.address as Address
+                }
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded, {
+                    strategy: "calldata"
+                })
+                .request();
+
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.firedHooks).to.include("blockAuthorIsNotParticipant");
             expect(r.disconnectedAddresses).to.deep.equal([outsider.address]);
         });
 

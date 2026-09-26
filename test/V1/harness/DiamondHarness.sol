@@ -142,39 +142,61 @@ abstract contract DiamondHarness is Test {
         );
     }
 
-    function _makeFinalCloseSnapshot(bytes32 channelId, address[] memory participants, uint256[] memory pks)
+    /// the chain snapshot's same-fork successor with `nextParticipants` and every pending inbound consumed;
+    /// an empty set is the final close
+    function _makeSameForkSnapshot(bytes32 channelId, address[] memory nextParticipants, uint256[] memory pks)
         internal
         view
         returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots)
     {
-        require(participants.length == pks.length && participants.length >= 2, "invalid close participants");
-
         StateSnapshot memory currentSnapshot = deployedDiamond.getStateSnapshot(channelId);
-        StateSnapshot memory finalSnapshot = currentSnapshot;
-        finalSnapshot.snapshotData.participants = new address[](0);
-        finalSnapshot.blockHeight = currentSnapshot.blockHeight + 1;
-        finalSnapshot.timestamp = currentSnapshot.timestamp + 1;
+        ChannelBalance memory inboundHead = deployedDiamond.getChannelBalance(channelId);
+        StateSnapshot memory nextSnapshot = currentSnapshot;
+        nextSnapshot.snapshotData.participants = nextParticipants;
+        nextSnapshot.snapshotData.latestInboundMessageBlockHash = inboundHead.latestInboundMessageBlockHash;
+        nextSnapshot.snapshotData.latestInboundMessageBlockHeight = inboundHead.latestInboundMessageBlockHeight;
+        nextSnapshot.blockHeight = currentSnapshot.blockHeight + 1;
+        nextSnapshot.timestamp = currentSnapshot.timestamp + 1;
 
-        Block memory finalBlock;
-        finalBlock.transaction.header.channelId = channelId;
-        finalBlock.transaction.header.participant = participants[0];
-        finalBlock.transaction.header.forkId = currentSnapshot.forkId;
-        finalBlock.transaction.header.transactionCnt = finalSnapshot.blockHeight;
-        finalBlock.transaction.header.timestamp = finalSnapshot.timestamp;
-        finalBlock.stateSnapshotHash = keccak256(abi.encode(finalSnapshot));
+        Block memory nextBlock;
+        nextBlock.transaction.header.channelId = channelId;
+        nextBlock.transaction.header.participant = vm.addr(pks[0]);
+        nextBlock.transaction.header.forkId = currentSnapshot.forkId;
+        nextBlock.transaction.header.transactionCnt = nextSnapshot.blockHeight;
+        nextBlock.transaction.header.timestamp = nextSnapshot.timestamp;
+        nextBlock.stateSnapshotHash = keccak256(abi.encode(nextSnapshot));
 
-        bytes memory encodedBlock = abi.encode(finalBlock);
-        BlockConfirmation memory confirmation;
+        proofs = new MilestoneProof[](1);
+        proofs[0].blockConfirmations = new BlockConfirmation[](1);
+        proofs[0].blockConfirmations[0] = _blockConfirmation(abi.encode(nextBlock), pks);
+        snapshots = new StateSnapshot[](1);
+        snapshots[0] = nextSnapshot;
+    }
+
+    /// one-block milestone authored by `pks[0]` and co-signed by the rest
+    function _milestone(bytes32 channelId, bytes32 forkId, uint256[] memory pks)
+        internal
+        pure
+        returns (MilestoneProof memory milestone)
+    {
+        Block memory milestoneBlock;
+        milestoneBlock.transaction.header.channelId = channelId;
+        milestoneBlock.transaction.header.forkId = forkId;
+        milestoneBlock.transaction.header.participant = vm.addr(pks[0]);
+        milestoneBlock.transaction.header.transactionCnt = 1;
+        milestone.blockConfirmations = new BlockConfirmation[](1);
+        milestone.blockConfirmations[0] = _blockConfirmation(abi.encode(milestoneBlock), pks);
+    }
+
+    function _blockConfirmation(bytes memory encodedBlock, uint256[] memory pks)
+        internal
+        pure
+        returns (BlockConfirmation memory confirmation)
+    {
         confirmation.signedBlock = SignedBlock({encodedBlock: encodedBlock, signature: _sign(pks[0], encodedBlock)});
         confirmation.signatures = new bytes[](pks.length - 1);
         for (uint256 i = 1; i < pks.length; i++) {
             confirmation.signatures[i - 1] = _sign(pks[i], encodedBlock);
         }
-
-        proofs = new MilestoneProof[](1);
-        proofs[0].blockConfirmations = new BlockConfirmation[](1);
-        proofs[0].blockConfirmations[0] = confirmation;
-        snapshots = new StateSnapshot[](1);
-        snapshots[0] = finalSnapshot;
     }
 }

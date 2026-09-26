@@ -363,7 +363,7 @@ assertion cannot pass against an empty pre-state, and asserts the ban survives i
 old `dispose()` call turns it red.
 The reduction case counts `multicall` invocations rather than inferring from state, parks the submit on its
 gas-limit read, resets, releases, and waits a further second so a late write still fails
-([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P15`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p15)).
+([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p17)).
 
 [SpectateService.test.ts](../verification/tests/test/unit/SpectateService.test.ts.md) gained two cases at the top of the file, and
 every declaration's line link in that report was re-resolved against the current file. The first drives
