@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: staging for adopting a fork disputed while its reduce was pending
+// @spec-test-coverage-ignore: staging for a reduce that lands alone onto a fork disputed while it was pending
 import type { ForkId } from "@/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -69,7 +69,7 @@ async function reduceOntoDisputedFork(
     return forkId;
 }
 
-export async function assertDisputedForkAdoptionLandsWithItsReduce(): Promise<void> {
+export async function assertReduceLandsAloneThenLatestForkAdopted(): Promise<void> {
     const h = TestSession.getHarness();
     await h.scenario.preDisputeSetup({
         peerCount: PEER_COUNT,
@@ -81,9 +81,17 @@ export async function assertDisputedForkAdoptionLandsWithItsReduce(): Promise<vo
     await h.assert.dispute.initiatedAndCommitedWait({ expectedCount: 1 });
     const forkF = await reduceOntoDisputedFork(h, forkE);
 
-    // the reducer's bundled adoption landed with the reduce, inside F's kill period
-    expect(await chainForkOf(h)).to.equal(forkF);
+    // E's reduce landed alone; F is the latest fork but disputed -> the follow-up post adopts nothing
+    expect(await chainForkOf(h)).to.equal(forkE);
     const killF = await h.query.killPeriod(forkF, 0);
     expect(killF.windowExists).to.equal(true);
-    expect(killF.isExpired).to.equal(false);
+
+    // once F reduces, the reducer's follow-up post adopts the latest undisputed fork
+    await h.dispute.resolveDisputeWait({ forkId: forkF });
+    const forkG = await reducedResultOf(h, forkF);
+    expect(forkG).to.not.equal(forkF);
+    await waitFor(
+        async () => (await chainForkOf(h)) === forkG,
+        h.event.protocolEventTimeoutMs()
+    );
 }

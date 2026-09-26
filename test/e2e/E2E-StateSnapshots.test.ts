@@ -1,7 +1,7 @@
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { tryDecodeCustomError } from "@/utils";
-import { assertDisputedForkAdoptionLandsWithItsReduce } from "@test/fixtures/DisputedForkAdoptionStaging";
+import { assertReduceLandsAloneThenLatestForkAdopted } from "@test/fixtures/DisputedForkAdoptionStaging";
 import {
     assertPromotionDisputeStanding,
     assertUnpublishedPromotionTimeout
@@ -46,8 +46,8 @@ describe("E2E: State Snapshots", function () {
             )
         ).to.be.greaterThan(0);
     });
-    it("a fork disputed while its reduce was pending is adopted with the reduce, inside its kill period", async () => {
-        await assertDisputedForkAdoptionLandsWithItsReduce();
+    it("a reduce onto a fork disputed while it was pending lands alone; the latest undisputed fork is adopted once that fork reduces", async () => {
+        await assertReduceLandsAloneThenLatestForkAdopted();
     });
     it("off-chain promotion gains dispute standing only after snapshot publication", async () => {
         await assertPromotionDisputeStanding();
