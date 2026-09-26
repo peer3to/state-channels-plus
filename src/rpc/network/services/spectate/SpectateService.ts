@@ -346,6 +346,21 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     "on-chain height exceeds proved height"
                 );
             }
+            // a proof that does not advance past the on-chain snapshot extends from it only if it is that snapshot
+            if (
+                onChainSnapshot.forkID ===
+                    syncPayload.latestForkGenesisSnapshot.forkId &&
+                onChainSnapshot.hash !==
+                    StateSnapshot.from(latestFinalizedSnapshot).hash &&
+                !(await diamondStateMachine.localDiamondContract.isSnapshotNewer(
+                    latestFinalizedSnapshot,
+                    onChainSnapshot.toStruct()
+                ))
+            )
+                return this.rejectSync(
+                    peerAddress,
+                    "on-chain snapshot is not the proved snapshot"
+                );
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
             const genesisSnapshot = StateSnapshot.from(

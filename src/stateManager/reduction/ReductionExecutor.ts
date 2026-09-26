@@ -400,7 +400,8 @@ export default class ReductionExecutor {
                 if (!this.stateManager.isDisposed)
                     DetachedPromises.collect(
                         this.stateManager.snapshotUpdateService.postStateSnapshot(
-                            candidate.reducedForkId
+                            candidate.reducedForkId,
+                            { forkAdoptionOnly: true }
                         )
                     );
             })

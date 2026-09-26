@@ -45,9 +45,10 @@ export default class SnapshotUpdateService {
     }
 
     public async postStateSnapshot(
-        forkId: ForkId
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
     ): Promise<StateSnapshot | undefined> {
-        const submission = await this.submitStateSnapshot(forkId);
+        const submission = await this.submitStateSnapshot(forkId, options);
         if (!submission) return undefined;
 
         DetachedPromises.collect(submission.completion);
@@ -61,13 +62,16 @@ export default class SnapshotUpdateService {
     }
 
     private async submitStateSnapshot(
-        forkId: ForkId
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
     ): Promise<SnapshotSubmission | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData = await this.prepareUpdateSnapshotSameFork(
-            forkId,
-            forkData.expectedSnapshot
-        );
+        const sameForkData: typeof forkData = options?.forkAdoptionOnly
+            ? { canPost: true, callData: [], outboundMessageBlocks: [] }
+            : await this.prepareUpdateSnapshotSameFork(
+                  forkId,
+                  forkData.expectedSnapshot
+              );
 
         const callData = [...forkData.callData, ...sameForkData.callData];
         const expectedSnapshot =
