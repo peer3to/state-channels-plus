@@ -193,10 +193,13 @@ says so and names the variable.
 
 A worker runs tasks with the runner from its own checkout, so the browser tier
 reaches it only after **the worker host updates that checkout, restarts
-`yarn test:parallel:server`, and rebuilds its runner image**. The distributed
-protocol version covers the tier vocabulary, so an orchestrator on this branch
-reports `worker protocol mismatch` for a worker that has not updated rather than
-failing once a browser task is already assigned.
+`yarn test:parallel:server`, and rebuilds its runner image**. The browser tier
+arrived with distributed protocol 14. The orchestrator still leases protocol 13
+hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
+host at a time. When no connected worker supports the browser runner, the run
+skips the browser tasks with a warning that lists them (also written to the
+GitHub job summary) instead of failing; CI's `browser` job runs the same gates
+inside the runner image either way.
 
 ### Distributed parallel tests
 
@@ -458,10 +461,13 @@ worker's streamed output. Infrastructure output is collected and retained when
 any test fails. A fully successful run skips collection unless
 `--keep-infra-logs` is set.
 
-The distributed protocol version must match across the orchestrator, worker
-host, and isolated guest. A mismatch is rejected before test execution with an
-update or rebase instruction. After a protocol change, update and restart every
-worker host before running branches that use the new protocol.
+The orchestrator leases worker hosts on any distributed protocol from the
+minimum it still supports up to its own (`MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL`
+and `DISTRIBUTED_PROTOCOL_VERSION` in `protocol.js`), and schedules on each host
+only the task runners its protocol knows. A host outside that range is rejected
+before test execution with an update or rebase instruction. A worker host and
+its isolated guest must still match exactly, since both run the host's own
+checkout.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate
