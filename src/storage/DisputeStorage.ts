@@ -2,8 +2,7 @@ import { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
     DisputeConfirmationStruct,
-    DisputeStruct,
-    SignedDisputeStruct
+    DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers } from "ethers";
 
@@ -17,7 +16,6 @@ export enum DisputeConfirmationOrigin {
 
 type StoreOptions = {
     origin: DisputeConfirmationOrigin;
-    hash?: Hash;
 };
 type DidIDispute = boolean;
 type StoredDisputeConfirmation = {
@@ -41,19 +39,6 @@ export class DisputeStorage {
     // CREATE
     // ====================================
 
-    /*────────────────────────────────────────────────────────────────────────────
-      STORE  DISPUTE 
-    ────────────────────────────────────────────────────────────────────────────*/
-    storeDispute(dispute: SignedDisputeStruct, options: StoreOptions): Hash {
-        // Convert SignedDispute to DisputeConfirmation (empty signatures)
-        const disputeConfirmation: DisputeConfirmationStruct = {
-            signedDispute: dispute,
-            signatures: [] // Starts empty, ready for peer confirmations
-        };
-
-        return this.storeDisputeConfirmation(disputeConfirmation, options);
-    }
-
     storeDisputedFork(forkId: ForkId, disputed: boolean): void {
         this.disputedForks.set(forkId, disputed);
     }
@@ -65,10 +50,9 @@ export class DisputeStorage {
         disputeConfirmation: DisputeConfirmationStruct,
         options: StoreOptions
     ): Hash {
-        // Determine hash - use provided or compute
-        const disputeHash =
-            options.hash ??
-            ethers.keccak256(disputeConfirmation.signedDispute.encodedDispute);
+        const disputeHash = ethers.keccak256(
+            disputeConfirmation.signedDispute.encodedDispute
+        );
 
         // Keep the first stored copy; never merge signatures. Only a chain
         // event copy replaces a stored sync copy (REQ-DSTORE-1).

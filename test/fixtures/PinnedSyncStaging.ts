@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: pinned sync staging exercised by explicit component and E2E declarations
+import { randomWallet } from "../factory";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -7,7 +8,7 @@ import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
-import { getBytes, keccak256, Wallet, ZeroHash } from "ethers";
+import { getBytes, keccak256, ZeroHash } from "ethers";
 
 export async function assertComputedSuccessorSync(
     h: MathPeerTestHarness,
@@ -91,9 +92,9 @@ export async function assertSyncKeepsChainDisputeConfirmation(
                     );
                 return commitments.map((commitment) => ({
                     commitment,
-                    signatures: sm.storage.disputes
-                        .getDisputeConfirmation(commitment)
-                        ?.signatures.map(String)
+                    signatures:
+                        sm.storage.disputes.getDisputeConfirmation(commitment)
+                            ?.signatures
                 }));
             },
             { forkId: sourceForkId }
@@ -137,8 +138,8 @@ export async function assertSyncKeepsChainDisputeConfirmation(
             disputeHash
         );
         const extraSignatures = [
-            Wallet.createRandom().signMessageSync(getBytes(disputeHash)),
-            Wallet.createRandom().signMessageSync(getBytes(disputeHash))
+            randomWallet().signMessageSync(getBytes(disputeHash)),
+            randomWallet().signMessageSync(getBytes(disputeHash))
         ];
         window.disputeConfirmations[0] = {
             signedDispute: supplied.signedDispute,

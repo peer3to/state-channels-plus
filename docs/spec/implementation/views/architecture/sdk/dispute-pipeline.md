@@ -328,7 +328,7 @@ multicalls both. This is also the N/N exit path of the block pipeline.
 
 ## 8. Persistence and return to normal execution
 
-- [`DisputeStorage`](../../../../../../src/storage/DisputeStorage.ts#L15): confirmations
+- [`DisputeStorage`](../../../../../../src/storage/DisputeStorage.ts#L26): confirmations
   by commitment, the per-fork `didIDispute` flag.
 - [`DisputeFraudProofStorage`](../../../../../../src/storage/DisputeFraudProofStorage.ts#L8):
   one dispute fraud proof per dispute (the audit stops at the first).
