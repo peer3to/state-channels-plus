@@ -92,7 +92,7 @@ A service (a subclass of [`ANetworkRpcService`](../../../../../../../src/rpc/net
 internal helpers, and business logic — e.g.
 [`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9)
 owns the per-peer acknowledgment maps, and
-[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L35) owns the in-flight
+[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L31) owns the in-flight
 sync set and the whole payload-generation/verification machinery. It pairs with an **RpcMethods**
 class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes *only* the
 deliberately public, remotely callable methods. The dispatcher instantiates the RpcMethods class
