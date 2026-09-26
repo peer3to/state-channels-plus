@@ -68,13 +68,11 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    applied. The earlier unbounded walk counted every JOIN ever recorded, including the original
    participants' open joins: a leaver stayed "pending" after its reduction and a slashed inbound joiner
    stayed in the eligibility set ([cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md)).
-   Two readers keep the unbounded walk: `reduce` for slash eligibility, because after a reduction is
+   One reader keeps the unbounded walk: `reduce` for slash eligibility, because after a reduction is
    mined the snapshot lists only the survivors and a late reducer must still fold the same slashes
-   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)), and the milestone-finality
-   read in [DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md) for its historical joiners.
-   That read takes the chain snapshot participants, which no adoption can change while a proof against the
-   dispute can land ([StateSnapshotFacet.sol.md](StateSnapshotFacet.sol.md)), and subtracts only the slashes
-   the dispute commits, never the live slash set.
+   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)). The milestone-finality read in
+   [DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md) walks only the dispute's committed interval,
+   from its latest state's inbound hash to its anchor, and subtracts only the slashes the dispute commits.
 5. **The rejected inbound replay names the state it was seeded with.**
    `_applyInboundMessages` sets the state machine to `encodedStateMachineState` once and then walks
    every message; when a message is refused it raises

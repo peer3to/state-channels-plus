@@ -62,10 +62,11 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 4. **Data-availability decision by finality probe.** Auditing calldata is posted iff the proof's
    last milestone is not provably final to everyone (`isLastMilestoneFinalByEveryone.staticCall`,
-   [#L552](../../../../../../src/disputeManager/DisputeManager.ts#L552)); a known-final anchor
-   spares the calldata cost. The on-chain predicate judges the chain snapshot set, frozen for the kill
-   period, plus the joiners at or below the dispute's anchor, minus the dispute's own `onChainSlashes`, so
-   this construction-time probe and a later fraud-proof read of the committed dispute agree.
+   [#L584](../../../../../../src/disputeManager/DisputeManager.ts#L584)); a known-final anchor
+   spares the calldata cost. The probe passes the dispute's own latest-state snapshot, and the on-chain
+   predicate judges the set the dispute commits: that snapshot's participants plus the joiners up to the
+   dispute's anchor, minus its `onChainSlashes`. So this construction-time probe and a later fraud-proof read
+   of the committed dispute agree.
 5. **Construction aborts on partial data.** `getAuditingData` flags any locally unbackable element
    (`isPartial`) and `constructDispute` throws rather than submitting a dispute the node cannot
    stand behind ([#L388](../../../../../../src/disputeManager/DisputeManager.ts#L388)).
