@@ -15,7 +15,7 @@ import {
     getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import { Address, BlockValidationResult, Signature, Status } from "@/types";
+import { BlockValidationResult, Signature, Status } from "@/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
@@ -79,20 +79,20 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(
-        _block: Block,
-        senderAddress?: Address
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // A peer still on another channel - such as one this runtime has left -
         // cannot know it is talking to the wrong runtime. Its copy is refused
         // without a verdict: the connection closes and it may reconnect.
-        if (senderAddress) {
+        const sources = getSourcePeers(entry);
+        if (sources.size === 0) return BlockValidationResult.DISCONNECT;
+        for (const source of sources) {
             this.p2pManager.disconnectConnection(
-                senderAddress,
+                source,
                 DisconnectPolicy.ALLOW
             );
-            return BlockValidationResult.CLOSED;
         }
-        return BlockValidationResult.DISCONNECT;
+        return BlockValidationResult.CLOSED;
     }
     public async channelNotOpened(
         entry: QueuedBlockEntry

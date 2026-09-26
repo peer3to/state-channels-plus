@@ -97,7 +97,7 @@ export default class ValidationService {
                 blockChannelId: String(block.channelId),
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            return await strategy.wrongChannel(block);
+            return await strategy.wrongChannel(entry);
         }
 
         // Check if channel is open

@@ -13,7 +13,7 @@ import {
     getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import { Address, BlockValidationResult, Signature } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Logger } from "@/utils";
 import {
@@ -77,19 +77,19 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISCONNECT;
     }
     public async wrongChannel(
-        _block: Block,
-        senderAddress?: Address
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Same rule as the live strategy: a copy for another channel closes
         // the sender's connection without a verdict.
-        if (senderAddress) {
+        const sources = getSourcePeers(entry);
+        if (sources.size === 0) return BlockValidationResult.DISCONNECT;
+        for (const source of sources) {
             this.p2pManager.disconnectConnection(
-                senderAddress,
+                source,
                 DisconnectPolicy.ALLOW
             );
-            return BlockValidationResult.CLOSED;
         }
-        return BlockValidationResult.DISCONNECT;
+        return BlockValidationResult.CLOSED;
     }
     public async channelNotOpened(
         entry: QueuedBlockEntry

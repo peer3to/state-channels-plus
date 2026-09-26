@@ -23,14 +23,14 @@ The chain-observed context: delegates to the live strategy for every deviation a
 
 ## Key design decisions
 
-Observed calldata constructs a confirmation-free entry, but a queued calldata copy can merge gossip copies' confirmations. The unrecoverable-confirmation hook therefore delegates to the live strategy: the unrecoverable values are stripped and their recorded suppliers disconnected. Objective author/block checks and trusted posting timestamps remain in the existing calldata path. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L52).
+Observed calldata constructs a confirmation-free entry, but a queued calldata copy can merge gossip copies' confirmations. The unrecoverable-confirmation hook therefore delegates to the live strategy: the unrecoverable values are stripped and their recorded suppliers disconnected. Objective author/block checks and trusted posting timestamps remain in the existing calldata path. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L51).
 
-The subjective hook accepts the chain-committed block after objective timestamp validation. The shared pipeline now calls the hook instead of deciding by class identity. See [CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L172).
+The subjective hook accepts the chain-committed block after objective timestamp validation. The shared pipeline now calls the hook instead of deciding by class identity. See [CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L171).
 
 1. **Delegation keeps one consequence table** — only the poster-fault difference is local.
-2. **An unprovable poster fault asks the timeout owner for one forced check** ([authenticateBlockFailed](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L32), [blockIsNotLinkedAndIsNotFirstBlock](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L145)). No fraud proof exists for a bad signature on posted calldata or for an unlinked posted block, so the forced timeout is the only response; the timeout owner still decides eligibility and the writer's turn.
+2. **An unprovable poster fault asks the timeout owner for one forced check** ([authenticateBlockFailed](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L32), [blockIsNotLinkedAndIsNotFirstBlock](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L144)). No fraud proof exists for a bad signature on posted calldata or for an unlinked posted block, so the forced timeout is the only response; the timeout owner still decides eligibility and the writer's turn.
 3. **The signer-related hooks delegate instead of throwing.** A queued chain-committed entry merges gossip copies of the same block, so extra signatures, a non-participant author or a wrong channel can reach those hooks; they take the live consequence.
-4. **`wrongChannel` forwards the sender to the live strategy** ([#L40](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L40)), so a peer's foreign-channel copy gets the same plain close.
+4. **`wrongChannel` forwards the entry to the live strategy** ([#L40](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L40)), so a peer's foreign-channel copy gets the same plain close.
 
 ## Inputs, outputs, state, and side effects
 

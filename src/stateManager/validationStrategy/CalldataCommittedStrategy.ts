@@ -6,7 +6,7 @@ import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import type ParticipantTimeoutService from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import { Address, BlockValidationResult, Signature } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -38,10 +38,9 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async wrongChannel(
-        block: Block,
-        senderAddress?: Address
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.blockValidationStrategy.wrongChannel(block, senderAddress);
+        return this.blockValidationStrategy.wrongChannel(entry);
     }
     public async channelNotOpened(
         entry: QueuedBlockEntry

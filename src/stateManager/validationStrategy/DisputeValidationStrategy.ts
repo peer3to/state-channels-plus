@@ -8,7 +8,7 @@ import { Block } from "@/models";
 
 import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import { Address, BlockValidationResult, Hash, Signature } from "@/types";
+import { BlockValidationResult, Hash, Signature } from "@/types";
 import { Logger } from "@/utils";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import {
@@ -123,8 +123,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return this.handleInvalidBlockStructure();
     }
     public async wrongChannel(
-        _block: Block,
-        _senderAddress?: Address
+        _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         throw new Error(
             "DisputeValidationStrategy - wrongChannel should not be called"

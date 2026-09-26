@@ -1,7 +1,7 @@
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block, StateSnapshot } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import { Address, BlockValidationResult, Signature } from "@/types";
+import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -37,12 +37,12 @@ export default abstract class AValidationStrategy {
     ): Promise<BlockValidationResult>;
 
     /**
-     * `senderAddress` is set only for a network copy at admission, the one
-     * place a single peer delivered it; a queued entry reaches this with none.
+     * The entry's sources are the peers that delivered this copy: the single
+     * sender at admission, every attributed source for a dequeued entry, and
+     * none for a struct-only caller.
      */
     public abstract wrongChannel(
-        block: Block,
-        senderAddress?: Address
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
     public abstract channelNotOpened(

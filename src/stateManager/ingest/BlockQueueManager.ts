@@ -124,7 +124,12 @@ export default class BlockQueueManager {
                 // channel's; a peer's copy is judged by the strategy.
                 if (options.origin !== BlockOrigin.NETWORK) return true;
                 return strategy.interpretFinalValidationResult(
-                    await strategy.wrongChannel(block, options.senderAddress)
+                    await strategy.wrongChannel(
+                        this.stateManager.storage.queues.createEntry(block, {
+                            origin: BlockOrigin.NETWORK,
+                            senderAddress: options.senderAddress
+                        })
+                    )
                 );
             }
 

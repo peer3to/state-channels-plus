@@ -30,7 +30,7 @@ The disputed-fork hook discards entries with `NOT_READY` without requeueing or a
 The subjective hook accepts proved history. The constructor receives the live strategy; double-sign, invalid-transition, forged-inbound, objective-timestamp, known-genesis and disputed-fork hooks delegate to it for committed peers. See [SpectatingValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L261).
 
 1. **The abort/drop split is the fail-closed rule:** provable fraud → stop following; unattributable junk → keep spectating ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) consumer side).
-2. **A peer's copy for another channel is closed without a verdict**, as in the live strategy: with a sender `wrongChannel` closes it with `DisconnectPolicy.ALLOW` and returns `CLOSED` ([#L79](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L79)) ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+2. **A peer's copy for another channel is closed without a verdict**, as in the live strategy: `wrongChannel` closes each of the entry's sources with `DisconnectPolicy.ALLOW` and returns `CLOSED` ([#L79](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L79)) ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 
 ## Inputs, outputs, state, and side effects
 
