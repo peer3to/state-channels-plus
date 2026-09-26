@@ -28,7 +28,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062) | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
 | [`OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385`](open-questions.md#oq-impl-sync-in-flight-1-wc8385)               | Ordinary sync collision before intake eligibility recheck                                                                         | Engineer review | [Owner](source/src/stateManager/ingest/BlockQueueManager.ts.md)                                                                                                                                       | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                   | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
-| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb) | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code   | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
+| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                               | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
 
@@ -244,6 +244,11 @@ record forks belonging to a foreign channel, and use the endpoint as a free chai
 duplicate-key check keys on `forkId` only, ignoring channel. Decide the channel-binding check and
 the ack-record keying; also whether acks should be signed (see the documentation-debt note below).
 See [sdk/rpc/is-fork-disputed.md](./views/architecture/sdk/rpc/is-fork-disputed.md) §6.6.
+
+**Partly decided (2026-09-26, engineer):** the channel-binding check is in place, and a request
+naming another channel is refused with a plain close and no verdict (see the responder's
+[design decision](./source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)).
+Still open: the ack-record keying by fork only, and whether acknowledgements should be signed.
 
 Related (documentation debt / decision pending): dispute acknowledgments are **unsigned**, so the
 model doc's "building on an acknowledged dead fork is provably byzantine" overstates — the ack

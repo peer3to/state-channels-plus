@@ -336,6 +336,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         const initialSync = waitForInitialSync
             ? this.getInitialSyncPromise()
             : undefined;
+        // A leave can settle while the join is in flight. The reset settles
+        // this wait itself and re-arms the latch for the next channel, which a
+        // settle from here would then mark as already done.
+        const generation = this.stateManager.channelGeneration;
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
@@ -366,11 +370,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // the join finishes in the background under that disposal. Any other
         // settlement keeps waiting for the join as before.
         await Promise.race([join, initialSync]);
+        if (this.stateManager.isStaleChannelWork(generation)) return;
         if (this.stateManager.isDisposed) {
             this.settleInitialSync(false);
             return;
         }
         await join;
+        if (this.stateManager.isStaleChannelWork(generation)) return;
         // The status may have left OPENED during the discovery join (chain
         // genesis, abort). Nothing later would settle the wait, so settle now.
         if (this.stateManager.isDisposed) {

@@ -1,3 +1,4 @@
+import { DisconnectTier } from "@/DisconnectPolicy";
 import { Status } from "@/types";
 import { assertClean } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
@@ -223,6 +224,69 @@ describe("E2E: Channel reuse", function () {
             snapshotWrites: 0
         });
         await syncs.restore();
+    });
+
+    it("a peer asking about the channel the runtime left is disconnected without a verdict", async function () {
+        const { h, channelId, targeted } =
+            await TargetedChannelJoinFixture.unopened("reuse-stale-ack", 3);
+        await targeted.openWithPeers(channelId, [0, 1]);
+        const reused = h.getPeer(2);
+        expect(await targeted.connect(reused, channelId)).to.equal(true);
+        await reused.p2pInstance.leaveChannel();
+
+        const nextChannelId = ethers.id("reuse-stale-ack-next");
+        const partner = await targeted.addFreshPeer();
+        expect(
+            await Promise.all([
+                targeted.connect(reused, nextChannelId, { autoOpen: true }),
+                targeted.connect(partner, nextChannelId, { autoOpen: true })
+            ])
+        ).to.deep.equal([true, true]);
+
+        // The partner asks, over the real RPC, about the channel the reused
+        // runtime left, whose state its local diamond still holds.
+        const disconnects = await h.rpcStub.recordDisconnects(reused.index);
+        const answer = await h.execOnHost(
+            h.getPeer(partner.index),
+            async (sm, args) =>
+                await sm.p2pManager.remoteRpc.isForkDisputedService
+                    .onDisputeAcknowledgmentRequest(args.channelId, args.forkId)
+                    .request(args.responder, { timeoutMs: args.timeoutMs })
+                    .then(
+                        () => "acknowledged",
+                        () => "rejected"
+                    ),
+            {
+                channelId,
+                forkId: ethers.id("reuse-stale-ack-fork"),
+                responder: reused.address,
+                timeoutMs: 5000
+            }
+        );
+        const control = h.control(reused);
+        // A close can be requested more than once (the reply then meets a
+        // closed transport); what matters is that every one is a plain close.
+        const tiers = (await disconnects.disconnects())
+            .filter((disconnect) => disconnect.peerAddress === partner.address)
+            .map((disconnect) => disconnect.tier);
+        expect({
+            answer,
+            tiers: [...new Set(tiers)],
+            blacklisted: await control.query
+                .isBlacklisted(partner.address)
+                .request(),
+            suspended: await control.query
+                .isSuspended(partner.address)
+                .request(),
+            strikes: await control.query.getStrikes(partner.address).request()
+        }).to.deep.equal({
+            answer: "rejected",
+            tiers: [DisconnectTier.ALLOW],
+            blacklisted: false,
+            suspended: false,
+            strikes: 0
+        });
+        await disconnects.restore();
     });
 
     it("explicit disposal still shuts down a runtime that was reused", async function () {

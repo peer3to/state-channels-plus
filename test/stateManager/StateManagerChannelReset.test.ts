@@ -1,4 +1,4 @@
-import { DisconnectPolicy } from "@/DisconnectPolicy";
+import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import type StateManager from "@/stateManager";
 import { Status } from "@/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -175,10 +175,8 @@ describe("StateManager.resetChannel", function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const peer = h.getPeer(0);
-        // Single-use fault: chain-log work that outlives the drain bound.
-        await h.execOnHost(peer, (sm) => {
-            sm.stateChannelEventListener.drain = async () => false;
-        });
+        // Chain-log work that outlives the drain bound.
+        await h.rpcStub.failEventDrain(peer.index);
 
         await expect(peer.p2pInstance.leaveChannel()).to.be.rejectedWith(
             "cannot be reused"
@@ -285,8 +283,10 @@ describe("StateManager.resetChannel", function () {
     it("answers no acknowledgement request that outlived the channel it was asked about", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        const result = await h.execOnHost(
-            h.getPeer(2),
+        const responder = h.getPeer(2);
+        const recorder = await h.rpcStub.recordDisconnects(responder.index);
+        const hostResult = await h.execOnHost(
+            responder,
             async (sm, args) => {
                 const service = sm.p2pManager.localRpc.isForkDisputedService;
                 const transport = sm.p2pManager.openConnections[0]!;
@@ -294,10 +294,6 @@ describe("StateManager.resetChannel", function () {
                 const methods = service.createRPCMethods(transport);
                 const diamond = sm.diamondStateMachine.localDiamondContract;
                 const isForkDisputed = diamond.isForkDisputed.bind(diamond);
-                const p2p = sm.p2pManager;
-                const ban =
-                    p2p.disconnectAndBlacklistPeerByEvmAddress.bind(p2p);
-                let bans = 0;
                 let parked = false;
                 let release: () => void = () => undefined;
                 const held = new Promise<void>((resolve) => {
@@ -313,10 +309,6 @@ describe("StateManager.resetChannel", function () {
                     },
                     isForkDisputed
                 );
-                p2p.disconnectAndBlacklistPeerByEvmAddress = (address) => {
-                    bans += 1;
-                    return ban(address);
-                };
                 try {
                     // The answer is worth nothing once the channel it was
                     // asked about is gone, and neither is the peer's conduct.
@@ -335,7 +327,6 @@ describe("StateManager.resetChannel", function () {
                     release();
                     return {
                         answer: await answer,
-                        bans,
                         acknowledged: service.didIAcknowledgeDisputedFork(
                             asker,
                             args.forkId
@@ -343,11 +334,16 @@ describe("StateManager.resetChannel", function () {
                     };
                 } finally {
                     diamond.isForkDisputed = isForkDisputed;
-                    p2p.disconnectAndBlacklistPeerByEvmAddress = ban;
                 }
             },
             { forkId: ethers.id("responder-fork") }
         );
+        const result = {
+            ...hostResult,
+            bans: (await recorder.disconnects()).filter(
+                (disconnect) => disconnect.tier === DisconnectTier.BLACKLIST
+            ).length
+        };
 
         expect(result).to.deep.equal({
             answer: "onDisputeAcknowledgmentRequest - the channel was left",
@@ -378,13 +374,17 @@ describe("StateManager.resetChannel", function () {
                     .catch((error: unknown) =>
                         error instanceof Error ? error.message : "thrown"
                     );
+                // The asker's connection closes, but no verdict is recorded.
                 return {
                     answer,
                     acknowledged: service.didIAcknowledgeDisputedFork(
                         asker,
                         sm.forkId
                     ),
-                    blacklisted: sm.p2pManager.isBlacklisted(asker)
+                    closed: transport.isClosed,
+                    blacklisted: sm.p2pManager.isBlacklisted(asker),
+                    suspended: sm.p2pManager.isSuspended(asker),
+                    strikes: sm.p2pManager.profileManager.getStrikes(asker)
                 };
             },
             { otherChannel: ethers.id("another-channel") }
@@ -393,7 +393,10 @@ describe("StateManager.resetChannel", function () {
         expect(result).to.deep.equal({
             answer: "onDisputeAcknowledgmentRequest - not this runtime's channel",
             acknowledged: false,
-            blacklisted: false
+            closed: true,
+            blacklisted: false,
+            suspended: false,
+            strikes: 0
         });
     });
 
@@ -637,6 +640,30 @@ describe("StateManager.resetChannel", function () {
         });
     });
 
+    it("does not let a discovery join that outlived its channel settle the next channel's first sync", async function () {
+        const { h, channelId, targeted } =
+            await TargetedChannelJoinFixture.unopened(
+                "reset-held-discovery-join",
+                3
+            );
+        await targeted.openWithPeers(channelId, [0, 1]);
+        const observer = h.getPeer(2);
+        const join = await h.rpcStub.holdDiscoveryJoin(observer.index);
+        // The connect saw the channel OPENED and parks inside its discovery
+        // join, so the leave settles the initial-sync wait under it.
+        const firstConnect = targeted.connect(observer, channelId);
+        await waitFor(async () => (await join.entered()) === 1);
+        await observer.p2pInstance.leaveChannel();
+
+        // The old join finishes after the reset re-armed the latch.
+        await join.release();
+        expect(await firstConnect).to.equal(false);
+        await waitFor(async () => (await join.completed()) === 1);
+        // A latch the old join had settled would end this connect before its
+        // own sync ran.
+        expect(await targeted.connect(observer, channelId)).to.equal(true);
+    });
+
     it("fails a pending join wait instead of leaving it hanging across the reset", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
@@ -829,43 +856,36 @@ describe("StateManager.resetChannel", function () {
     it("does not penalise a peer for an acknowledgement that outlived its channel", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        const result = await h.execOnHost(
-            h.getPeer(2),
+        const requester = h.getPeer(2);
+        const recorder = await h.rpcStub.recordDisconnects(requester.index);
+        const hostResult = await h.execOnHost(
+            requester,
             async (sm, args) => {
                 const forkAck = sm.p2pManager.localRpc.isForkDisputedService;
                 const p2p = sm.p2pManager;
-                const ban =
-                    p2p.disconnectAndBlacklistPeerByEvmAddress.bind(p2p);
-                let bans = 0;
-                p2p.disconnectAndBlacklistPeerByEvmAddress = (address) => {
-                    bans += 1;
-                    return ban(address);
+                // No peer answers a fork nobody disputed, so every request
+                // fails: without the fence each failure bans its peer.
+                forkAck.requestDisputeAcknowledgment(sm.channelId, args.forkId);
+                await sm.resetChannel();
+                // The release cuts the transports, so every request has
+                // already rejected by the time the reset returns; two
+                // macrotasks drain their catch arms. Waiting for the
+                // acknowledgement timeout instead would cost seconds.
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                return {
+                    strikes: p2p.profileManager.getStrikes(args.peer),
+                    blacklisted: p2p.isBlacklisted(args.peer)
                 };
-                try {
-                    // No peer answers a fork nobody disputed, so every request
-                    // fails: without the fence each failure bans its peer.
-                    forkAck.requestDisputeAcknowledgment(
-                        sm.channelId,
-                        args.forkId
-                    );
-                    await sm.resetChannel();
-                    // The release cuts the transports, so every request has
-                    // already rejected by the time the reset returns; two
-                    // macrotasks drain their catch arms. Waiting for the
-                    // acknowledgement timeout instead would cost seconds.
-                    await new Promise((resolve) => setTimeout(resolve, 0));
-                    await new Promise((resolve) => setTimeout(resolve, 0));
-                    return {
-                        bans,
-                        strikes: p2p.profileManager.getStrikes(args.peer),
-                        blacklisted: p2p.isBlacklisted(args.peer)
-                    };
-                } finally {
-                    p2p.disconnectAndBlacklistPeerByEvmAddress = ban;
-                }
             },
             { forkId: ethers.id("ack-fork"), peer: h.getPeer(0).address }
         );
+        const result = {
+            bans: (await recorder.disconnects()).filter(
+                (disconnect) => disconnect.tier === DisconnectTier.BLACKLIST
+            ).length,
+            ...hostResult
+        };
 
         expect(result).to.deep.equal({
             bans: 0,
@@ -880,11 +900,7 @@ describe("StateManager.resetChannel", function () {
         const releasing = h.getPeer(2);
         const peer = h.getPeer(0).address;
         // Park the reset mid-flight and try to earn a verdict there.
-        const drain = await h.rpcStub.holdEventDrain(releasing.index);
-        await h.execOnHost(releasing, (sm) => {
-            Reflect.set(sm, "heldReset", sm.resetChannel());
-        });
-        await waitFor(async () => (await drain.entered()) === 1);
+        const reset = await h.rpcStub.startResetHeldAtDrain(releasing.index);
         const duringReset = await h.execOnHost(
             releasing,
             (sm, args) => {
@@ -893,13 +909,10 @@ describe("StateManager.resetChannel", function () {
             },
             { peer }
         );
-        await drain.release();
+        await reset.release();
         const afterReset = await h.execOnHost(
             releasing,
-            async (sm, args) => {
-                await Reflect.get(sm, "heldReset");
-                return sm.p2pManager.isBlacklisted(args.peer);
-            },
+            (sm, args) => sm.p2pManager.isBlacklisted(args.peer),
             { peer }
         );
 
@@ -923,11 +936,7 @@ describe("StateManager.resetChannel", function () {
         // Park the reset mid-flight and try to earn a strike and a suspension
         // there. Read while it is parked: the reset forgets both once it runs
         // on, so a read afterwards could not tell the fence from the release.
-        const drain = await h.rpcStub.holdEventDrain(releasing.index);
-        await h.execOnHost(releasing, (sm) => {
-            Reflect.set(sm, "heldReset", sm.resetChannel());
-        });
-        await waitFor(async () => (await drain.entered()) === 1);
+        const reset = await h.rpcStub.startResetHeldAtDrain(releasing.index);
         const duringReset = await h.execOnHost(
             releasing,
             (sm, a) => {
@@ -941,10 +950,7 @@ describe("StateManager.resetChannel", function () {
             },
             args
         );
-        await drain.release();
-        await h.execOnHost(releasing, async (sm) => {
-            await Reflect.get(sm, "heldReset");
-        });
+        await reset.release();
 
         expect(duringReset).to.deep.equal({ strikes: 0, suspended: false });
     });
