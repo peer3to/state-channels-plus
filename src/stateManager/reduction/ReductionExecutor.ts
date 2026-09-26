@@ -329,17 +329,8 @@ export default class ReductionExecutor {
         }
     }
 
+    // the reduce lands alone; adopting the reduced fork is a separate post
     private async prepareSubmission(candidate: LocalReductionCandidate) {
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                this.stateManager.channelId
-            )
-        );
-        const { calldata: forkCalldata } =
-            this.stateManager.snapshotUpdateService.buildForkSnapshotCalldata(
-                candidate.reducedGenesisSnapshot,
-                currentOnChainSnapshot
-            );
         const reduceCalldata =
             this.reductionComputationService.buildReduceAndFinalizeCalldata(
                 candidate.disputes,
@@ -348,7 +339,7 @@ export default class ReductionExecutor {
                 candidate.reduceData.inboundMessageBlocks,
                 candidate.reducedForkId
             );
-        return { calldata: [reduceCalldata, forkCalldata] };
+        return { calldata: [reduceCalldata] };
     }
 
     private async simulateSubmission(
@@ -405,6 +396,13 @@ export default class ReductionExecutor {
                 if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
+                // the reduce is mined -> adopt the latest undisputed fork
+                if (!this.stateManager.isDisposed)
+                    DetachedPromises.collect(
+                        this.stateManager.snapshotUpdateService.postStateSnapshot(
+                            candidate.reducedForkId
+                        )
+                    );
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;

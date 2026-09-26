@@ -158,6 +158,12 @@ export default class SnapshotUpdateService {
                                 `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                             );
                         },
+                        RaceConditionSnapshotUpdateNotLatestFork: () => {
+                            this.logger.warn(
+                                "postStateSnapshot: a later reduction landed first; the next post adopts it",
+                                { forkId }
+                            );
+                        },
                         RaceConditionSnapshotUpdateDisputedFork: () => {
                             this.logger.warn(
                                 "postStateSnapshot: adoption refused on a disputed fork",

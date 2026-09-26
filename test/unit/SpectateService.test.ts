@@ -211,9 +211,8 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("applySyncResponse", function () {
-        // FIND-SYNC-2: the simulation's disputed-fork refusal aborts the sync and cuts the responder today;
-        // the recorded fix direction is a retryable failure that leaves the responder unpunished
-        it.skip("a dispute opens on the pinned fork after the proof was served → the sync fails without blacklisting the responder", async function () {
+        // verification is historic: a dispute landing after the proof was served does not change what it proves
+        it("a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -238,8 +237,8 @@ describe("Unit: SpectateService", function () {
                 payload!.encodedSyncPayload,
                 Type.SyncPayload
             );
-            // the same-fork call is in the simulation, and the fork was
-            // undisputed when the proof was served
+            // the proof advances the fork, and the fork was undisputed when
+            // the proof was served
             expect(decodedPayload.milestoneSnapshots.length).to.be.greaterThan(
                 0
             );
@@ -268,7 +267,10 @@ describe("Unit: SpectateService", function () {
                         payload!.encodedSyncPayload
                     )
                     .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-                expect(accepted).to.equal(false);
+                expect(accepted).to.equal(true);
+                expect(
+                    await stub.restoreRecordedSyncRejections().request()
+                ).to.deep.equal([]);
                 expect(
                     await h
                         .control(requester)
@@ -378,21 +380,37 @@ describe("Unit: SpectateService", function () {
         });
     });
 
-    describe("tryMulticallSnapshotUpdate", function () {
-        it("the exact target snapshot lands first → accepts the benign height race", async function () {
+    describe("historic verification", function () {
+        it("on-chain snapshot ahead of the payload genesis on the same fork → milestones and outbound verified from it, accepted", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const forkId = h.activeForkId!;
-            const source = h.getPeer(0);
-            const staleOnChainSnapshot =
-                await h.channelManager.getStateSnapshot(h.channelId);
+            const responder = h.getPeer(0);
+            const requester = h.getPeer(2);
+            const posted = await h.transition.postSnapshotWait({
+                peerIndex: responder.index,
+                forkId: String(forkId)
+            });
+            expect(posted).to.not.equal(undefined);
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
             const latestHeight = await h
-                .control(source)
+                .control(responder)
                 .query.getLatestBlockHeight(forkId)
                 .request();
             expect(latestHeight).to.not.equal(null);
+            // the chain sits strictly between the fork genesis and the proven target
+            const onChainSnapshot = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(onChainSnapshot.forkID).to.equal(forkId);
+            expect(onChainSnapshot.blockHeight).to.be.greaterThan(0);
+            expect(onChainSnapshot.blockHeight).to.be.lessThan(latestHeight!);
+
             const payload = await h
-                .control(source)
+                .control(responder)
                 .spectate.generateSyncPayload(
                     h.channelId,
                     forkId,
@@ -401,30 +419,25 @@ describe("Unit: SpectateService", function () {
                 .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             expect(payload).to.not.equal(null);
 
-            const postedSnapshot = await h.transition.postSnapshotWait({
-                peerIndex: source.index,
-                forkId: String(forkId)
-            });
-            expect(postedSnapshot).to.not.equal(undefined);
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await h.channelManager.getStateSnapshot(h.channelId)
-            );
-            expect(currentOnChainSnapshot.hash).to.equal(postedSnapshot!.hash);
-
-            await h
-                .control(source)
-                .stub.stubNextReductionSimulationError(
-                    "RaceConditionBlockHeightTooOld"
-                )
-                .request();
-            const accepted = await h
-                .control(source)
-                .spectate.tryMulticallSnapshotUpdate(
-                    StateSnapshot.from(staleOnChainSnapshot).encode() as string,
-                    payload!.encodedSyncPayload
-                )
-                .request();
-            expect(accepted).to.equal(true);
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            try {
+                const accepted = await h
+                    .control(requester)
+                    .spectate.applySyncResponse(
+                        responder.address,
+                        forkId,
+                        latestHeight!,
+                        payload!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                expect(accepted).to.equal(true);
+                expect(
+                    await stub.restoreRecordedSyncRejections().request()
+                ).to.deep.equal([]);
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
         });
     });
 

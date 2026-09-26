@@ -1310,21 +1310,37 @@ export class StubService extends ANetworkRpcService<
         this.syncWindowHold?.release();
     }
 
+    // records each sync's supplied windows and those the chain had not finalized, which the sync must reduce
     public recordSyncReductionWindows(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.tryMulticallSnapshotUpdate.bind(service);
+        const original = service.applySyncResponse.bind(service);
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
         this.syncReductionWindows = [];
         this.restoreSyncReductionRecorder = () => {
-            service.tryMulticallSnapshotUpdate = original;
+            service.applySyncResponse = original;
         };
-        service.tryMulticallSnapshotUpdate = async (...args) => {
-            this.syncReductionWindows.push({
-                suppliedForks: args[2].disputeWindows.map(
-                    (window) => window.forkId
-                ),
-                reductionForks: args[3].map((window) => window.forkId)
-            });
-            return await original(...args);
+        service.applySyncResponse = async (
+            peerAddress,
+            syncRequest,
+            encodedSyncPayload
+        ) => {
+            const suppliedForks = Codec.decode(
+                encodedSyncPayload,
+                Type.SyncPayload
+            ).disputeWindows.map((window) => window.forkId);
+            const reductionForks: ForkId[] = [];
+            for (const forkId of suppliedForks) {
+                if (
+                    !(await contract.isReduceChallengePeriodExpired(
+                        syncRequest.channelId,
+                        forkId
+                    ))
+                )
+                    reductionForks.push(forkId);
+            }
+            this.syncReductionWindows.push({ suppliedForks, reductionForks });
+            return await original(peerAddress, syncRequest, encodedSyncPayload);
         };
     }
 
