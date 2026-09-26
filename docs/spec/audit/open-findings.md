@@ -79,19 +79,32 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 ## FIND-DISPUTE-2-3HV3TZ — The evidence-improvement lost-race caller has no test
 
-**Status:** open verification gap. The containment itself is implemented for all four callers;
-three are now driven by their own declaration, and one — the evidence-improvement upload — is
+**Status:** open verification gap. The containment itself is implemented for all seven callers;
+six are now driven by their own declaration, and one — the evidence-improvement upload — is
 unevidenced.
 
 [`DisputeManager.disputeToleratingLostRace`](../implementation/source/src/disputeManager/DisputeManager.ts.md)
-is called from four places: `onChainSlashed`, `onDisputeKilled`, and the evidence-improvement branch
+is called from seven places: `onChainSlashed`, `onDisputeKilled`, and the evidence-improvement branch
 of `onDisputeCommitted` in
-[EventHandler](../implementation/source/src/eventHandlers/EventHandler.ts.md), plus the
+[EventHandler](../implementation/source/src/eventHandlers/EventHandler.ts.md); the
 empty-window escalation in
-[ReductionExecutor](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md).
+[ReductionExecutor](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md);
+the timeout constructor in
+[ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md);
+the self-removal dispute in
+[MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md);
+and `requestDispute` itself, which the block pipeline and the forced-inclusion trigger call.
 The first two are covered by
 [test/unit/EventHandler.test.ts](../verification/tests/test/unit/EventHandler.test.ts.md), whose two
-cases also kill a mutant that makes the shared method rethrow for every caller. The reducer is
+cases reach the handler from a real kill and a real slash on a live session and also kill a mutant
+that makes the shared method rethrow for every caller. The timeout constructor, the self-removal
+dispute and `requestDispute` each have their own case in
+[test/unit/ParticipantTimeoutService.test.ts](../verification/tests/test/unit/ParticipantTimeoutService.test.ts.md),
+[test/unit/MembershipService.test.ts](../verification/tests/test/unit/MembershipService.test.ts.md) and
+[test/unit/DisputeManager.test.ts](../verification/tests/test/unit/DisputeManager.test.ts.md)
+([`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P13`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p13)
+to [`P15`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p15)); a bare
+`dispute` call at any one of those sites turns only that site's case red. The reducer is
 covered by [test/e2e/E2E-ReductionManager.test.ts](../verification/tests/test/e2e/E2E-ReductionManager.test.ts.md)
 (below). The evidence-improvement branch has no declaration of its own, so
 [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9)

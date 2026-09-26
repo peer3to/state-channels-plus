@@ -76,11 +76,11 @@ sequenceDiagram
 
 ### 3.1 Local escalation (disputer role)
 
-Every trigger reaches [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L134),
-which is mutexed and idempotent per fork (`didIDispute` flag) — the four triggers that expect to
-lose a race to another peer's upload reach it through
-[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L111)
-(below):
+Every trigger reaches [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L138),
+which is mutexed and idempotent per fork (`didIDispute` flag). Every trigger reaches it through
+[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L115)
+(below), since any of them can lose a race to another peer's upload; the block pipeline enters
+through `requestDispute`, which runs the same helper on a detached attempt:
 
 | Trigger                                                                                                         | Site                                                                                                          | Dispute input it contributes                                                                                                                              |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -94,19 +94,24 @@ lose a race to another peer's upload reach it through
 | Auditor holds more evidence than a valid observed dispute                                                       | [`EventHandler.canConstructMoreEvidence`](../../../../../../src/eventHandlers/EventHandler.ts#L683)           | merged evidence (via `disputeToleratingLostRace`)                                                                                                         |
 
 The last four rows are the same race seen from four places: every honest peer acts
-on the trigger and uploads its own view. Whether that is refused depends on the
-window (see the note below); when it is, the peer gets the contract's
+on the trigger and uploads its own view. The first rows can meet it too — every
+honest peer times out the same writer, and fraud or a self-removal can reach a
+window whose evidence period has already closed. Whether that is refused depends
+on the window (see the note below); when it is, the peer gets the contract's
 `RaceConditionDisputeEvidencePeriodExpired`, which `DisputeManager.dispute`
-deliberately rethrows (§4). They all call
-[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L111),
+deliberately rethrows (§4) after logging it at debug. Every row calls
+[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L115),
 which lives on the manager — beside the rethrow it interprets, and reachable from
 the reducer as well as from the handlers. It matches the error through
 `tryHandleEvmError`'s typed handler map (so renaming the contract error breaks the
 build rather than the check), logs the lost race with the `caller` trigger as
 metadata, and returns; anything the map does not handle is rethrown unchanged.
 Without the containment a lost race left the handler's promise rejected with nobody
-awaiting it, and the reducer's attempt reached `ReductionManager.failCompletion`
-→ `StateManager.abort()`
+awaiting it, the reducer's attempt reached `ReductionManager.failCompletion`
+→ `StateManager.abort()`, the timeout check failed its scheduled task, the
+self-removal rejected the leave fallback, and the block pipeline's detached attempt
+reached the top-level error funnel. A lost self-removal now reports that it did
+not dispute, and the leave fallback still treats that as a failed start
 ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
 Note what is _not_ first-wins: only a window that already exists with a closed
@@ -270,7 +275,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L332)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L341)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,
