@@ -1,7 +1,5 @@
-// @spec-test-coverage-ignore: staging for the descendant kill-period adoption regression
-import { StateSnapshot } from "@/models";
+// @spec-test-coverage-ignore: staging for adopting a fork disputed while its reduce was pending
 import type { ForkId } from "@/types";
-import { tryDecodeCustomError } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -41,18 +39,17 @@ async function holdReduceSubmits(h: MathPeerTestHarness) {
     };
 }
 
-// the peers install the next reduced fork, an honest timeout dispute opens its
-// window while every reduce is pending, then the reduce lands alone
-async function reduceAloneOntoDisputedFork(
+// the peers install the reduced fork, and an honest timeout dispute opens its
+// window while every reduce is pending
+async function reduceOntoDisputedFork(
     h: MathPeerTestHarness,
-    fromForkId: ForkId,
-    seenForkIds: ForkId[]
+    fromForkId: ForkId
 ): Promise<ForkId> {
     const held = await holdReduceSubmits(h);
     let reducedForkId: ForkId | undefined;
     try {
         await waitFor(
-            async () => !seenForkIds.includes(await localForkOf(h)),
+            async () => (await localForkOf(h)) !== fromForkId,
             h.event.protocolEventTimeoutMs()
         );
         reducedForkId = await localForkOf(h);
@@ -72,7 +69,7 @@ async function reduceAloneOntoDisputedFork(
     return forkId;
 }
 
-export async function assertAncestorAdoptionRefusedDuringDescendantKillPeriod(): Promise<void> {
+export async function assertDisputedForkAdoptionLandsWithItsReduce(): Promise<void> {
     const h = TestSession.getHarness();
     await h.scenario.preDisputeSetup({
         peerCount: PEER_COUNT,
@@ -82,34 +79,11 @@ export async function assertAncestorAdoptionRefusedDuringDescendantKillPeriod():
 
     await h.byzantine.submitInvalidStateTransitionBlock(1);
     await h.assert.dispute.initiatedAndCommitedWait({ expectedCount: 1 });
-    const forkF = await reduceAloneOntoDisputedFork(h, forkE, [forkE]);
-    const forkG = await reduceAloneOntoDisputedFork(h, forkF, [forkE, forkF]);
+    const forkF = await reduceOntoDisputedFork(h, forkE);
 
-    // the chain never left E, F is past its kill period and G's is open
-    expect(await chainForkOf(h)).to.equal(forkE);
-    expect((await h.query.killPeriod(forkF, 0)).isExpired).to.equal(true);
-    const killG = await h.query.killPeriod(forkG, 0);
-    expect(killG.windowExists).to.equal(true);
-    expect(killG.isExpired).to.equal(false);
-
-    // G's disputer adopts the expired F directly to shrink the chain set
-    const genesisF = await h
-        .control(h.getPeer(0))
-        .dispute.getGenesisSnapshotStruct(forkF)
-        .request();
-    expect(genesisF).to.not.equal(null);
-    const attacker = h.channelManager.connect(h.getPeer(3).signer);
-    const refusal = await attacker
-        .updateStateSnapshotFork(
-            h.channelId,
-            StateSnapshot.decode(genesisF!.encodedSnapshot).toStruct(),
-            []
-        )
-        .then(
-            () => null,
-            (error: unknown) => tryDecodeCustomError(error)
-        );
-    expect(refusal?.name).to.equal("RaceConditionSnapshotUpdateDisputedFork");
-    expect(refusal?.errorDescription.args[1]).to.equal(forkG);
-    expect(await chainForkOf(h)).to.equal(forkE);
+    // the reducer's bundled adoption landed with the reduce, inside F's kill period
+    expect(await chainForkOf(h)).to.equal(forkF);
+    const killF = await h.query.killPeriod(forkF, 0);
+    expect(killF.windowExists).to.equal(true);
+    expect(killF.isExpired).to.equal(false);
 }

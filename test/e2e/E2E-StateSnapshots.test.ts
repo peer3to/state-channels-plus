@@ -1,7 +1,7 @@
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { tryDecodeCustomError } from "@/utils";
-import { assertAncestorAdoptionRefusedDuringDescendantKillPeriod } from "@test/fixtures/DescendantKillPeriodStaging";
+import { assertDisputedForkAdoptionLandsWithItsReduce } from "@test/fixtures/DisputedForkAdoptionStaging";
 import {
     assertPromotionDisputeStanding,
     assertUnpublishedPromotionTimeout
@@ -46,8 +46,8 @@ describe("E2E: State Snapshots", function () {
             )
         ).to.be.greaterThan(0);
     });
-    it("adopting a reduced fork is refused while a fork it was reduced into is inside its kill period", async () => {
-        await assertAncestorAdoptionRefusedDuringDescendantKillPeriod();
+    it("a fork disputed while its reduce was pending is adopted with the reduce, inside its kill period", async () => {
+        await assertDisputedForkAdoptionLandsWithItsReduce();
     });
     it("off-chain promotion gains dispute standing only after snapshot publication", async () => {
         await assertPromotionDisputeStanding();
