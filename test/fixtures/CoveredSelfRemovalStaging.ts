@@ -7,7 +7,7 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 /** Forks of the self-removal disputes among recorded submissions. */
-function selfRemovalForks(
+export function selfRemovalForks(
     submissions: { encodedDispute: string | null }[]
 ): string[] {
     return submissions
@@ -30,7 +30,7 @@ function selfRemovalForks(
  * is the contract's own `RaceConditionDisputeEvidencePeriodExpired`: the race
  * is lost to a real window, not to a staged revert.
  */
-async function releaseAfterEvidencePeriod(
+export async function releaseAfterEvidencePeriod(
     h: MathPeerTestHarness,
     forkId: ForkId,
     held: { release: () => Promise<void>; restore: () => Promise<void> }

@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: authored-leave fallback staging for mapped runtime cases
 import { addressesEqual } from "@/utils";
+import {
+    releaseAfterEvidencePeriod,
+    selfRemovalForks
+} from "@test/fixtures/CoveredSelfRemovalStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -10,26 +14,42 @@ export async function assertAuthoredLeaveFallback(
     failure: "missing-marker" | "evidence-expired" | "success"
 ) {
     const h = TestSession.getHarness();
-    await h.lifecycle.start(3, 0, { timeConfig: { evidenceTime: 20 } });
+    // The evidence-expired refusal is the contract's own: peer 0's voluntary
+    // self-removal opens a real window on the fork, and a fourth participant
+    // keeps the channel settleable once both have left.
+    const covered = failure === "evidence-expired";
+    await h.lifecycle.start(
+        covered ? 4 : 3,
+        0,
+        covered
+            ? { timeConfig: { agreementTime: 8, evidenceTime: 4 } }
+            : { timeConfig: { evidenceTime: 20 } }
+    );
+    const coverer = h.getPeer(0);
     const leaver = h.getPeer(1);
     const withheld = h.getPeer(2);
     const forkId = h.activeForkId!;
     if (!slow)
         await h.control(leaver).stub.failPostStateSnapshotWait().request();
+    // Held reductions keep the covering window unsettled until the leave has
+    // been seen waiting for it.
+    if (covered)
+        for (const peer of h.peers)
+            await h.control(peer).stub.stubHoldReductionTasks().request();
+    // The covered case parks the leaver's real upload until the window stopped
+    // taking evidence; the others refuse it at send or forward it.
     const recorder = await h.rpcStub.recordDisputeSubmissions(
         leaver.index,
         failure === "success"
             ? { forward: true }
-            : {
-                  failWith: {
-                      customError:
-                          failure === "evidence-expired"
-                              ? "RaceConditionDisputeEvidencePeriodExpired"
-                              : undefined,
-                      message: "Dispute send failed",
-                      at: "send"
-                  }
-              }
+            : covered
+              ? { hold: true, forward: true }
+              : {
+                    failWith: {
+                        message: "Dispute send failed",
+                        at: "send"
+                    }
+                }
     );
     let restored = false;
     let authored: Promise<unknown> | undefined;
@@ -79,6 +99,22 @@ export async function assertAuthoredLeaveFallback(
                         .stub.getNextSignatureEntered()
                         .request()) === 1
             );
+        if (covered) {
+            // Peer 0's self-removal opens the window covering the fork before
+            // the fallback fires, as the other participants would. The
+            // fallback's upload stays parked until that window stopped taking
+            // evidence.
+            await h.execOnHost(
+                coverer,
+                async (sm, args) => {
+                    await sm.membershipService.startSelfRemovalDispute(
+                        args.forkId
+                    );
+                },
+                { forkId }
+            );
+            await releaseAfterEvidencePeriod(h, forkId, recorder);
+        }
         await waitFor(async () => (await recorder.submissions()).length === 1);
         expect(await recorder.submissions()).to.have.length(1);
         if (failure === "success") {
@@ -95,37 +131,39 @@ export async function assertAuthoredLeaveFallback(
                 assertMaliciousRemoved: false
             });
             expect(await outcome).to.deep.equal({ error: null });
-        } else if (failure === "evidence-expired") {
-            // the chain refuses the fallback when the fork's window already
-            // holds commitments -> the leave waits for that window to settle
+        } else if (covered) {
+            // The fallback reached the chain only after the covering window
+            // stopped taking evidence, so the chain refused it and the leave
+            // waits for the window to settle.
             await h.event.waitUntilLeavePhase(
                 leaver.index,
                 "awaiting-settlement"
             );
-            expect(
-                await h.control(leaver).query.didIDispute(forkId).request()
-            ).to.equal(false);
+            const [fallback] = await recorder.submissions();
+            expect({
+                fork: selfRemovalForks([fallback])[0],
+                revert: fallback.revert?.name ?? null
+            }).to.deep.equal({
+                fork: String(forkId),
+                revert: "RaceConditionDisputeEvidencePeriodExpired"
+            });
             if (!slow) {
+                // The window's settlement re-arms the leave on the settled
+                // fork, where its one retried self-removal drops the leaver.
+                // The leave disposes the leaver, so its stubs go back first.
                 await recorder.restore();
                 await h
                     .control(leaver)
                     .stub.restorePostStateSnapshotWait()
                     .request();
                 restored = true;
-                // a committed self-removal stands in for that window; its
-                // reduction drops the fully signed leaver
-                await h.dispute.suppressDisputeInitiation([leaver.index]);
-                await h.dispute.selfRemoveViaDisputeWait({
-                    leaverIndex: leaver.index,
-                    forkId
-                });
-                await h.dispute.resolveDisputeWait({
-                    forkId,
-                    honestPeerIndices: [0, 2],
-                    assertMaliciousRemoved: false
-                });
+                for (const peer of h.peers)
+                    await h
+                        .control(peer)
+                        .stub.restoreReductionTasks(true)
+                        .request();
                 expect(await outcome).to.deep.equal({ error: null });
-                for (const peer of [h.getPeer(0), withheld]) {
+                for (const peer of [withheld, h.getPeer(3)]) {
                     const participants = await h
                         .control(peer)
                         .query.getParticipants()
@@ -139,7 +177,7 @@ export async function assertAuthoredLeaveFallback(
             }
         } else {
             const result = await outcome;
-            // No window covers the fork, so neither refusal is a lost race the
+            // No window covers the fork, so the refusal is not a lost race the
             // leave can wait out.
             expect(result.error).to.include(
                 "Terminal channel leave failed to start a dispute"
