@@ -241,22 +241,13 @@ export default class DisputeValidationService {
     private async tryCreateLastMilestoneNotFinalProof(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        // the chain judges the set the dispute pins; without that snapshot there is nothing to prove against
-        const latestStateSnapshot = this.storage.stateSnapshots
-            .getStateSnapshotByHash(
-                dispute.input.latestStateSnapshotHash as Hash
-            )
-            ?.toStruct();
-        if (!latestStateSnapshot) return false;
         const isFinal =
             await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                dispute,
-                latestStateSnapshot
+                dispute
             );
         if (isFinal) return false;
         this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
-            dispute,
-            latestStateSnapshot
+            dispute
         );
         return true;
     }

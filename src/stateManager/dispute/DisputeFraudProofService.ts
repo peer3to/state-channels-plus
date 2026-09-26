@@ -183,11 +183,10 @@ export default class DisputeFraudProofService {
     }
 
     createDisputeLastMilestoneNotFinalAndNoAuditingData(
-        dispute: DisputeStruct,
-        latestStateSnapshot: StateSnapshotStruct
+        dispute: DisputeStruct
     ): Hash {
         const proof: DisputeLastMilestoneNotFinalAndNoAuditingDataStruct = {
-            latestStateSnapshot
+            __: false
         };
 
         return this.storeFraudProof(dispute, {

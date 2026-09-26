@@ -92,7 +92,7 @@ struct DisputeInvalidBlockInStateProofApplyFraudProof {
 }
 
 struct DisputeLastMilestoneNotFinalAndNoAuditingData {
-    StateSnapshot latestStateSnapshot;
+    bool __;
 }
 
 struct InvalidDisputeReason {

@@ -182,7 +182,7 @@ export const TimeoutNotLinkedToLatestStateProofEthersType = `tuple(
 )`;
 
 export const DisputeLastMilestoneNotFinalAndNoAuditingDataProofEthersType = `tuple(
-    ${StateSnapshotEthersType} latestStateSnapshot
+    bool __
 )`;
 
 export const DisputeStateProofHeaderMismatchProofEthersType = `tuple(

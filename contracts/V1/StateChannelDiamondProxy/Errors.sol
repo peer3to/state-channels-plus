@@ -15,7 +15,6 @@ error ErrorBlockCalldataMsgSenderNotBlockAuthor(address expectedAuthor, address 
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid(bytes32 currentForkId, bytes32 targetForkId);
 error ErrorInvalidStateProof(bytes32 forkId, uint256 milestoneProofCount, uint256 milestoneSnapshotCount);
-error ErrorDisputeLatestStateSnapshotMismatch(bytes32 committedSnapshotHash, bytes32 suppliedSnapshotHash);
 error ErrorOutboundMessageBlocksInvalid(
     bytes32 lowerLatestOutboundMessageBlockHash,
     uint256 lowerLatestOutboundMessageBlockHeight,

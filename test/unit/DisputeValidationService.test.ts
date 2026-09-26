@@ -52,48 +52,14 @@ describe("Unit: DisputeValidationService", function () {
             bc.signedBlock.encodedBlock = randomHash(); // 32 junk bytes -> Block decode throws
 
             const run = await h.dispute.auditDispute(1, dispute);
-            // an undecodable block can never be final by everyone, and the proof
-            // carries the snapshot the dispute pins
+            // the proof carries no data from us: the chain recomputes finality
+            // from the committed dispute, and an undecodable block can never be
+            // final by everyone
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
             );
-            const proof = Codec.decode(
-                run.storedProof!.encodedProof,
-                DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
-            );
-            expect(StateSnapshot.from(proof.latestStateSnapshot).hash).to.equal(
-                dispute.input.latestStateSnapshotHash
-            );
             expect(run.disputeFraudProofCount).to.equal(1);
-        });
-
-        it("milestones[0].blockConfirmations[0].signedBlock.encodedBlock = junk AND postedAuditingData false AND pinned snapshot unknown locally -> no proof, abstains", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
-            expect(dispute.postedAuditingData).to.equal(false);
-            dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock =
-                randomHash();
-
-            const removed = await h.execOnHost(
-                h.getPeer(1),
-                (sm, args) => {
-                    const snapshots = sm.storage.stateSnapshots as unknown as {
-                        snapshotsByHash: Map<string, unknown>;
-                    };
-                    return snapshots.snapshotsByHash.delete(
-                        String(args.snapshotHash)
-                    );
-                },
-                { snapshotHash: dispute.input.latestStateSnapshotHash }
-            );
-            expect(removed).to.equal(true);
-
-            const run = await h.dispute.auditDispute(1, dispute);
-            expect(run.outcome).to.equal("returned");
-            expect(run.storedProof).to.equal(undefined);
-            expect(run.disputeFraudProofCount).to.equal(0);
         });
 
         it("signedBlocks[-1].encodedBlock = junk with no milestones AND postedAuditingData false -> audit skipped, true, no proof", async function () {

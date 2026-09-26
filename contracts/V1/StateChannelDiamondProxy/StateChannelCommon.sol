@@ -430,7 +430,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         StateSnapshot memory latestStateSnapshot,
         bytes memory latestStateMachineState
     ) internal pure returns (bool) {
-        if (!_isPinnedLatestState(dispute, latestStateSnapshot)) return false;
+        bytes32 snapshotHash = keccak256(abi.encode(latestStateSnapshot));
+        if (snapshotHash != dispute.input.latestStateSnapshotHash) return false;
 
         if (latestStateSnapshot.snapshotData.stateMachineStateHash != keccak256(latestStateMachineState)) {
             return false;

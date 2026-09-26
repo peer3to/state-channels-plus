@@ -41,10 +41,6 @@ and the positional committed-set matching `areDisputesCommitted`.
    hashes a commitment-mismatch revert reports are by construction the hashes the comparison
    tested — a second inline copy of the preimage could drift from the committed one and make the
    payload describe a comparison that never happened.
-4. **One owner for the latest-state pin.**
-   [`_isPinnedLatestState`](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L183)
-   is the single `keccak256(abi.encode(latestStateSnapshot)) == dispute.input.latestStateSnapshotHash` check;
-   the inbound-anchor proof, the latest-state link in `StateChannelCommon` and the milestone-finality read call it.
 
 ## Inputs, outputs, state, and side effects
 
