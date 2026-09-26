@@ -111,7 +111,8 @@ awaiting it, the reducer's attempt reached `ReductionManager.failCompletion`
 → `StateManager.abort()`, the timeout check failed its scheduled task, the
 self-removal rejected the leave fallback, and the block pipeline's detached attempt
 reached the top-level error funnel. A lost self-removal now reports that it did
-not dispute, and the leave fallback still treats that as a failed start
+not dispute; the leave then waits for the window that covers the fork and retries
+once on the fork its settlement produces, failing only when no window covers it
 ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
 Note what is _not_ first-wins: only a window that already exists with a closed
