@@ -317,40 +317,20 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (!isCorrectGenesis)
                 return this.rejectSync(peerAddress, "genesis snapshot invalid");
 
-            // optimization: if the on-chain snapshot is on the same fork but more advanced than what
-            // peers proved, reject before running any contract verification.
             const latestFinalizedSnapshot =
                 syncPayload.milestoneSnapshots.length > 0
                     ? syncPayload.milestoneSnapshots.at(-1)!
                     : syncPayload.latestForkGenesisSnapshot;
+            // the proof must extend the chain's snapshot: on its fork, that snapshot itself or a newer one
             if (
-                onChainSnapshot.forkID ===
-                    syncPayload.latestForkGenesisSnapshot.forkId &&
-                onChainSnapshot.blockHeight >
-                    Number(latestFinalizedSnapshot.blockHeight)
-            ) {
-                this.logger.debug(
-                    `applySyncResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
-                );
-                return this.rejectSync(
-                    peerAddress,
-                    "on-chain height exceeds proved height"
-                );
-            }
-            // a proof that does not advance past the on-chain snapshot extends from it only if it is that snapshot
-            if (
-                onChainSnapshot.forkID ===
-                    syncPayload.latestForkGenesisSnapshot.forkId &&
-                onChainSnapshot.hash !==
-                    StateSnapshot.from(latestFinalizedSnapshot).hash &&
-                !(await diamondStateMachine.localDiamondContract.isSnapshotNewer(
-                    latestFinalizedSnapshot,
-                    onChainSnapshot.toStruct()
+                !(await stateManager.stateChannelManagerContract.isExtendingOnChainSnapshot.staticCall(
+                    channelId,
+                    latestFinalizedSnapshot
                 ))
             )
                 return this.rejectSync(
                     peerAddress,
-                    "on-chain snapshot is not the proved snapshot"
+                    "proof does not extend the on-chain snapshot"
                 );
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)

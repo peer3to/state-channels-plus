@@ -544,7 +544,7 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("historic verification rejections", function () {
-        it("proof ending at the on-chain height with another snapshot → rejected, the on-chain snapshot is not the proved snapshot", async function () {
+        it("proof ending at the on-chain height with another snapshot → rejected, the proof does not extend the on-chain snapshot", async function () {
             const { accepted, rejections } = await applyAnchoredSyncPayload(
                 TestSession.getHarness(),
                 (payload, onChainSnapshot) => {
@@ -555,7 +555,7 @@ describe("Unit: SpectateService", function () {
             );
             expect(accepted).to.equal(false);
             expect(rejections).to.deep.equal([
-                "on-chain snapshot is not the proved snapshot"
+                "proof does not extend the on-chain snapshot"
             ]);
         });
 
