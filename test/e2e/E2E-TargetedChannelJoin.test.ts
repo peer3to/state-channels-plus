@@ -2,19 +2,18 @@ import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { assertClean } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
-import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import {
+    TargetedChannelJoinFixture,
+    targetedTestTime
+} from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-const testTime = {
-    agreementTime: 4,
-    p2pTime: 2,
-    chainFallbackTime: 2,
-    evidenceTime: 2
-};
+const testTime = targetedTestTime;
 
 // Four simultaneous targeted callers churn through the derived-to-raw topic
 // handoff before block 1 can be authored; give that first turn two windows.
@@ -25,26 +24,8 @@ const fourCallerTime = {
 };
 
 describe("E2E: Targeted channel join", function () {
-    const unopened = async (
-        label: string,
-        peerCount = 2,
-        timeConfig = testTime
-    ) => {
-        const h = TestSession.getHarness();
-        const channelId = ethers.keccak256(
-            ethers.AbiCoder.defaultAbiCoder().encode(["string"], [label])
-        );
-        await h.setup(peerCount, {
-            autoConnect: false,
-            channelId: label,
-            timeConfig
-        });
-        return {
-            h,
-            channelId,
-            targeted: new TargetedChannelJoinFixture(h)
-        };
-    };
+    const unopened = (label: string, peerCount = 2, timeConfig = testTime) =>
+        TargetedChannelJoinFixture.unopened(label, peerCount, timeConfig);
 
     const openedWithFreshObservers = async (
         label: string,
@@ -131,47 +112,42 @@ describe("E2E: Targeted channel join", function () {
         }).to.deep.equal(before);
     });
 
-    it("terminal leave settles before a fresh runtime connects another channel", async function () {
-        const { h, channelId } = await unopened("target-terminal-leave", 3);
+    it("leave settles before the same runtime connects another channel", async function () {
+        const { h, channelId, targeted } = await unopened(
+            "target-leave-reuse",
+            3
+        );
         await h.lifecycle.openChannelForParticipants([0, 1, 2]);
         await h.network.joinSelectedKey([0, 1, 2], channelId);
         const leaver = h.getPeer(1);
-        let exit: Promise<unknown> | undefined;
-        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
-            exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
-        });
-        const leave = leaver.p2pInstance.leaveChannel();
-        await h.transition.advanceState();
-        await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
-        await exit;
-        await leave;
+        await h.lifecycle.leaveWithAuthoredExit(leaver.index);
         expect(
             (await h.channelManager.getParticipants(channelId)).includes(
                 leaver.address
             )
         ).to.equal(false);
+        // The runtime survives its own departure and is back where a fresh one
+        // starts, so the next target is selectable on the same instance.
+        await assertClean(h, leaver);
 
-        const freshFixture = new TargetedChannelJoinFixture(h);
-        const freshPeers = [];
-        for (let index = 0; index < 3; index += 1) {
-            freshPeers.push(await freshFixture.addFreshPeer());
-        }
-        const nextChannelId = ethers.id("target-after-terminal-leave");
+        const partner = await targeted.addFreshPeer();
+        const nextChannelId = ethers.id("target-after-leave-reuse");
         expect(
             await Promise.all(
-                freshPeers.map((peer) =>
+                [leaver, partner].map((peer) =>
                     peer.p2pInstance.p2pSigner.connectToChannel(nextChannelId, {
                         autoOpen: true
                     })
                 )
             )
-        ).to.deep.equal([true, true, true]);
-        expect(
-            await h.control(freshPeers[0]).query.getChannelId().request()
-        ).to.equal(nextChannelId);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        ).to.deep.equal([true, true]);
+        expect({
+            leaver: await h.control(leaver).query.getChannelId().request(),
+            partner: await h.control(partner).query.getChannelId().request()
+        }).to.deep.equal({
+            leaver: nextChannelId,
+            partner: nextChannelId
+        });
     });
 
     it("unopened target without autoOpen and with balance returns false without discovery", async function () {

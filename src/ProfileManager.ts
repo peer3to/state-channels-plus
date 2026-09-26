@@ -19,8 +19,9 @@ const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 // An explicit blacklist always wins over transport fallback. It also owns the
 // session-scoped half of the disconnect ladder: one strike count per peer key
 // that saturates into a suspension. The strikes live on the manager rather
-// than on a profile, so they die with the session; the blacklist verdict is
-// recorded in storage so it can outlive it.
+// than on a profile, so they die with the session or with the channel the
+// runtime leaves; the blacklist verdict is recorded in storage so it can
+// outlive both.
 class ProfileManager {
     private readonly mapTransportToProfile = new Map<
         NetworkTransport,
@@ -34,7 +35,8 @@ class ProfileManager {
     // Keys are normalized peer keys (checksummed EVM address once proven, the
     // lowercase Hyperswarm key before); values count the retry-tier
     // disconnects taken against that peer in this session, or SUSPENDED once
-    // the peer is barred for the rest of it. Never reset.
+    // the peer is barred for the rest of it. Cleared only when the runtime
+    // leaves its channel.
     private readonly mapPeerKeyToStrikes = new Map<PeerKey, number>();
     private readonly blacklistStorage: BlacklistStorage;
 
@@ -53,6 +55,39 @@ class ProfileManager {
             () => this.mapEvmAddressToProfile.clear(),
             () => this.mapHpAddressToProfile.clear(),
             () => this.mapPeerKeyToStrikes.clear()
+        );
+    }
+
+    /**
+     * Channel reset: close every transport and forget every peer except the
+     * blacklisted ones. A blacklist verdict rests on a proven fault by that
+     * identity, so it follows the peer into the next channel this runtime
+     * serves; everything else about a peer belongs to the channel left,
+     * including its strikes and any suspension they earned, which record
+     * unproven faults.
+     */
+    public releaseChannelPeers(): void {
+        runCleanupSync(
+            // A suspension also banned the peer's Hyperswarm handle; lift that
+            // ban before its strikes go, or the swarm keeps refusing the peer.
+            () => this.liftSuspensionBans(),
+            () => this.mapPeerKeyToStrikes.clear(),
+            ...[...this.mapTransportToProfile.keys()].map((transport) => () => {
+                this.removeTransport(transport);
+            }),
+            () => this.mapTransportToProfile.clear(),
+            () => {
+                for (const [address, profile] of this.mapEvmAddressToProfile) {
+                    if (!profile.isBlackListed)
+                        this.mapEvmAddressToProfile.delete(address);
+                }
+            },
+            () => {
+                for (const [address, profile] of this.mapHpAddressToProfile) {
+                    if (!profile.isBlackListed)
+                        this.mapHpAddressToProfile.delete(address);
+                }
+            }
         );
     }
 
@@ -418,6 +453,18 @@ class ProfileManager {
         }
         profile.blacklist();
         profile.getHolepunchPeerInfo()?.ban(true);
+    }
+
+    private liftSuspensionBans(): void {
+        const profiles = new Set([
+            ...this.mapEvmAddressToProfile.values(),
+            ...this.mapHpAddressToProfile.values()
+        ]);
+        for (const profile of profiles) {
+            if (!profile.isBlackListed && this.isProfileSuspended(profile)) {
+                profile.getHolepunchPeerInfo()?.ban(false);
+            }
+        }
     }
 
     private suspendProfile(profile: PeerProfile): void {

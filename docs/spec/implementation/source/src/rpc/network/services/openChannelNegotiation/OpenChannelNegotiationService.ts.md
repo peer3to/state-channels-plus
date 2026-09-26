@@ -74,6 +74,8 @@ claims complete conformance for a requirement that depends on other files.
   a silent initiator, a committed-peer loss, and a burned window take the counted close, and a remote abort,
   an already-open match, and a failed opening receipt close with no strike.
 
+- `reset()` clears any attempt that outlived the channel and then restores the default negotiation state rather than only clearing the attempt ([#L263](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L263)): the negotiated balance belongs to the channel it was agreed for, so the next channel must negotiate from the default. The default comes from the module-level `initialNegotiationState()` ([#L86](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L86)), which the field initializer uses too ([#L145](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L145)), so a fresh service and a reset service start from one definition. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

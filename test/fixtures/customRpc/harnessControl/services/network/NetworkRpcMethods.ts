@@ -63,7 +63,9 @@ export class NetworkRpcMethods extends ANetworkRpcMethods<NetworkService> {
 
     public async joinSelectedKey(channelId: string): Promise<boolean> {
         await this.p2pManager.stateManager.setChannelId(channelId as ChannelId);
-        DetachedPromises.collect(this.p2pManager.joinDiscoveryKey(channelId));
+        DetachedPromises.collect(
+            this.p2pManager.joinChannelDiscovery(channelId)
+        );
         return true;
     }
 

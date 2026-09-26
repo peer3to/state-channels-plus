@@ -204,6 +204,31 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
+    it("an intake the channel reset overtakes neither syncs nor blacklists its source", async () => {
+        const f = new QueueIntakeFixture();
+        await f.start({ holdMembership: true });
+        const pending = f.receive(f.strangers[0]);
+        try {
+            await f.waitForRead();
+            // The sender's refresh is parked on its chain read; the runtime
+            // leaves the channel before it resumes.
+            await f.h.execOnHost(f.h.getPeer(0), async (sm) => {
+                await sm.resetChannel();
+            });
+            await f.control.stub.releaseAdmissionMembership().request();
+            expect(await pending).to.equal(true);
+            expect((await f.observation()).membershipSyncs).to.equal(0);
+            expect((await f.observation()).completedSyncs).to.equal(0);
+            expect(
+                await f.control.query.isBlacklisted(f.strangers[0]).request()
+            ).to.equal(false);
+        } finally {
+            await f.control.stub.releaseAdmissionMembership().request();
+            await pending;
+            await f.close();
+        }
+    });
+
     it("a failed unknown copy preserves the existing honest contribution", async () => {
         const f = new QueueIntakeFixture();
         await f.start({ failMembership: true });

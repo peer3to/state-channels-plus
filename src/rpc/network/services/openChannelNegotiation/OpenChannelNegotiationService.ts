@@ -84,6 +84,13 @@ export type NegotiationState = {
     channelOpened: boolean;
 };
 
+function initialNegotiationState(): NegotiationState {
+    return {
+        myBalance: { amount: DEFAULT_JOIN_AMOUNT, data: "0x" },
+        channelOpened: false
+    };
+}
+
 class NegotiationAdmissionPolicy implements DeferredAdmissionPolicy {
     constructor(
         private readonly service: OpenChannelNegotiationService,
@@ -136,10 +143,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     OpenChannelNegotiationRpcMethods,
     OpenChannelNegotiationP2PManager
 > {
-    public state: NegotiationState = {
-        myBalance: { amount: DEFAULT_JOIN_AMOUNT, data: "0x" },
-        channelOpened: false
-    };
+    public state: NegotiationState = initialNegotiationState();
     private readonly readiness: EventBarrier;
 
     constructor(p2pManager: OpenChannelNegotiationP2PManager) {
@@ -253,6 +257,15 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     public async dispose(): Promise<void> {
         if (!this.state.attempt) return;
         await this.clearAttempt("runtime disposed", "cancelled");
+    }
+
+    /**
+     * Channel reset: cancel any attempt that outlived the old channel and drop
+     * the negotiated balance, so the next channel negotiates from the default.
+     */
+    public async reset(): Promise<void> {
+        await this.clearAttempt("channel reset", "cancelled");
+        this.state = initialNegotiationState();
     }
 
     private observeChannelOpened(channelId: string): void {

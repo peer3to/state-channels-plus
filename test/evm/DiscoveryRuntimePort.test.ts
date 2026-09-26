@@ -823,7 +823,7 @@ describe("discovery runtime port", function () {
         );
     });
 
-    it("public leave immediately disposes an attached NOT_OPENED runtime", async function () {
+    it("public leave immediately resets an attached NOT_OPENED runtime", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const peer = h.peers[0];
@@ -843,12 +843,10 @@ describe("discovery runtime port", function () {
         await peer.p2pInstance.leaveChannel();
 
         expect(leaveTurnCount).to.equal(0);
-        await expect(
-            peer.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await assertClean(h, peer);
     });
 
-    it("public leave immediately disposes a synced observer runtime", async function () {
+    it("public leave immediately resets a synced observer runtime", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const channelId = ethers.id("synced-observer-public-leave");
@@ -869,12 +867,10 @@ describe("discovery runtime port", function () {
 
         await observer.p2pInstance.leaveChannel();
 
-        await expect(
-            observer.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await assertClean(h, observer);
     });
 
-    it("participating public leave emits leave turn, settles removal, and disposes once", async function () {
+    it("participating public leave emits leave turn, settles removal, and resets once", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
         const leaver = h.peers[1];
@@ -906,7 +902,7 @@ describe("discovery runtime port", function () {
         ).to.equal(3);
         await expect(
             leaver.p2pInstance.p2pSigner.connectToChannel(h.channelId)
-        ).to.be.rejectedWith("terminal channel leave is pending");
+        ).to.be.rejectedWith("channel leave is pending");
 
         await h.transition.advanceState();
         await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
@@ -921,42 +917,7 @@ describe("discovery runtime port", function () {
                 leaver.address
             )
         ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
-    });
-
-    it("outer disposal failure rejects leave after the settled runtime becomes terminal", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 0);
-        const leaver = h.peers[1];
-        let exitPromise: Promise<unknown> | undefined;
-        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
-            exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
-        });
-        const originalDispose = leaver.p2pInstance.dispose.bind(
-            leaver.p2pInstance
-        );
-        leaver.p2pInstance.dispose = async () => {
-            await originalDispose();
-            throw new Error("injected outer disposal failure");
-        };
-
-        const leave = leaver.p2pInstance.leaveChannel();
-        await h.transition.advanceState();
-        await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
-        await exitPromise;
-        await expect(leave).to.be.rejectedWith(
-            "injected outer disposal failure"
-        );
-        expect(
-            (await h.channelManager.getParticipants(h.channelId)).includes(
-                leaver.address
-            )
-        ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await assertClean(h, leaver);
     });
 
     it("a reduction that drops the leaver keeps its status until the chain records the removal", async function () {
@@ -1103,9 +1064,7 @@ describe("discovery runtime port", function () {
                 leaver.address
             )
         ).to.equal(false);
-        await expect(
-            leaver.p2pInstance.p2pSigner.getChannelStatus()
-        ).to.be.rejectedWith("disposed");
+        await assertClean(h, leaver);
     });
 
     it("leave watchdog starts a dispute carrying self-removal with no new blocks", async function () {
@@ -1203,19 +1162,19 @@ describe("discovery runtime port", function () {
         await expect(leave).to.be.rejectedWith("disposed");
     });
 
-    it("pending terminal leave rejects joinLobby", async function () {
+    it("pending leave rejects joinLobby", async function () {
         await assertPendingLeaveGuard(TestSession.getHarness(), "joinLobby");
     });
 
-    it("pending terminal leave rejects joinChannel", async function () {
+    it("pending leave rejects joinChannel", async function () {
         await assertPendingLeaveGuard(TestSession.getHarness(), "joinChannel");
     });
 
-    it("pending terminal leave rejects topUpBalance", async function () {
+    it("pending leave rejects topUpBalance", async function () {
         await assertPendingLeaveGuard(TestSession.getHarness(), "topUpBalance");
     });
 
-    it("pending terminal leave rejects collectJoinChannelConfirmation", async function () {
+    it("pending leave rejects collectJoinChannelConfirmation", async function () {
         await assertPendingLeaveGuard(
             TestSession.getHarness(),
             "collectJoinChannelConfirmation"

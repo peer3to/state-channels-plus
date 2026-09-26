@@ -11,7 +11,8 @@ import {
     missingInboundEligibility,
     eligibilityAppearsDuringRefresh,
     observeSourceEligibility,
-    observeSlashDuringRefresh
+    observeSlashDuringRefresh,
+    refreshOvertakenByReset
 } from "@test/fixtures/SourceEligibilityFixture";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -109,6 +110,12 @@ describe("Unit: MembershipService", function () {
         expect(observed.result).to.equal(true);
         expect(observed.reads).to.equal(1);
         expect(observed.state).to.equal(SourceEligibility.SLASHED);
+    });
+    it("a refresh the channel reset overtakes writes no membership", async () => {
+        expect(await refreshOvertakenByReset()).to.deep.equal({
+            refreshed: false,
+            membershipSyncs: 0
+        });
     });
     it("a committed off-chain addition during refresh is eligible when the chain result misses it", async () => {
         const observed = await eligibilityAppearsDuringRefresh();

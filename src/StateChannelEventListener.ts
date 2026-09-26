@@ -6,7 +6,7 @@ import { StateChannelManagerInterface } from "@typechain-types";
 import { Filter, Log } from "ethers";
 
 class StateChannelEventListener {
-    private static readonly DISPOSE_TIMEOUT_MS = 30000;
+    private static readonly DRAIN_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
     private currentChannelKey?: ChannelKey;
     private filter?: Filter;
@@ -58,8 +58,16 @@ class StateChannelEventListener {
     async stop(): Promise<void> {
         this.disposed = true;
         this.generation += 1;
-        await this.eventSyncService.waitForScheduled(
-            StateChannelEventListener.DISPOSE_TIMEOUT_MS
+        await this.drain();
+    }
+
+    /**
+     * Wait, bounded, for already scheduled log work to finish. Returns false
+     * when the bound ran out with work still running.
+     */
+    async drain(): Promise<boolean> {
+        return await this.eventSyncService.waitForScheduled(
+            StateChannelEventListener.DRAIN_TIMEOUT_MS
         );
     }
 

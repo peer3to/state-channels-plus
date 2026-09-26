@@ -35,9 +35,7 @@ export async function assertPendingLeaveGuard(
                         prepared.expectedSnapshotHash,
                         prepared.expectedForkId
                     );
-        await expect(attempt).to.be.rejectedWith(
-            "terminal channel leave is pending"
-        );
+        await expect(attempt).to.be.rejectedWith("channel leave is pending");
     } finally {
         await leaver.p2pInstance.dispose();
     }

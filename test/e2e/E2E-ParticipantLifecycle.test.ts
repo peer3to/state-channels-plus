@@ -284,7 +284,7 @@ describe("E2E: Participant Lifecycle", function () {
             await assertLeaverCanBeForceJoinedBackAfterExit();
         });
 
-        it("public terminal leave settles before disposal and excludes the former signer", async function () {
+        it("public leave settles before the runtime resets and excludes the former signer", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
             const leaver = h.getPeer(1);
@@ -300,9 +300,9 @@ describe("E2E: Participant Lifecycle", function () {
             await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
             await exitPromise;
             // The exit block is authored: the leaver never writes again and
-            // its runtime disposes once the leave settles, so harness queries
-            // stop routing through it; the others keep the slot alive while
-            // the exit snapshot lands.
+            // its runtime resets to its pre-channel state once the leave
+            // settles, so harness queries stop routing through it; the others
+            // keep the slot alive while the exit snapshot lands.
             h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
             let leaveSettled = false;
             const settledLeave = leave.then(() => {

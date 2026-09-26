@@ -4,6 +4,7 @@ import type { QueryService } from "./QueryService";
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { Status } from "@/types/flags";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
@@ -367,6 +368,15 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
     /** Retry-tier strikes this peer recorded against `key` in this session. */
     public getStrikes(key: string): number {
         return this.p2pManager.profileManager.getStrikes(key);
+    }
+
+    /**
+     * Whether this peer's local discovery refuses the peer behind `hpAddress`:
+     * the handle ban a suspension or blacklist places, on the local transport
+     * the harness runs.
+     */
+    public isPeerHandleBanned(hpAddress: string): boolean {
+        return LocalPeerInfo.isBanned(this.p2pManager, hpAddress);
     }
 
     /** Whether this peer has suspended `evmAddress` for this session. */

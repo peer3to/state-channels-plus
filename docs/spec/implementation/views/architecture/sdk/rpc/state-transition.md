@@ -30,9 +30,9 @@ Position in the flow:
 
 - **Sending side** (local, typed proxy — never through this service's handler): the success path
   gossips after persistence
-  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L478) step 7, only when
+  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L519) step 7, only when
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
-  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478) →
+  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L519) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
   ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.

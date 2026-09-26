@@ -82,7 +82,7 @@ which is mutexed and idempotent per fork (`didIDispute` flag):
 | Trigger                                                                                                         | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
-| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L478) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
+| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L519) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
 | Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
 | Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
 | On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
@@ -118,7 +118,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L324),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L329),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -229,7 +229,7 @@ is an internal error (throws).
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L354):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L359):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, derive auditing data locally if not
@@ -261,7 +261,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   difference means our evidence changes the outcome → upload our dispute
   (evidence accumulation). Otherwise schedule reduction at `killPeriodEnd`.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L876)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L881)):
 record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
@@ -313,7 +313,7 @@ is still a participant.
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L756)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L761)):
 mirror into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute locally; a mismatching
 `reducedForkId` → `SCM.challengeDisputeReduction(disputes, latestSnapshot, state, inboundBlocks)`

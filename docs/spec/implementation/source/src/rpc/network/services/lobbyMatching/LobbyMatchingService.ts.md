@@ -66,6 +66,8 @@ The shared peer predicate runs only after the original input guards. Matching ow
 
 The source contribution is limited to the linked requirements and operation described above; surrounding policy remains in the related owners.
 
+- `reset()` runs the same `cleanup()` as disposal but leaves matching available ([#L236](../../../../../../../../../src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts#L236)), so an attempt or handed-off transport belonging to the channel just left is settled and released while the service keeps serving the next channel. It passes `keepStatus: true`, which skips the `NOT_OPENED` restoration at the end of `cleanup` ([#L751](../../../../../../../../../src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts#L751)), so the reset's owner — `StateManager.resetChannel()` — is the one that sets the status last. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

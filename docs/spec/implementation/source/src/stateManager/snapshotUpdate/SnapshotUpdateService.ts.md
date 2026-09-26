@@ -92,8 +92,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 - [ReductionExecutor](../reduction/ReductionExecutor.ts.md), [MessageBlockStorage](../../storage/MessageBlockStorage.ts.md), [AgreementManager](../../agreementManager/AgreementManager.ts.md).
 
-# Terminal leave contribution
+# Channel leave contribution
 
-`postStateSnapshotWait` is an explicit internal awaitable boundary used by terminal leave so a refused post (resolved `false`) or a transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+`postStateSnapshotWait` is an explicit internal awaitable boundary used by the channel leave so a refused post (resolved `false`) or a transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

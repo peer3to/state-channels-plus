@@ -270,7 +270,19 @@ export default class JoinChannelService extends ANetworkRpcService<JoinChannelRp
                     this.p2pManager.stateManager.timeConfig.agreementTime *
                         2 *
                         1000,
-                    "join threshold participant reachability"
+                    "join threshold participant reachability",
+                    // The runtime left the channel or shut down: no handshake
+                    // can make it ready now, so fail instead of hanging.
+                    () => {
+                        if (settled) return;
+                        settled = true;
+                        unsubscribe();
+                        reject(
+                            new Error(
+                                "collectJoinChannelConfirmation: the runtime left the channel"
+                            )
+                        );
+                    }
                 );
         });
     }

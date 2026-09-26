@@ -65,6 +65,7 @@ type InboundMessageLogKey = string;
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
     | "discoveryJoinHold"
+    | "discoveryJoinGate"
     | "auditingDataRebuild"
     | "snapshotPostSend"
     | "expiredCalldataPost"
@@ -119,6 +120,9 @@ export type StubKey =
     | "ingestConfirmations"
     | "networkConfirmations"
     | "spectateSyncApplication"
+    | "eventDrain"
+    | "eventDrainFailure"
+    | "recordedDisconnects"
     | "onChainSlashesQuery"
     | "localDiamondInboundMessages"
     | "eventLogs"
@@ -158,15 +162,17 @@ export type ReductionApplicationControl =
 /** Which stage of a reduction attempt the attempt hold pauses. */
 /**
  * Where a reduction attempt pauses: before any executor work, at the synced
- * dispute read, at candidate computation, or at the submission's gas-limit
- * read (after the local install, before the chain write).
+ * dispute read, at candidate computation, at the submission's gas-limit read
+ * (after the local install, before the chain write), or at the receipt wait
+ * of a transaction the submission already sent (`sendWait`).
  */
 export type ReductionAttemptHoldPoint =
     | "attempt"
     | "admission"
     | "disputes"
     | "compute"
-    | "submit";
+    | "submit"
+    | "sendWait";
 /**
  * What the paused call does once released: continue with the real call,
  * return `undefined` (the executor's "data unavailable" branch), or throw
@@ -353,6 +359,7 @@ export class StubService extends ANetworkRpcService<
         proofEntries: number;
         proofSources: number;
         chainReads: number;
+        membershipSyncs: number;
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
@@ -445,6 +452,14 @@ export class StubService extends ANetworkRpcService<
     readonly controlIngestContext = new AsyncLocalStorage<true>();
     /** Gate holding this peer's own sync at its application step. */
     spectateSyncApplicationGate?: StubGate;
+    /** Parks the channel reset at its chain-feed drain while set. */
+    eventDrainGate?: StubGate;
+    /** Parks local-discovery joins until released; `completed` counts joins that finished. */
+    discoveryJoinGate?: StubGate & { completed: number };
+    /** A channel reset the stub started and left running. */
+    channelResetOutcome?: DetachedCallOutcome;
+    /** Every disconnect requested while the record stub is installed. */
+    readonly recordedDisconnects: { peerAddress: string; tier: string }[] = [];
     reductionApplicationGate?: StubGate;
     /** Calls that reached the control; survives the restore that an abort triggers. */
     reductionApplicationEntered = 0;
@@ -481,6 +496,8 @@ export class StubService extends ANetworkRpcService<
     spectateSyncCallCount = 0;
     /** Addresses `spectateService.sync` was asked to sync from, newest last. */
     readonly spectateSyncTargets: string[] = [];
+    /** Incremented when a forwarded `spectateService.sync` settles. */
+    spectateSyncSettledCount = 0;
     /** Resolvers waiting for a given number of `spectateService.sync` calls. */
     private readonly spectateSyncWaiters: {
         target: number;
@@ -534,7 +551,7 @@ export class StubService extends ANetworkRpcService<
         this.leaveWatchdogObservation = observation;
         let held: ReturnType<typeof setTimeout> | undefined;
         timers.scheduleTask = (task, delayMs, name) => {
-            if (name !== "terminal channel leave watchdog")
+            if (name !== "channel leave watchdog")
                 return schedule(task, delayMs, name);
             observation.delayMs = delayMs;
             observation.scheduled += 1;
@@ -651,6 +668,7 @@ export class StubService extends ANetworkRpcService<
         const machine = this.sm.diamondStateMachine;
         const router = this.p2pManager.rpcRouter;
         const read = chain.readPinnedChainMembership.bind(chain);
+        const synchronize = chain.synchronizeChainMembership.bind(chain);
         const participants = machine.getParticipants.bind(machine);
         const broadcast = router.broadcastRpc.bind(router);
         const request = router.sendRpcRequest.bind(router);
@@ -669,6 +687,7 @@ export class StubService extends ANetworkRpcService<
             proofEntries: 0,
             proofSources: 0,
             chainReads: 0,
+            membershipSyncs: 0,
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
@@ -680,6 +699,7 @@ export class StubService extends ANetworkRpcService<
                 spectate.sync = sync;
                 queues.createEntry = createEntry;
                 chain.readPinnedChainMembership = read;
+                chain.synchronizeChainMembership = synchronize;
                 machine.getParticipants = participants;
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
@@ -733,6 +753,10 @@ export class StubService extends ANetworkRpcService<
             await gate;
             return result;
         };
+        chain.synchronizeChainMembership = async (...args) => {
+            observation.membershipSyncs++;
+            return synchronize(...args);
+        };
         machine.getParticipants = async () => {
             observation.localMembershipReads++;
             return participants();
@@ -772,6 +796,7 @@ export class StubService extends ANetworkRpcService<
             proofEntries: observation?.proofEntries ?? 0,
             proofSources: observation?.proofSources ?? 0,
             chainReads: observation?.chainReads ?? 0,
+            membershipSyncs: observation?.membershipSyncs ?? 0,
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,
@@ -2046,6 +2071,32 @@ export class StubService extends ANetworkRpcService<
             await sleep(holdMs);
             return original(...args);
         }) as typeof LocalDiscoveryServer.connectToPeers;
+    }
+
+    public installDiscoveryJoinGate(): void {
+        this.restoreDiscoveryJoinGate();
+        const original =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        this.stubOriginals.set("discoveryJoinGate", original);
+        const gate = { ...this.createGate(), completed: 0 };
+        this.discoveryJoinGate = gate;
+        LocalDiscoveryServer.connectToPeers = (async (...args) => {
+            gate.entered += 1;
+            await gate.gate;
+            const joined = await original(...args);
+            gate.completed += 1;
+            return joined;
+        }) as typeof LocalDiscoveryServer.connectToPeers;
+    }
+
+    /** Let parked joins run on; later joins go straight to discovery. */
+    public restoreDiscoveryJoinGate(): void {
+        const original = this.stubOriginals.get("discoveryJoinGate");
+        this.discoveryJoinGate?.release();
+        if (original === undefined) return;
+        LocalDiscoveryServer.connectToPeers =
+            original as typeof LocalDiscoveryServer.connectToPeers;
+        this.stubOriginals.delete("discoveryJoinGate");
     }
 
     public async joinAndLeavePendingLocalDiscovery(

@@ -270,6 +270,13 @@ limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification
   at sign. There is no bound tying the deadline to protocol windows. A far-future deadline keeps a
   collected authorization valid for a long time. Accepted residual today. **Open question ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)):**
   required deadline bounds. (Divergence class: decision pending.)
+- **Authorization collected for a channel the runtime has left.** The collection hop is a network round
+  trip over the peer set, so a leave can settle inside it and leave a fully valid confirmation in the
+  caller's hand. `LocalP2pSigner.connectToChannel` captures the runtime's channel generation before
+  `prepareJoinChannelConfirmation` on both the first-join and the top-up path and returns `false` instead of
+  submitting when it moved. The confirmation itself stays valid — nothing about it is wrong — but submitting
+  it would put a departed signer back into the channel it just left, which is the one effect of late work
+  that no local cleanup can undo ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 - **Top-up path.** `topUpBalance` reuses the same confirmation shape and the same
   `signJoinRequest` responder (the RPC endpoint does not distinguish join vs. top-up — the
   `isTopUp` branch is contract-side). A signature collected "for a join" is equally valid for a

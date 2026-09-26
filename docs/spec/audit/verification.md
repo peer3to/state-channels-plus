@@ -255,3 +255,261 @@ The engineer approved host shutdown preparation before the child cascade. Run-31
 ## Application setup ownership correction
 
 The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Evidence for the non-terminal channel leave
+
+Three new suites carry the change.
+[StorageClear.test.ts](../verification/tests/test/storage/StorageClear.test.ts.md) takes all seventeen
+permutations of the facade clear obligation: one per module through that module's own public writer and
+reader, plus the idempotence, reuse, and untouched-instance boundaries. Each case reads the datum before the
+clear and compares one structure, so no assertion can pass against an absent pre-state — the failure mode
+that would make a "nothing is there afterwards" test vacuous.
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+takes the runtime projection together with the emptied stores in one before/after comparison, both sides of
+the boundary around the release (channel work refused while the leave is pending, another channel selectable
+once it settled), and the refusal on a disposed runtime. It reaches the reset through the public leave rather
+than by calling `resetChannel()` directly, which is what makes it evidence for the specified behaviour and
+not just for the method.
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) takes the behaviour
+end to end with real peers and real opens: a second channel reached on the runtime that left, asserted
+together with isolation from the channel that was left; two complete leave/reconnect cycles; and an explicit
+shutdown that is still terminal after a reuse. Its second case is the one that would catch a leaked leave
+memo, and its third target is deliberately left unopened so that selecting it proves the id was unbound
+without a second negotiated open masking the result.
+
+Three existing reports were corrected rather than re-credited.
+[DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md) keeps its three
+public-leave assignments: the declarations were renamed and their oracles changed from a disposed-runtime
+rejection to the pre-channel projection, which is a stronger assertion of the same permutations, now reworded
+to match. The declaration for the removed `outer disposal failure` case is deleted; it carried no assignment,
+so no permutation lost its evidence. Every surviving declaration's line link was re-resolved against the
+current file.
+[E2E-TargetedChannelJoin](../verification/tests/test/e2e/E2E-TargetedChannelJoin.test.ts.md) keeps
+[`REQ-LIF-10-QR8NQ9.T1.P4`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p4) and
+[`REQ-TJOIN-7-NNGTAY.T1.P8`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p8)
+because the reworded permutations are what that test now proves: the leaver's own runtime reaches the next
+channel.
+[E2E-ParticipantLifecycle](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md) keeps
+[`REQ-LIF-10-QR8NQ9.T1.P5`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p5): it asserts
+chain membership, the next block's signature set, and the absence of blacklisting, none of which depended on
+the leaver being disposed.
+
+The gap once tracked as
+[`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb) is closed. The rejected side is
+asserted by the DiscoveryRuntimePort fallback-rejection cases. The success side, the release of the leave
+operation, is taken by a sixth
+[StateManagerChannelReset](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md) case:
+on an unbound runtime two consecutive leaves return different promises and `isLeaving` is false between and
+after them
+([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23)).
+Removing the operation release from the reset turns it red.
+
+The follow-up fence for work that outlives its channel adds two declarations.
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) gained a fourth case
+that holds the observer's spectate sync at its application step, leaves, releases it, waits for it to settle
+through a counting stub rather than a sleep, and then asserts the clean pre-channel projection and a
+successful reconnect to the same channel. It takes
+[`REQ-LIF-10-QR8NQ9.T1.P17`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p17) and one
+permutation in each of the three files involved; the reconnect is the discriminating oracle, and removing the
+P2P generation check, removing the persistence check, or re-arming the latch before the status change each
+turns the case red.
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+gained a fifth case that calls the reset on the host and, in the same turn, checks the old fork is inactive
+and a reduction for it starts nothing; it takes
+[`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18) and fails when
+the retirement is moved back to the end of the reset. Every declaration's line link in both reports was
+re-resolved against the current file. The two sibling permutations neither case observed — the stale sync
+not penalising its responder, and a sync resuming inside the reset itself — are now taken by a further
+E2E-ChannelReuse case that parks the reset at its chain-feed drain, releases the held sync into it, and reads
+mid-reset that the status is still `OPENED`, nothing was persisted for the old fork, and the responder is not
+blacklisted
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)).
+A stale branch that rejects its responder, or a generation advanced after the drain, turns it red. This
+closes [`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3). Every declaration's line link
+in both reports was re-resolved again after the insertions.
+
+## Review 494 follow-up evidence
+
+The review round that followed turned four prose claims about the reset into assertions and added one new
+suite. All of the new cases were mutation-checked against the exact change they guard.
+
+The no-penalty half of the mid-reset case was the weakest link and is now the strongest. It previously read
+only `isBlacklisted`, and the report said disconnection was not read separately because the rejection path
+cuts and bans together. That reasoning does not survive the environment: discovery is still live at the point
+where the reset is parked, so a cut peer reconnects and any connectivity read passes either way. The case now
+installs a restore-in-test probe over the observer's `disconnectConnection` and
+`disconnectAndBlacklistPeerByEvmAddress`, counts only the calls aimed at the responder, delegates to the
+originals, and restores both before the drain is released; the count is asserted zero inside the same
+structure as the rest of the mid-reset projection. That makes the case evidence for the newly normative
+[`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20) as well as the
+permutations it already held.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md) gained four cases.
+The drain-failure case stubs `stateChannelEventListener.drain` to answer `false` and asserts both halves of
+the specified failure mode — the public leave rejects with "cannot be reused" **and** the runtime reads
+disposed — which is what separates it from a reset that merely threw
+([`REQ-LIF-10-QR8NQ9.T1.P19`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p19),
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P8`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p8)). Removing the `abort()`
+leaves the runtime alive and turns it red; removing the drain check leaves the leave resolving.
+The pending-join case is the one whose oracle is time: it starts the threshold-reachability wait against an
+address no peer owns, so only the wait's own far longer timer or the reset can settle it, resets, and races
+the wait against a five-second bound, reporting "still pending" as a distinct outcome rather than a timeout
+([`REQ-SDK-ARCH-2-QBZAT8.T1.P9`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p9)). Dropping the cancel
+handler turns it red with that exact string.
+The exclusion case reads the non-excluded peer before the reset as well as after, so the "forgotten"
+assertion cannot pass against an empty pre-state, and asserts the ban survives in the same structure
+([`REQ-AUTH-4-JWCF71.T1.P7`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p7)); restoring the
+old `dispose()` call turns it red.
+The reduction case counts `multicall` invocations rather than inferring from state, parks the submit on its
+gas-limit read, resets, releases, and waits a further second so a late write still fails
+([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p17)).
+
+[SpectateService.test.ts](../verification/tests/test/unit/SpectateService.test.ts.md) gained two cases at the top of the file, and
+every declaration's line link in that report was re-resolved against the current file. The first drives
+`applySyncResponse` with an earlier generation and undecodable bytes, so the ordinary reject path runs and
+only the fence can keep it off the peer; the oracle is one structure covering the answer, the blacklist, and
+the transport, on a live channel where the same bytes at the current generation would cut the responder. The
+second proves the in-flight entry belongs to its attempt: it holds `runSync`, does what a reset does, lets a
+newer attempt register for the same peer, then releases the old one and asserts the newer entry survived.
+
+[TimeoutManager.test.ts](../verification/tests/test/utils/TimeoutManager.test.ts.md) is new and takes the five cancel-handler
+permutations directly on the real class with no harness. Its two negative cases are what make the handler a
+cancellation signal rather than a second completion callback: an owner's own `cancelTask` must not run it,
+and a task that already fired must not be reported as cancelled — the latter asserted as one structure over
+both counters, so a handler run after the body cannot hide. Four of the five schedule at a 60-second delay,
+so no case can pass on a timer that happened to fire.
+
+Nothing in this round retired a permutation or moved one between declarations.
+
+## Review 494 second-round evidence
+
+A second blind round found three more instances of one class — work begun for a channel the runtime had left
+reaching the next one — and each fix ships with a declaration whose named mutant turns it red.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+is now thirteen cases. The late-join case is the only one in the whole suite whose unfenced outcome would have
+been on chain: it holds `prepareJoinChannelConfirmation` so the signature round trip parks exactly where a
+leave can settle underneath it, resets, then releases the hold and asserts one structure over the connect's
+answer and a count of `membershipService.joinChannel` calls. Counting the call rather than reading membership
+is what makes it evidence — a `false` on its own would also be produced by a submission that reverted — and
+dropping the join-path generation check turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P22`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p22),
+[`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw.p6)).
+The acknowledgement case starts a real round for a fork nobody disputed, resets, and waits two seconds — long
+enough for the requests to fail once the reset has cut the transports — before reading a ban count and the
+blacklist; dropping the failure-branch check turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24),
+[`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P9`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p9)).
+The verdict case is the only one that needs the reset itself held open, because the window it tests exists
+only while the release body runs: it parks the reset at its chain-feed drain, attempts the ban there, and
+reads the blacklist both during the reset and after it in one structure, so a suppression that merely
+deferred the verdict fails the second read; disabling the reset-window suppression turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P10`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p10),
+[`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P16`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p16)).
+
+The mid-reset case in
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) was strengthened rather
+than duplicated. Its "persisted nothing" half rested on a fork-genesis read, which the sync's _first_ write
+does not touch: `fetchAndPersistOnChainSnapshot` puts the on-chain snapshot into the local EVM before any of
+the payload has been verified. The existing probe now wraps that method too and asserts a zero call count
+inside the same structure, so dropping the check that precedes the first write turns the case red where the
+genesis read would still have passed
+([`REQ-LIF-10-QR8NQ9.T1.P21`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p21),
+[`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P30`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p30)).
+Every declaration's line link in both reports was re-resolved against the current files by exact title; the
+reset report's links had additionally drifted by one line before this round.
+
+The full distributed gate is green on the tree that carries these fixes: 2443 passing, 0 failing. One earlier
+run failed in the late-join case, and the cause was the case's own staging rather than the fence — it slept
+before resetting, so the reset could land inside one of the join's earlier round trips and the join then
+failed on a cut transport instead of on the generation check. The hold now signals when it is holding the
+prepared confirmation and the reset waits for that signal, which is why the case is evidence for the fence and
+not for a timing window.
+
+Two permutations are added without evidence and are tracked rather than absorbed: the unacknowledged-answer
+branch of the acknowledgement fence
+([`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P10`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p10))
+and the per-block re-check in the sync replay loop
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p31)).
+Both branches exist in the source and both could fail independently of the branches that are covered — a
+mutant dropping only one of them survives the current suite — so they are named as their own permutations and
+registered as [`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej) rather than folded
+into the covered sibling's wording. Nothing in this round retired a permutation or moved one between
+declarations.
+
+## Review 494 third-round evidence
+
+A third blind round found five more resume points and one unchecked release step, and each ships with a
+declaration that was mutation-checked in this tree: removing its own fix turns its own case red, and only
+its own.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+is now nineteen cases. Five of the six new ones share a shape that is worth naming, because it is what makes
+them evidence rather than timing: replace the dependency the operation is about to await with a hold, spin
+until the hold reports it has been entered, reset on the host, and only then release. No sleep decides when
+the reset lands. The chain-status case holds `isChannelOpen`, resets, selects a **different** channel id,
+and reads the status, the channel id, and a count of local-diamond snapshot writes taken after the reset;
+the count is the half that matters, because the read's first effect is a cache keyed by channel id that the
+event handler's own id check would have accepted under the new id, and a status-only oracle would have
+passed
+([`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P12`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p12)).
+The discovery case holds the first `refreshOpenedStatusFromChain` and makes every later one answer that the
+channel is open, so the resumed connect cannot leave through its not-opened branch and the count of
+`joinChannelDiscovery` calls is genuinely about the fence rather than about a status that happened to be
+wrong
+([`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26),
+[`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw.p7)).
+The sync case holds `getStateSnapshot` inside `fetchAndPersistOnChainSnapshot` and then selects **the same**
+channel id again after the reset — the only case in the suite that does, and the whole point of it: the
+restored id satisfies every id-keyed check the write passes through, so an implementation fenced on channel
+id rather than on generation passes every other case and fails this one
+([`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27),
+[`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P32`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p32)).
+The acknowledgement-responder case holds the responder's local `isForkDisputed` and reads one structure —
+the thrown message, a ban count, and `didIAcknowledgeDisputedFork` for the asker — so an endpoint that
+answered fails on a different member than one that recorded or one that judged
+([`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28),
+[`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1-jzbh4b.p5)).
+The calldata case is the one that parks nothing: it captures the real step-11 closure as the commit path
+schedules it, advances turns until the peer authors the block that arms it, resets, and fires the captured
+closure at the released runtime, counting `maybePostBlockOnChain` invocations across the firing — counting
+the attempt rather than the chain, so a transaction that is sent and reverts still fails the case
+([`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29),
+[`UNIT-TEST-BLOCK-COMMIT-SERVICE-2-APAFNV.P1`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md#unit-test-block-commit-service-2-apafnv.p1)).
+The sixth is the task-drain failure, built as the sibling of the chain-feed one and asserting the same two
+halves — the leave rejects with "cannot be reused" **and** the runtime reads disposed — because a rejection
+alone would also be produced by a reset that threw and left the instance alive. It schedules a task that
+never settles and releases it after the assertions, so the case leaves nothing running behind it
+([`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30),
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P10`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p10),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P11`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p11),
+[`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P10`](../implementation/source/src/utils/TimeoutManager.ts.md#unit-test-timeout-manager-1-jngdyk.p10)).
+
+Two existing cases in the same file traded fixed sleeps for deterministic waits, which is a strengthening
+rather than a cosmetic change: the reduction case now spins until its stub reports it is parked instead of
+sleeping 50ms first, and yields one macrotask after the release rather than a second, and the
+acknowledgement case yields two macrotasks instead of two seconds. In both the oracle is unchanged and the
+window the sleep was covering was already closed by the reset, so the shorter waits do not weaken them —
+a write or a ban that still lands fails them exactly as before. Every declaration's line link in the report
+was re-resolved against the current file by exact title; all thirteen earlier rows had drifted, most of them
+by the 375 lines the new cases add.
+
+One new permutation is deliberately unevidenced and is named as such rather than filed:
+[`UNIT-TEST-BLOCK-COMMIT-SERVICE-2-APAFNV`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md#unit-test-block-commit-service-2-apafnv)
+carries only its channel-left permutation. The live side of that boundary — the same closure posting for the
+channel it was armed for — is the ordinary calldata path that every run reaching a post exercises, so the
+obligation says where it is covered instead of restating it as a permutation of this timer that no
+declaration would own. The `true` return of `cancelAllTasks` is treated the same way: every passing reset in
+the tree depends on it.
+
+[`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej)
+stays open, and neither of its two branches was closed by this round. The new acknowledgement case is the
+**responder** endpoint refusing to answer; the finding's first branch is the **requester** reading a peer's
+`false` answer after the release, which is a different read in a different file, and the responder's throw
+reaches the requester as a failure, so it exercises the covered failure branch rather than the uncovered
+answer branch. The new sync case fences `fetchAndPersistOnChainSnapshot`, which is upstream of the replay
+loop; the finding's second branch is a generation that moves **between** two suffix ingests, and the new
+case never reaches the loop. Nothing in this round retired a permutation or moved one between declarations.

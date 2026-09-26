@@ -30,6 +30,10 @@ Channel identity uses the shared permissive string/lowercase conversion; event m
 
 `stop()` rejects new log delivery through the existing disposed/generation guards and waits for scheduled work. It retains the provider listener until `dispose()`, so a host can destroy its owned provider before listener removal starts an unsubscribe. Direct disposal still stops work and removes the listener, including when draining fails.
 
+The wait itself is the public `drain()` ([#L68](../../../../../src/StateChannelEventListener.ts#L68)): a bounded `eventSyncService.waitForScheduled` under the named `DRAIN_TIMEOUT_MS` constant ([#L9](../../../../../src/StateChannelEventListener.ts#L9)). `stop()` calls it after raising the generation ([#L57](../../../../../src/StateChannelEventListener.ts#L57)), and `StateManager.resetChannel()` calls it directly after `clearChannelId()`, so a channel reset drains already scheduled log work with the same bound without marking the listener disposed — the listener keeps serving the next channel's `setChannelId`.
+
+`drain()` reports its outcome rather than swallowing it: it returns the boolean `waitForScheduled` produces, `true` when everything scheduled settled and `false` when the bound ran out with work still running ([#L68](../../../../../src/StateChannelEventListener.ts#L68)). Only the channel reset acts on it — `stop()` is on the way to disposal, where an unfinished handler has no next channel to leak into, so it keeps ignoring the result. The reset does not, because a handler that outlives the bound would resume against the next channel; it turns `false` into a throw, and the leave service turns that into a terminal shutdown ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents        |

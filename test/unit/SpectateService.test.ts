@@ -36,6 +36,84 @@ describe("Unit: SpectateService", function () {
         );
     });
 
+    it("a sync outcome from an earlier channel generation does not cut its responder", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                // Undecodable bytes take the ordinary reject path; the stale
+                // generation is what must keep it from reaching the peer.
+                const accepted = await spectate.applySyncResponse(
+                    args.responder,
+                    { channelId: sm.channelId },
+                    "0x1234",
+                    sm.channelGeneration - 1
+                );
+                return {
+                    accepted,
+                    blacklisted: sm.p2pManager.isBlacklisted(args.responder),
+                    connected:
+                        !!sm.p2pManager.profileManager.getTransportByEvmAddress(
+                            args.responder
+                        )
+                };
+            },
+            { responder: h.getPeer(0).address }
+        );
+
+        expect(result).to.deep.equal({
+            accepted: false,
+            blacklisted: false,
+            connected: true
+        });
+    });
+
+    it("an old sync settling late leaves a newer sync's in-flight entry in place", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const inFlight: Map<
+                    string,
+                    { request: SyncRequest; result: Promise<boolean> }
+                > = spectate["inFlightByPeerAddress"];
+                const runSync = spectate["runSync"];
+                // Single-use hold: the old sync stays in flight until released.
+                let release!: () => void;
+                const held = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                spectate["runSync"] = async () => {
+                    await held;
+                    return false;
+                };
+                try {
+                    const oldSync = spectate.sync(args.responder, sm.channelId);
+                    // What a channel reset does, then a newer sync registers.
+                    spectate.reset();
+                    const newer = {
+                        request: { channelId: sm.channelId },
+                        result: Promise.resolve(true)
+                    };
+                    inFlight.set(args.responder, newer);
+                    release();
+                    await oldSync;
+                    return inFlight.get(args.responder) === newer;
+                } finally {
+                    spectate["runSync"] = runSync;
+                    inFlight.clear();
+                }
+            },
+            { responder: ethers.getAddress(h.getPeer(0).address) }
+        );
+
+        expect(result).to.equal(true);
+    });
+
     it("concurrent source syncs accept when a second persist overwrites the first reduction", async function () {
         await assertConcurrentSyncWindowOverwrite(TestSession.getHarness());
     });

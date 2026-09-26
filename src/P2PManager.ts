@@ -30,6 +30,14 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
+// The channel is being given up and every peer is going with it; a verdict,
+// suspension or strike recorded now would belong to no channel. A verdict
+// outlives the reset by design, and a suspension or strike recorded after the
+// release has cleared them would too, so either would follow the peer into
+// the next channel.
+const NO_VERDICT_WHILE_RELEASING =
+    "Disconnecting peer without a verdict: the channel is being released";
+
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     public readonly rpcRouter: NetworkRpcRouter<this>;
     stateManager: StateManager<TCustomRpc>;
@@ -47,6 +55,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     private disposalPromise?: Promise<void>;
+    // The channel topic this runtime joined, left again by the channel reset.
+    private channelDiscoveryKey?: string;
     private readonly unsubscribeHandshakeCompleted: () => void;
     // Settle the initial-sync wait when the runtime leaves OPENED for any
     // reason other than the sync request itself: chain genesis moves the
@@ -152,6 +162,53 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         return this.disposalPromise !== undefined;
     }
 
+    /**
+     * Channel reset: leave the channel's discovery topic, drop every peer, and
+     * forget every profile except blacklisted ones. The swarm and the custom
+     * RPC root survive. The initial-sync latch is re-armed separately, once
+     * the reset's status change is done.
+     */
+    public async resetChannel(): Promise<void> {
+        await runCleanup(
+            () => this.leaveChannelDiscovery(),
+            () => this.localRpc.resetChannel(),
+            // disconnectAll rejects each transport's pending RPCs; the profile
+            // release then reaches transports registered but never opened
+            // (lobby, handoff).
+            () => this.disconnectAll(),
+            () => this.profileManager.releaseChannelPeers()
+        );
+    }
+
+    /** Join the selected channel's topic and remember it for the reset. */
+    public async joinChannelDiscovery(discoveryKey: string): Promise<void> {
+        this.channelDiscoveryKey = ethers.hexlify(discoveryKey);
+        await this.joinDiscoveryKey(discoveryKey);
+    }
+
+    public async leaveChannelDiscovery(): Promise<void> {
+        const discoveryKey = this.channelDiscoveryKey;
+        if (!discoveryKey) return;
+        this.channelDiscoveryKey = undefined;
+        await this.leaveDiscoveryKey(discoveryKey);
+    }
+
+    /**
+     * Re-arm the initial-sync latch so the next channel waits for its own
+     * first sync. The latch settles on any status change out of OPENED, so
+     * this must run after the reset has set its own status.
+     */
+    public rearmInitialSync(): void {
+        // A wait created for the old channel must not hang: settle it as failed
+        // before the latch is re-armed for the next one.
+        this.settleInitialSync(false);
+        this.initialSyncStarted = false;
+        this.initialSyncSettled = false;
+        this.initialSyncOutcome = false;
+        this.initialSyncPromise = undefined;
+        this.resolveInitialSync = undefined;
+    }
+
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
         const stateManager = this.stateManager;
         if (stateManager.isDisposed) return;
@@ -224,6 +281,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.initialSyncStarted = true;
         this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
+        const generation = stateManager.channelGeneration;
         const success = await this.localRpc.spectateService.sync(
             peerAddress,
             stateManager.channelId,
@@ -231,6 +289,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             undefined,
             stateManager.timeConfig.agreementTime * 2 * 1000
         );
+        // The runtime left that channel while the sync ran. Its result belongs
+        // to no current wait, and settling now would mark the next channel's
+        // re-armed initial sync as already done.
+        if (stateManager.isStaleChannelWork(generation)) return;
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
@@ -274,6 +336,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         const initialSync = waitForInitialSync
             ? this.getInitialSyncPromise()
             : undefined;
+        // A leave can settle while the join is in flight. The reset settles
+        // this wait itself and re-arms the latch for the next channel, which a
+        // settle from here would then mark as already done.
+        const generation = this.stateManager.channelGeneration;
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
@@ -304,11 +370,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // the join finishes in the background under that disposal. Any other
         // settlement keeps waiting for the join as before.
         await Promise.race([join, initialSync]);
+        if (this.stateManager.isStaleChannelWork(generation)) return;
         if (this.stateManager.isDisposed) {
             this.settleInitialSync(false);
             return;
         }
         await join;
+        if (this.stateManager.isStaleChannelWork(generation)) return;
         // The status may have left OPENED during the discovery join (chain
         // genesis, abort). Nothing later would settle the wait, so settle now.
         if (this.stateManager.isDisposed) {
@@ -416,6 +484,18 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // Transports may come from another module graph, so the structural
         // check decides, not `instanceof`.
         const isTransport = isNetworkTransport(peer);
+        if (
+            policy.tier !== DisconnectTier.ALLOW &&
+            this.stateManager.isResettingChannel
+        ) {
+            this.logger.warn(
+                NO_VERDICT_WHILE_RELEASING,
+                isTransport
+                    ? LoggerUtils.getTransportMetadata(peer)
+                    : { peerAddress: peer, reason }
+            );
+            policy = DisconnectPolicy.ALLOW;
+        }
         const profile = isTransport
             ? this.profileManager.getProfileForFault(peer)
             : this.profileManager.getProfileByEvmAddress(peer);

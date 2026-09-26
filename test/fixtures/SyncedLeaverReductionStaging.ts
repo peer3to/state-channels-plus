@@ -61,8 +61,10 @@ export async function assertSyncedLeaverSkipsSubmission(
         );
         await application.release();
         await leave;
+        // The leaver passed through SYNCED when the chain removed it; the
+        // settled leave then reset the runtime to its pre-channel state.
         expect(await h.control(target).query.getStatus().request()).to.equal(
-            Status.SYNCED
+            Status.NOT_OPENED
         );
         // Leave completion can precede the reduction attempt's final reads.
         await waitFor(

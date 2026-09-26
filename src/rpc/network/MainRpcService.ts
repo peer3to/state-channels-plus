@@ -50,6 +50,20 @@ class MainRpcService {
     ready(): Promise<void> | void {}
 
     /**
+     * Channel-reset hook for custom RPC roots. `StateManager.resetChannel()`
+     * awaits it while the runtime gives up one channel to serve another, so a
+     * root can drop channel-scoped state it would otherwise carry over.
+     * Overrides must call `super.resetChannel()` so lobby, negotiation,
+     * fork-acknowledgement, and spectate state is cleared.
+     */
+    async resetChannel(): Promise<void> {
+        await this.openChannelNegotiationService.reset();
+        await this.lobbyMatchingService.reset();
+        this.isForkDisputedService.reset();
+        this.spectateService.reset();
+    }
+
+    /**
      * Runtime-shutdown hook for custom RPC roots. `StateManager.dispose()`
      * awaits it before tearing down the p2p manager, timeout manager, and EVM,
      * so a root can settle waits and drain async work. Overrides must call

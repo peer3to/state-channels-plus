@@ -49,6 +49,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
+    /** Channel reset: drop sync dedupe entries for the old channel's peers. */
+    public reset(): void {
+        this.inFlightByPeerAddress.clear();
+    }
+
     public async sync(
         peerAddress: Address,
         channelId: ChannelId,
@@ -88,14 +93,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             syncRequest,
             timeoutMs
         );
-        this.inFlightByPeerAddress.set(normalizedPeerAddress, {
-            request: syncRequest,
-            result: attempt
-        });
+        const entry = { request: syncRequest, result: attempt };
+        this.inFlightByPeerAddress.set(normalizedPeerAddress, entry);
         try {
             return await attempt;
         } finally {
-            this.inFlightByPeerAddress.delete(normalizedPeerAddress);
+            // A channel reset clears this map, and the next channel may have
+            // registered its own sync to the same peer since: leave that one.
+            if (this.inFlightByPeerAddress.get(normalizedPeerAddress) === entry)
+                this.inFlightByPeerAddress.delete(normalizedPeerAddress);
         }
     }
 
@@ -104,6 +110,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         timeoutMs: number
     ): Promise<boolean> {
+        // Captured before the request: a response applied after the runtime
+        // left this channel must not write into the next one.
+        const generation = this.p2pManager.stateManager.channelGeneration;
         let response: { encodedSyncPayload: Bytes };
         try {
             response = await this.remoteRpc.spectateService
@@ -116,6 +125,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
+            // A request for a channel the runtime has since left says nothing
+            // about the peer in the current one.
+            if (this.p2pManager.stateManager.isStaleChannelWork(generation)) {
+                return false;
+            }
             this.p2pManager.disconnectConnection(
                 normalizedPeerAddress,
                 DisconnectPolicy.allowRetry()
@@ -126,7 +140,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return await this.applySyncResponse(
                 normalizedPeerAddress,
                 syncRequest,
-                response.encodedSyncPayload
+                response.encodedSyncPayload,
+                generation
             );
         } catch (error) {
             // A payload that cannot even be applied is Byzantine evidence.
@@ -134,11 +149,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            return this.rejectSync(
                 normalizedPeerAddress,
-                "sync payload failed to apply"
+                "failed to apply",
+                generation
             );
-            return false;
         }
     }
 
@@ -153,9 +168,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
-        encodedSyncPayload: Bytes
+        encodedSyncPayload: Bytes,
+        generation = this.p2pManager.stateManager.channelGeneration
     ): Promise<boolean> {
         const channelId = syncRequest.channelId;
+        // Nothing below may touch the runtime once it has left this channel:
+        // the first step already writes to the local EVM. Checked before the
+        // payload is decoded, which the stale response would only discard.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return false;
+        // Every rejection below is judged against the same peer and channel.
+        const reject = (reason: string) =>
+            this.rejectSync(peerAddress, reason, generation);
 
         try {
             // Decode inside the try: a malicious/broken peer can return bytes
@@ -211,8 +235,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const diamondStateMachine = stateManager.diamondStateMachine;
 
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
-            const onChainSnapshot =
-                await this.fetchAndPersistOnChainSnapshot(channelId);
+            const onChainSnapshot = await this.fetchAndPersistOnChainSnapshot(
+                channelId,
+                generation
+            );
+            if (!onChainSnapshot) return false;
             let finalForkId = onChainSnapshot.forkID;
 
             // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
@@ -246,8 +273,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const onChainDisputeWindows =
                 await this.fetchAndPersistOnChainDisputeWindows(
                     channelId,
-                    forkIds
+                    forkIds,
+                    generation
                 );
+            if (!onChainDisputeWindows) return false;
 
             let notReducedCount = 0;
             const disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[] =
@@ -260,12 +289,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         dw.forkId
                     );
                 if (!windowExists || !isExpired)
-                    return this.rejectSync(
-                        peerAddress,
-                        "kill period not expired"
-                    );
+                    return reject("kill period not expired");
 
                 // 2.3) reduce them if they're not already reduced
+                if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+                    return false;
                 const isReducedAndFinal = finalizedByFork.get(dw.forkId);
                 if (!isReducedAndFinal) {
                     disputeWindowsThatNeedToBeReducedOnChain.push(dw);
@@ -284,10 +312,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                     // 2.4) ** If more than 1  has to be reduced -> abort **
                     if (++notReducedCount > 1)
-                        return this.rejectSync(
-                            peerAddress,
-                            "more than one unreduced window"
-                        );
+                        return reject("more than one unreduced window");
                 }
 
                 // A successful reduction already checks the expected fork in Solidity.
@@ -299,10 +324,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         (window) => window.forkId === dw.forkId
                     )!;
                     if (_dw.reducedResult.forkId != dw.reducedForkId)
-                        return this.rejectSync(
-                            peerAddress,
-                            "reduced fork mismatch"
-                        );
+                        return reject("reduced fork mismatch");
                 }
                 // if the above call fails -> local evm will throw -> catch and abort
                 finalForkId = dw.reducedForkId;
@@ -326,8 +348,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 isGenesisValid &&
                 stateHashMatch;
 
-            if (!isCorrectGenesis)
-                return this.rejectSync(peerAddress, "genesis snapshot invalid");
+            if (!isCorrectGenesis) return reject("genesis snapshot invalid");
 
             // optimization: if the on-chain snapshot is on the same fork but more advanced than what
             // peers proved, reject before running any contract verification.
@@ -344,10 +365,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 this.logger.debug(
                     `applySyncResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
                 );
-                return this.rejectSync(
-                    peerAddress,
-                    "on-chain height exceeds proved height"
-                );
+                return reject("on-chain height exceeds proved height");
             }
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
@@ -371,10 +389,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             }
 
             if (!areValidExitBlocks)
-                return this.rejectSync(
-                    peerAddress,
-                    "pre-genesis outbound blocks invalid"
-                );
+                return reject("pre-genesis outbound blocks invalid");
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
             // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
@@ -387,10 +402,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         finalForkId
                     );
                 if (Number(_timestamp) != 0)
-                    return this.rejectSync(
-                        peerAddress,
-                        "latest fork is disputed"
-                    );
+                    return reject("latest fork is disputed");
             } else {
                 // 2.8.2) (requested)
                 if (
@@ -399,10 +411,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         (window) => window.forkId === syncRequest.forkId
                     )
                 )
-                    return this.rejectSync(
-                        peerAddress,
-                        "requested fork is not the latest"
-                    );
+                    return reject("requested fork is not the latest");
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
@@ -413,17 +422,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     syncPayload.milestoneSnapshots,
                     syncPayload.latestForkGenesisSnapshot
                 );
-            if (!isValid)
-                return this.rejectSync(peerAddress, "milestones invalid");
+            if (!isValid) return reject("milestones invalid");
 
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
                 hash(syncPayload.latestFinalizedEncodedState)
             )
-                return this.rejectSync(
-                    peerAddress,
-                    "finalized state hash mismatch"
-                );
+                return reject("finalized state hash mismatch");
 
             // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             areValidExitBlocks =
@@ -433,10 +438,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     latestFinalizedSnapshot.snapshotData
                 );
             if (!areValidExitBlocks)
-                return this.rejectSync(
-                    peerAddress,
-                    "latest-fork outbound blocks invalid"
-                );
+                return reject("latest-fork outbound blocks invalid");
 
             // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
             const isValidBalance =
@@ -445,8 +447,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     latestFinalizedSnapshot.snapshotData,
                     syncPayload.latestFinalizedEncodedState
                 );
-            if (!isValidBalance)
-                return this.rejectSync(peerAddress, "balance invariant failed");
+            if (!isValidBalance) return reject("balance invariant failed");
 
             // 3) Finally - staticcall multicall to deduct failure/success -> on failure abort
             const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
@@ -456,18 +457,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 disputeWindowsThatNeedToBeReducedOnChain
             );
             if (!isMulticallSuccess)
-                return this.rejectSync(
-                    peerAddress,
-                    "multicall simulation failed"
-                );
+                return reject("multicall simulation failed");
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            const { shouldAbort } = await this.persistSyncPayload(syncPayload);
-            if (shouldAbort)
-                return this.rejectSync(
-                    peerAddress,
-                    "payload persistence aborted"
-                );
+            const { shouldAbort, stale } = await this.persistSyncPayload(
+                syncPayload,
+                generation
+            );
+            // Not the peer's fault: the runtime left the channel mid-sync.
+            if (stale) return false;
+            if (shouldAbort) return reject("payload persistence aborted");
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =
@@ -488,6 +487,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 })
             );
             for (const bc of blockConfirmations) {
+                // Re-checked per block: each ingest awaits the state mutex,
+                // which a reset can take in between.
+                if (stateManager.isStaleChannelWork(generation)) return false;
                 try {
                     const isOk =
                         await stateManager.blockIngestService.onBlockConfirmationStruct(
@@ -497,20 +499,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                                     stateManager.spectatingValidationStrategy
                             }
                         );
-                    if (!isOk)
-                        return this.rejectSync(
-                            peerAddress,
-                            "block confirmation rejected"
-                        );
+                    if (!isOk) return reject("block confirmation rejected");
                 } catch (e) {
                     this.logger.error(
                         `Error processing block confirmation during spectate sync`,
                         { error: e }
                     );
-                    return this.rejectSync(
-                        peerAddress,
-                        "block confirmation threw"
-                    );
+                    return reject("block confirmation threw");
                 }
             }
             this.logger.debug(
@@ -528,19 +523,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
                         syncPayload.stateProof
                     );
-                if (!hasBlock)
-                    return this.rejectSync(
-                        peerAddress,
-                        "state proof has no block"
-                    );
+                if (!hasBlock) return reject("state proof has no block");
                 if (
                     Number(latestBlock.transaction.header.transactionCnt) <
                     syncRequest.blockHeight
                 )
-                    return this.rejectSync(
-                        peerAddress,
-                        "proved height is below request"
-                    );
+                    return reject("proved height is below request");
             }
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
@@ -548,7 +536,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return true;
         } catch (e) {
             this.logger.warn(e);
-            return this.rejectSync(peerAddress, "verification threw");
+            return reject("verification threw");
         }
     }
 
@@ -840,8 +828,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * Fetch latest on-chain snapshot
      */
     public async fetchAndPersistOnChainSnapshot(
-        channelId: ChannelId
-    ): Promise<StateSnapshot> {
+        channelId: ChannelId,
+        generation: number
+    ): Promise<StateSnapshot | undefined> {
         // Fetch the latest on-chain snapshot from RPC node
         // Assume it's true since it's on-chain
         const currentOnChainSnapshot = StateSnapshot.from(
@@ -849,6 +838,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 channelId
             )
         );
+        // The caller's fence is upstream of this read. Reconnecting to the
+        // same channel restores the ID the event handler checks, so only the
+        // generation still tells the old snapshot from the new channel's.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return undefined;
         // sync our local EVM to it
         await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
@@ -863,7 +857,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      */
     public async fetchAndPersistOnChainDisputeWindows(
         channelId: ChannelId,
-        forkIds: ForkId[]
+        forkIds: ForkId[],
+        generation: number
     ) {
         const disputeWindows =
             await this.p2pManager.stateManager.stateChannelManagerContract.getDisputeWindows(
@@ -871,7 +866,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 forkIds
             );
 
+        // Writes straight into the local diamond, with no channel ID check of
+        // its own between it and the reused runtime.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return undefined;
+
         for (const dw of disputeWindows) {
+            // Each write is an await the reset can land in; the rest stand down.
+            if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+                return undefined;
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.persistDisputeWindow(
                 channelId,
                 dw
@@ -1017,11 +1020,21 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     public async persistSyncPayload(
-        syncPayload: SyncPayload
-    ): Promise<{ shouldAbort: boolean }> {
+        syncPayload: SyncPayload,
+        generation?: number
+    ): Promise<{ shouldAbort: boolean; stale?: boolean }> {
         const stateManager = this.p2pManager.stateManager;
         return await stateManager.withMutex(
             async () => {
+                // Checked under the mutex the channel reset clears storage
+                // under, so a payload lands either before that clear (and is
+                // wiped by it) or not at all.
+                if (
+                    generation !== undefined &&
+                    stateManager.isStaleChannelWork(generation)
+                ) {
+                    return { shouldAbort: false, stale: true };
+                }
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
 
@@ -1166,7 +1179,23 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    private rejectSync(peerAddress: string, reason: string): false {
+    /**
+     * Fail a sync and cut its responder. A sync that ran for a channel the
+     * runtime has since left fails without the cut: its outcome says nothing
+     * about the peer as a member of whatever channel the runtime is in now.
+     */
+    private rejectSync(
+        peerAddress: string,
+        reason: string,
+        generation: number
+    ): false {
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation)) {
+            this.logger.debug("applySyncResponse - dropping stale sync", {
+                peerAddress,
+                reason
+            });
+            return false;
+        }
         this.logger.debug("applySyncResponse - rejecting sync", {
             peerAddress,
             reason

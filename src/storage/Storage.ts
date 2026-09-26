@@ -20,26 +20,46 @@ import { Address } from "@/types/types";
 import { deepCopyProxy, getChecksumAddress } from "@/utils";
 
 export class Storage {
-    public readonly blocks: BlockStorage;
-    public readonly inboundMessages: MessageBlockStorage;
-    public readonly outboundMessages: MessageBlockStorage;
-    public readonly stateSnapshots: StateSnapshotStorage;
-    public readonly stateMachineStates: StateMachineStateStorage;
-    public readonly participantSetChanges: ParticipantSetChangeStorage;
-    public readonly queues: QueueStorage;
-    public readonly disputes: DisputeStorage;
-    public readonly fraudProofs: FraudProofStorage;
-    public readonly disputeFraudProofs: DisputeFraudProofStorage;
-    public readonly timeout: TimeoutStorage;
-    public readonly forceExit: ForceExitStorage;
-    public readonly forceJoin: ForceJoinStorage;
-    public readonly blockCalldata: BlockCalldataStorage;
-    public readonly eventSync: EventSyncStorage;
+    public blocks!: BlockStorage;
+    public inboundMessages!: MessageBlockStorage;
+    public outboundMessages!: MessageBlockStorage;
+    public stateSnapshots!: StateSnapshotStorage;
+    public stateMachineStates!: StateMachineStateStorage;
+    public participantSetChanges!: ParticipantSetChangeStorage;
+    public queues!: QueueStorage;
+    public disputes!: DisputeStorage;
+    public fraudProofs!: FraudProofStorage;
+    public disputeFraudProofs!: DisputeFraudProofStorage;
+    public timeout!: TimeoutStorage;
+    public forceExit!: ForceExitStorage;
+    public forceJoin!: ForceJoinStorage;
+    public blockCalldata!: BlockCalldataStorage;
+    public eventSync!: EventSyncStorage;
+    // Not channel-scoped: a blacklist verdict follows the identity into the
+    // next channel, so `clear` keeps this store.
     public readonly blacklist: BlacklistStorage;
+    private readonly maxChannelParticipants?: number;
 
     // `maxChannelParticipants` comes from the deployed contract, so the queue's
     // retention bound follows the chain instead of restating it.
     constructor(maxChannelParticipants?: number) {
+        this.maxChannelParticipants = maxChannelParticipants;
+        this.blacklist = deepCopyProxy(new BlacklistStorage());
+        this.initStores();
+        return deepCopyProxy(this);
+    }
+
+    /**
+     * Drop every channel-scoped entry by rebuilding the sub-stores. Consumers
+     * hold this aggregate, never a sub-store, and read each one through the
+     * proxy on every access, so fresh instances are visible everywhere at once
+     * and no sub-store has to enumerate its own fields.
+     */
+    clear(): void {
+        this.initStores();
+    }
+
+    private initStores(): void {
         this.blocks = deepCopyProxy(new BlockStorage());
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
@@ -48,7 +68,9 @@ export class Storage {
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage()
         );
-        this.queues = deepCopyProxy(new QueueStorage(maxChannelParticipants));
+        this.queues = deepCopyProxy(
+            new QueueStorage(this.maxChannelParticipants)
+        );
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());
         this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());
@@ -57,8 +79,6 @@ export class Storage {
         this.forceJoin = deepCopyProxy(new ForceJoinStorage());
         this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
         this.eventSync = deepCopyProxy(new EventSyncStorage());
-        this.blacklist = deepCopyProxy(new BlacklistStorage());
-        return deepCopyProxy(this);
     }
 
     /**

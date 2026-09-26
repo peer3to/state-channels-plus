@@ -81,6 +81,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Chain-only dispute intake with dedup and exact binding ([`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)); adopt-or-challenge on foreign reductions.
 
+- `reset()` drops the in-flight dispute dedupe map ([#L62](../../../../../../src/eventHandlers/EventHandler.ts#L62)), so a dispute hash seen on the channel just left cannot suppress handling of the same hash on the next one; this is the event-handler share of the ordered non-terminal release in [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.
@@ -115,8 +117,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 - [DisputeValidationService](../stateManager/dispute/DisputeValidationService.ts.md), [DisputeManager](../disputeManager/DisputeManager.ts.md), [ReductionManager](../stateManager/reduction/ReductionManager.ts.md), [IsForkDisputedService](../rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md).
 
-# Terminal leave contribution
+# Channel leave and reset contribution
 
-`StateSnapshotUpdated` accepts an otherwise unknown snapshot when it proves removal for a runtime with a pending terminal leave. It lets reduction converge instead of aborting, then rechecks leave completion after snapshot and reduced-fork event processing. The removal alone proves the signer is in neither on-chain set, so the branch assigns `SYNCED` without a pending-set read: the contract refuses a JOIN while the fork carries a dispute window, a same-fork snapshot post must consume every pending JOIN, and a reduction consumes the JOINs up to its window's expiry, so no posted snapshot can drop a signer whose JOIN is still pending ([`REQ-LIF-10-QR8NQ9.T1.P6`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p6)). This contributes to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+`StateSnapshotUpdated` accepts an otherwise unknown snapshot when it proves removal for a runtime with a pending channel leave. It lets reduction converge instead of aborting, then rechecks leave completion after snapshot and reduced-fork event processing. The removal alone proves the signer is in neither on-chain set, so the branch assigns `SYNCED` without a pending-set read: the contract refuses a JOIN while the fork carries a dispute window, a same-fork snapshot post must consume every pending JOIN, and a reduction consumes the JOINs up to its window's expiry, so no posted snapshot can drop a signer whose JOIN is still pending ([`REQ-LIF-10-QR8NQ9.T1.P6`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p6)). This contributes to [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).

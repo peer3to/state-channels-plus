@@ -31,6 +31,16 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
     }
 
     /**
+     * Channel reset: fork acknowledgements belong to the channel they were
+     * exchanged on, so none of them may survive into the next one.
+     */
+    public reset(): void {
+        this.peerAcknowledgementsByAddress.clear();
+        this.myAcknowledgementsByAddress.clear();
+        this.disputedForks.clear();
+    }
+
+    /**
      * Request all peers to acknowledge a disputed fork
      * This should be called when a dispute window is created on-chain.
      *
@@ -60,6 +70,12 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
         const snapshotAddresses = [...this.p2pManager.getConnectedPeers()];
         const timeoutMs =
             2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
+        // These requests outlive their channel: a leave settles while they are
+        // in flight, the reset cuts the transports, and every one of them
+        // rejects. Neither the answer nor the failure means anything then.
+        const generation = this.p2pManager.stateManager.channelGeneration;
+        const isStale = () =>
+            this.p2pManager.stateManager.isStaleChannelWork(generation);
 
         void Promise.all(
             snapshotAddresses.map(async (peerAddress) => {
@@ -68,6 +84,7 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                         await this.remoteRpc.isForkDisputedService
                             .onDisputeAcknowledgmentRequest(channelId, forkId)
                             .request(peerAddress, { timeoutMs });
+                    if (isStale()) return;
                     if (!acknowledged) {
                         // A refusal may be a lagging chain view, not proven
                         // misbehaviour: it spends the peer's retry bound.
@@ -89,6 +106,7 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                         peerAddress
                     );
                 } catch (error) {
+                    if (isStale()) return;
                     this.logger.debug(
                         `Dispute acknowledgment request failed for fork ${forkId}, disconnecting`,
                         {

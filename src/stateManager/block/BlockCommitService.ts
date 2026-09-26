@@ -168,8 +168,14 @@ export default class BlockCommitService {
 
         // step 11 - maybe post block on chain
         if (block.author === sm.signerAddress) {
+            // Timers stay armed through most of a channel release, and this one
+            // would send a transaction for the channel the runtime just left.
+            // Fenced by the channel generation rather than the fork, so a fork
+            // change within the same channel still posts the author's block.
+            const generation = sm.channelGeneration;
             sm.timeoutManager.scheduleTask(
                 () => {
+                    if (sm.isStaleChannelWork(generation)) return;
                     sm.calldataPostingService.maybePostBlockOnChain(block.hash);
                 },
                 sm.timeConfig.agreementTime * 1000,

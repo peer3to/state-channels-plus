@@ -393,10 +393,16 @@ export default class ReductionExecutor {
         }
     }
 
+    /**
+     * `generation` is the channel occupancy the submission belongs to. A
+     * resubmission passes its original one: captured afresh, a reset that
+     * landed while the first send failed would make it look current.
+     */
     private submitDetached(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
-        submission: { calldata: string[] }
+        submission: { calldata: string[] },
+        generation = this.stateManager.channelGeneration
     ): void {
         this.logger.info("Reduction transaction submit", {
             forkId,
@@ -406,10 +412,14 @@ export default class ReductionExecutor {
         const transaction = this.stateManager.stateChannelManagerContract
             .getGasLimit()
             .then((gasLimit) => {
-                // Disposal can land while the gas limit resolves; the chain
-                // write is the last reduction-owned effect and is re-checked
-                // right before it happens.
-                if (this.stateManager.isDisposed) return undefined;
+                // Disposal or a channel reset can land while the gas limit
+                // resolves; the chain write is the last reduction-owned effect
+                // and is re-checked right before it happens.
+                if (
+                    this.stateManager.isDisposed ||
+                    this.stateManager.isStaleChannelWork(generation)
+                )
+                    return undefined;
                 return this.stateManager.stateChannelManagerContract.multicall(
                     submission.calldata,
                     { gasLimit }
@@ -446,9 +456,16 @@ export default class ReductionExecutor {
                     adoptionFrozen &&
                     submission.calldata.length > 1
                 ) {
-                    this.submitDetached(forkId, candidate, {
-                        calldata: submission.calldata.slice(0, 1)
-                    });
+                    // The channel was left while the first send failed: the
+                    // reduce belongs to no current channel.
+                    if (this.stateManager.isStaleChannelWork(generation))
+                        return;
+                    this.submitDetached(
+                        forkId,
+                        candidate,
+                        { calldata: submission.calldata.slice(0, 1) },
+                        generation
+                    );
                     return;
                 }
                 if (handled && raceErrorName) {

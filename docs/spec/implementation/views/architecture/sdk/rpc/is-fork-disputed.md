@@ -13,7 +13,7 @@
 Implementation:
 [`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9),
 [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
-Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L354).
+Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L359).
 Evidence consumer:
 [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
 
@@ -58,7 +58,7 @@ sequenceDiagram
 
 The round is **relevance-gated**: it fires only when the disputed fork is the node's current
 fork, or the dispute is final and the node has a pending reduction operation for that fork
-([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L354)); late non-final
+([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L359)); late non-final
 events for already-resolved forks do not restart it. Dispute-event ordering and
 kill/counter-dispute sequencing around this trigger have known lifecycle races —
 [`OQ-25-E09XFR` (Minor SDK lifecycle races)](../../../../open-questions.md#oq-25-e09xfr).
@@ -97,6 +97,10 @@ delegated to a downstream pipeline:
 1. **Dispatch preconditions** _(dispatcher + guard, [./README.md](./README.md) §6.4/§5)_.
 2. **Sender attribution**: `senderTransport.peerAddress`; missing (unreachable behind the
    guard) → disconnect + blacklist of the addressless transport profile + throw (the requester's promise rejects).
+   2a. **Channel binding**: a request naming any channel but `stateManager.channelId` → plain close of
+   the asker's transport (`DisconnectPolicy.ALLOW`: no exclusion, suspension, or retry strike) +
+   throw, before any other check. The local diamond still holds a channel the runtime left, so no
+   answer read from it may be given for a channel this runtime no longer serves (§6.6).
 3. **Duplicate check** _(replay-rejecting, [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 2)_:
    `didIAcknowledgeDisputedFork(peerAddress, forkId)` — a second request for a fork already
    acknowledged **to this peer** is a protocol violation → disconnect + blacklist by address +
@@ -134,6 +138,13 @@ the dispute event handler. Algorithm:
       `onDisputeAcknowledgment` hook fires.
     - reply `false`, rejection (guard error, handler throw), transport error, or timeout →
       `disconnectAndBlacklistPeerByEvmAddress(peer)`.
+    - **Channel fence.** The round captures the runtime's channel generation before fanning out and
+      re-reads it on both consequence branches. The requests are detached and can outlive their
+      channel: a leave settles while they are in flight, the release cuts every transport, and each
+      one then rejects — without the fence, one reset would exclude every peer of the channel just
+      left. A moved generation returns from the per-peer task without recording or punishing
+      anything. (While the release is still running the P2P manager suppresses the verdict anyway;
+      the fence is what covers the window after it has finished.)
 4. Returns `true` (first occurrence) synchronously; outcomes land asynchronously.
 
 Response authenticity rests entirely on the correlation layer: only the addressed peer can
@@ -276,18 +287,26 @@ Proposed direction: require `channelId == stateManager.channelId` before stage 4
 same disconnect+blacklist as a false claim). **Open question:** confirm the check and whether
 rejecting foreign-channel queries breaks any intended multi-channel future.
 
+_Engineer decision (2026-09-26), channel binding only:_ the check now runs before stage 3 (stage 2a),
+and a mismatch costs a plain close with no verdict rather than a blacklist, because a reused runtime's
+honest former peers may still ask about the channel it left. Consequences (1) and the chain-read
+oracle are closed for the responder. The fork-only keying in (2) and (3) and signed
+acknowledgements remain open under [`OQ-36-WEN9T1`](../../../../open-questions.md#oq-36-wen9t1).
+
 ## 7. Failure outcomes
 
 Against the model doc's table ([./README.md](./README.md) §8):
 
-| Failure                                                           | Consequence                                                | Model-doc row                                       | Match                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicate ack request (responder)                                 | Disconnect + blacklist + request error                     | "Fork-not-disputed / duplicate dispute-ack request" | yes                                                                                                                                                                                                                                                       |
-| Fork not disputed (responder)                                     | Disconnect + blacklist + request error                     | same row                                            | yes                                                                                                                                                                                                                                                       |
-| Missing `peerAddress` (responder)                                 | Disconnect + addressless-profile blacklist + request error | service bullet §7                                   | yes                                                                                                                                                                                                                                                       |
-| **Malformed `channelId`/`forkId` / responder chain-read failure** | Request error only, **connection kept**                    | falls under generic "Request handler throws"        | **flag: the per-service row reads as if every responder failure blacklists; this path does not (§6.1) — and on the requester side the same error _does_ blacklist the responder (row below), so one fault produces asymmetric penalties on the two ends** |
-| Peer replies `false` / rejects / errors / times out (requester)   | Disconnect + blacklist by address                          | "Dispute-ack rejection/error/timeout (outgoing)"    | yes                                                                                                                                                                                                                                                       |
-| Response from non-addressed peer                                  | Disconnect + blacklist responder                           | correlation row                                     | yes (inherited)                                                                                                                                                                                                                                           |
+| Failure                                                           | Consequence                                                                                     | Model-doc row                                       | Match                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate ack request (responder)                                 | Disconnect + blacklist + request error                                                          | "Fork-not-disputed / duplicate dispute-ack request" | yes                                                                                                                                                                                                                                                       |
+| Request naming another channel (responder)                        | Plain close (reconnect allowed, no verdict) + request error                                     | none (post-reuse channel binding)                   | n/a                                                                                                                                                                                                                                                       |
+| Fork not disputed (responder)                                     | Disconnect + blacklist + request error                                                          | same row                                            | yes                                                                                                                                                                                                                                                       |
+| Missing `peerAddress` (responder)                                 | Disconnect + addressless-profile blacklist + request error                                      | service bullet §7                                   | yes                                                                                                                                                                                                                                                       |
+| **Malformed `channelId`/`forkId` / responder chain-read failure** | Request error only, **connection kept**                                                         | falls under generic "Request handler throws"        | **flag: the per-service row reads as if every responder failure blacklists; this path does not (§6.1) — and on the requester side the same error _does_ blacklist the responder (row below), so one fault produces asymmetric penalties on the two ends** |
+| Peer replies `false` / rejects / errors / times out (requester)   | Disconnect + blacklist by address, unless the runtime left the channel meanwhile — then nothing | "Dispute-ack rejection/error/timeout (outgoing)"    | yes                                                                                                                                                                                                                                                       |
+| Runtime left the channel under the responder's dispute reads      | Request error only, no acknowledgement recorded and no verdict on the asker                     | falls under generic "Request handler throws"        | yes — the requester's own fence discards the failure, so neither end penalises the other                                                                                                                                                                  |
+| Response from non-addressed peer                                  | Disconnect + blacklist responder                                                                | correlation row                                     | yes (inherited)                                                                                                                                                                                                                                           |
 
 ## 8. Assumptions, constraints & dependencies
 

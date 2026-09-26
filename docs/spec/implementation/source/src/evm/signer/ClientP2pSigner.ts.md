@@ -60,6 +60,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Signing confinement per the identity rules.
 
+- `leaveChannel()` forwards the host request with no timeout and returns its promise unchanged ([#L189](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L189)). It leaves the mirrored `isLeader` alone: the leader flag is application-owned with a single writer (`setIsLeader`, [#L120](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L120)), so the application that set it clears it, and neither the client nor the host reset touches it. Contributes to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+
 ## Specification contradictions
 
 None demonstrated.
@@ -89,8 +91,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Channel ownership and leave contribution
 
 The client exposes no channel-ID setter and forwards `leaveChannel` with no generic request timeout. Host
-lifecycle failures remain authoritative. The method is an internal route for `P2pInstance.leaveChannel`; a
-direct signer call does not dispose the outer runtime. This contributes to [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+lifecycle failures remain authoritative. The method is an internal route for `P2pInstance.leaveChannel`; it resolves once the host has
+observed settled removal and reset itself, and it disposes nothing. The mirrored `isLeader` is not part of the
+route: the writer role is application-owned, so the application clears it. This contributes to [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
 
