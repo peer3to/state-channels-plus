@@ -198,7 +198,11 @@ export default class MembershipService {
     public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
         const sm = this.stateManager;
         sm.storage.forceExit.setForceExit(true);
-        await sm.disputeManager.dispute(forkId);
+        // A lost race rolls the dispute marker back, so it reports false.
+        await sm.disputeManager.disputeToleratingLostRace(
+            forkId,
+            "startSelfRemovalDispute"
+        );
         return sm.storage.disputes.didIDispute(forkId);
     }
 
