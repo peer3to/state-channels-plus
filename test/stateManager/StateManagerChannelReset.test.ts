@@ -193,18 +193,25 @@ describe("StateManager.resetChannel", function () {
         const peer = h.getPeer(0);
         // A task already running when the release reaches the task drain, and
         // still running when its bound expires.
-        await h.execOnHost(peer, (sm) => {
-            let release: () => void = () => undefined;
-            Reflect.set(sm, "heldTaskRelease", () => release());
-            sm.timeoutManager.scheduleTask(
-                () =>
-                    new Promise<void>((resolve) => {
-                        release = resolve;
-                    }),
-                0,
-                "held task for the drain bound"
-            );
-        });
+        // Resolves only once the task is running: a leave sent while its timer
+        // is still pending would cancel it instead of draining it.
+        await h.execOnHost(
+            peer,
+            (sm) =>
+                new Promise<void>((started) => {
+                    let release: () => void = () => undefined;
+                    Reflect.set(sm, "heldTaskRelease", () => release());
+                    sm.timeoutManager.scheduleTask(
+                        () =>
+                            new Promise<void>((resolve) => {
+                                release = resolve;
+                                started();
+                            }),
+                        0,
+                        "held task for the drain bound"
+                    );
+                })
+        );
 
         await expect(peer.p2pInstance.leaveChannel()).to.be.rejectedWith(
             "cannot be reused"
