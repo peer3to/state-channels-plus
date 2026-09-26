@@ -919,6 +919,13 @@ describe("browser tier environment", function () {
         expect(output).to.contain("--no-browser");
     });
 
+    it("names the install command and --no-browser when no Chromium is installed", function () {
+        const output = runChromiumPreCheck(writeGateTree([]));
+        expect(output).to.match(/^FAILED /);
+        expect(output).to.contain("yarn playwright install chromium");
+        expect(output).to.contain("--no-browser");
+    });
+
     it("keeps the browser typecheck out of both worker prepare scripts", function () {
         // A worker prepares every run it serves, browser gates or not; the
         // typecheck belongs to runs that schedule a gate.
