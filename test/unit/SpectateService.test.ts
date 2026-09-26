@@ -9,6 +9,7 @@ import {
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
+    assertSyncKeepsChainDisputeConfirmation,
     assertSyncWindowReadRace
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
@@ -48,6 +49,9 @@ describe("Unit: SpectateService", function () {
     });
     it("successor sync succeeds before its genesis is installed without either blacklist", async function () {
         await assertComputedSuccessorSync(TestSession.getHarness(), true);
+    });
+    it("successor sync with extra dispute co-signatures keeps the stored on-chain dispute confirmation", async function () {
+        await assertSyncKeepsChainDisputeConfirmation(TestSession.getHarness());
     });
     it("pinned sync serves the exact current height", async function () {
         await assertPinnedHeight(TestSession.getHarness(), 0);

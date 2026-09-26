@@ -7,16 +7,29 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers } from "ethers";
 
+// Where a stored dispute confirmation copy came from.
+export enum DisputeConfirmationOrigin {
+    // A `DisputeCommitted` event: the chain accepted this copy.
+    CHAIN_EVENT,
+    // A peer's spectate-sync payload: nothing verifies its signatures.
+    SYNC
+}
+
 type StoreOptions = {
+    origin: DisputeConfirmationOrigin;
     hash?: Hash;
 };
 type DidIDispute = boolean;
+type StoredDisputeConfirmation = {
+    disputeConfirmation: DisputeConfirmationStruct;
+    origin: DisputeConfirmationOrigin;
+};
 
 export class DisputeStorage {
     // ====================================
     // STORAGE MAPS
     // ====================================
-    private disputes: Map<Hash, DisputeConfirmationStruct>;
+    private disputes: Map<Hash, StoredDisputeConfirmation>;
     private disputedForks: Map<ForkId, DidIDispute>;
 
     constructor() {
@@ -31,7 +44,7 @@ export class DisputeStorage {
     /*────────────────────────────────────────────────────────────────────────────
       STORE  DISPUTE 
     ────────────────────────────────────────────────────────────────────────────*/
-    storeDispute(dispute: SignedDisputeStruct, options?: StoreOptions): Hash {
+    storeDispute(dispute: SignedDisputeStruct, options: StoreOptions): Hash {
         // Convert SignedDispute to DisputeConfirmation (empty signatures)
         const disputeConfirmation: DisputeConfirmationStruct = {
             signedDispute: dispute,
@@ -50,33 +63,25 @@ export class DisputeStorage {
     ────────────────────────────────────────────────────────────────────────────*/
     storeDisputeConfirmation(
         disputeConfirmation: DisputeConfirmationStruct,
-        options?: StoreOptions
+        options: StoreOptions
     ): Hash {
         // Determine hash - use provided or compute
         const disputeHash =
-            options?.hash ??
+            options.hash ??
             ethers.keccak256(disputeConfirmation.signedDispute.encodedDispute);
 
-        const existingDispute = this.disputes.get(disputeHash);
-
-        if (existingDispute !== undefined) {
-            // Merge signatures
-            const signaturesSet = new Set(existingDispute.signatures);
-            for (const newSignature of disputeConfirmation.signatures) {
-                signaturesSet.add(newSignature);
-            }
-
-            const mergedDispute: DisputeConfirmationStruct = {
-                signedDispute: existingDispute.signedDispute,
-                signatures: Array.from(signaturesSet)
-            };
-
-            this.disputes.set(disputeHash, mergedDispute);
-            return disputeHash;
+        // Keep the first stored copy; never merge signatures. Only a chain
+        // event copy replaces a stored sync copy (REQ-DSTORE-1).
+        const existing = this.disputes.get(disputeHash);
+        const replacesSyncCopy =
+            existing?.origin === DisputeConfirmationOrigin.SYNC &&
+            options.origin === DisputeConfirmationOrigin.CHAIN_EVENT;
+        if (existing === undefined || replacesSyncCopy) {
+            this.disputes.set(disputeHash, {
+                disputeConfirmation,
+                origin: options.origin
+            });
         }
-        // If no existing dispute, store new dispute
-
-        this.disputes.set(disputeHash, disputeConfirmation);
         return disputeHash;
     }
 
@@ -87,7 +92,7 @@ export class DisputeStorage {
     getDisputeConfirmation(
         disputeHash: Hash
     ): DisputeConfirmationStruct | undefined {
-        return this.disputes.get(disputeHash);
+        return this.disputes.get(disputeHash)?.disputeConfirmation;
     }
 
     getDispute(disputeHash: Hash): DisputeStruct | undefined {

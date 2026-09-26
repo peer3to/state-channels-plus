@@ -69,7 +69,7 @@ what is specific to that module: its key space, data model, merge/update rules, 
 | [message-blocks.md](./message-blocks.md) | Inbound & outbound message-block stores | Hash-linked stream storage, tip pointers, backward range reads. |
 | [snapshots-and-states.md](./snapshots-and-states.md) | Snapshot store, state-machine-state store | Content-addressed snapshots and encoded states, genesis-by-fork index, the derived snapshot/state read paths. |
 | [participant-changes.md](./participant-changes.md) | Participant-set change points | Membership-change heights per fork and ordered range reads for milestone-hop construction. |
-| [dispute-evidence.md](./dispute-evidence.md) | Dispute store, fraud-proof store, dispute-fraud-proof store | Dispute confirmations with signature merge, disputed-fork and own-dispute flags, content-addressed proofs and their indexes. |
+| [dispute-evidence.md](./dispute-evidence.md) | Dispute store, fraud-proof store, dispute-fraud-proof store | Dispute confirmations with first-copy retention, disputed-fork and own-dispute flags, content-addressed proofs and their indexes. |
 | [calldata-and-timeouts.md](./calldata-and-timeouts.md) | Block-calldata store, timeout store | Calldata records keyed by fork/height/author with exact-hash matching; lowest-height timeout candidate per fork. |
 | [progress-markers.md](./progress-markers.md) | Event-sync, force-exit, force-join markers | Monotone chain-observation progress and local intent flags that survive across protocol phases. |
 

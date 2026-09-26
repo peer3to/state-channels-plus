@@ -3,7 +3,7 @@ import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ZeroHash } from "ethers";
+import { getBytes, keccak256, Wallet, ZeroHash } from "ethers";
 
 export async function assertComputedSuccessorSync(
     h: MathPeerTestHarness,
@@ -74,6 +74,126 @@ export async function assertComputedSuccessorSync(
                 .query.isBlacklisted(observer.address)
                 .request()
         ).to.equal(false);
+    } finally {
+        await hold.release();
+    }
+}
+
+/**
+ * The observer already stores the committed dispute from its on-chain event.
+ * The source's successor sync payload carries that dispute with extra
+ * co-signatures appended. The sync completes and the stored copy keeps the
+ * chain's signatures.
+ */
+export async function assertSyncKeepsChainDisputeConfirmation(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const source = h.getPeer(0);
+    const observer = h.getPeer(2);
+    const readStoredConfirmations = () =>
+        h.execOnHost(
+            observer,
+            async (sm, { forkId }) => {
+                const commitments =
+                    await sm.stateChannelManagerContract.getWindowCommitments(
+                        sm.channelId,
+                        forkId
+                    );
+                return commitments.map((commitment) => ({
+                    commitment,
+                    signatures: sm.storage.disputes
+                        .getDisputeConfirmation(commitment)
+                        ?.signatures.map(String)
+                }));
+            },
+            { forkId: sourceForkId }
+        );
+    const chainCopies = await readStoredConfirmations();
+    // The event path stored the chain's copy of every window commitment.
+    expect(chainCopies).to.not.have.lengthOf(0);
+    for (const chainCopy of chainCopies) {
+        expect(chainCopy.signatures, chainCopy.commitment).to.not.equal(
+            undefined
+        );
+    }
+    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
+        outcome: "hold",
+        at: "setState"
+    });
+    try {
+        await h.control(source).stub.startTryReduce(sourceForkId).request();
+        await waitFor(async () => (await hold.entered()) === 1);
+        const successor = await h.execOnHost(
+            source,
+            async (sm, { forkId }) => {
+                const disputes = await sm.agreementManager.getForkDisputes(
+                    (await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                        sm.channelId,
+                        forkId
+                    ))!
+                );
+                return (await sm.reductionManager.computeReductionLocally(
+                    forkId,
+                    disputes
+                ))!.reducedForkId;
+            },
+            { forkId: sourceForkId }
+        );
+        const response = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.remoteRpc.spectateService
+                    .onSpectateRequest({
+                        channelId: sm.channelId,
+                        forkId: args.forkId
+                    })
+                    .request(args.source),
+            { source: source.address, forkId: successor }
+        );
+        const payload = Codec.decode(
+            response.encodedSyncPayload,
+            Type.SyncPayload
+        );
+        const [window] = payload.disputeWindows;
+        expect(window.forkId).to.equal(sourceForkId);
+        const [supplied] = window.disputeConfirmations;
+        const disputeHash = keccak256(supplied.signedDispute.encodedDispute);
+        expect(chainCopies.map((copy) => copy.commitment)).to.include(
+            disputeHash
+        );
+        const extraSignatures = [
+            Wallet.createRandom().signMessageSync(getBytes(disputeHash)),
+            Wallet.createRandom().signMessageSync(getBytes(disputeHash))
+        ];
+        window.disputeConfirmations[0] = {
+            signedDispute: supplied.signedDispute,
+            signatures: [...supplied.signatures, ...extraSignatures]
+        };
+
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                forkId: successor,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+
+        expect(accepted).to.equal(true);
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            successor
+        );
+        expect(await readStoredConfirmations()).to.deep.equal(chainCopies);
     } finally {
         await hold.release();
     }

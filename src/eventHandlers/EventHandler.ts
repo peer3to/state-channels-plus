@@ -6,6 +6,7 @@ import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import Storage from "@/storage";
+import { DisputeConfirmationOrigin } from "@/storage/DisputeStorage";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -426,7 +427,12 @@ export class EventHandler {
         }
 
         if (isFinal) {
-            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+            this.storage.disputes.storeDisputeConfirmation(
+                disputeConfirmation,
+                {
+                    origin: DisputeConfirmationOrigin.CHAIN_EVENT
+                }
+            );
             let genesis: ReductionGenesis;
             try {
                 if (!disputeAuditingData) {
@@ -666,7 +672,9 @@ export class EventHandler {
         forkId: ForkId,
         disputeConfirmation: DisputeConfirmationStruct
     ): Promise<void> {
-        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation, {
+            origin: DisputeConfirmationOrigin.CHAIN_EVENT
+        });
         await P2pEventHooksUtils.notifyDisputeUpdate({
             channelId,
             forkId,
