@@ -236,7 +236,7 @@ export type RecordedDisputeSubmission = {
     gasLimit: string | null;
     /** Set once `dispute()` awaited the returned transaction. */
     waited: boolean;
-    /** Custom error a forwarded send or its `wait()` reverted with, or null. */
+    /** Custom error a forwarded send or its `wait()` reverted with, or the staged failure decoded the same way; null when it does not decode. */
     revert: { name: string; args: string[] } | null;
 };
 
@@ -2436,6 +2436,15 @@ export class StubService extends ANetworkRpcService<
                 revert: null
             };
             this.recordedDisputeSubmissions.push(entry);
+            // One decoder for real reverts and staged failures, so a staged
+            // error that would not decode shows as `revert: null` too.
+            const recordRevert = (error: unknown) => {
+                const decoded = tryDecodeCustomError(error);
+                entry.revert = decoded && {
+                    name: decoded.name,
+                    args: decoded.errorDescription.args.map(String)
+                };
+            };
             const hold = this.disputeSubmissionHold;
             if (hold) {
                 hold.held += 1;
@@ -2443,16 +2452,11 @@ export class StubService extends ANetworkRpcService<
             }
             const activeFailure = failuresRemaining > 0 ? failure : undefined;
             if (activeFailure) failuresRemaining -= 1;
+            if (activeFailure)
+                recordRevert(this.submissionFailure(activeFailure));
             if (activeFailure?.at === "send")
                 throw this.submissionFailure(activeFailure);
             if (forward && !activeFailure) {
-                const recordRevert = (error: unknown) => {
-                    const decoded = tryDecodeCustomError(error);
-                    entry.revert = decoded && {
-                        name: decoded.name,
-                        args: decoded.errorDescription.args.map(String)
-                    };
-                };
                 let tx: ContractTransactionResponse;
                 try {
                     tx = (await send()) as ContractTransactionResponse;

@@ -18,6 +18,20 @@ const LOST_RACE_REFUSAL = {
 } as const;
 
 /**
+ * The refusals each upload met, as the recorder decoded them. Pinning these to
+ * the lost-race error keeps the premise honest: a staged error that did not
+ * decode would be absorbed by `dispute()` as unclassified and pass the
+ * losing-side oracle without the containment doing anything.
+ */
+async function recordedRefusals(recorder: {
+    submissions: () => Promise<Array<{ revert: { name: string } | null }>>;
+}): Promise<Array<string | null>> {
+    return (await recorder.submissions()).map(
+        (submission) => submission.revert?.name ?? null
+    );
+}
+
+/**
  * Every honest observer of the same trigger uploads replacement evidence and
  * all but the first are refused, so the loser's handler must still succeed.
  * The trigger is a real on-chain event: a kill that empties the window, or a
@@ -44,7 +58,9 @@ export async function assertLostEvidenceRaceTolerated(
             h.event.protocolEventTimeoutMs(),
             50
         );
-        expect((await recorder.submissions()).length).to.equal(1);
+        expect(await recordedRefusals(recorder)).to.deep.equal([
+            LOST_RACE_REFUSAL.customError
+        ]);
     } finally {
         await recorder.restore();
     }
@@ -68,10 +84,9 @@ async function stageRealKill(h: MathPeerTestHarness) {
     await h.dispute.suppressDisputeInitiation(
         h.peers.filter((p) => p !== observer).map((p) => p.index)
     );
-    const recorder = await h.rpcStub.recordDisputeSubmissions(
-        observer.index,
-        { failWith: LOST_RACE_REFUSAL }
-    );
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        failWith: LOST_RACE_REFUSAL
+    });
     await h.tamper.postTamperedDispute(2, (dispute) => {
         dispute.outputSnapshotDataHash = id("lost-race-invalid-output");
     });
@@ -109,10 +124,9 @@ async function stageRealSlash(h: MathPeerTestHarness) {
         (p) => p !== applier && p.address !== offender.address
     )!;
     await h.control(observer).stub.restoreDisputeInitiation().request();
-    const recorder = await h.rpcStub.recordDisputeSubmissions(
-        observer.index,
-        { failWith: LOST_RACE_REFUSAL }
-    );
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index, {
+        failWith: LOST_RACE_REFUSAL
+    });
     // Single-use: a participant applying a stored proof outside a dispute,
     // which the routed facet function allows but the SDK never does itself.
     const slashBlock = await h.execOnHost(
@@ -137,7 +151,11 @@ async function stageRealSlash(h: MathPeerTestHarness) {
     );
     expect(await h.channelManager.isForkDisputed(h.channelId, h.activeForkId!))
         .to.be.false;
-    return { observerIndex: observer.index, triggerBlock: slashBlock, recorder };
+    return {
+        observerIndex: observer.index,
+        triggerBlock: slashBlock,
+        recorder
+    };
 }
 
 /**
@@ -208,8 +226,12 @@ export async function assertLostRaceCallerTolerated(
         );
         expect({
             ...outcome,
-            uploads: (await recorder.submissions()).length
-        }).to.deep.equal({ disputed: false, rejected: "", uploads: 1 });
+            refusals: await recordedRefusals(recorder)
+        }).to.deep.equal({
+            disputed: false,
+            rejected: "",
+            refusals: [LOST_RACE_REFUSAL.customError]
+        });
     } finally {
         await recorder.restore();
     }
@@ -249,7 +271,9 @@ export async function assertRequestDisputeLostRaceTolerated(
         // Drains every detached promise, the requested attempt included,
         // and throws on the first one that reached the error funnel.
         await TestSession.settleDetached();
-        expect(await recorder.submissions()).to.have.length(1);
+        expect(await recordedRefusals(recorder)).to.deep.equal([
+            LOST_RACE_REFUSAL.customError
+        ]);
     } finally {
         await recorder.restore();
     }

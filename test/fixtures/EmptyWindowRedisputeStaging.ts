@@ -99,8 +99,15 @@ export async function assertEmptyWindowRedispute(
             disposed: await new TargetedChannelJoinFixture(h).isDisposed(
                 targetPeer
             ),
-            uploads: (await refused.submissions()).length
-        }).to.deep.equal({ disposed: false, uploads: 1 });
+            // decoded as the lost-race error, so the containment is what
+            // kept the reducer alive, not an unclassified absorb
+            refusals: (await refused.submissions()).map(
+                (submission) => submission.revert?.name ?? null
+            )
+        }).to.deep.equal({
+            disposed: false,
+            refusals: ["RaceConditionDisputeEvidencePeriodExpired"]
+        });
         await refused.restore();
         return;
     }
