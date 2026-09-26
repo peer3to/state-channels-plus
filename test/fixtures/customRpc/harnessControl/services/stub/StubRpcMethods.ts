@@ -29,7 +29,13 @@ import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/Spec
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Status } from "@/types";
-import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
@@ -93,6 +99,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 "authoring",
                 "commit",
                 "signature",
+                "confirmation",
                 "confirmationValidation",
                 "proofConfirmationValidation",
                 "storedMerge",
@@ -2763,8 +2770,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public async startTimeoutConstruction(writer: string): Promise<boolean> {
-        return this.service.startTimeoutConstruction(writer);
+    public async startTimeoutConstruction(
+        writer: string,
+        height?: BlockHeight
+    ): Promise<boolean> {
+        return this.service.startTimeoutConstruction(writer, height);
     }
 
     public holdTimeoutBuild(): boolean {

@@ -526,6 +526,21 @@ describe("E2E: Join channel race conditions", function () {
                     existingPrepared.expectedForkId
                 )
             ).to.equal(false);
+            // pin why the chain refuses: the disputed-fork gate, not another check
+            let existingRevert: unknown;
+            try {
+                await existingParticipant.p2pInstance.stateChannelManagerContract.topUpBalance.staticCall(
+                    existingPrepared.confirmation,
+                    existingPrepared.expectedSnapshotHash,
+                    existingPrepared.expectedForkId
+                );
+                expect.fail("expected the disputed fork to refuse the top-up");
+            } catch (error) {
+                existingRevert = error;
+            }
+            expect(
+                tryDecodeCustomError(existingRevert)?.errorDescription.name
+            ).to.equal("RaceConditionJoinChannelForkDisputed");
 
             const pendingTopUpAmount = 222n;
             const pendingPrepared =
@@ -546,6 +561,27 @@ describe("E2E: Join channel race conditions", function () {
                     pendingPrepared.expectedForkId
                 )
             ).to.equal(false);
+            let pendingRevert: unknown;
+            try {
+                await joiner.p2pInstance.stateChannelManagerContract.topUpBalance.staticCall(
+                    pendingPrepared.confirmation,
+                    pendingPrepared.expectedSnapshotHash,
+                    pendingPrepared.expectedForkId
+                );
+                expect.fail("expected the disputed fork to refuse the top-up");
+            } catch (error) {
+                pendingRevert = error;
+            }
+            expect(
+                tryDecodeCustomError(pendingRevert)?.errorDescription.name
+            ).to.equal("RaceConditionJoinChannelForkDisputed");
+            // both refusals left the channel's deposits untouched
+            expect(
+                BigInt(
+                    (await h.channelManager.getChannelBalance(h.channelId))
+                        .totalDeposits.amount
+                )
+            ).to.equal(depositsBefore);
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,

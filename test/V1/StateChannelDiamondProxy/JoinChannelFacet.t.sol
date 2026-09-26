@@ -435,6 +435,37 @@ contract JoinChannelFacetTest is Test {
         assertFalse(harness.depositCalled());
     }
 
+    function test_topUpBalance_disputedForkRejected() public {
+        harness.seedChannel(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID, _eligibleParticipantPair(), address(0));
+        harness.seedDisputedFork(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID);
+
+        // an existing member topping up, countersigned by both threshold
+        // members -> only the undisputed-fork gate can reject it
+        JoinChannel memory topUp = JoinChannel({
+            channelId: DISPUTED_CHANNEL_ID,
+            participant: vm.addr(ELIGIBLE_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedTopUp = abi.encode(topUp);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedTopUp, signature: _sign(ELIGIBLE_PK, encodedTopUp)});
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedTopUp);
+        confirmation.signatures[1] = _sign(SLASHED_PK, encodedTopUp);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(DISPUTED_CHANNEL_ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionJoinChannelForkDisputed.selector, DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID)
+        );
+        vm.prank(topUp.participant);
+        harness.topUpBalance(confirmation, keccak256(abi.encode(snapshot)), DISPUTED_FORK_ID);
+
+        assertFalse(harness.depositCalled());
+    }
+
     /// The two-member eligibility set the threshold cases seed their channel
     /// with. Neither key is slashed on those channels, so the facet's threshold
     /// set is these two addresses in this order - hand-built here, never read

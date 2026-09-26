@@ -253,67 +253,85 @@ export async function assertHonestLeaverKillPeriodRefusal(
     // the chain refuses the post because the fork is disputed
     const { forkId, leaver, others, leaverReduction, send, rebuild } =
         await stageHeldLeaverExitPost(h);
+    let reductionReleased = false;
+    // the reduced state's terminal abort may already have removed the host
+    const releaseReduction = async () => {
+        if (reductionReleased || runtimeIsClosed(leaver.p2pInstance)) return;
+        reductionReleased = true;
+        try {
+            await leaverReduction.release();
+        } catch (error) {
+            // the abort can dispose the host while the release is in flight
+            if (!runtimeIsClosed(leaver.p2pInstance)) throw error;
+        }
+    };
     let signedAtDispute: { height: number } | null = null;
     let offender: number | undefined;
     let snapshotBeforeRelease: Hash | undefined;
     try {
-        await send.waitUntilHeld();
-        offender = (await h.query.getNextPeerToWrite()).index;
-        await h.byzantine.submitInvalidStateTransitionBlock(offender);
-        await h.assert.dispute.committedWait({
-            peersIndices: others.filter((index) => index !== offender),
-            expectedCount: 1
-        });
-        snapshotBeforeRelease = await h.query.getOnChainSnapshotHash();
-        // kill period still open before the release
-        const killPeriod = await h.query.killPeriod(forkId, others[0]!);
-        expect(killPeriod.windowExists).to.equal(true);
-        expect(killPeriod.isExpired).to.equal(false);
-        if (leaverDisputesFirst) {
-            // the leaver's own dispute of the invalid block leaves before the
-            // post is released: it lands, or parks behind the post's send
-            await rebuild.waitUntilHeld();
-            signedAtDispute = await h
-                .control(leaver)
-                .query.getLatestSignedBlockByParticipant(forkId, leaver.address)
-                .request();
-            await rebuild.release();
-            const observer = others.find((index) => index !== offender)!;
-            await waitFor(
-                async () =>
-                    (await send.waitUntilHeld()) > 1 ||
-                    (await findDisputeBy(
-                        h,
-                        observer,
+        try {
+            await send.waitUntilHeld();
+            offender = (await h.query.getNextPeerToWrite()).index;
+            await h.byzantine.submitInvalidStateTransitionBlock(offender);
+            await h.assert.dispute.committedWait({
+                peersIndices: others.filter((index) => index !== offender),
+                expectedCount: 1
+            });
+            snapshotBeforeRelease = await h.query.getOnChainSnapshotHash();
+            // kill period still open before the release
+            const killPeriod = await h.query.killPeriod(forkId, others[0]!);
+            expect(killPeriod.windowExists).to.equal(true);
+            expect(killPeriod.isExpired).to.equal(false);
+            if (leaverDisputesFirst) {
+                // the leaver's own dispute of the invalid block leaves before the
+                // post is released: it lands, or parks behind the post's send
+                await rebuild.waitUntilHeld();
+                signedAtDispute = await h
+                    .control(leaver)
+                    .query.getLatestSignedBlockByParticipant(
                         forkId,
                         leaver.address
-                    )) !== undefined
+                    )
+                    .request();
+                await rebuild.release();
+                const observer = others.find((index) => index !== offender)!;
+                await waitFor(
+                    async () =>
+                        (await send.waitUntilHeld()) > 1 ||
+                        (await findDisputeBy(
+                            h,
+                            observer,
+                            forkId,
+                            leaver.address
+                        )) !== undefined
+                );
+            }
+            // the chain refused the post for the disputed fork, not another reason
+            expect(await send.release()).to.equal(
+                "RaceConditionSnapshotUpdateDisputedFork"
             );
+            if (!leaverDisputesFirst) {
+                // the leaver's own dispute against the invalid block is already
+                // parked in construction -> keep it there until the refused post's
+                // fallback marks the exit, so it is captured as the self-removal
+                await waitFor(() =>
+                    h.control(leaver).query.getForceExit().request()
+                );
+                await rebuild.waitUntilHeld();
+                signedAtDispute = await h
+                    .control(leaver)
+                    .query.getLatestSignedBlockByParticipant(
+                        forkId,
+                        leaver.address
+                    )
+                    .request();
+            }
+        } finally {
+            await rebuild.release();
+            await send.release();
         }
-        // the chain refused the post for the disputed fork, not another reason
-        expect(await send.release()).to.equal(
-            "RaceConditionSnapshotUpdateDisputedFork"
-        );
-        if (!leaverDisputesFirst) {
-            // the leaver's own dispute against the invalid block is already
-            // parked in construction -> keep it there until the refused post's
-            // fallback marks the exit, so it is captured as the self-removal
-            await waitFor(() =>
-                h.control(leaver).query.getForceExit().request()
-            );
-            await rebuild.waitUntilHeld();
-            signedAtDispute = await h
-                .control(leaver)
-                .query.getLatestSignedBlockByParticipant(forkId, leaver.address)
-                .request();
-        }
-    } finally {
-        await rebuild.release();
-        await send.release();
-    }
 
-    const honest = others.filter((index) => index !== offender);
-    try {
+        const honest = others.filter((index) => index !== offender);
         const dispute = await assertLeaverDisputeIsLatestState(
             h,
             forkId,
@@ -366,15 +384,12 @@ export async function assertHonestLeaverKillPeriodRefusal(
                 )
             ).to.equal(false);
         }
-        // the leaver's parked reduction submit settles before quiesce; the
-        // reduced state's terminal abort may already have removed its host
-        if (!runtimeIsClosed(leaver.p2pInstance))
-            await leaverReduction.release();
+        // the leaver's parked reduction submit settles before quiesce
+        await releaseReduction();
         expect(
             (await h.quiesceHosts()).map((error) => error.message)
         ).to.deep.equal([]);
     } finally {
-        if (!runtimeIsClosed(leaver.p2pInstance))
-            await leaverReduction.release();
+        await releaseReduction();
     }
 }

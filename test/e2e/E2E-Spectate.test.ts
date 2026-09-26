@@ -1809,6 +1809,48 @@ describe("E2E: Spectate Service", function () {
             await restoreEvents(false);
             await h.rpcStub.cancelScheduledReductions(responderIndex);
         });
+
+        it("a spectator sees posted junk calldata → no forced timeout check and it stays synced", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.spectatorJoinedAndSynced();
+            const spectator = h.getPeer(3);
+            const forkId = h.activeForkId!;
+            // the participants' own disputes would move the spectator's fork
+            await h.dispute.suppressDisputeInitiation([0, 1, 2]);
+            const writerAddress = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            const writer = h.peers.find((p) => p.address === writerAddress)!;
+            const height = await h
+                .control(spectator)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const tasks = await h.rpcStub.recordScheduledTasks(spectator.index);
+            try {
+                h.event.resetEventSpies();
+                await h.byzantine.postJunkCalldataOnChain(writer.index, {
+                    height
+                });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [spectator.index]
+                );
+                // a spectator judges posted calldata with the spectating
+                // strategy: it never asks for a timeout
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith("timeoutParticipant")
+                    )
+                ).to.deep.equal([]);
+                expect(
+                    await h.control(spectator).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await tasks.restore();
+            }
+        });
     });
 
     describe("Pinned sync while the target fork opens a kill period", function () {

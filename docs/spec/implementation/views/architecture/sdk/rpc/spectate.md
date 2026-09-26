@@ -50,7 +50,7 @@ post-handshake sync against a participant peer
 ([`InitHandshakeService`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L28),
 when the local node is in `OPENED` status and the peer is a dispute-eligible participant), and the
 block queue's `requestSync` when a queued block cannot be linked
-([`BlockQueueManager`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L31)), which pins the
+([`BlockQueueManager`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L41)), which pins the
 block's `forkId` and `height`.
 
 **Observable contract.** A successful `sync` teleports local state to the peer's latest provable

@@ -26,6 +26,19 @@ export class TimeoutStorage {
         this.timeouts.set(forkId, timeout);
     }
 
+    // drops a refused plain timeout; a forced one stored since survives
+    deleteTimeout(forkId: ForkId, refused: TimeoutStruct): void {
+        const existingTimeout = this.timeouts.get(forkId);
+        if (
+            existingTimeout &&
+            BigInt(existingTimeout.blockHeight) ===
+                BigInt(refused.blockHeight) &&
+            existingTimeout.participant === refused.participant &&
+            !existingTimeout.isForced
+        )
+            this.timeouts.delete(forkId);
+    }
+
     // ====================================
     // READ
     // ====================================
