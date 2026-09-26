@@ -96,10 +96,10 @@ export async function assertAuthoredLeaveFallback(
             expect(await outcome).to.deep.equal({ error: null });
         } else {
             const result = await outcome;
+            // No window covers the fork, so neither refusal is a lost race the
+            // leave can wait out.
             expect(result.error).to.include(
-                failure === "evidence-expired"
-                    ? "RaceConditionDisputeEvidencePeriodExpired"
-                    : "Terminal channel leave failed to start a dispute"
+                "Terminal channel leave failed to start a dispute"
             );
             expect(
                 await h.control(leaver).query.didIDispute(forkId).request()
@@ -127,6 +127,7 @@ export async function assertExitFallbackFailureGuards() {
                 sm.forkId,
                 new Error("irrelevant exit failure")
             );
+            sm.leaveChannelService.onExitSelfRemovalNotStarted(sm.forkId);
         });
     await notify();
     const leave = peer.p2pInstance.leaveChannel();

@@ -501,11 +501,8 @@ export default class MembershipService {
                                     "Self-removal dispute did not start",
                                     { forkId: block.forkId }
                                 );
-                                sm.leaveChannelService.onExitFallbackFailed(
-                                    block.forkId,
-                                    new Error(
-                                        "Terminal channel leave failed to start a dispute"
-                                    )
+                                sm.leaveChannelService.onExitSelfRemovalNotStarted(
+                                    block.forkId
                                 );
                             }
                         } catch (disputeError) {
@@ -540,11 +537,8 @@ export default class MembershipService {
                                 "Self-removal dispute did not start",
                                 { forkId: persistedBlock.forkId }
                             );
-                            sm.leaveChannelService.onExitFallbackFailed(
-                                persistedBlock.forkId,
-                                new Error(
-                                    "Terminal channel leave failed to start a dispute"
-                                )
+                            sm.leaveChannelService.onExitSelfRemovalNotStarted(
+                                persistedBlock.forkId
                             );
                         }
                     } catch (error) {
