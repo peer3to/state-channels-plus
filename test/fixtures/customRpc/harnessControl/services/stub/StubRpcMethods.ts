@@ -404,6 +404,97 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /**
+     * Make this peer's chain-feed drain report work that outlived its bound,
+     * so a channel reset cannot finish and has to shut the runtime down.
+     */
+    public stubFailEventDrain(): boolean {
+        this.restoreFailEventDrain();
+        const listener = this.service.sm.stateChannelEventListener;
+        this.service.stubOriginals.set("eventDrainFailure", listener.drain);
+        Reflect.set(listener, "drain", async () => false);
+        return true;
+    }
+
+    public restoreFailEventDrain(): boolean {
+        const original = this.service.stubOriginals.get("eventDrainFailure");
+        if (original === undefined) return false;
+        Reflect.set(
+            this.service.sm.stateChannelEventListener,
+            "drain",
+            original
+        );
+        this.service.stubOriginals.delete("eventDrainFailure");
+        return true;
+    }
+
+    /** Start this peer's channel reset host-side and keep its outcome. */
+    public startChannelReset(): boolean {
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.channelResetOutcome = outcome;
+        void this.service.sm.resetChannel().then(
+            () => {
+                outcome.settled = true;
+            },
+            (error) => {
+                outcome.settled = true;
+                outcome.rejected =
+                    error instanceof Error ? error.message : String(error);
+            }
+        );
+        return true;
+    }
+
+    public getChannelResetOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.channelResetOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /**
+     * Record every disconnect requested on this peer with the tier it asked
+     * for, then forward it unchanged. A blacklist by address goes through the
+     * same entry point, so it is recorded too.
+     */
+    public stubRecordDisconnects(): boolean {
+        this.restoreRecordDisconnects();
+        const p2p = this.service.sm.p2pManager;
+        const original = p2p.disconnectConnection;
+        this.service.stubOriginals.set("recordedDisconnects", original);
+        this.service.recordedDisconnects.length = 0;
+        p2p.disconnectConnection = (peer, policy, ...rest) => {
+            this.service.recordedDisconnects.push({
+                peerAddress: String(
+                    typeof peer === "object" && "peerAddress" in peer
+                        ? peer.peerAddress
+                        : peer
+                ),
+                tier: policy.tier
+            });
+            return Reflect.apply(original, p2p, [peer, policy, ...rest]);
+        };
+        return true;
+    }
+
+    public getRecordedDisconnects(): { peerAddress: string; tier: string }[] {
+        return [...this.service.recordedDisconnects];
+    }
+
+    public restoreRecordDisconnects(): boolean {
+        const original = this.service.stubOriginals.get("recordedDisconnects");
+        if (original === undefined) return false;
+        Reflect.set(
+            this.service.sm.p2pManager,
+            "disconnectConnection",
+            original
+        );
+        this.service.stubOriginals.delete("recordedDisconnects");
+        return true;
+    }
+
     public restoreDropNetworkConfirmations(): boolean {
         const original = this.service.stubOriginals.get("networkConfirmations");
         if (original === undefined) return false;
@@ -1731,6 +1822,26 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Hold the discovery join for `holdMs` so an abort can land inside it. */
     public stubHoldDiscoveryJoin(holdMs: number): boolean {
         this.service.installDiscoveryJoinHold(holdMs);
+        return true;
+    }
+
+    /** Park this peer's local-discovery joins until released. */
+    public stubGateDiscoveryJoin(): boolean {
+        this.service.installDiscoveryJoinGate();
+        return true;
+    }
+
+    /** Joins that reached the gate, and joins that finished after it. */
+    public getDiscoveryJoinGateCounts(): {
+        entered: number;
+        completed: number;
+    } {
+        const gate = this.service.discoveryJoinGate;
+        return { entered: gate?.entered ?? 0, completed: gate?.completed ?? 0 };
+    }
+
+    public restoreGateDiscoveryJoin(): boolean {
+        this.service.restoreDiscoveryJoinGate();
         return true;
     }
 

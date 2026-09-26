@@ -1100,6 +1100,86 @@ export class RpcStubActions<
     }
 
     /**
+     * Park a peer's local-discovery joins. `release()` lets the parked joins
+     * run on and sends later ones straight to discovery; `completed()` counts
+     * the parked joins that have since finished.
+     */
+    async holdDiscoveryJoin(peerIndex: number): Promise<{
+        entered: () => Promise<number>;
+        completed: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubGateDiscoveryJoin().request();
+        return {
+            entered: async () =>
+                (await ctl().getDiscoveryJoinGateCounts().request()).entered,
+            completed: async () =>
+                (await ctl().getDiscoveryJoinGateCounts().request()).completed,
+            release: async () => {
+                await ctl().restoreGateDiscoveryJoin().request();
+            }
+        };
+    }
+
+    /**
+     * Make a peer's chain-feed drain report work that outlived its bound, so
+     * its next channel reset cannot finish. Returns a restore.
+     */
+    async failEventDrain(peerIndex: number): Promise<() => Promise<void>> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubFailEventDrain().request();
+        return async () => {
+            await ctl().restoreFailEventDrain().request();
+        };
+    }
+
+    /**
+     * Start a peer's channel reset and park it at its chain-feed drain: the
+     * channel and fork are retired, peers and storage not yet touched.
+     * `release()` lets the reset run on and resolves once it has settled.
+     */
+    async startResetHeldAtDrain(peerIndex: number): Promise<{
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        const drain = await this.holdEventDrain(peerIndex);
+        await ctl().startChannelReset().request();
+        await waitFor(async () => (await drain.entered()) === 1);
+        return {
+            release: async () => {
+                await drain.release();
+                await waitFor(
+                    async () =>
+                        (await ctl().getChannelResetOutcome().request())
+                            ?.settled === true
+                );
+                const outcome = await ctl().getChannelResetOutcome().request();
+                if (outcome?.rejected) throw new Error(outcome.rejected);
+            }
+        };
+    }
+
+    /**
+     * Record every disconnect a peer requests, with the tier asked for; the
+     * disconnects still run. Returns the recording and a restore.
+     */
+    async recordDisconnects(peerIndex: number): Promise<{
+        disconnects: () => Promise<{ peerAddress: string; tier: string }[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordDisconnects().request();
+        return {
+            disconnects: async () =>
+                await ctl().getRecordedDisconnects().request(),
+            restore: async () => {
+                await ctl().restoreRecordDisconnects().request();
+            }
+        };
+    }
+
+    /**
      * Hold a peer's own sync at its application step, keeping it in flight
      * toward its responder. Returns the entered count and a release.
      */

@@ -60,6 +60,7 @@ type InboundMessageLogKey = string;
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
     | "discoveryJoinHold"
+    | "discoveryJoinGate"
     | "auditingDataRebuild"
     | "snapshotPostSend"
     | "expiredCalldataPost"
@@ -115,6 +116,8 @@ export type StubKey =
     | "networkConfirmations"
     | "spectateSyncApplication"
     | "eventDrain"
+    | "eventDrainFailure"
+    | "recordedDisconnects"
     | "onChainSlashesQuery"
     | "localDiamondInboundMessages"
     | "eventLogs"
@@ -442,6 +445,12 @@ export class StubService extends ANetworkRpcService<
     spectateSyncApplicationGate?: StubGate;
     /** Parks the channel reset at its chain-feed drain while set. */
     eventDrainGate?: StubGate;
+    /** Parks local-discovery joins until released; `completed` counts joins that finished. */
+    discoveryJoinGate?: StubGate & { completed: number };
+    /** A channel reset the stub started and left running. */
+    channelResetOutcome?: DetachedCallOutcome;
+    /** Every disconnect requested while the record stub is installed. */
+    readonly recordedDisconnects: { peerAddress: string; tier: string }[] = [];
     reductionApplicationGate?: StubGate;
     /** Calls that reached the control; survives the restore that an abort triggers. */
     reductionApplicationEntered = 0;
@@ -2035,6 +2044,32 @@ export class StubService extends ANetworkRpcService<
             await sleep(holdMs);
             return original(...args);
         }) as typeof LocalDiscoveryServer.connectToPeers;
+    }
+
+    public installDiscoveryJoinGate(): void {
+        this.restoreDiscoveryJoinGate();
+        const original =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        this.stubOriginals.set("discoveryJoinGate", original);
+        const gate = { ...this.createGate(), completed: 0 };
+        this.discoveryJoinGate = gate;
+        LocalDiscoveryServer.connectToPeers = (async (...args) => {
+            gate.entered += 1;
+            await gate.gate;
+            const joined = await original(...args);
+            gate.completed += 1;
+            return joined;
+        }) as typeof LocalDiscoveryServer.connectToPeers;
+    }
+
+    /** Let parked joins run on; later joins go straight to discovery. */
+    public restoreDiscoveryJoinGate(): void {
+        const original = this.stubOriginals.get("discoveryJoinGate");
+        this.discoveryJoinGate?.release();
+        if (original === undefined) return;
+        LocalDiscoveryServer.connectToPeers =
+            original as typeof LocalDiscoveryServer.connectToPeers;
+        this.stubOriginals.delete("discoveryJoinGate");
     }
 
     public async joinAndLeavePendingLocalDiscovery(
