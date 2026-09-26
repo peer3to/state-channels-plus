@@ -29,13 +29,13 @@ Its declarations are grouped by owner: `// implemented by StateChannelManagerPro
 ([#L16](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L16)) then one
 `// routed to <Facet>` block per facet — UtilityFacet
 ([#L42](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L42)), DisputeManagerFacet
-([#L146](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L146)),
-DisputeVerificationFacet ([#L155](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L155)),
-FraudProofFacet ([#L189](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L189)),
-DisputeFraudProofFacet ([#L198](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L198)),
-StateSnapshotFacet ([#L213](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L213)),
-JoinChannelFacet ([#L228](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L228)) and
-StateProofFacet ([#L242](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L242)).
+([#L162](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L162)),
+DisputeVerificationFacet ([#L171](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L171)),
+FraudProofFacet ([#L205](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L205)),
+DisputeFraudProofFacet ([#L214](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L214)),
+StateSnapshotFacet ([#L229](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L229)),
+JoinChannelFacet ([#L244](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L244)) and
+StateProofFacet ([#L258](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L258)).
 It inherits `StateChannelManagerEvents`, so a consumer bound to this type also decodes every event
 the diamond emits.
 
