@@ -544,7 +544,17 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             );
         }
         // Capture a real proof now; later chain progress makes it stale.
-        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
+        return this.stubSpectatePayload(
+            Codec.encode(syncPayload, Type.SyncPayload) as string
+        );
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` always answer with
+     * `encodedSyncPayload` (a crafted proof); restore with restoreSpectateStaleProof.
+     */
+    public stubSpectatePayload(encodedSyncPayload: string): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
         if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
             this.service.stubOriginals.set(
                 "spectateCreateRpcMethods",
@@ -1738,9 +1748,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return (await outcome) ?? null;
     }
 
-    /** Fail this peer's first adopt-only snapshot post at its send; record every multicall's call names. */
-    public stubFailFirstAdoptionPost(): boolean {
-        this.service.installAdoptionPostFailure();
+    /** Fail this peer's first `failures` adopt-only snapshot posts at their send; record every multicall's call names. */
+    public stubFailFirstAdoptionPost(failures: number = 1): boolean {
+        this.service.installAdoptionPostFailure(failures);
         return true;
     }
 

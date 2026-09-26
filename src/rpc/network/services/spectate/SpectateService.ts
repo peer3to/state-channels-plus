@@ -182,7 +182,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2) Fetch all disputeWindows that where provided in the SyncPayload:
             //      2.1) persist/update the localEVM with them
             //      2.2) verify that they're expired - if they're not expired abort
-            //      2.3) reduce them if they're not already reduced (do this locally + package calldata for a single multicall later to the RPC node) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
+            //      2.3) reduce them if they're not already reduced (locally only) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
             //      2.6) verify final genesisSnapshot is correct -> abort otherwise
@@ -886,7 +886,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return disputeWindows;
     }
 
-    // blocks and snapshots below `anchorHeight` were only link-checked, never verified -> not persisted
+    // milestones starting below `anchorHeight` are skipped by verifyMilestones (only link-checked) -> their blocks and snapshots are not persisted
     public async persistSyncPayload(
         syncPayload: SyncPayload,
         anchorHeight: number = 0
@@ -922,9 +922,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     return { shouldAbort: false };
                 }
 
+                const firstVerifiedMilestone =
+                    this.getFirstVerifiedMilestoneIndex(
+                        syncPayload.stateProof,
+                        anchorHeight
+                    );
                 const finalizedBlocks = this.getFinalizedBlocksFromStateProof(
-                    syncPayload.stateProof
-                ).filter((block) => block.height >= anchorHeight);
+                    syncPayload.stateProof,
+                    firstVerifiedMilestone
+                );
                 if (this.hasAnyBlockConflict(finalizedBlocks)) {
                     return { shouldAbort: true };
                 }
@@ -954,11 +960,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     }
                 );
                 this.persistFinalizedBlocks(finalizedBlocks);
-                for (const snapshot of syncPayload.milestoneSnapshots)
-                    if (Number(snapshot.blockHeight) >= anchorHeight)
-                        storage.stateSnapshots.storeStateSnapshot(
-                            StateSnapshot.from(snapshot)
-                        );
+                for (const snapshot of syncPayload.milestoneSnapshots.slice(
+                    firstVerifiedMilestone
+                ))
+                    storage.stateSnapshots.storeStateSnapshot(
+                        StateSnapshot.from(snapshot)
+                    );
                 for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
                     storage.outboundMessages.store(omb);
                 for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
@@ -975,12 +982,28 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         );
     }
 
+    // mirrors _verifyMilestones: a milestone whose first block is below the anchor height is skipped
+    private getFirstVerifiedMilestoneIndex(
+        stateProof: StateProofStruct,
+        anchorHeight: number
+    ): number {
+        const index = stateProof.milestones.findIndex(
+            (milestone) =>
+                Block.fromBlockConfirmation(milestone.blockConfirmations[0])
+                    .height >= anchorHeight
+        );
+        return index === -1 ? stateProof.milestones.length : index;
+    }
+
     private getFinalizedBlocksFromStateProof(
-        stateProof: StateProofStruct
+        stateProof: StateProofStruct,
+        fromMilestone: number
     ): Block[] {
         const finalizedBlocks: Block[] = [];
-        // for all milestones except the last persist all blocks
-        for (let i = 0; i < stateProof.milestones.length - 1; i++) {
+        if (fromMilestone >= stateProof.milestones.length)
+            return finalizedBlocks;
+        // for all verified milestones except the last persist all blocks
+        for (let i = fromMilestone; i < stateProof.milestones.length - 1; i++) {
             for (const blockConfirmation of stateProof.milestones[i]
                 .blockConfirmations) {
                 const block = Block.fromBlockConfirmation(blockConfirmation);

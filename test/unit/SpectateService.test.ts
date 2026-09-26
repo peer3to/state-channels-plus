@@ -1,10 +1,12 @@
+import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     applyAnchoredSyncPayload,
-    forgedOutboundBlock
+    forgedOutboundBlock,
+    stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     assertConcurrentSyncWindowOverwrite,
@@ -441,6 +443,102 @@ describe("Unit: SpectateService", function () {
                 ).to.deep.equal([]);
             } finally {
                 await stub.restoreRecordedSyncRejections().request();
+            }
+        });
+    });
+
+    describe("historic verification persistence", function () {
+        it("a milestone prepended below the on-chain anchor carrying a block and a snapshot above it → sync accepted, neither is stored", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, onChainSnapshot, payload } =
+                await stageAnchoredSyncPayload(h);
+            const anchor = onChainSnapshot.blockHeight;
+            const milestones = payload.stateProof.milestones;
+            const first = milestones[0].blockConfirmations[0];
+            const firstHeight = Block.fromBlockConfirmation(first).height;
+            // the honest proof starts above the anchor; the prepended milestone
+            // starts below it, so verifyMilestones skips it without any check
+            expect(firstHeight).to.be.greaterThan(anchor);
+            const copyAt = (height: number, timestampShift: bigint) => {
+                const block = Codec.decode(
+                    first.signedBlock.encodedBlock,
+                    Type.Block
+                );
+                block.transaction.header.transactionCnt = BigInt(height);
+                block.transaction.header.timestamp =
+                    BigInt(block.transaction.header.timestamp) + timestampShift;
+                return {
+                    signedBlock: {
+                        encodedBlock: Codec.encode(block, Type.Block) as string,
+                        signature: first.signedBlock.signature
+                    },
+                    signatures: first.signatures
+                };
+            };
+            const planted = copyAt(firstHeight, 1n);
+            milestones.unshift({
+                blockConfirmations: [copyAt(anchor - 1, 2n), planted]
+            });
+            const plantedSnapshot = {
+                ...payload.milestoneSnapshots[0],
+                timestamp: BigInt(payload.milestoneSnapshots[0].timestamp) + 1n
+            };
+            payload.milestoneSnapshots.unshift(plantedSnapshot);
+            const encodedSyncPayload = Codec.encode(
+                payload,
+                Type.SyncPayload
+            ) as string;
+            const servers = h.peers.slice();
+            for (const peer of servers)
+                await h
+                    .control(peer)
+                    .stub.stubSpectatePayload(encodedSyncPayload)
+                    .request();
+            try {
+                const spectator = await h.join.addSpectatorWait();
+                const stored = await h.execOnHost(
+                    h.getPeer(spectator.index),
+                    (sm, a) => ({
+                        belowAnchor: Array.from(
+                            { length: a.anchor },
+                            (_, height) => height
+                        ).filter(
+                            (height) =>
+                                !!sm.storage.blocks.getBlock(a.forkId, height)
+                        ),
+                        firstVerifiedBlockHash:
+                            sm.storage.blocks.getBlock(a.forkId, a.firstHeight)
+                                ?.hash ?? null,
+                        plantedStored: !!sm.storage.blocks.getBlock(
+                            a.plantedHash
+                        ),
+                        plantedSnapshotStored:
+                            !!sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                a.plantedSnapshotHash
+                            )
+                    }),
+                    {
+                        forkId,
+                        anchor,
+                        firstHeight,
+                        plantedHash: Block.fromBlockConfirmation(planted).hash,
+                        plantedSnapshotHash:
+                            StateSnapshot.from(plantedSnapshot).hash
+                    }
+                );
+                expect(stored).to.deep.equal({
+                    belowAnchor: [],
+                    firstVerifiedBlockHash:
+                        Block.fromBlockConfirmation(first).hash,
+                    plantedStored: false,
+                    plantedSnapshotStored: false
+                });
+            } finally {
+                for (const peer of servers)
+                    await h
+                        .control(peer)
+                        .stub.restoreSpectateStaleProof()
+                        .request();
             }
         });
     });

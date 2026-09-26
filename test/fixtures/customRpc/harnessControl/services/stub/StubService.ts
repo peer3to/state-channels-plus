@@ -2181,11 +2181,11 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Fail this peer's first adopt-only snapshot post (a multicall whose only
-     * call is `updateStateSnapshotFork`) at its send, and record the call
-     * names of every multicall the peer sends; later sends run for real.
+     * Fail this peer's first `failures` adopt-only snapshot posts (a multicall
+     * whose only call is `updateStateSnapshotFork`) at their send, and record
+     * the call names of every multicall the peer sends; later sends run for real.
      */
-    public installAdoptionPostFailure(): void {
+    public installAdoptionPostFailure(failures: number): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("adoptionPostFailure")) {
             this.stubOriginals.set("adoptionPostFailure", contract.multicall);
@@ -2194,7 +2194,7 @@ export class StubService extends ANetworkRpcService<
             "adoptionPostFailure"
         ) as StateChannelManagerInterface["multicall"];
         this.recordedMulticallNames = [];
-        let failed = false;
+        let failed = 0;
         contract.multicall = new Proxy(original, {
             apply: (target, receiver, parameters) => {
                 const names = (parameters[0] as string[]).map(
@@ -2204,11 +2204,11 @@ export class StubService extends ANetworkRpcService<
                 );
                 this.recordedMulticallNames.push(names);
                 if (
-                    !failed &&
+                    failed < failures &&
                     names.length === 1 &&
                     names[0] === "updateStateSnapshotFork"
                 ) {
-                    failed = true;
+                    failed++;
                     return Promise.reject(
                         new Error("injected adoption post send failure")
                     );

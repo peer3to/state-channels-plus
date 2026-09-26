@@ -8,14 +8,9 @@ import { id } from "ethers";
 
 /**
  * Chain snapshot strictly between the fork genesis and the proven target on
- * the same fork; a participant serves a payload for the target, the payload is
- * altered by `mutate`, and another participant applies it. Returns the
- * requester's verdict and its recorded rejection reasons.
+ * the same fork; returns peer 0's payload for the target and the anchor.
  */
-export async function applyAnchoredSyncPayload(
-    h: MathPeerTestHarness,
-    mutate: (payload: SyncPayload, onChainSnapshot: StateSnapshot) => void
-): Promise<{ accepted: boolean; rejections: string[] }> {
+export async function stageAnchoredSyncPayload(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 3);
     const forkId = h.activeForkId!;
     const responder = h.getPeer(0);
@@ -44,6 +39,32 @@ export async function applyAnchoredSyncPayload(
         .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
     expect(served).to.not.equal(null);
     const payload = Codec.decode(served!.encodedSyncPayload, Type.SyncPayload);
+    return {
+        forkId,
+        responder,
+        requester,
+        latestHeight: latestHeight!,
+        onChainSnapshot,
+        payload
+    };
+}
+
+/**
+ * The staged payload is altered by `mutate` and another participant applies
+ * it. Returns the requester's verdict and its recorded rejection reasons.
+ */
+export async function applyAnchoredSyncPayload(
+    h: MathPeerTestHarness,
+    mutate: (payload: SyncPayload, onChainSnapshot: StateSnapshot) => void
+): Promise<{ accepted: boolean; rejections: string[] }> {
+    const {
+        forkId,
+        responder,
+        requester,
+        latestHeight,
+        onChainSnapshot,
+        payload
+    } = await stageAnchoredSyncPayload(h);
     mutate(payload, onChainSnapshot);
 
     const stub = h.control(requester).stub;
@@ -54,7 +75,7 @@ export async function applyAnchoredSyncPayload(
             .spectate.applySyncResponse(
                 responder.address,
                 forkId,
-                latestHeight!,
+                latestHeight,
                 Codec.encode(payload, Type.SyncPayload) as string
             )
             .request({ timeoutMs: h.event.protocolEventTimeoutMs() });

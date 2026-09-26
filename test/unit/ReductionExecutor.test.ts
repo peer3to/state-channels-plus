@@ -4,6 +4,7 @@ import { hash as randomHash } from "@test/factory";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 describe("Unit: ReductionExecutor", function () {
     // a reduce whose inbound run this peer cannot walk yields no reduce data.
@@ -358,6 +359,57 @@ describe("Unit: ReductionExecutor", function () {
                 )
             ).to.equal(false);
             expect(await chainForkId()).to.equal(reducedForkId);
+        });
+
+        it("the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index,
+                2
+            );
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+            // after the reduction-task restore, which resets scheduleTask
+            const tasks = await h.rpcStub.recordScheduledTasks(reducer.index);
+
+            const adoptionPosts = async () =>
+                (await adoption.recorded()).filter(
+                    (names) =>
+                        names.length === 1 &&
+                        names[0] === "updateStateSnapshotFork"
+                ).length;
+            try {
+                await waitFor(
+                    async () => (await adoptionPosts()) === 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const retries = (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith("adoptReducedFork-")
+                );
+                // one retry scheduled, and nothing after the second failure
+                expect(retries).to.have.length(1);
+                expect(await adoptionPosts()).to.equal(2);
+                await TestSession.settleDetached({
+                    expectedErrorIncludes: "injected adoption post send failure"
+                });
+                expect(
+                    (
+                        await h.channelManager.getReducedResult(
+                            h.channelId,
+                            sourceForkId
+                        )
+                    ).reducedForkId
+                ).to.not.equal(ZeroHash);
+                expect(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId
+                ).to.equal(sourceForkId);
+            } finally {
+                await tasks.restore();
+                await adoption.restore();
+            }
         });
     });
 
