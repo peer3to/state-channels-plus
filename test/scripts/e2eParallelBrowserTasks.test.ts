@@ -6,6 +6,8 @@ import {
     waitForProcessesGone,
     removeScratchRoots,
     runGateLaunchProbe,
+    runChromiumPreCheck,
+    browsersPathWith,
     waitForGateReady,
     writeBuildCommand,
     writeGate,
@@ -61,7 +63,7 @@ const { runBrowserGate } =
     };
 const { browserChromiumFailure } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
-        browserChromiumFailure: () => Error | null;
+        browserChromiumFailure: () => Promise<Error | null>;
     };
 const {
     TASK_RUNNERS,
@@ -898,10 +900,23 @@ describe("browser tier environment", function () {
         ]);
     });
 
-    it("checks the gates' Chromium before a run schedules them", function () {
+    it("checks the gates' Chromium before a run schedules them", async function () {
         // The browser typecheck says nothing about the browser,
         // so without this the tier fails only after the whole run.
-        expect(browserChromiumFailure()).to.equal(null);
+        expect(await browserChromiumFailure()).to.equal(null);
+    });
+
+    it("passes the Chromium pre-check when only the headless shell the gates launch is installed", function () {
+        expect(
+            runChromiumPreCheck(browsersPathWith(["headless-shell"]))
+        ).to.equal("READY");
+    });
+
+    it("fails the Chromium pre-check when only the full Chromium is installed", function () {
+        const output = runChromiumPreCheck(browsersPathWith(["chromium"]));
+        expect(output).to.match(/^FAILED /);
+        expect(output).to.contain("yarn playwright install chromium");
+        expect(output).to.contain("--no-browser");
     });
 
     it("keeps the browser typecheck out of both worker prepare scripts", function () {

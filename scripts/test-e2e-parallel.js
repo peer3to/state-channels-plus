@@ -421,7 +421,7 @@ async function main(options = {}) {
 
     for (const { message, warm } of resolveWarmUps(tasks, cli.distributed)) {
         console.log(message);
-        const buildFailure = warm();
+        const buildFailure = await warm();
         if (buildFailure) {
             console.error(buildFailure.message);
             process.exit(1);

@@ -10,6 +10,13 @@ const LAUNCH_HELPER = path.join(
     "browser",
     "chromiumLaunch.js"
 );
+const TASK_RUNNERS = path.join(
+    REPO_ROOT,
+    "scripts",
+    "e2e-parallel",
+    "shared",
+    "taskRunners.js"
+);
 
 // Every throwaway tree this fixture created, for the owning suite to remove.
 const scratchRoots: string[] = [];
@@ -192,4 +199,69 @@ export function runGateLaunchProbe(
         }
     });
     return `${result.stdout}${result.stderr}`;
+}
+
+/**
+ * Run the runner's Chromium pre-check in a child process, so the browsers path
+ * Playwright resolves at import is the one the case asks for. Prints "READY"
+ * when the check passes and "FAILED <message>" when it reports a problem.
+ */
+export function runChromiumPreCheck(browsersPath?: string) {
+    const script = `
+        const { browserChromiumFailure } = require(${JSON.stringify(TASK_RUNNERS)});
+        browserChromiumFailure().then((failure) => {
+            process.stdout.write(
+                failure ? "FAILED " + failure.message.replace(/\\s+/g, " ") : "READY"
+            );
+        });
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        env: {
+            ...process.env,
+            ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
+            SCP_BROWSER_CONTAINED: ""
+        }
+    });
+    return `${result.stdout}${result.stderr}`;
+}
+
+/**
+ * A scratch browsers directory holding only the named builds of this machine's
+ * installed Playwright browsers, linked from where Playwright keeps them.
+ * `chromium` is the full browser `executablePath()` reports; `headless-shell`
+ * is the separate build a headless launch uses.
+ */
+export function browsersPathWith(builds: Array<"chromium" | "headless-shell">) {
+    const reported = spawnSync(
+        process.execPath,
+        [
+            "-e",
+            'process.stdout.write(require("playwright").chromium.executablePath())'
+        ],
+        { cwd: REPO_ROOT, encoding: "utf8" }
+    ).stdout;
+    let installed = path.dirname(reported);
+    while (!path.basename(installed).startsWith("chromium-")) {
+        const parent = path.dirname(installed);
+        if (parent === installed)
+            throw new Error(`No Playwright chromium build above ${reported}`);
+        installed = parent;
+    }
+    const browsersDir = path.dirname(installed);
+    const root = scratchRoot("browsers-");
+    for (const entry of fs.readdirSync(browsersDir)) {
+        const isShell = entry.startsWith("chromium_headless_shell-");
+        const isFull = entry.startsWith("chromium-");
+        if (
+            (isShell && builds.includes("headless-shell")) ||
+            (isFull && builds.includes("chromium"))
+        )
+            fs.symlinkSync(
+                path.join(browsersDir, entry),
+                path.join(root, entry)
+            );
+    }
+    return root;
 }

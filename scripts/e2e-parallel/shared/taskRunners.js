@@ -1,5 +1,4 @@
 const { spawnSync } = require("child_process");
-const fs = require("fs");
 const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
@@ -89,12 +88,16 @@ function forgeBuildFailure() {
 /**
  * Check the gates' actual requirement before the tier runs. The browser
  * typecheck says nothing about it, so without this a whole run ends with two gates failing on a missing
- * browser, where the forge tier fails immediately on a missing binary.
+ * browser, where the forge tier fails immediately on a missing binary. It
+ * launches Chromium the way every gate does and closes it again: headless
+ * launches use Playwright's separate headless-shell build, which can be
+ * installed without the full Chromium that `executablePath()` reports, and
+ * vice versa.
  */
-function browserChromiumFailure() {
-    let executablePath;
+async function browserChromiumFailure() {
+    let chromium;
     try {
-        executablePath = require("playwright").chromium.executablePath();
+        chromium = require("playwright").chromium;
     } catch (error) {
         return new Error(
             `Could not resolve Playwright's Chromium: ${error.message}. ` +
@@ -102,12 +105,20 @@ function browserChromiumFailure() {
                 "to skip the browser tier."
         );
     }
-    if (fs.existsSync(executablePath)) return null;
-    return new Error(
-        `Playwright's Chromium is missing at ${executablePath}. Run ` +
-            "`yarn playwright install chromium`, or re-run with --no-browser " +
-            "to skip the browser tier."
-    );
+    // Required here, not at load: a distributed worker loads this module for
+    // the tier names, and this check only ever runs on the coordinator.
+    const {
+        launchChromium
+    } = require("../../../test/browser/chromiumLaunch.js");
+    try {
+        const browser = await launchChromium(chromium);
+        await browser.close();
+        return null;
+    } catch (error) {
+        return new Error(
+            `${error.message} Or re-run with --no-browser to skip the browser tier.`
+        );
+    }
 }
 
 /**
