@@ -171,6 +171,40 @@ describe("StateManager.resetChannel", function () {
         });
     });
 
+    it("rejects a leave after an abort as a disposed runtime without reporting a failed reset", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0, {
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        // In process: the abort tears the host root down, so no reply could
+        // cross the port afterwards.
+        const { host, sm } = runtimeEndpointFor(h.getPeer(0).p2pInstance);
+        const logger = Reflect.get(sm.leaveChannelService, "logger") as {
+            error: (...args: unknown[]) => void;
+        };
+        const logError = logger.error.bind(logger);
+        const errorLogs: unknown[] = [];
+        // Record-only: the message is kept, the log still happens.
+        logger.error = (...args) => {
+            errorLogs.push(args[0]);
+            logError(...args);
+        };
+        try {
+            sm.abort();
+            const outcome = await sm.leaveChannelService.leaveChannel().then(
+                () => "resolved",
+                (error: Error) => error.message
+            );
+            expect({ outcome, errorLogs }).to.deep.equal({
+                outcome: "Cannot leave the channel of a disposed runtime",
+                errorLogs: []
+            });
+        } finally {
+            logger.error = logError;
+            await host.dispose();
+        }
+    });
+
     it("shuts the runtime down and rejects the leave when the reset cannot drain", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });

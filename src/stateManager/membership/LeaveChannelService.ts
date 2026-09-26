@@ -119,6 +119,12 @@ export default class LeaveChannelService {
      */
     private async settleAndReset(departure: Promise<void>): Promise<void> {
         await departure;
+        // An abort already shut the runtime down, and a later call on a shut
+        // runtime fails. There is no reset to attempt, so none is reported as
+        // failed.
+        if (this.stateManager.isDisposed) {
+            throw new Error("Cannot leave the channel of a disposed runtime");
+        }
         try {
             await this.stateManager.resetChannel();
         } catch (error) {
