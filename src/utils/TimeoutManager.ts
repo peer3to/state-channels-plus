@@ -41,9 +41,9 @@ export class TimeoutManager {
                         `Completed scheduled task '${taskName}'`
                     );
                 } catch (error) {
-                    console.error(
-                        `TimeoutManager: Error executing scheduled task '${taskName}':`,
-                        error
+                    this.logger.error(
+                        `Error executing scheduled task '${taskName}'`,
+                        { error }
                     );
                 }
             };
