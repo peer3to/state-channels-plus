@@ -299,7 +299,7 @@ disputes (`getOnChainThresholdSet`, `canParticipateInDisputes`) even before any 
 includes them.
 
 **Top-up.** `topUpBalance` runs the same pipeline with `isTopUp = true`: the participant must
-already exist, the disputed-fork check is skipped, and the resulting inbound `JOIN` message is
+already exist, the fork must not be disputed (as for a join), and the resulting inbound `JOIN` message is
 applied by `_joinChannel`, which — per its contract
 (`the corresponding state-machine operation`) — adds a new
 participant _or_ credits an existing participant's balance without changing membership.

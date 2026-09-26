@@ -9,19 +9,15 @@
 
 ## Overview
 
-Two tests probe the on-chain walk that validates `dispute.input.latestInboundMessageBlockHash`
-against the inbound message-block chain. Each stubs peer 0's `constructDispute` to plant a junk
-value — a random hash that exists nowhere on-chain, or `ZeroHash` combined with
-`lastInboundMessageBlockHeight = 999999n` — and then provokes the dispute by having peer 1 submit
-a double-sign block. The oracles assert the tampered dispute is initiated and committed without
-auditing data, at least one honest peer fires `onDisputeKilled`, honest peers store a
-`DisputeInboundHashNotInChain` dispute fraud proof, and the fork resolves to a successor. The
-honest replacement is constructed only after its auditor observes the kill, so its output includes
-the killed disputer's slash before submission can become threshold-final. The
-genesis happy path (`0x0` hash with height 0) is out of scope here; it lives in
-`disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts`. After the permutation
-atomization, the inbound-tip check failure, its proof family, and its mirrored-predicate
-agreement exist as single-scenario IDs; they are split across the two tests below.
+Upload refuses any dispute not anchored exactly at the chain's inbound head
+(`disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts`), so the three fraud-proof cases here are
+`it.skip` tripwires that never reach a committed dispute: a random `latestInboundMessageBlockHash`, `ZeroHash` with
+`lastInboundMessageBlockHeight = 999999n` (both `DisputeInboundHashNotInChain`), and an anchor below the pinned
+snapshot's inbound height (`DisputeInboundAnchorBehindLatestState`). They run nothing, so no test IDs are
+assigned. The one live case holds the lagging peer's inbound events from before the open, lands an existing
+participant's top-up, advances and finalizes past it, then provokes a double-sign dispute that only the lagging
+peer initiates. The oracles assert that dispute commits and resolves, no peer fires `onDisputeKilled`, and the
+lagging disputer is not slashed.
 
 ## Tests and covered test IDs
 
@@ -30,9 +26,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / inboundHash > dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L16) (line 16)                                                | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P1`](../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09.p1), [`REQ-DISPUTE-PIPE-5-RZZB48.T1.P18`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t1.p18) |
-| [`E2E: dispute validation / inboundHash > dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L82) (line 82) | —                                                                                                                                                                                                                                                                                                                                       |
-| [`E2E: dispute validation / inboundHash > honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L159) (line 159)                                               | —                                                                                                                                                                                                                                                                                                                                       |
-| [dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L47) (line 47)                                                                 | —                                                                                                                                                                                                                                                                                                                                       |
+| Test declaration                                                                                                                                                                                                                                                                 | Covers                                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / inboundHash > dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L14) (line 14)                                                | —                                                                                                                                |
+| [`E2E: dispute validation / inboundHash > dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L45) (line 45)                       | —                                                                                                                                |
+| [`E2E: dispute validation / inboundHash > dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L77) (line 77) | —                                                                                                                                |
+| [`E2E: dispute validation / inboundHash > honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed`](../../../../../../../test/e2e/disputeValidation/inboundHash.test.ts#L154) (line 154)                                               | [`REQ-DISPUTE-PIPE-5-RZZB48.T2.P3`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t2.p3) |

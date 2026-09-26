@@ -3,7 +3,9 @@ import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
     assertTimeoutRetryAfterForkSwitch,
-    assertObsoleteEarlyTimeoutRetry
+    assertObsoleteEarlyTimeoutRetry,
+    checkTimeoutAfterDeadline,
+    stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertLostRaceCallerTolerated } from "@test/fixtures/LostEvidenceRaceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -185,6 +187,271 @@ describe("Unit: ParticipantTimeoutService", function () {
                 TestSession.getHarness(),
                 "disposed"
             );
+        });
+    });
+
+    describe("posted block → forced only on rejection", function () {
+        it("a plain check meets a valid posted block still in confirmation → no dispute, then the block is stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const hold = await h.rpcStub.holdBlockWork(
+                observer.index,
+                "confirmation"
+            );
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const { leader, startHeight, forkId } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                await hold.waitUntilEntered();
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: startHeight,
+                    writer: leader.address,
+                    isForced: false
+                });
+                expect(await recorder.submissions()).to.deep.equal([]);
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+
+                await hold.release();
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHeight(forkId, startHeight)
+                            .request()) !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await hold.release();
+                await recorder.restore();
+            }
+        });
+
+        it("the pipeline rejects a bad-signature block posted by the writer in turn → a forced timeout names it after the deadline", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find((p) => p.address === writer)!;
+            await h.dispute.suppressDisputeInitiation([1, 2]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                await h.byzantine.postJunkCalldataOnChain(writerPeer.index, {
+                    height: 2
+                });
+                await waitFor(
+                    async () => (await recorder.submissions()).length > 0,
+                    h.event.hostExecTimeoutMs()
+                );
+                // two requests: the rejecting hook on the event, and the
+                // deadline check's hand-back rejecting the same block again
+                const requests = async () =>
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith(
+                            "timeoutParticipantAfterPostedBlockRejected"
+                        )
+                    );
+                await waitFor(
+                    async () => (await requests()).length === 2,
+                    h.event.hostExecTimeoutMs()
+                );
+                expect(await requests()).to.deep.equal([
+                    {
+                        taskName: `timeoutParticipantAfterPostedBlockRejected - fork ${forkId} - block 2 - participant ${writer}`,
+                        delayMs: 0
+                    },
+                    {
+                        taskName: `timeoutParticipantAfterPostedBlockRejected - fork ${forkId} - block 2 - participant ${writer}`,
+                        delayMs: 0
+                    }
+                ]);
+                // the second request re-validates but sends nothing: the
+                // dispute marker is already set
+                expect(
+                    (await recorder.submissions()).filter(
+                        (submission) =>
+                            Codec.decode(
+                                submission.encodedDispute,
+                                Type.Dispute
+                            ).input.timeout.isForced
+                    )
+                ).to.have.length(1);
+                const timeout = Codec.decode(
+                    (await recorder.submissions())[0].encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                expect(timeout.isForced).to.equal(true);
+                expect(timeout.participant).to.equal(writer);
+                expect(Number(timeout.blockHeight)).to.equal(2);
+            } finally {
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("a bad-signature block posted out of turn → the requested forced check never forces", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const outOfTurn = h.peers.find(
+                (p) => p.address !== writer && p.index !== observer.index
+            )!;
+            await h.dispute.suppressDisputeInitiation([1, 2]);
+            // recorded, not run: the direct check below is the only one
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index, {
+                suppressPrefix: "timeoutParticipant"
+            });
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                await h.byzantine.postJunkCalldataOnChain(outOfTurn.index, {
+                    height: 2
+                });
+                await waitFor(
+                    async () =>
+                        (await tasks.tasks()).some(
+                            (task) =>
+                                task.taskName ===
+                                `timeoutParticipantAfterPostedBlockRejected - fork ${forkId} - block 2 - participant ${outOfTurn.address}`
+                        ),
+                    h.event.protocolEventTimeoutMs()
+                );
+                await checkTimeoutAfterDeadline(h, observer.index, {
+                    forkId,
+                    height: 2,
+                    writer: outOfTurn.address,
+                    isForced: true
+                });
+                // the real writer's plain check, armed before the recorder, may still time it out
+                expect(
+                    (await recorder.submissions()).map(
+                        (submission) =>
+                            Codec.decode(
+                                submission.encodedDispute,
+                                Type.Dispute
+                            ).input.timeout.participant
+                    )
+                ).to.not.include(outOfTurn.address);
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .query.getTimeout(forkId)
+                            .request()
+                    )?.participant
+                ).to.not.equal(outOfTurn.address);
+            } finally {
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("a forced check for a height whose previous block is not stored → returns without disputing or rescheduling", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index, {
+                suppressPrefix: "timeoutParticipant"
+            });
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                // height 4 while 2 is next: nothing is stored below it
+                await h.execOnHost(
+                    observer,
+                    (sm, args) =>
+                        sm.participantTimeoutService["tryTimeoutParticipant"](
+                            args.forkId,
+                            4,
+                            args.writer,
+                            true
+                        ),
+                    { forkId, writer }
+                );
+                expect(await recorder.submissions()).to.deep.equal([]);
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.includes("block 4")
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("a bad-signature block posted into a dispute window opened before the deadline → no forced timeout", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageWindowBeforeTimeoutDeadline(h);
+            try {
+                await h.byzantine.postJunkCalldataOnChain(staged.writer.index, {
+                    height: staged.height
+                });
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(staged.observer)
+                            .query.getBlockCalldataTimestamp(
+                                staged.forkId,
+                                staged.height,
+                                staged.writer.address
+                            )
+                            .request()) !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await checkTimeoutAfterDeadline(h, staged.observer.index, {
+                    forkId: staged.forkId,
+                    height: staged.height,
+                    writer: staged.writer.address,
+                    isForced: true
+                });
+                expect(await staged.recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
+        });
+
+        it("a dispute window opened before the deadline and nothing posted → no plain timeout", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageWindowBeforeTimeoutDeadline(h);
+            try {
+                await checkTimeoutAfterDeadline(h, staged.observer.index, {
+                    forkId: staged.forkId,
+                    height: staged.height,
+                    writer: staged.writer.address,
+                    isForced: false
+                });
+                expect(await staged.recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await staged.restore();
+            }
         });
     });
 

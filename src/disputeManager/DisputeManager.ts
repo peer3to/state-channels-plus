@@ -141,6 +141,8 @@ class DisputeManager {
         let refreshSlashes = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetryDelaySeconds: number | undefined;
+        let postedTimeout: TimeoutStruct | undefined;
+        let uploadFailed = false;
         let observedOnChainSlashes: Address[] = [];
         try {
             await this.mutex.lock({ taskName: "dispute" });
@@ -240,6 +242,7 @@ class DisputeManager {
             );
             await txResponse.wait();
         } catch (error) {
+            uploadFailed = true;
             const success = await tryHandleEvmError(error, {
                 tx: txResponse,
                 logger: this.logger,
@@ -261,6 +264,16 @@ class DisputeManager {
                             1,
                             Number(minimum) - Number(current)
                         );
+                    },
+                    // the writer posted first -> drop the refused timeout so
+                    // later disputes on the fork do not carry it
+                    RaceConditionDisputeTimeoutCalldataPosted: () => {
+                        postedTimeout = submittedTimeout;
+                        if (postedTimeout)
+                            this.storage.timeout.deleteTimeout(
+                                forkId,
+                                postedTimeout
+                            );
                     },
                     RaceConditionDisputeTimeoutWindowCreatedTooEarly: () => {
                         this.logger.info(
@@ -294,7 +307,6 @@ class DisputeManager {
                 });
 
             this.storage.disputes.storeDisputedFork(forkId, false);
-            if (rethrow !== undefined) throw rethrow;
         } finally {
             this.mutex.unlock();
         }
@@ -313,6 +325,29 @@ class DisputeManager {
                 "timeoutParticipantAfterEarlySubmission"
             );
         }
+        // our marker dropped any posted block at ingest -> hand it back once
+        if (uploadFailed && !this.stateManager.isDisposed) {
+            const posted = postedTimeout
+                ? this.storage.blockCalldata.getBlockCalldata(
+                      forkId,
+                      Number(postedTimeout.blockHeight),
+                      postedTimeout.participant
+                  )
+                : await this.stateManager.withMutex(
+                      async () =>
+                          this.storage.blockCalldata.getBlockCalldata(
+                              forkId,
+                              this.storage.blocks.getNextBlockHeight(forkId),
+                              await this.stateManager.diamondStateMachine.getNextToWrite()
+                          ),
+                      { taskName: "dispute posted block hand-back" }
+                  );
+            if (posted)
+                await this.stateManager.blockQueueManager.ingestPostedBlock(
+                    posted
+                );
+        }
+        if (rethrow !== undefined) throw rethrow;
         if (
             refreshSlashes &&
             !this.stateManager.isDisposed &&

@@ -11,7 +11,7 @@ import {
     ErrorJoinChannelParticipantAlreadyExists,
     ErrorTopUpBalanceParticipantNotFound,
     ErrorTopUpBalanceParticipantSlashed,
-    RaceConditionForceInboundJoinForkDisputed,
+    RaceConditionJoinChannelForkDisputed,
     RaceConditionSnapshotForkMismatch
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
@@ -427,12 +427,41 @@ contract JoinChannelFacetTest is Test {
         // the two operands are separate constants with different preimages, so
         // a payload that swapped the channel and the fork would not match
         vm.expectRevert(
-            abi.encodeWithSelector(
-                RaceConditionForceInboundJoinForkDisputed.selector, DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID
-            )
+            abi.encodeWithSelector(RaceConditionJoinChannelForkDisputed.selector, DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID)
         );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), DISPUTED_FORK_ID);
+
+        assertFalse(harness.depositCalled());
+    }
+
+    function test_topUpBalance_disputedForkRejected() public {
+        harness.seedChannel(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID, _eligibleParticipantPair(), address(0));
+        harness.seedDisputedFork(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID);
+
+        // an existing member topping up, countersigned by both threshold
+        // members -> only the undisputed-fork gate can reject it
+        JoinChannel memory topUp = JoinChannel({
+            channelId: DISPUTED_CHANNEL_ID,
+            participant: vm.addr(ELIGIBLE_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedTopUp = abi.encode(topUp);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedTopUp, signature: _sign(ELIGIBLE_PK, encodedTopUp)});
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedTopUp);
+        confirmation.signatures[1] = _sign(SLASHED_PK, encodedTopUp);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(DISPUTED_CHANNEL_ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionJoinChannelForkDisputed.selector, DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID)
+        );
+        vm.prank(topUp.participant);
+        harness.topUpBalance(confirmation, keccak256(abi.encode(snapshot)), DISPUTED_FORK_ID);
 
         assertFalse(harness.depositCalled());
     }

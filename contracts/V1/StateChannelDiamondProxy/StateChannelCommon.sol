@@ -156,17 +156,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return pendingParticipants;
     }
 
-    function _deriveEligibleParticipantsFromInboundHash(bytes32 channelId, bytes32 latestInboundMessageBlockHash)
-        internal
-        view
-        returns (address[] memory eligibleParticipants)
-    {
-        address[] memory snapshotParticipants = _getSnapshotParticipants(channelId);
-        return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
-            channelId, latestInboundMessageBlockHash, snapshotParticipants, bytes32(0)
-        );
-    }
-
     function _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
         bytes32 channelId,
         bytes32 latestInboundMessageBlockHash,
@@ -595,7 +584,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) internal view virtual returns (bool) {
+    function _canParticipateInDisputesNow(bytes32 channelId, address participant)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
             channelId,
             channelBalances[channelId].latestInboundMessageBlockHash,

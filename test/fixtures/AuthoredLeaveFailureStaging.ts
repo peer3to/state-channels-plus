@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: authored-leave fallback staging for mapped runtime cases
+import { addressesEqual } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -94,6 +95,48 @@ export async function assertAuthoredLeaveFallback(
                 assertMaliciousRemoved: false
             });
             expect(await outcome).to.deep.equal({ error: null });
+        } else if (failure === "evidence-expired") {
+            // the chain refuses the fallback when the fork's window already
+            // holds commitments -> the leave waits for that window to settle
+            await h.event.waitUntilLeavePhase(
+                leaver.index,
+                "awaiting-settlement"
+            );
+            expect(
+                await h.control(leaver).query.didIDispute(forkId).request()
+            ).to.equal(false);
+            if (!slow) {
+                await recorder.restore();
+                await h
+                    .control(leaver)
+                    .stub.restorePostStateSnapshotWait()
+                    .request();
+                restored = true;
+                // a committed self-removal stands in for that window; its
+                // reduction drops the fully signed leaver
+                await h.dispute.suppressDisputeInitiation([leaver.index]);
+                await h.dispute.selfRemoveViaDisputeWait({
+                    leaverIndex: leaver.index,
+                    forkId
+                });
+                await h.dispute.resolveDisputeWait({
+                    forkId,
+                    honestPeerIndices: [0, 2],
+                    assertMaliciousRemoved: false
+                });
+                expect(await outcome).to.deep.equal({ error: null });
+                for (const peer of [h.getPeer(0), withheld]) {
+                    const participants = await h
+                        .control(peer)
+                        .query.getParticipants()
+                        .request();
+                    expect(
+                        participants.some((participant) =>
+                            addressesEqual(participant, leaver.address)
+                        )
+                    ).to.equal(false);
+                }
+            }
         } else {
             const result = await outcome;
             // No window covers the fork, so neither refusal is a lost race the

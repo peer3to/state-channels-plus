@@ -182,6 +182,10 @@ export default class LeaveChannelService {
             operation.forkId !== forkId
         )
             return;
+        // A refusal because the fork's window already holds commitments never
+        // reaches here: `startSelfRemovalDispute` absorbs that lost race and
+        // the fallback reports it through `onExitSelfRemovalNotStarted`,
+        // which waits for the covering window.
         this.fail(operation, error);
     }
 

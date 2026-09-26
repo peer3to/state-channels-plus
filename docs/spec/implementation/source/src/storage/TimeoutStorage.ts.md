@@ -19,30 +19,35 @@
 
 ## Responsibility and observable boundary
 
-At most one timeout candidate per fork, retaining the lowest block height.
+At most one timeout candidate per fork, retaining the lowest block height, with an identity-matched drop for a candidate the base layer proved moot.
 
 ## Key design decisions
 
 1. **Lowest height wins.** A stored update with a higher height than the retained candidate is
    ignored ([#L20](../../../../../../src/storage/TimeoutStorage.ts#L20)), mirroring the protocol's lowest-timed-out-height precedence so local escalation never skips ahead. Equal height replaces (refreshing evidence context for the same slot).
 
+2. **A drop matches identity.** `deleteTimeout` removes the retained candidate only when the
+   passed candidate has the same height and participant and the retained one is not forced
+   ([#L30](../../../../../../src/storage/TimeoutStorage.ts#L30)), so a forced candidate stored
+   between submission and refusal survives and no unrelated slot is cleared.
+
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                |
-| ------------ | --------------------------------------- |
-| Inputs       | (fork, timeout struct).                 |
-| Outputs      | Candidate per fork or explicit absence. |
-| Owned state  | `timeouts` fork → struct.               |
-| Side effects | None.                                   |
+| Aspect       | Contents                                                            |
+| ------------ | ------------------------------------------------------------------- |
+| Inputs       | (fork, timeout struct) for store and for the identity-matched drop. |
+| Outputs      | Candidate per fork or explicit absence.                             |
+| Owned state  | `timeouts` fork → struct.                                           |
+| Side effects | None.                                                               |
 
 ## Linked requirements
 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                          | Specification IDs                                                                                         |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| [TimeoutStorage.ts](../../../../../../src/storage/TimeoutStorage.ts) | [`REQ-TOSTORE-1-JQPXBC`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc) |
+| Source file                                                          | Specification IDs                                                                                                                                                                                                    |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [TimeoutStorage.ts](../../../../../../src/storage/TimeoutStorage.ts) | [`REQ-TOSTORE-1-JQPXBC`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc), [`REQ-TOSTORE-2-WX7VMH`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -53,6 +58,7 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Lowest-height retention independent of arrival order ([`REQ-TOSTORE-1-JQPXBC` (Lowest-height timeout candidate)](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc)).
+- Identity-matched drop of a refused candidate ([`REQ-TOSTORE-2-WX7VMH` (Drop a refused candidate by identity)](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)).
 
 ## Specification contradictions
 
@@ -71,14 +77,15 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                                   | Implementation status | Evidence                                                                                                                                                                                                                                           | Gap / divergence |
 | --------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-TOSTORE-1-JQPXBC`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc) | Covered               | **Here:** higher-height updates ignored ([#L20](../../../../../../src/storage/TimeoutStorage.ts#L20)). **Other files:** candidate production and precedence checks — [StateManager](../stateManager/StateManager.ts.md) (`tryTimeoutParticipant`). | None.            |
+| [`REQ-TOSTORE-2-WX7VMH`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh) | Covered               | **Here:** identity-matched drop ([#L30](../../../../../../src/storage/TimeoutStorage.ts#L30)). **Other files:** the only caller is the posted-calldata refusal handler in [DisputeManager](../disputeManager/DisputeManager.ts.md).                | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                        | Obligation              | Public entry and setup                                       | Oracle and forbidden effects                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-timeout-storage-1-tax9c3"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3` | Lowest-height retention | Store candidates at varied heights per fork in varied orders | Lowest retained for every order; equal height replaces; forks independent | <a id="unit-test-timeout-storage-1-tax9c3.p1"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P1` — lower replaces higher; <a id="unit-test-timeout-storage-1-tax9c3.p2"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P2` — higher ignored; <a id="unit-test-timeout-storage-1-tax9c3.p3"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P3` — order permutations converge; <a id="unit-test-timeout-storage-1-tax9c3.p4"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P4` — equal-height replacement; <a id="unit-test-timeout-storage-1-tax9c3.p5"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P5` — per-fork isolation |
+| Unit test ID                                                                        | Obligation              | Public entry and setup                                       | Oracle and forbidden effects                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="unit-test-timeout-storage-1-tax9c3"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3` | Lowest-height retention | Store candidates at varied heights per fork in varied orders | Lowest retained for every order; equal height replaces; forks independent | <a id="unit-test-timeout-storage-1-tax9c3.p1"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P1` — lower replaces higher; <a id="unit-test-timeout-storage-1-tax9c3.p2"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P2` — higher ignored; <a id="unit-test-timeout-storage-1-tax9c3.p3"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P3` — order permutations converge; <a id="unit-test-timeout-storage-1-tax9c3.p4"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P4` — equal-height replacement; <a id="unit-test-timeout-storage-1-tax9c3.p5"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P5` — per-fork isolation; <a id="unit-test-timeout-storage-1-tax9c3.p6"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P6` — a drop naming the stored non-forced candidate removes it; <a id="unit-test-timeout-storage-1-tax9c3.p7"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P7` — a forced candidate stored over the same slot survives the drop; <a id="unit-test-timeout-storage-1-tax9c3.p8"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P8` — a drop naming another height leaves the candidate; <a id="unit-test-timeout-storage-1-tax9c3.p9"></a>`UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P9` — a drop naming another participant at the same height leaves the candidate |
 
 ## Related source reports
 
