@@ -4,6 +4,7 @@ import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 const PEER_COUNT = 4;
 
@@ -88,7 +89,12 @@ export async function assertReduceLandsAloneThenLatestForkAdopted(): Promise<voi
 
     // once F reduces, the reducer's follow-up post adopts the latest undisputed fork
     await h.dispute.resolveDisputeWait({ forkId: forkF });
-    const forkG = await reducedResultOf(h, forkF);
+    // the harness's chain read can trail the peers' view of the reduce under load
+    let forkG = ZeroHash as ForkId;
+    await waitFor(async () => {
+        forkG = await reducedResultOf(h, forkF);
+        return forkG !== ZeroHash;
+    }, h.event.protocolEventTimeoutMs());
     expect(forkG).to.not.equal(forkF);
     await waitFor(
         async () => (await chainForkOf(h)) === forkG,
