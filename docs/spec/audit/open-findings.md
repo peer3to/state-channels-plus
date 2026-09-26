@@ -89,9 +89,14 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 ## FIND-DISPUTE-2-3HV3TZ — The evidence-improvement lost-race caller has no test
 
-**Status:** open verification gap. The containment itself is implemented for all seven callers;
-six are now driven by their own declaration, and one — the evidence-improvement upload — is
-unevidenced.
+**Status:** _Resolved (2026-09-26)._ All seven callers are driven by their own declaration. The
+evidence-improvement upload is now covered by `Unit: EventHandler > replacement evidence races > a
+committed dispute whose evidence-improvement upload loses the race still schedules the reduction`
+([test/unit/EventHandler.test.ts](../verification/tests/test/unit/EventHandler.test.ts.md)), which
+maps [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9)
+and [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P14`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p14)
+and turns red when that one site goes back to a bare `disputeManager.dispute(forkId)`. The history
+below is kept as the record of the gap.
 
 [`DisputeManager.disputeToleratingLostRace`](../implementation/source/src/disputeManager/DisputeManager.ts.md)
 is called from seven places: `onChainSlashed`, `onDisputeKilled`, and the evidence-improvement branch

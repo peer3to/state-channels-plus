@@ -1,4 +1,7 @@
-import { assertLostEvidenceRaceTolerated } from "@test/fixtures/LostEvidenceRaceStaging";
+import {
+    assertEvidenceImprovementLostRaceTolerated,
+    assertLostEvidenceRaceTolerated
+} from "@test/fixtures/LostEvidenceRaceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("Unit: EventHandler", function () {
@@ -14,6 +17,12 @@ describe("Unit: EventHandler", function () {
             await assertLostEvidenceRaceTolerated(
                 TestSession.getHarness(),
                 "onDisputeKilled"
+            );
+        });
+
+        it("a committed dispute whose evidence-improvement upload loses the race still schedules the reduction", async function () {
+            await assertEvidenceImprovementLostRaceTolerated(
+                TestSession.getHarness()
             );
         });
     });

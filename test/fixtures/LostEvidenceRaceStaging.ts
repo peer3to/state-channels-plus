@@ -278,3 +278,110 @@ export async function assertRequestDisputeLostRaceTolerated(
         await recorder.restore();
     }
 }
+
+/**
+ * The evidence-improvement branch of `onDisputeCommitted`. The observer misses
+ * the real fraud while its dispute initiation is suppressed, so another peer's
+ * dispute commits first and the observer holds no commitment of its own; the
+ * observer's subscribed delivery of that commit is held. Its construction is
+ * staged to claim one more slash than the committed dispute, so the audit
+ * finds outcome-changing evidence and uploads it, and that upload is refused
+ * as the lost race. The handler then runs host-side on the real committed
+ * log's arguments, exactly as event sync dispatches them: it must resolve,
+ * attempt that one upload, and schedule the fork's reduction.
+ */
+export async function assertEvidenceImprovementLostRaceTolerated(
+    h: MathPeerTestHarness
+): Promise<void> {
+    // The handler must run inside the kill period: the expired branch
+    // schedules unconditionally and would mask the audit-valid path.
+    await h.scenario.preDisputeSetup({
+        peerCount: 4,
+        timeConfig: { evidenceTime: 16 }
+    });
+    const forkId = h.activeForkId!;
+    const observer = h.getPeer(0);
+    const disputer = h.getPeer(1);
+    const scheduled = await h.rpcStub.recordScheduledTasks(observer.index);
+    const restoreCommits = await h.rpcStub.holdDisputeCommittedEvents(
+        observer.index,
+        { passFirst: false }
+    );
+    await h.dispute.suppressDisputeInitiation([observer.index]);
+    // Armed only once the commit is held, so the one upload it records is the
+    // evidence-improvement attempt.
+    let restoreRecorder: (() => Promise<void>) | undefined;
+    const reductionTasks = async () =>
+        (await scheduled.tasks()).filter((task) =>
+            task.taskName.startsWith("reduction-")
+        ).length;
+    try {
+        await h.byzantine.submitInvalidStateTransitionBlock(2);
+        await h.assert.dispute.initiatedWait({
+            peersIndices: [disputer.index]
+        });
+        await waitFor(
+            async () =>
+                (await h.query.killPeriod(forkId, observer.index))
+                    .windowExists &&
+                (await h.rpcStub.getHeldDisputeCommittedCount(observer.index)) >
+                    0
+        );
+        await h.dispute.restoreDisputeInitiation([observer.index]);
+        await h.tamper.stubConstructDispute(
+            observer.index,
+            (dispute, _sm, args) => {
+                dispute.input.onChainSlashes = [
+                    ...dispute.input.onChainSlashes,
+                    args.extraSlashedAddress as string
+                ];
+            },
+            { args: { extraSlashedAddress: h.getPeer(3).address } }
+        );
+        const recorder = await h.rpcStub.recordDisputeSubmissions(
+            observer.index,
+            { failWith: LOST_RACE_REFUSAL }
+        );
+        restoreRecorder = () => recorder.restore();
+        const before = await reductionTasks();
+
+        const rejected = await h.execOnHost(observer, async (sm) => {
+            const contract = sm.stateChannelManagerContract;
+            const [log] = (
+                await contract.queryFilter(
+                    contract.filters.DisputeCommitted(sm.channelId)
+                )
+            ).slice(-1);
+            if (!log || !("args" in log))
+                throw new Error("no committed dispute on chain");
+            const args = log.args;
+            try {
+                await sm.eventHandler.onDisputeCommitted(
+                    args.channelId,
+                    args.disputeConfirmation,
+                    Number(args.disputeCreationTimestamp),
+                    args.isFinal,
+                    Number(args.windowCreationTimestamp)
+                );
+                return "";
+            } catch (error) {
+                return error instanceof Error ? error.message : String(error);
+            }
+        });
+
+        expect({
+            rejected,
+            refusals: await recordedRefusals(recorder),
+            reductionScheduled: (await reductionTasks()) > before
+        }).to.deep.equal({
+            rejected: "",
+            refusals: [LOST_RACE_REFUSAL.customError],
+            reductionScheduled: true
+        });
+    } finally {
+        await restoreRecorder?.();
+        await h.byzantine.restoreDisputeConstruction(observer.index);
+        await restoreCommits(false);
+        await scheduled.restore();
+    }
+}
