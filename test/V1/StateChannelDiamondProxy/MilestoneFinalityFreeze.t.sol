@@ -157,6 +157,10 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
         channelBalances[channelId].latestInboundMessageBlockHeight = height;
     }
 
+    function chainForkId(bytes32 channelId) external view returns (bytes32) {
+        return stateSnapshots[channelId].forkId;
+    }
+
     function clearOldInboundMessageBlocks(bytes32 channelId, bytes32 head) external {
         _clearOldInboundMessageBlocks(channelId, head);
     }
@@ -189,14 +193,15 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
     }
 
     function test_isFinal_topUpAboveAnchor_openBlockPruned_memberStaysExpected() public {
-        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)), pinned);
         harness.clearOldInboundMessageBlocks(CHANNEL_ID, H0);
         // a top-up is recorded as a JOIN, above the dispute's anchor
         harness.seedInboundJoin(CHANNEL_ID, H1, H0, 2, b);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "B unsigned -> not final");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "B unsigned -> not final");
 
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H1, 2);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "B stays expected after the top-up");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "B stays expected after the top-up");
     }
 
     /// forge-config: default.fuzz.runs = 64
@@ -220,12 +225,16 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         for (uint256 i = 0; i < signerCount; i++) {
             signerKeys[i + 2] = 0x1001 + i;
         }
-        Dispute memory dispute =
-            _dispute(heads[anchorIndex], anchorIndex + 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, signerKeys));
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute = _dispute(
+            heads[anchorIndex], anchorIndex + 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, signerKeys), pinned
+        );
 
-        // expected = {A, B} plus every join at or below the anchor, computed from the seed
+        // expected = {A, B} plus every join above the pinned inbound and at or below the anchor, from the seed
         bool expectedFinal = signerCount >= anchorIndex;
-        assertEq(harness.isLastMilestoneFinalByEveryone(dispute), expectedFinal, "pending joins above the anchor");
+        assertEq(
+            harness.isLastMilestoneFinalByEveryone(dispute, pinned), expectedFinal, "pending joins above the anchor"
+        );
 
         address[] memory adopted = new address[](anchorIndex + 2);
         adopted[0] = a;
@@ -234,59 +243,118 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
             adopted[i + 2] = joiners[i];
         }
         harness.landSnapshot(CHANNEL_ID, adopted, heads[anchorIndex], anchorIndex + 1);
-        assertEq(harness.isLastMilestoneFinalByEveryone(dispute), expectedFinal, "adopted at the anchor");
+        assertEq(harness.isLastMilestoneFinalByEveryone(dispute, pinned), expectedFinal, "adopted at the anchor");
     }
 
     function test_isFinal_joinAtAnchor_expectedBeforeAndAfterConsumption() public {
         harness.seedInboundJoin(CHANNEL_ID, H1, H0, 2, c);
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
         Dispute memory signedByAB =
-            _dispute(H1, 2, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)));
+            _dispute(H1, 2, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)), pinned);
         Dispute memory signedByABC =
-            _dispute(H1, 2, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B, PK_C)));
+            _dispute(H1, 2, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B, PK_C)), pinned);
 
-        assertFalse(harness.isLastMilestoneFinalByEveryone(signedByAB), "pending C expected");
-        assertTrue(harness.isLastMilestoneFinalByEveryone(signedByABC), "C signed");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(signedByAB, pinned), "pending C expected");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(signedByABC, pinned), "C signed");
 
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b, c), H1, 2);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(signedByAB), "consumed C expected");
-        assertTrue(harness.isLastMilestoneFinalByEveryone(signedByABC), "C signed after consumption");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(signedByAB, pinned), "consumed C expected");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(signedByABC, pinned), "C signed after consumption");
     }
 
     function test_isFinal_slashAfterCommit_cannotFlipFalseToTrue() public {
-        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "B unsigned -> not final");
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)), pinned);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "B unsigned -> not final");
         harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
 
         vm.warp(block.timestamp + 1);
         harness.slash(CHANNEL_ID, b);
         assertFalse(
-            harness.isLastMilestoneFinalByEveryone(dispute), "a slash the dispute does not list changes nothing"
+            harness.isLastMilestoneFinalByEveryone(dispute, pinned), "a slash the dispute does not list changes nothing"
         );
 
-        Dispute memory listsSlash = _dispute(H0, 1, _addresses(b), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        assertTrue(harness.isLastMilestoneFinalByEveryone(listsSlash), "the committed slash list decides");
+        Dispute memory listsSlash = _dispute(H0, 1, _addresses(b), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)), pinned);
+        assertTrue(harness.isLastMilestoneFinalByEveryone(listsSlash, pinned), "the committed slash list decides");
     }
 
     function test_isFinal_memberSlashedOnEarlierFork_expectedUnlessListed() public {
         // B was slashed before this fork's window existed
         harness.slash(CHANNEL_ID, b);
         vm.warp(block.timestamp + 1);
-        Dispute memory unlisted = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        Dispute memory listed = _dispute(H0, 1, _addresses(b), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted), "construction expects the unlisted B");
-        assertTrue(harness.isLastMilestoneFinalByEveryone(listed), "construction drops the listed B");
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory unlisted =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)), pinned);
+        Dispute memory listed = _dispute(H0, 1, _addresses(b), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)), pinned);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted, pinned), "construction expects the unlisted B");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(listed, pinned), "construction drops the listed B");
 
         harness.seedWindow(CHANNEL_ID, FORK_ID, unlisted);
         vm.warp(block.timestamp + 1);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted), "the proof expects the unlisted B");
-        assertTrue(harness.isLastMilestoneFinalByEveryone(listed), "the proof drops the listed B");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted, pinned), "the proof expects the unlisted B");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(listed, pinned), "the proof drops the listed B");
+    }
+
+    function test_isFinal_liveSetShrinks_verdictUnchanged() public {
+        StateSnapshot memory pinned = _pinned(_addresses(a, b, c), H0, 1);
+        Dispute memory dispute =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)), pinned);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "C unsigned -> not final");
+
+        harness.landSnapshot(CHANNEL_ID, _addresses(a, b), H0, 1);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "the chain dropping C changes nothing");
+        harness.slash(CHANNEL_ID, c);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "an unlisted slash of C changes nothing");
+    }
+
+    function test_isFinal_liveSetWidens_verdictUnchanged() public {
+        address d = vm.addr(0xD00D);
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)), pinned);
+        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "A and B signed -> final");
+
+        harness.seedInboundJoin(CHANNEL_ID, H1, H0, 2, d);
+        harness.landSnapshot(CHANNEL_ID, _addresses(a, b, d), H1, 2);
+        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "D adopted after signing changes nothing");
+    }
+
+    function test_isFinal_pinnedSnapshotMismatch_invalidatesProof() public {
+        StateSnapshot memory pinned = _pinned(_addresses(a, b, c), H0, 1);
+        Dispute memory dispute =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)), pinned);
+        harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
+
+        // a prover shrinking the committed set to make the milestone read final is not the committed snapshot
+        StateSnapshot memory supplied = _pinned(_addresses(a, b), H0, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeLatestStateSnapshotMismatch.selector,
+                keccak256(abi.encode(pinned)),
+                keccak256(abi.encode(supplied))
+            )
+        );
+        harness.isLastMilestoneFinalByEveryone(dispute, supplied);
+
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        payload.latestStateSnapshot = supplied;
+        vm.prank(b);
+        harness.applyDisputeFraudProofs(
+            _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
+        );
+        assertTrue(harness.isSlashed(CHANNEL_ID, b), "an unpinned snapshot slashes the submitter");
+        assertFalse(harness.isSlashed(CHANNEL_ID, a), "the disputer is untouched");
+        assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 1, "dispute stays committed");
     }
 
     function test_applyDisputeFraudProofs_participantSetUnchanged_submitterSlashedNotDisputer() public {
-        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)));
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A, PK_B)), pinned);
         harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
 
         DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        payload.latestStateSnapshot = pinned;
         vm.prank(b);
         harness.applyDisputeFraudProofs(
             _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
@@ -297,25 +365,36 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertEq(harness.commitmentCount(CHANNEL_ID, FORK_ID), 1, "dispute stays committed");
     }
 
-    function test_disputeInvalidStateProof_noCalldata_frozenSet_slashesDisputer() public {
+    function test_disputeInvalidStateProof_noCalldata_committedSet_slashesDisputer() public {
         SnapshotData memory genesis;
         genesis.participants = _addresses(a, b);
         genesis.latestInboundMessageBlockHash = H0;
         genesis.latestInboundMessageBlockHeight = 1;
         bytes32 genesisForkId = keccak256(abi.encode(genesis));
 
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
         Dispute memory dispute =
-            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesisForkId, _keys(PK_A, PK_B)));
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesisForkId, _keys(PK_A, PK_B)), pinned);
         dispute.input.forkId = genesisForkId;
         SignedBlock[] memory signedBlocks = new SignedBlock[](2);
         signedBlocks[0] = _makeSignedGenesisBlock(PK_A, CHANNEL_ID, genesisForkId, 1, bytes32(0));
-        signedBlocks[1] = _makeSignedBlock(PK_A, CHANNEL_ID, genesisForkId, 1, 2, keccak256("not the genesis block"));
+        // the latest proven block commits the pinned snapshot, but links to the wrong parent
+        Block memory latest;
+        latest.transaction.header.channelId = CHANNEL_ID;
+        latest.transaction.header.participant = a;
+        latest.transaction.header.forkId = genesisForkId;
+        latest.transaction.header.transactionCnt = 1;
+        latest.transaction.header.timestamp = 2;
+        latest.previousBlockHash = keccak256("not the genesis block");
+        latest.stateSnapshotHash = keccak256(abi.encode(pinned));
+        signedBlocks[1] = SignedBlock({encodedBlock: abi.encode(latest), signature: _sign(PK_A, abi.encode(latest))});
         dispute.input.stateProof.signedBlocks = signedBlocks;
-        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "final against the frozen set");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "final against the committed set");
         harness.seedWindow(CHANNEL_ID, genesisForkId, dispute);
 
         DisputeInvalidStateProof memory payload;
         payload.auditingData.genesisStateSnapshotData = genesis;
+        payload.auditingData.latestStateSnapshot = pinned;
         vm.prank(b);
         harness.applyDisputeFraudProofs(
             _proof(DisputeFraudProofType.DisputeInvalidStateProof, abi.encode(payload), dispute)
@@ -325,84 +404,26 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertFalse(harness.isSlashed(CHANNEL_ID, b), "valid proof keeps the submitter");
     }
 
-    function test_forkUpdate_refusedWhileTargetKillPeriodOpen_setStaysFrozen() public {
-        // the chain still holds fork E with the leaver C; E reduced to F2 = {A, B}, and F2 already has a dispute
+    function test_forkUpdate_landsWhileTargetKillPeriodOpen_verdictUnchanged() public {
+        // the chain still holds fork E; E reduced to F2 = {A, B}, and F2 already has a dispute whose
+        // committed set still holds C
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b, c), H0, 1);
         StateSnapshot memory genesis = _reducedGenesis(E_FORK_ID, _addresses(a, b));
         genesis.timestamp = harness.seedReducedFork(CHANNEL_ID, E_FORK_ID, genesis.forkId);
+        StateSnapshot memory pinned = _pinned(_addresses(a, b, c), H0, 1);
         Dispute memory dispute =
-            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesis.forkId, _keys(PK_A, PK_B)));
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesis.forkId, _keys(PK_A, PK_B)), pinned);
         dispute.input.forkId = genesis.forkId;
         harness.seedWindow(CHANNEL_ID, genesis.forkId, dispute);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "C unsigned on the chain set -> not final");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "C unsigned -> not final");
 
-        // inside the kill period -> currentTimestamp < killPeriodEnd
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RaceConditionSnapshotUpdateDisputedFork.selector,
-                CHANNEL_ID,
-                genesis.forkId,
-                block.timestamp + 10,
-                block.timestamp
-            )
-        );
+        // inside F2's kill period the linked adoption lands
         harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "the refused update leaves the verdict");
-
-        // at expiry the adoption lands, and no proof against the dispute can land any more
-        vm.warp(block.timestamp + 10);
-        harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
-        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "adopted {A, B}");
-        DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
-        vm.prank(b);
-        // the kill period ends exactly now
-        vm.expectRevert(
-            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, block.timestamp, block.timestamp)
-        );
-        harness.applyDisputeFraudProofs(
-            _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
-        );
-    }
-
-    function test_forkUpdate_unlinkedTargetInKillPeriod_revertsStateSnapshotNotValid() public {
-        StateSnapshot memory genesis = _reducedGenesis(E_FORK_ID, _addresses(a, b));
-        genesis.timestamp = harness.seedReducedFork(CHANNEL_ID, E_FORK_ID, keccak256("another fork"));
-        Dispute memory dispute =
-            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesis.forkId, _keys(PK_A, PK_B)));
-        harness.seedWindow(CHANNEL_ID, genesis.forkId, dispute);
-
-        // the freeze is reached only after the reduction link is proven
-        vm.expectRevert(abi.encodeWithSelector(ErrorStateSnapshotNotValid.selector, E_FORK_ID, genesis.forkId));
-        harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
-    }
-
-    function test_forkUpdate_ancestorAdoptionRefusedWhileDescendantKillPeriodOpen() public {
-        (StateSnapshot memory forkF, bytes32 forkG, Dispute memory dispute) = _stageDescendantKillPeriod();
-
-        // F is past its own kill period, but G, the fork F was reduced into, is not
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RaceConditionSnapshotUpdateDisputedFork.selector,
-                CHANNEL_ID,
-                forkG,
-                block.timestamp + 10,
-                block.timestamp
-            )
-        );
-        harness.updateStateSnapshotFork(CHANNEL_ID, forkF, new MessageBlock[](0));
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "the refused adoption leaves G's verdict");
-    }
-
-    function test_forkUpdate_ancestorAdoptionDuringDescendantKillPeriod_honestChallengerNotSlashed() public {
-        (StateSnapshot memory forkF,, Dispute memory dispute) = _stageDescendantKillPeriod();
-
-        // the disputer tries to shrink the chain set to {A, B} before the challenge lands
-        vm.prank(a);
-        try harness.updateStateSnapshotFork(CHANNEL_ID, forkF, new MessageBlock[](0)) {
-            assertTrue(false, "the adoption of F must be refused while G's kill period is open");
-        } catch {}
+        assertEq(harness.chainForkId(CHANNEL_ID), genesis.forkId, "adopted F2");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "the adoption leaves the verdict");
 
         DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        payload.latestStateSnapshot = pinned;
         vm.prank(b);
         harness.applyDisputeFraudProofs(
             _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
@@ -411,29 +432,53 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertFalse(harness.isSlashed(CHANNEL_ID, b), "the honest challenger keeps its seat");
     }
 
-    function test_forkUpdate_ancestorAdoptionLandsAfterDescendantKillPeriod() public {
-        (StateSnapshot memory forkF,, Dispute memory dispute) = _stageDescendantKillPeriod();
+    function test_forkUpdate_unlinkedTarget_revertsStateSnapshotNotValid() public {
+        StateSnapshot memory genesis = _reducedGenesis(E_FORK_ID, _addresses(a, b));
+        genesis.timestamp = harness.seedReducedFork(CHANNEL_ID, E_FORK_ID, keccak256("another fork"));
+        StateSnapshot memory pinned = _pinned(_addresses(a, b), H0, 1);
+        Dispute memory dispute =
+            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesis.forkId, _keys(PK_A, PK_B)), pinned);
+        harness.seedWindow(CHANNEL_ID, genesis.forkId, dispute);
 
-        vm.warp(block.timestamp + 10);
+        vm.expectRevert(abi.encodeWithSelector(ErrorStateSnapshotNotValid.selector, E_FORK_ID, genesis.forkId));
+        harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
+    }
+
+    function test_forkUpdate_ancestorAdoptionDuringDescendantKillPeriod_honestChallengerNotSlashed() public {
+        (StateSnapshot memory forkF, StateSnapshot memory pinned, Dispute memory dispute) = _stageDescendantKillPeriod();
+
+        // the disputer shrinks the chain set to {A, B} before the challenge lands
+        vm.prank(a);
         harness.updateStateSnapshotFork(CHANNEL_ID, forkF, new MessageBlock[](0));
-        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "adopted {A, B} once no proof can land");
+        assertEq(harness.chainForkId(CHANNEL_ID), forkF.forkId, "adopted F");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "G's verdict unchanged");
+
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        payload.latestStateSnapshot = pinned;
+        vm.prank(b);
+        harness.applyDisputeFraudProofs(
+            _proof(DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData, abi.encode(payload), dispute)
+        );
+        assertTrue(harness.isSlashed(CHANNEL_ID, a), "the disputer owed auditing data -> slashed");
+        assertFalse(harness.isSlashed(CHANNEL_ID, b), "the honest challenger keeps its seat");
     }
 
     /// chain on E = {A, B, C}; E reduced to F = {A, B} (expired, reduced to G); G holds A's committed dispute whose
     /// last milestone C never signed, inside G's kill period
     function _stageDescendantKillPeriod()
         internal
-        returns (StateSnapshot memory forkF, bytes32 forkG, Dispute memory dispute)
+        returns (StateSnapshot memory forkF, StateSnapshot memory pinned, Dispute memory dispute)
     {
         harness.landSnapshot(CHANNEL_ID, _addresses(a, b, c), H0, 1);
         forkF = _reducedGenesis(E_FORK_ID, _addresses(a, b));
         forkF.timestamp = harness.seedReducedFork(CHANNEL_ID, E_FORK_ID, forkF.forkId);
-        forkG = keccak256("fork G");
+        bytes32 forkG = keccak256("fork G");
         harness.seedExpiredReducedWindow(CHANNEL_ID, forkF.forkId, forkG);
-        dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, forkG, _keys(PK_A, PK_B)));
+        pinned = _pinned(_addresses(a, b, c), H0, 1);
+        dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, forkG, _keys(PK_A, PK_B)), pinned);
         dispute.input.forkId = forkG;
         harness.seedWindow(CHANNEL_ID, forkG, dispute);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "C unsigned on the chain set -> not final");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute, pinned), "C unsigned -> not final");
     }
 
     function _reducedGenesis(bytes32 originForkId, address[] memory participants)
@@ -448,13 +493,28 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         genesis.forkId = keccak256(abi.encode(genesis.snapshotData));
     }
 
+    /// the dispute's latest state: participants and the inbound head it consumed
+    function _pinned(address[] memory participants, bytes32 inboundHash, uint256 inboundHeight)
+        internal
+        pure
+        returns (StateSnapshot memory pinned)
+    {
+        pinned.snapshotData.participants = participants;
+        pinned.snapshotData.latestInboundMessageBlockHash = inboundHash;
+        pinned.snapshotData.latestInboundMessageBlockHeight = inboundHeight;
+        pinned.forkId = FORK_ID;
+        pinned.blockHeight = 1;
+    }
+
     function _dispute(
         bytes32 anchorHash,
         uint256 anchorHeight,
         address[] memory onChainSlashes,
-        MilestoneProof memory lastMilestone
+        MilestoneProof memory lastMilestone,
+        StateSnapshot memory pinned
     ) internal view returns (Dispute memory dispute) {
         dispute.input.channelId = CHANNEL_ID;
+        dispute.input.latestStateSnapshotHash = keccak256(abi.encode(pinned));
         dispute.input.forkId = FORK_ID;
         dispute.input.disputer = a;
         dispute.input.latestInboundMessageBlockHash = anchorHash;
@@ -492,14 +552,12 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
 
     function test_sameFork_refusedWhileKillPeriodOpen() public {
         _openWindow(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId, PK_A);
-        uint256 killPeriodEnd = block.timestamp + diamond.getEvidenceTime();
-        vm.warp(killPeriodEnd - 1);
+        vm.warp(block.timestamp + diamond.getEvidenceTime() - 1);
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
             _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
         bytes32 snapshotBefore = keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL)));
 
-        // inside the kill period -> currentTimestamp < killPeriodEnd
-        _expectDisputedForkRefusal(CHANNEL, killPeriodEnd);
+        _expectDisputedForkRefusal(CHANNEL);
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL))), snapshotBefore, "snapshot unchanged");
@@ -509,14 +567,13 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
     function test_sameFork_refusedAfterKillPeriodExpiry() public {
         _openWindow(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId, PK_A);
         vm.warp(block.timestamp + diamond.getEvidenceTime());
-        (, bool killPeriodExpired, uint256 killPeriodEnd,) =
-            diamond.isKillPeriodExpired(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId);
+        (, bool killPeriodExpired,,) = diamond.isKillPeriodExpired(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId);
         assertTrue(killPeriodExpired, "kill period over");
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
             _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
 
-        // a disputed fork only advances by reduction, however long ago it was disputed -> currentTimestamp >= killPeriodEnd
-        _expectDisputedForkRefusal(CHANNEL, killPeriodEnd);
+        // a disputed fork only advances by reduction, however long ago it was disputed
+        _expectDisputedForkRefusal(CHANNEL);
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
         (bool open,) = diamond.isChannelOpen(CHANNEL);
         assertTrue(open, "the close advance did not land");
@@ -550,7 +607,8 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
             current.forkId,
             PK_A,
             current.snapshotData.latestInboundMessageBlockHash,
-            current.snapshotData.latestInboundMessageBlockHeight
+            current.snapshotData.latestInboundMessageBlockHeight,
+            current
         );
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -582,15 +640,16 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         diamond.updateStateSnapshotSameFork(LEAVE_CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         // step 2 - eve left; bob disputes with a last milestone eve never signed and no auditing data
-        Dispute memory dispute = _openWindow(LEAVE_CHANNEL, diamond.getStateSnapshot(LEAVE_CHANNEL).forkId, PK_B);
+        (Dispute memory dispute, StateSnapshot memory pinned) =
+            _openWindow(LEAVE_CHANNEL, diamond.getStateSnapshot(LEAVE_CHANNEL).forkId, PK_B);
 
         // step 3 - eve's signed exit, which anyone can post, is refused on the disputed fork
         (proofs, snapshots) = _makeSameForkSnapshot(LEAVE_CHANNEL, _addresses(alice, bob), _keys(PK_E, PK_A, PK_B));
-        _expectDisputedForkRefusal(LEAVE_CHANNEL, block.timestamp + diamond.getEvidenceTime());
+        _expectDisputedForkRefusal(LEAVE_CHANNEL);
         diamond.updateStateSnapshotSameFork(LEAVE_CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         // step 4 - alice proves bob owed auditing data
-        _proveNotFinal(dispute, alice);
+        _proveNotFinal(dispute, pinned, alice);
 
         assertFalse(diamond.isParticipantSlashedOnChain(LEAVE_CHANNEL, alice), "honest challenger not slashed");
         assertTrue(
@@ -598,28 +657,31 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         );
     }
 
-    /// the same-fork refusal of `channelId`'s current fork, with the exact diagnostic args
-    function _expectDisputedForkRefusal(bytes32 channelId, uint256 killPeriodEnd) internal {
+    /// the same-fork refusal of `channelId`'s current fork, with the exact args
+    function _expectDisputedForkRefusal(bytes32 channelId) internal {
         vm.expectRevert(
             abi.encodeWithSelector(
-                RaceConditionSnapshotUpdateDisputedFork.selector,
-                channelId,
-                diamond.getStateSnapshot(channelId).forkId,
-                killPeriodEnd,
-                block.timestamp
+                RaceConditionSnapshotUpdateDisputedFork.selector, channelId, diamond.getStateSnapshot(channelId).forkId
             )
         );
     }
 
-    /// `disputerPk` uploads a dispute on `forkId` at the chain's inbound head, its last milestone signed by alice and bob
+    /// `disputerPk` uploads a dispute on `forkId` at the chain's inbound head, its last milestone signed by alice and
+    /// bob; its latest state is the chain snapshot at upload
     function _openWindow(bytes32 channelId, bytes32 forkId, uint256 disputerPk)
         internal
-        returns (Dispute memory dispute)
+        returns (Dispute memory dispute, StateSnapshot memory pinned)
     {
         ChannelBalance memory head = diamond.getChannelBalance(channelId);
+        pinned = diamond.getStateSnapshot(channelId);
         DisputeConfirmation memory confirmation;
         (dispute, confirmation) = _signedDispute(
-            channelId, forkId, disputerPk, head.latestInboundMessageBlockHash, head.latestInboundMessageBlockHeight
+            channelId,
+            forkId,
+            disputerPk,
+            head.latestInboundMessageBlockHash,
+            head.latestInboundMessageBlockHeight,
+            pinned
         );
         vm.prank(vm.addr(disputerPk));
         diamond.uploadDispute(confirmation);
@@ -630,9 +692,11 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         bytes32 forkId,
         uint256 disputerPk,
         bytes32 anchorHash,
-        uint256 anchorHeight
+        uint256 anchorHeight,
+        StateSnapshot memory pinned
     ) internal pure returns (Dispute memory dispute, DisputeConfirmation memory confirmation) {
         dispute.input.channelId = channelId;
+        dispute.input.latestStateSnapshotHash = keccak256(abi.encode(pinned));
         dispute.input.forkId = forkId;
         dispute.input.disputer = vm.addr(disputerPk);
         dispute.input.latestInboundMessageBlockHash = anchorHash;
@@ -644,9 +708,10 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
     }
 
     /// `prover` claims the dispute's last milestone is not final and its disputer owed auditing data
-    function _proveNotFinal(Dispute memory dispute, address prover) internal {
+    function _proveNotFinal(Dispute memory dispute, StateSnapshot memory pinned, address prover) internal {
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         DisputeLastMilestoneNotFinalAndNoAuditingData memory payload;
+        payload.latestStateSnapshot = pinned;
         proofs[0] = DisputeFraudProof({
             proofType: DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
             participant: dispute.input.disputer,

@@ -38,18 +38,6 @@ contract StateSnapshotFacet is StateChannelCommon {
             (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
             if (!challengePeriodExpired) break;
             if (disputeWindow.reducedResult.forkId == targetForkId) {
-                // the target and every fork it was reduced into must be past its kill period -> a later
-                // fork's committed dispute is judged against the participant set it saw
-                bytes32 forkId = targetForkId;
-                while (forkId != bytes32(0)) {
-                    DisputeWindow storage window = disputeWindowMap[forkId];
-                    (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(window, _getEvidenceTime());
-                    require(
-                        !_isDisputeWidnowCreated(window) || killPeriodExpired,
-                        RaceConditionSnapshotUpdateDisputedFork(channelId, forkId, killPeriodEnd, block.timestamp)
-                    );
-                    forkId = window.reducedResult.forkId;
-                }
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
                 updated = true;
                 break;
@@ -90,12 +78,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             )
         );
         if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
-            (, uint256 killPeriodEnd) = _isKillPeriodExpired(
-                disputeData[channelId].disputeWindowMap[currentStateSnapshot.forkId], _getEvidenceTime()
-            );
-            revert RaceConditionSnapshotUpdateDisputedFork(
-                channelId, currentStateSnapshot.forkId, killPeriodEnd, block.timestamp
-            );
+            revert RaceConditionSnapshotUpdateDisputedFork(channelId, currentStateSnapshot.forkId);
         }
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);

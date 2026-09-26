@@ -179,6 +179,11 @@ function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot me
     return dispute.input.forkId == keccak256(abi.encode(latestStateSnapshot.snapshotData));
 }
 
+/// the supplied snapshot is the one the dispute commits by hash
+function _isPinnedLatestState(Dispute memory dispute, StateSnapshot memory latestStateSnapshot) pure returns (bool) {
+    return keccak256(abi.encode(latestStateSnapshot)) == dispute.input.latestStateSnapshotHash;
+}
+
 function _isDisputeInboundAnchorBehindLatestState(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
     pure
     returns (bool)
@@ -186,7 +191,7 @@ function _isDisputeInboundAnchorBehindLatestState(Dispute memory dispute, StateS
     // pin latestStateSnapshot to dispute.input.latestStateSnapshotHash -> both
     // heights come from the signed dispute, so a supplied latestStateSnapshot
     // can't frame an honest disputer
-    if (keccak256(abi.encode(latestStateSnapshot)) != dispute.input.latestStateSnapshotHash) return false;
+    if (!_isPinnedLatestState(dispute, latestStateSnapshot)) return false;
     if (!_isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot)) return false;
 
     uint256 snapshotHeight = latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight;

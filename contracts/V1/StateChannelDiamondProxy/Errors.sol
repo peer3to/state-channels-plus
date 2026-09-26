@@ -15,6 +15,7 @@ error ErrorBlockCalldataMsgSenderNotBlockAuthor(address expectedAuthor, address 
 //StateSnapshot errors
 error ErrorStateSnapshotNotValid(bytes32 currentForkId, bytes32 targetForkId);
 error ErrorInvalidStateProof(bytes32 forkId, uint256 milestoneProofCount, uint256 milestoneSnapshotCount);
+error ErrorDisputeLatestStateSnapshotMismatch(bytes32 committedSnapshotHash, bytes32 suppliedSnapshotHash);
 error ErrorOutboundMessageBlocksInvalid(
     bytes32 lowerLatestOutboundMessageBlockHash,
     uint256 lowerLatestOutboundMessageBlockHeight,
@@ -135,9 +136,7 @@ error RaceConditionJoinChannelSnapshotMismatch(bytes32 currentSnapshotHash, byte
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );
-error RaceConditionSnapshotUpdateDisputedFork(
-    bytes32 channelId, bytes32 forkId, uint256 killPeriodEnd, uint256 currentTimestamp
-);
+error RaceConditionSnapshotUpdateDisputedFork(bytes32 channelId, bytes32 forkId);
 error RaceConditionJoinChannelForkDisputed(bytes32 channelId, bytes32 forkId);
 error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
 error RaceConditionDisputeInboundNotLatest(

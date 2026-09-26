@@ -227,11 +227,13 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bytes memory encodedFraudProof,
         Dispute memory dispute
     ) internal returns (address) {
-        abi.decode(encodedFraudProof, (DisputeLastMilestoneNotFinalAndNoAuditingData));
+        DisputeLastMilestoneNotFinalAndNoAuditingData memory proof =
+            abi.decode(encodedFraudProof, (DisputeLastMilestoneNotFinalAndNoAuditingData));
 
         if (dispute.postedAuditingData) return _invalid();
+        if (!_isPinnedLatestState(dispute, proof.latestStateSnapshot)) return _invalid();
 
-        bool isFinal = _isLastMilestoneFinalByEveryone(dispute);
+        bool isFinal = _isLastMilestoneFinalByEveryone(dispute, proof.latestStateSnapshot);
         if (!isFinal) return _valid(dispute.input.disputer);
         return _invalid();
     }
@@ -301,7 +303,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             {
                 return _invalid();
             }
-            if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
+            // this proof exists for a pin inconsistent with the state proof, so the set comes from the proof's latest block
+            if (!_isSnapshotLinkedToLatestBlock(dispute, proof.auditingData.latestStateSnapshot)) return _invalid();
+            if (!_isLastMilestoneFinalByEveryone(dispute, proof.auditingData.latestStateSnapshot)) return _invalid();
 
             if (dispute.input.stateProof.signedBlocks.length != 0) {
                 bytes memory linkReturnData = _delegatecall(
@@ -768,8 +772,17 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return abi.decode(result, (address));
     }
 
-    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
-        return _isLastMilestoneFinalByEveryone(dispute);
+    function isLastMilestoneFinalByEveryone(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+        public
+        returns (bool isFinal)
+    {
+        require(
+            _isPinnedLatestState(dispute, latestStateSnapshot),
+            ErrorDisputeLatestStateSnapshotMismatch(
+                dispute.input.latestStateSnapshotHash, keccak256(abi.encode(latestStateSnapshot))
+            )
+        );
+        return _isLastMilestoneFinalByEveryone(dispute, latestStateSnapshot);
     }
 
     function hasStateProofHeaderMismatch(Dispute memory dispute) public pure returns (bool) {
@@ -780,32 +793,31 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _isDisputeInboundHashValid(dispute);
     }
 
-    /// the historic set a dispute commits to at its inbound anchor; `_canParticipateInDisputesNow` is live eligibility
-    function _getHistoricThresholdSet(Dispute memory dispute) internal view returns (address[] memory thresholdSet) {
-        bytes32 channelId = dispute.input.channelId;
-        // the chain set is frozen for the kill period (adoption onto the fork or any ancestor reduced into it refused)
-        address[] memory participants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            _getSnapshotParticipants(channelId),
-            _derivePendingParticipantsFromInboundHash(
-                channelId, dispute.input.latestInboundMessageBlockHash, bytes32(0)
-            )
-        );
-        // the disputer picks the slashes; over-listing is provable by DisputeOnChainSlashesNotSubset
-        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(participants, dispute.input.onChainSlashes);
-    }
-
-    function _isLastMilestoneFinalByEveryone(Dispute memory dispute) internal returns (bool isFinal) {
+    function _isLastMilestoneFinalByEveryone(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+        internal
+        returns (bool isFinal)
+    {
         if (dispute.input.stateProof.milestones.length == 0) {
             return true;
         }
-
-        address[] memory expectedParticipants = _getHistoricThresholdSet(dispute);
+        bytes32 channelId = dispute.input.channelId;
+        // the set the dispute commits: the participants after its latest proven block, the joiners the chain
+        // recorded between that snapshot's inbound hash and the dispute's anchor, minus the slashes it lists
+        SnapshotData memory thresholdSnapshotData = latestStateSnapshot.snapshotData;
+        thresholdSnapshotData.participants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+                latestStateSnapshot.snapshotData.participants,
+                _derivePendingParticipantsFromInboundHash(
+                    channelId,
+                    dispute.input.latestInboundMessageBlockHash,
+                    latestStateSnapshot.snapshotData.latestInboundMessageBlockHash
+                )
+            ),
+            dispute.input.onChainSlashes
+        );
 
         MilestoneProof memory lastMilestone =
             dispute.input.stateProof.milestones[dispute.input.stateProof.milestones.length - 1];
-
-        SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-        thresholdSnapshotData.participants = expectedParticipants;
 
         (isFinal,) = StateChannelManagerInterface(address(this)).isMilestoneFinal(
             dispute.input.forkId, thresholdSnapshotData, lastMilestone

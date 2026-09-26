@@ -214,7 +214,10 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         virtual
         returns (bool);
 
-    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public virtual returns (bool isFinal);
+    function isLastMilestoneFinalByEveryone(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
+        public
+        virtual
+        returns (bool isFinal);
 
     function hasStateProofHeaderMismatch(Dispute memory dispute) public pure virtual returns (bool);
 
