@@ -259,7 +259,7 @@ substitutes. Examples of the split done right:
 [`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
 rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
 past the skew comparison);
-[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L97)
+[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L154)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
 [`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)

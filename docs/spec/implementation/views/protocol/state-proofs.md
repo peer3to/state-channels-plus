@@ -96,7 +96,7 @@ dispute fraud proofs before/while they matter ([disputes.md](./disputes.md),
 ## 7. Exact verification pipeline (current)
 
 [`StateProofFacet.verifyStateProof(dispute, auditingData)`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1)
-— reachable via [`verifyStateProof`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L46), routed to the manager boundary and declared on [StateChannelManagerInterface](../../../../../contracts/V1/StateChannelManagerInterface.sol#L244) —
+— reachable via [`verifyStateProof`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L46), routed to the manager boundary and declared on [StateChannelManagerInterface](../../../../../contracts/V1/StateChannelManagerInterface.sol#L260) —
 accepts iff all of the following hold:
 
 1. **Auditing reference:** `dispute.input.disputeAuditingDataHash == keccak256(abi.encode(auditingData))`.
