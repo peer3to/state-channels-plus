@@ -558,7 +558,7 @@ export class EventHandler {
                     );
                 }
             }
-            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
+            await this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
                 dispute,
                 persistableAuditingData,
                 { includeUnfinalizedBlocks: true }

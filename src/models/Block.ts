@@ -252,8 +252,54 @@ export default class Block {
     /** Merge another copy after the caller has established the same block identity. */
     mergeFrom(incoming: Block): void {
         this.expandSignatures(incoming.confirmationSignatures);
-        const timestamp = incoming.onChainTimestamp;
-        if (timestamp !== undefined) this.onChainTimestamp = timestamp;
+        this.mergeOnChainTimestamp(incoming);
+    }
+
+    /**
+     * Like `mergeFrom`, but adds only signatures from signers this block does
+     * not hold yet (see `newSignerSignatures`).
+     */
+    mergeNewSignersFrom(incoming: Block): void {
+        this.expandSignatures(
+            this.newSignerSignatures(incoming.confirmationSignatures)
+        );
+        this.mergeOnChainTimestamp(incoming);
+    }
+
+    /**
+     * The incoming confirmation signatures whose recovered signer has no
+     * signature on this block yet (author included), keeping the first one per
+     * signer. Values that cannot be recovered are left out, and an author
+     * signature that cannot be recovered holds no signer. Returns normalized
+     * signatures; this block is not changed.
+     */
+    newSignerSignatures(
+        incoming: Signature[] | Set<Signature>
+    ): Set<Signature> {
+        const heldSigners = new Set<Address>();
+        for (const held of this.allSignatures) {
+            const signer = this.tryRecoverSigner(held);
+            if (signer) heldSigners.add(signer);
+        }
+        const selected = new Set<Signature>();
+        for (const signature of incoming) {
+            const normalized = SignatureUtils.normalizeSignature(signature);
+            const signer = this.tryRecoverSigner(normalized);
+            if (!signer || heldSigners.has(signer)) continue;
+            heldSigners.add(signer);
+            selected.add(normalized);
+        }
+        return selected;
+    }
+
+    /**
+     * Keep at most one confirmation signature per recovered signer: the first
+     * one per signer, none for the author, none that cannot be recovered.
+     */
+    retainOneSignaturePerSigner(): void {
+        const confirmationSignatures = this._confirmationSignatures;
+        this._confirmationSignatures = new Set();
+        this.expandSignatures(this.newSignerSignatures(confirmationSignatures));
     }
 
     /** Drop confirmation signatures (the author's original signature is kept). */
@@ -326,6 +372,19 @@ export default class Block {
             encodedBlock: this.encode(),
             signature: (await this.sign(signer)) as Bytes
         };
+    }
+
+    private tryRecoverSigner(signature: Signature): Address | undefined {
+        try {
+            return this.signatureToAddress(signature);
+        } catch {
+            return undefined;
+        }
+    }
+
+    private mergeOnChainTimestamp(incoming: Block): void {
+        const timestamp = incoming.onChainTimestamp;
+        if (timestamp !== undefined) this.onChainTimestamp = timestamp;
     }
 
     private getHashBytes(): Uint8Array {

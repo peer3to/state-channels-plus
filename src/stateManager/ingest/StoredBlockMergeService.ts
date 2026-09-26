@@ -3,13 +3,14 @@ import type AValidationStrategy from "../validationStrategy/AValidationStrategy"
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address } from "@/types/types";
-import { difference, getChecksumAddress, isSubset, Logger } from "@/utils";
+import { difference, getChecksumAddress, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
 /**
  * Merges an incoming confirmation into a block we already store: accumulates
- * new signatures, cuts signers outside the participant union, and re-gossips.
+ * signatures from new signers (one per signer), cuts signers outside the
+ * participant union, and re-gossips.
  * Scheduled by `BlockQueueManager` when ingest finds the block already stored.
  */
 export default class StoredBlockMergeService {
@@ -46,17 +47,6 @@ export default class StoredBlockMergeService {
         if (normalization !== BlockValidationResult.SUCCESS)
             return normalization;
 
-        const existingSignatures = existingBlock.confirmationSignatures;
-        const incomingSignatures = block.confirmationSignatures;
-        const newSignatures = difference(
-            incomingSignatures,
-            existingSignatures
-        );
-
-        if (newSignatures.size === 0) {
-            return strategy.noNewSignaturesOnExistingBlock(block);
-        }
-
         const participants = new Set<Address>(
             sm.storage
                 .getParticipantsUnion(
@@ -66,24 +56,40 @@ export default class StoredBlockMergeService {
                 .map((participant) => getChecksumAddress(participant))
         );
 
-        const newSignerAddresses = new Set<Address>(
-            Array.from(newSignatures).map((signature) =>
-                getChecksumAddress(block.signatureToAddress(signature))
+        // Stray signers are collected before the per-signer cut below, so every
+        // supplier of a stray value is still attributed, not only the first.
+        const unexpectedSignatures = new Set(
+            Array.from(
+                difference(
+                    block.confirmationSignatures,
+                    existingBlock.confirmationSignatures
+                )
+            ).filter(
+                (signature) =>
+                    !participants.has(
+                        getChecksumAddress(block.signatureToAddress(signature))
+                    )
             )
         );
 
-        if (!isSubset(newSignerAddresses, participants)) {
-            const unexpectedSigners = difference(
-                newSignerAddresses,
-                participants
-            );
-            const unexpectedSignatures = new Set(
-                Array.from(newSignatures).filter((signature) =>
-                    unexpectedSigners.has(
-                        getChecksumAddress(
-                            block.signatureToAddress(signature)
-                        ) as Address
-                    )
+        // Only a signer the stored block does not hold yet brings something
+        // new: one signature per signer, the held one is kept. Cut the copy
+        // down to those so it is the only growth stored and relayed.
+        const newSignatures = existingBlock.newSignerSignatures(
+            block.confirmationSignatures
+        );
+        block.removeConfirmationSignatures(
+            difference(block.confirmationSignatures, newSignatures)
+        );
+
+        if (newSignatures.size === 0) {
+            return strategy.noNewSignaturesOnExistingBlock(block);
+        }
+
+        if (unexpectedSignatures.size > 0) {
+            const unexpectedSigners = new Set<Address>(
+                Array.from(unexpectedSignatures).map((signature) =>
+                    getChecksumAddress(block.signatureToAddress(signature))
                 )
             );
             this.logger.warn(
@@ -114,10 +120,7 @@ export default class StoredBlockMergeService {
             }
             // SUCCESS: the strategy stripped the stray signatures and cut
             // their byzantine sender.
-            if (
-                difference(block.confirmationSignatures, existingSignatures)
-                    .size === 0
-            ) {
+            if (block.confirmationSignatures.size === 0) {
                 return strategy.noNewSignaturesOnExistingBlock(block);
             }
         }

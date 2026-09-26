@@ -36,6 +36,7 @@ import {
 } from "@/utils";
 import { Config, config, createConfig } from "@/utils/config";
 import { LogLevel } from "@/utils/logging/Logger";
+import { routedFacets } from "@/utils/routedFacets";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
 import { AssertActions } from "@test/harness/actions/assert/AssertActions";
@@ -69,7 +70,9 @@ import {
 import SyncCoordinator from "@test/utils/SyncCoordinator";
 import {
     AStateMachine as AStateMachineContract,
-    StateChannelManagerInterface
+    StateChannelManagerInterface,
+    UtilityFacet,
+    UtilityFacet__factory
 } from "@typechain-types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import * as dotenv from "dotenv";
@@ -98,6 +101,8 @@ export class PeerTestHarness<
 > {
     public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
     public channelManager!: StateChannelManagerInterface;
+    /** The deployed UtilityFacet the channel manager routes to. */
+    public utilityFacet!: UtilityFacet;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
     public options!: HarnessOptions;
@@ -524,6 +529,14 @@ export class PeerTestHarness<
             logger: this.logger
         });
         const facetAddresses = JSON.parse(facetResolution.value) as string[];
+        this.utilityFacet = UtilityFacet__factory.connect(
+            facetAddresses[
+                routedFacets.findIndex(
+                    ({ facetName }) => facetName === "UtilityFacet"
+                )
+            ],
+            deployerSigner
+        );
 
         const scmResolution = await resolveOrDeployShared({
             cacheDir,

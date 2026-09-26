@@ -1056,6 +1056,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 if (this.hasAnyBlockConflict(finalizedBlocks)) {
                     return { shouldAbort: true };
                 }
+                // Classify before the first write, so a failure cannot leave
+                // the sync half-applied.
+                await this.stripChainRejectedSignatures(finalizedBlocks);
 
                 for (const dw of syncPayload.disputeWindows) {
                     for (const dispute of dw.disputeConfirmations) {
@@ -1128,6 +1131,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
     private hasAnyBlockConflict(blocks: Block[]): boolean {
         return blocks.some((block) => this.hasBlockConflict(block));
+    }
+
+    /** Keep only confirmation signatures the chain accepts. */
+    private async stripChainRejectedSignatures(blocks: Block[]): Promise<void> {
+        const validationService =
+            this.p2pManager.stateManager.validationService;
+        for (const block of blocks) {
+            block.removeConfirmationSignatures(
+                await validationService.findMalformedConfirmationSignatures(
+                    block
+                )
+            );
+        }
     }
 
     private persistFinalizedBlocks(blocks: Block[]): void {

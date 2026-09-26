@@ -3,12 +3,15 @@ import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { assertNonHexNewBlockCopyKeepsGenuineSignature } from "@test/fixtures/ChainRejectedSignatureFixture";
 import {
     assertStoredCopyQuota,
     assertPendingJoinAdmission,
     assertIndependentNetworkAllowances,
     assertStoredMalformedNetworkCopy,
-    assertOutsiderProofDoesNotAdmitCopy
+    assertOutsiderProofDoesNotAdmitCopy,
+    assertRepeatedStoredSignerVariants,
+    assertNewBlockSignerVariantsStoredOnce
 } from "@test/fixtures/QueueNetworkRetentionFixture";
 import {
     assertSlashAdmission,
@@ -48,6 +51,18 @@ describe("E2E: BlockQueueManager", function () {
 
     it("stored network copies are bounded before each ordinary merge", async () => {
         await assertStoredCopyQuota(true);
+    });
+
+    it("repeated batches of a participant's alternate signatures keep one stored signature per signer and relay only the first", async () => {
+        await assertRepeatedStoredSignerVariants();
+    });
+
+    it("a new block carrying alternate signatures of one participant is stored with one signature per signer", async () => {
+        await assertNewBlockSignerVariantsStoredOnce();
+    });
+
+    it("a queued new block copy carrying a non-hex value commits with the genuine signature and blacklists its supplier", async () => {
+        await assertNonHexNewBlockCopyKeepsGenuineSignature();
     });
 
     it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {

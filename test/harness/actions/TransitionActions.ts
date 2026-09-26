@@ -5,6 +5,7 @@ import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Logger, sleep, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { StoredMergeNetworkCopy } from "@test/fixtures/customRpc/harnessControl/services/validationProbe/ValidationProbeService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import type { TestPeer } from "@test/harness/core/types";
@@ -506,11 +507,13 @@ export class TransitionActions<
         peerIndex: number;
         confirmation: { signedBlock: unknown; signatures: string[] };
         strategy?: "active" | "dispute" | "spectating" | "calldata";
+        /** Queue one network copy per supplier and merge that entry. */
+        networkCopies?: StoredMergeNetworkCopy[];
     }): Promise<{
         result: number | null;
         persistedSignatures: string[] | null;
     }> {
-        const { peerIndex, confirmation, strategy } = options;
+        const { peerIndex, confirmation, strategy, networkCopies } = options;
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
             .validation.runStoredBlockMerge(
@@ -518,7 +521,9 @@ export class TransitionActions<
                     confirmation as BlockConfirmationStruct,
                     Type.BlockConfirmation
                 ) as string,
-                strategy ? { strategy } : undefined
+                strategy || networkCopies
+                    ? { strategy, networkCopies }
+                    : undefined
             )
             .request();
     }

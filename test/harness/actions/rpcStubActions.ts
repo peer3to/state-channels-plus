@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: restorable timing controls exercised by mapped lobby and negotiation tests
 import type { Status } from "@/types";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 import { Logger } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
@@ -1152,5 +1152,34 @@ export class RpcStubActions<
             .control(this.harness.getPeer(peerIndex))
             .stub.waitForSpectateSyncCalls(count)
             .request({ timeoutMs });
+    }
+
+    /**
+     * Wait, event by event, until the peer's admission observation holds at
+     * least `count` stored-merge results. Every stored merge ends in a
+     * processed event for its block, so each wake-up rechecks the record;
+     * other peers' copies of the same block only cause an extra recheck.
+     */
+    async waitForStoredMergeResults(
+        peerIndex: number,
+        blockHash: Hash,
+        count: number
+    ) {
+        const stub = this.peerStub(peerIndex);
+        for (;;) {
+            // Baseline first: an event after it wakes the wait below.
+            const seen = this.harness.event.blockConfirmationsProcessed(
+                peerIndex,
+                blockHash
+            );
+            const observation = await stub.getAdmissionObservation().request();
+            if (observation.storedMergeResults.length >= count)
+                return observation;
+            await this.harness.event.waitForBlockConfirmationProcessed({
+                peerIndex,
+                blockHash,
+                minCalls: seen + 1
+            });
+        }
     }
 }

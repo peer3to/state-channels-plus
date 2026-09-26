@@ -101,6 +101,12 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool);
 
+    function retrieveSignerAddresses(bytes memory encodedData, bytes[] memory signatures)
+        public
+        pure
+        virtual
+        returns (address[] memory signers);
+
     function getWindowCommitments(bytes32 channelId, bytes32 forkId)
         public
         view

@@ -44,6 +44,9 @@ export class BlockStorage {
         const existingBlock = this.coordinatesToBlockMap.get(coordinateKey);
 
         if (!existingBlock) {
+            // A stored block keeps at most one confirmation signature per
+            // signer, so an equivocating signer cannot grow it.
+            block.retainOneSignaturePerSigner();
             // Store new block entry
             this.hashToBlockMap.set(blockHash, block);
             this.coordinatesToBlockMap.set(coordinateKey, block);
@@ -61,8 +64,9 @@ export class BlockStorage {
             return undefined;
         }
 
-        // They are equal => merge signatures
-        existingBlock.mergeFrom(block);
+        // They are equal => merge signatures from signers not held yet; the
+        // signature already held for a signer is kept
+        existingBlock.mergeNewSignersFrom(block);
 
         // Return the hash (same object in both maps)
         return blockHash;
@@ -132,7 +136,7 @@ export class BlockStorage {
                 ? this.getBlock(hashOrForkId)
                 : this.getBlock(hashOrForkId, height);
 
-        return block?.expandSignatures([signature]);
+        return block?.expandSignatures(block.newSignerSignatures([signature]));
     }
 
     // ====================================

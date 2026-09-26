@@ -73,8 +73,6 @@ const notRoutedByFacet: Record<
             "stateless helper called on the facet directly",
         isAddressInArray: "stateless helper called on the facet directly",
         retrieveSignerAddress: "stateless helper called on the facet directly",
-        retrieveSignerAddresses:
-            "stateless helper called on the facet directly",
         subtractAddressArrays: "stateless helper called on the facet directly",
         tryDecodeBlock: "stateless helper called on the facet directly",
         verifyThresholdSigned: "stateless helper called on the facet directly"

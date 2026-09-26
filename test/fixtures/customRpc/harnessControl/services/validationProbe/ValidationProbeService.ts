@@ -18,6 +18,9 @@ import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers, id } from "ethers";
 
+/** One supplier's copy of a confirmation for a stored-merge probe. */
+export type StoredMergeNetworkCopy = { sender: Address; signatures: string[] };
+
 export type ConcurrentCalldataRecoveryProbe = {
     queryCount: number;
     firstFound: boolean;
@@ -815,6 +818,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         encodedBlockConfirmation: string,
         options?: {
             strategy?: "active" | "dispute" | "spectating" | "calldata";
+            networkCopies?: StoredMergeNetworkCopy[];
         }
     ): Promise<{
         result: number | null;
@@ -826,9 +830,11 @@ export class ValidationProbeService extends ANetworkRpcService<
             Type.BlockConfirmation
         );
         const block = Block.fromBlockConfirmation(blockConfirmation);
-        const entry = sm.storage.queues.createEntry(block, {
-            origin: BlockOrigin.PROOF
-        });
+        const entry = options?.networkCopies
+            ? this.queueNetworkCopies(block, options.networkCopies)
+            : sm.storage.queues.createEntry(block, {
+                  origin: BlockOrigin.PROOF
+              });
 
         let strategy: AValidationStrategy;
         switch (options?.strategy) {
@@ -858,6 +864,32 @@ export class ValidationProbeService extends ANetworkRpcService<
                 ? Array.from(persisted.confirmationSignatures).map(String)
                 : null
         };
+    }
+
+    /**
+     * Queue one network copy per supplier through the real queue storage, so
+     * the copies merge into one entry with per-source attribution, then take
+     * that entry out of the queue.
+     */
+    public queueNetworkCopies(
+        block: Block,
+        copies: StoredMergeNetworkCopy[]
+    ): QueuedBlockEntry {
+        const queues = this.sm.storage.queues;
+        for (const copy of copies) {
+            queues.queueBlock(
+                Block.fromBlockConfirmation({
+                    signedBlock: block.signedBlock,
+                    signatures: copy.signatures
+                }),
+                { origin: BlockOrigin.NETWORK, senderAddress: copy.sender }
+            );
+        }
+        const entry = queues
+            .tryDequeueAt(block.forkId, block.height)
+            .find((queued) => queued.block.hash === block.hash);
+        if (!entry) throw new Error("queued network copies were not merged");
+        return entry;
     }
 
     public async runBlockValidation(

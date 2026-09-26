@@ -121,7 +121,7 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
             /** Post-decode override; "" is not ABI-encodable (see service). */
             latestFinalizedStateStateMachineStateOverride?: string;
         }
-    ): PersistDisputeDataProjection {
+    ): Promise<PersistDisputeDataProjection> {
         return this.service.persistDisputeDataWithoutAudit(
             encodedDispute,
             options

@@ -2,6 +2,7 @@
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
+import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type LobbyMatchingRpcMethods from "@/rpc/network/services/lobbyMatching/LobbyMatchingRpcMethods";
@@ -14,6 +15,7 @@ import type {
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import { BlockValidationResult } from "@/types";
 import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import {
     Codec,
@@ -26,6 +28,7 @@ import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
 import type { StateChannelManagerInterface } from "@typechain-types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct
@@ -356,6 +359,16 @@ export class StubService extends ANetworkRpcService<
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
+        // Confirmation signatures carried by each observed broadcast, in order.
+        broadcastSignatures: string[][];
+        // Block height of each observed broadcast, in the same order.
+        broadcastHeights: number[];
+        // Most confirmation values one observed network copy carried.
+        largestNetworkEntry: number;
+        // Outcome of each observed stored-block merge, in completion order.
+        storedMergeResults: (BlockValidationResult | null)[];
+        // Calls to the on-chain confirmation-signature classifier.
+        signerClassificationCalls: number;
         holdGossip: boolean;
         heldGossip: (() => void)[];
         releaseMembership: () => void;
@@ -656,6 +669,11 @@ export class StubService extends ANetworkRpcService<
         const request = router.sendRpcRequest.bind(router);
         const spectate = this.p2pManager.localRpc.spectateService;
         const sync = spectate.sync.bind(spectate);
+        const localDiamond = machine.localDiamondContract;
+        const classify = localDiamond.retrieveSignerAddresses;
+        const storedMerge = this.sm.storedBlockMergeService;
+        const mergeStored =
+            storedMerge.tryMergeStoredBlockConfirmation.bind(storedMerge);
         let releaseMembership: () => void = () => {};
         const gate = new Promise<void>((resolve) => {
             releaseMembership = resolve;
@@ -672,6 +690,11 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
+            broadcastSignatures: [] as string[][],
+            broadcastHeights: [] as number[],
+            largestNetworkEntry: 0,
+            storedMergeResults: [] as (BlockValidationResult | null)[],
+            signerClassificationCalls: 0,
             holdGossip: options.holdGossip ?? false,
             heldGossip: [] as (() => void)[],
             releaseMembership,
@@ -683,6 +706,8 @@ export class StubService extends ANetworkRpcService<
                 machine.getParticipants = participants;
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
+                storedMerge.tryMergeStoredBlockConfirmation = mergeStored;
+                localDiamond.retrieveSignerAddresses = classify;
             }
         };
         this.admissionObservation = observation;
@@ -705,13 +730,34 @@ export class StubService extends ANetworkRpcService<
                 (!options.source ||
                     (args[1].origin === BlockOrigin.NETWORK &&
                         args[1].senderAddress === options.source))
-            )
+            ) {
                 observation.networkEntries++;
+                observation.largestNetworkEntry = Math.max(
+                    observation.largestNetworkEntry,
+                    entry.block.confirmationSignatures.size
+                );
+            }
             if (entry.origin === BlockOrigin.PROOF) {
                 observation.proofEntries++;
                 observation.proofSources += entry.sourcesToSignatures.size;
             }
             return entry;
+        };
+        // Record-only: counts the real contract calls and forwards them.
+        localDiamond.retrieveSignerAddresses = new Proxy(classify, {
+            apply: (target, receiver, parameters) => {
+                observation.signerClassificationCalls++;
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
+        storedMerge.tryMergeStoredBlockConfirmation = async (...args) => {
+            const result = await mergeStored(...args);
+            if (
+                !options.source ||
+                args[0].sourcesToSignatures.has(options.source)
+            )
+                observation.storedMergeResults.push(result ?? null);
+            return result;
         };
         queue.ingestBlockConfirmation = async (...args) => {
             try {
@@ -743,6 +789,13 @@ export class StubService extends ANetworkRpcService<
                 rpc.method === "onBlockConfirmation"
             ) {
                 observation.broadcasts++;
+                const confirmation = rpc.params[0] as BlockConfirmationStruct;
+                observation.broadcastSignatures.push(
+                    confirmation.signatures.map(String)
+                );
+                observation.broadcastHeights.push(
+                    Block.fromBlockConfirmation(confirmation).height
+                );
                 if (observation.holdGossip) {
                     observation.heldGossip.push(() => broadcast(rpc));
                     return;
@@ -775,6 +828,14 @@ export class StubService extends ANetworkRpcService<
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,
+            broadcastSignatures: (observation?.broadcastSignatures ?? []).map(
+                (signatures) => [...signatures]
+            ),
+            broadcastHeights: [...(observation?.broadcastHeights ?? [])],
+            largestNetworkEntry: observation?.largestNetworkEntry ?? 0,
+            storedMergeResults: [...(observation?.storedMergeResults ?? [])],
+            signerClassificationCalls:
+                observation?.signerClassificationCalls ?? 0,
             heldGossip: observation?.heldGossip.length ?? 0
         };
     }

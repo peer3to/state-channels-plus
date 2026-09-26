@@ -9,6 +9,7 @@ import {
     randomAddress,
     blockStructWithTransactionHeader
 } from "@test/factory";
+import { assertPersistedMilestoneKeepsGenuineSignature } from "@test/fixtures/ChainRejectedSignatureFixture";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
@@ -1012,6 +1013,14 @@ describe("Unit: DisputeValidationService", function () {
             }
             expect(p.snapshots[0].storedBefore).to.equal(false);
             expect(p.snapshots[0].storedAfter).to.equal(true);
+        });
+
+        it("includeUnfinalizedBlocks true -> a milestone confirmation keeps only its genuine signature, not its chain-rejected re-encodings", async function () {
+            await assertPersistedMilestoneKeepsGenuineSignature(true);
+        });
+
+        it("includeUnfinalizedBlocks false -> a milestone confirmation keeps only its genuine signature, not its chain-rejected re-encodings", async function () {
+            await assertPersistedMilestoneKeepsGenuineSignature(false);
         });
 
         it("includeUnfinalizedBlocks false -> stateProof.signedBlocks and latestStateSnapshot not stored", async function () {

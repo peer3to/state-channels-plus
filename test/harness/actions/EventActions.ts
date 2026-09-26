@@ -226,16 +226,33 @@ export class EventActions<
         });
     }
 
+    /** How many confirmations for this block the peer has processed so far. */
+    blockConfirmationsProcessed(peerIndex: number, blockHash: Hash): number {
+        return (
+            this.harness
+                .getPeer(peerIndex)
+                .eventSpies.onBlockConfirmationProcessed?.getCalls()
+                .filter((call) => call.args[0] === blockHash).length ?? 0
+        );
+    }
+
+    /**
+     * Wait until the peer processed a confirmation for this block. With
+     * `minCalls`, wait until it processed at least that many (take the
+     * baseline from `blockConfirmationsProcessed` before the stimulus).
+     */
     async waitForBlockConfirmationProcessed(options: {
         peerIndex: number;
         blockHash: Hash;
         keepConnection?: boolean;
+        minCalls?: number;
         timeoutMs?: number;
     }): Promise<void> {
         const {
             peerIndex,
             blockHash,
             keepConnection,
+            minCalls = 1,
             timeoutMs = this.protocolEventTimeoutMs()
         } = options;
         const peer = this.harness.getPeer(peerIndex);
@@ -243,9 +260,9 @@ export class EventActions<
         await this.harness.eventCountsBarrier.waitFor(
             () => {
                 return (
-                    peer.eventSpies.onBlockConfirmationProcessed
+                    (peer.eventSpies.onBlockConfirmationProcessed
                         ?.getCalls()
-                        .some((call) => {
+                        .filter((call) => {
                             const [
                                 processedBlockHash,
                                 processedKeepConnection
@@ -255,7 +272,7 @@ export class EventActions<
                                 (keepConnection === undefined ||
                                     processedKeepConnection === keepConnection)
                             );
-                        }) ?? false
+                        }).length ?? 0) >= minCalls
                 );
             },
             {

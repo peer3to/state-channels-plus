@@ -65,6 +65,24 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
     }
 
     /**
+     * Send a confirmation whose signature values are raw strings, so values
+     * that are not ABI-encodable (e.g. odd-length hex) reach the receiver.
+     */
+    public async sendRawBlockConfirmation(
+        encodedSignedBlock: string,
+        rawSignatures: string[],
+        targetEvmAddress: string
+    ): Promise<boolean> {
+        this.p2pManager.remoteRpc.stateTransitionService
+            .onBlockConfirmation({
+                signedBlock: Codec.decode(encodedSignedBlock, Type.SignedBlock),
+                signatures: rawSignatures
+            })
+            .sendOne(targetEvmAddress);
+        return true;
+    }
+
+    /**
      * Apply a transaction against the live state machine and return the
      * resulting state-snapshot hash, for building a block whose body is invalid
      * but whose declared snapshot hash is a real (valid) state.

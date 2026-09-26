@@ -90,3 +90,32 @@ export function signBlockVariant(
         v: 27 + signed.recovery
     }).serialized;
 }
+
+// secp256k1 group order, for the high-s re-encoding below.
+const SECP256K1_N = BigInt(
+    "0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"
+);
+
+/**
+ * Re-encodings of one valid signature that need no key: v as 0/1, v as an
+ * EIP-155 style 35+, the 64-byte compact form, and the high-s twin. ethers
+ * recovers the first three to the same signer; the chain accepts none.
+ */
+export function signatureReencodings(signature: string) {
+    const parsed = ethers.Signature.from(signature);
+    const recovery = parsed.v - 27;
+    return {
+        v0: ethers.concat([parsed.r, parsed.s, ethers.toBeHex(recovery, 1)]),
+        v35: ethers.concat([
+            parsed.r,
+            parsed.s,
+            ethers.toBeHex(35 + recovery, 1)
+        ]),
+        compact: parsed.compactSerialized,
+        highS: ethers.concat([
+            parsed.r,
+            ethers.toBeHex(SECP256K1_N - BigInt(parsed.s), 32),
+            ethers.toBeHex(27 + (1 - recovery), 1)
+        ])
+    };
+}
