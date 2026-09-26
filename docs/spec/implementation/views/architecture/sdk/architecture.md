@@ -156,7 +156,7 @@ returned. Application setup owns this sequence; the root owns communication.
    `deployLocalDiamondWithStateMachineAddress`). The `LocalDiamond` is a local
    mirror of the on-chain manager's dispute/fraud-proof logic plus per-channel
    chain state, kept in sync by the
-   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L48) replaying
+   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L49) replaying
    observed chain events (`onChannelOpened`, `onStateSnapshotUpdated`,
    `onBlockCalldataPosted`, `onDisputeCommitted`, `onOnChainSlashAdded`, ...).
    Dispute re-execution, replay positioning, and canonical validation

@@ -92,7 +92,7 @@ A service (a subclass of [`ANetworkRpcService`](../../../../../../../src/rpc/net
 internal helpers, and business logic — e.g.
 [`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9)
 owns the per-peer acknowledgment maps, and
-[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L35) owns the in-flight
+[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L31) owns the in-flight
 sync set and the whole payload-generation/verification machinery. It pairs with an **RpcMethods**
 class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes *only* the
 deliberately public, remotely callable methods. The dispatcher instantiates the RpcMethods class
@@ -259,7 +259,7 @@ substitutes. Examples of the split done right:
 [`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
 rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
 past the skew comparison);
-[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L153)
+[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L154)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
 [`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)

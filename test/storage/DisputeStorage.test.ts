@@ -1,6 +1,10 @@
 import * as factory from "../factory";
-import { DisputeStorage } from "@/storage/DisputeStorage";
+import {
+    DisputeConfirmationOrigin,
+    DisputeStorage
+} from "@/storage/DisputeStorage";
 import { Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import {
     DisputeConfirmationStruct,
     SignedDisputeStruct
@@ -9,7 +13,12 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
 
-const sig = () => ethers.hexlify(ethers.randomBytes(65));
+const SYNC = { origin: DisputeConfirmationOrigin.SYNC };
+const CHAIN_EVENT = { origin: DisputeConfirmationOrigin.CHAIN_EVENT };
+
+// A co-signature by a fresh signer over the dispute hash.
+const coSignature = (disputeHash: Hash) =>
+    factory.randomWallet().signMessageSync(ethers.getBytes(disputeHash));
 
 describe("DisputeStorage", () => {
     let storage: DisputeStorage;
@@ -28,53 +37,11 @@ describe("DisputeStorage", () => {
         mockDisputeHash = ethers.keccak256(mockSignedDispute.encodedDispute);
     });
 
-    describe("CREATE - storeDispute()", () => {
-        it("should store SignedDispute with auto-computed hash and return hash with empty signatures", () => {
-            const hash = storage.storeDispute(mockSignedDispute);
-
-            expect(hash).to.equal(mockDisputeHash);
-            const stored = storage.getDisputeConfirmation(hash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
-            expect(stored?.signatures).to.deep.equal([]);
-        });
-
-        it("should store SignedDispute with provided hash", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
-            const hash = storage.storeDispute(mockSignedDispute, {
-                hash: customHash
-            });
-
-            expect(hash).to.equal(customHash);
-            const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
-            expect(stored?.signatures).to.deep.equal([]);
-        });
-
-        it("should return same hash on duplicate insert and preserve existing signatures", () => {
-            // First store with empty signatures
-            const hash1 = storage.storeDispute(mockSignedDispute);
-            expect(hash1).to.equal(mockDisputeHash);
-
-            // Add some signatures to the existing dispute
-            const existingDispute =
-                storage.getDisputeConfirmation(mockDisputeHash);
-            const signature1 = sig();
-            const signature2 = sig();
-            existingDispute!.signatures = [signature1, signature2];
-
-            // Second store should preserve existing signatures
-            const hash2 = storage.storeDispute(mockSignedDispute);
-            expect(hash2).to.equal(mockDisputeHash);
-
-            const stored = storage.getDisputeConfirmation(mockDisputeHash);
-            expect(stored?.signatures).to.deep.equal([signature1, signature2]);
-        });
-    });
-
     describe("CREATE - storeDisputeConfirmation()", () => {
         it("should store DisputeConfirmation with auto-computed hash", () => {
             const hash = storage.storeDisputeConfirmation(
-                mockDisputeConfirmation
+                mockDisputeConfirmation,
+                SYNC
             );
 
             expect(hash).to.equal(mockDisputeHash);
@@ -82,109 +49,294 @@ describe("DisputeStorage", () => {
             expect(stored).to.equal(mockDisputeConfirmation);
         });
 
-        it("should store DisputeConfirmation with provided hash", () => {
-            const customHash = ethers.hexlify(ethers.randomBytes(32));
-            const hash = storage.storeDisputeConfirmation(
-                mockDisputeConfirmation,
-                { hash: customHash }
-            );
-
-            expect(hash).to.equal(customHash);
-            const stored = storage.getDisputeConfirmation(customHash);
-            expect(stored).to.equal(mockDisputeConfirmation);
-        });
-
-        it("should merge signatures with deduplication on duplicate insert", () => {
-            // Create shared and unique signatures
-            const sharedSignature = sig();
-            const uniqueSignature1 = sig();
-            const uniqueSignature2 = sig();
-
-            // First dispute confirmation with shared + unique signature
-            const firstDisputeConfirmation = {
-                ...mockDisputeConfirmation,
-                signatures: [sharedSignature, uniqueSignature1]
-            };
-
-            const hash1 = storage.storeDisputeConfirmation(
-                firstDisputeConfirmation
-            );
-
-            // Second dispute confirmation with same shared signature + different unique signature
-            const secondDisputeConfirmation = {
-                ...mockDisputeConfirmation,
-                signatures: [sharedSignature, uniqueSignature2]
-            };
-
-            const hash2 = storage.storeDisputeConfirmation(
-                secondDisputeConfirmation
-            );
-
-            // Should return same hash
-            expect(hash1).to.equal(hash2);
-
-            const stored = storage.getDisputeConfirmation(hash1);
-
-            // Should have 3 unique signatures (shared signature not duplicated)
-            expect(stored?.signatures).to.have.lengthOf(3);
-            expect(stored?.signatures).to.include.members([
-                sharedSignature,
-                uniqueSignature1,
-                uniqueSignature2
-            ]);
-
-            // Verify no duplicates
-            const signatureSet = new Set(stored?.signatures);
-            expect(signatureSet.size).to.equal(stored?.signatures.length);
-        });
-
-        it("should handle empty signatures array", () => {
-            const disputeWithEmptySignatures = {
-                ...mockDisputeConfirmation,
-                signatures: []
-            };
+        it("stores the first copy of a dispute with exactly its signatures", () => {
+            const firstSignatures = [
+                coSignature(mockDisputeHash),
+                coSignature(mockDisputeHash)
+            ];
 
             const hash = storage.storeDisputeConfirmation(
-                disputeWithEmptySignatures
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: firstSignatures
+                },
+                SYNC
             );
 
-            const stored = storage.getDisputeConfirmation(hash);
-            expect(stored?.signatures).to.deep.equal([]);
+            expect(hash).to.equal(mockDisputeHash);
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal(firstSignatures);
         });
 
-        it("should preserve original SignedDispute when merging signatures", () => {
-            // Store first dispute
-            const hash1 = storage.storeDisputeConfirmation(
-                mockDisputeConfirmation
+        it("ignores a later sync copy that carries extra signatures", () => {
+            const firstSignature = coSignature(mockDisputeHash);
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [firstSignature]
+                },
+                SYNC
             );
 
-            // Create a second dispute with different SignedDispute but same hash
-            const differentSignedDispute = factory.signedDispute();
-            const secondDispute = {
-                signedDispute: differentSignedDispute,
-                signatures: [sig()]
+            const hash = storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [
+                        firstSignature,
+                        coSignature(mockDisputeHash),
+                        coSignature(mockDisputeHash)
+                    ]
+                },
+                SYNC
+            );
+
+            expect(hash).to.equal(mockDisputeHash);
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([firstSignature]);
+        });
+
+        it("does not grow the stored signatures across repeated sync copies", () => {
+            const firstSignature = coSignature(mockDisputeHash);
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [firstSignature]
+                },
+                SYNC
+            );
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([firstSignature]);
+        });
+
+        it("replaces a stored sync copy with a chain event copy", () => {
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [
+                        coSignature(mockDisputeHash),
+                        coSignature(mockDisputeHash)
+                    ]
+                },
+                SYNC
+            );
+            const chainSignature = coSignature(mockDisputeHash);
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [chainSignature]
+                },
+                CHAIN_EVENT
+            );
+
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([chainSignature]);
+        });
+
+        it("ignores a sync copy that arrives after a chain event copy", () => {
+            const chainSignature = coSignature(mockDisputeHash);
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [chainSignature]
+                },
+                CHAIN_EVENT
+            );
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([chainSignature]);
+        });
+
+        it("keeps the first chain event copy when a second chain event copy arrives", () => {
+            const firstChainSignature = coSignature(mockDisputeHash);
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [firstChainSignature]
+                },
+                CHAIN_EVENT
+            );
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                CHAIN_EVENT
+            );
+
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([firstChainSignature]);
+        });
+
+        it("keeps copies for different dispute hashes independent", () => {
+            const otherSignedDispute = factory.signedDispute();
+            const otherDisputeHash = ethers.keccak256(
+                otherSignedDispute.encodedDispute
+            );
+            const firstSignature = coSignature(mockDisputeHash);
+            const otherSignature = coSignature(otherDisputeHash);
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [firstSignature]
+                },
+                SYNC
+            );
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: otherSignedDispute,
+                    signatures: [otherSignature]
+                },
+                SYNC
+            );
+
+            expect(otherDisputeHash).to.not.equal(mockDisputeHash);
+            expect(
+                storage.getDisputeConfirmation(mockDisputeHash)?.signatures
+            ).to.deep.equal([firstSignature]);
+            expect(
+                storage.getDisputeConfirmation(otherDisputeHash)?.signatures
+            ).to.deep.equal([otherSignature]);
+        });
+
+        it("re-storing an identical sync confirmation leaves the stored copy unchanged", () => {
+            const firstCopy = {
+                signedDispute: mockSignedDispute,
+                signatures: [coSignature(mockDisputeHash)]
+            };
+            storage.storeDisputeConfirmation(firstCopy, SYNC);
+
+            const hash = storage.storeDisputeConfirmation(
+                {
+                    signedDispute: { ...mockSignedDispute },
+                    signatures: [...firstCopy.signatures]
+                },
+                SYNC
+            );
+
+            expect(hash).to.equal(mockDisputeHash);
+            expect(storage.getDisputeConfirmation(mockDisputeHash)).to.equal(
+                firstCopy
+            );
+        });
+
+        it("re-storing an identical chain event confirmation leaves the stored copy unchanged", () => {
+            const firstCopy = {
+                signedDispute: mockSignedDispute,
+                signatures: [coSignature(mockDisputeHash)]
+            };
+            storage.storeDisputeConfirmation(firstCopy, CHAIN_EVENT);
+
+            const hash = storage.storeDisputeConfirmation(
+                {
+                    signedDispute: { ...mockSignedDispute },
+                    signatures: [...firstCopy.signatures]
+                },
+                CHAIN_EVENT
+            );
+
+            expect(hash).to.equal(mockDisputeHash);
+            expect(storage.getDisputeConfirmation(mockDisputeHash)).to.equal(
+                firstCopy
+            );
+        });
+        it("keeps the first signed dispute when a later sync copy carries another disputer signature", () => {
+            const firstCopy = {
+                signedDispute: mockSignedDispute,
+                signatures: [coSignature(mockDisputeHash)]
+            };
+            storage.storeDisputeConfirmation(firstCopy, SYNC);
+            const otherSignature = coSignature(mockDisputeHash);
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: {
+                        encodedDispute: mockSignedDispute.encodedDispute,
+                        signature: otherSignature
+                    },
+                    signatures: [...firstCopy.signatures]
+                },
+                SYNC
+            );
+
+            const stored = storage.getDisputeConfirmation(mockDisputeHash);
+            expect(stored).to.equal(firstCopy);
+            expect(stored?.signedDispute.signature).to.equal(
+                mockSignedDispute.signature
+            );
+            expect(stored?.signedDispute.signature).to.not.equal(
+                otherSignature
+            );
+        });
+
+        it("takes the chain event's signed dispute when it replaces a sync copy", () => {
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            const chainSignedDispute = {
+                encodedDispute: mockSignedDispute.encodedDispute,
+                signature: coSignature(mockDisputeHash)
             };
 
-            // Store second dispute with same hash
-            const hash2 = storage.storeDisputeConfirmation(secondDispute, {
-                hash: hash1
-            });
+            storage.storeDisputeConfirmation(
+                { signedDispute: chainSignedDispute, signatures: [] },
+                CHAIN_EVENT
+            );
 
-            expect(hash1).to.equal(hash2);
-
-            const stored = storage.getDisputeConfirmation(hash1);
-            // Should preserve the original SignedDispute
-            expect(stored?.signedDispute).to.equal(mockSignedDispute);
-            // Should have merged signatures
-            expect(stored?.signatures.length).to.be.greaterThan(
-                mockDisputeConfirmation.signatures.length
+            const stored = storage.getDisputeConfirmation(mockDisputeHash);
+            expect(stored?.signedDispute).to.deep.equal(chainSignedDispute);
+            expect(stored?.signedDispute.signature).to.not.equal(
+                mockSignedDispute.signature
             );
         });
     });
 
     describe("READ - getDisputeConfirmation()", () => {
         beforeEach(() => {
-            storage.storeDisputeConfirmation(mockDisputeConfirmation);
+            storage.storeDisputeConfirmation(mockDisputeConfirmation, SYNC);
         });
 
         it("should get dispute confirmation by hash", () => {
@@ -199,15 +351,56 @@ describe("DisputeStorage", () => {
         });
     });
 
+    describe("READ - getDispute()", () => {
+        it("decodes the stored dispute across a sync store and a chain event replacement", () => {
+            const expected = Codec.decode(
+                mockSignedDispute.encodedDispute,
+                Type.Dispute
+            );
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            expect(storage.getDispute(mockDisputeHash)).to.deep.equal(expected);
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: {
+                        encodedDispute: mockSignedDispute.encodedDispute,
+                        signature: coSignature(mockDisputeHash)
+                    },
+                    signatures: []
+                },
+                CHAIN_EVENT
+            );
+            expect(storage.getDispute(mockDisputeHash)).to.deep.equal(expected);
+
+            const unknownHash = ethers.hexlify(ethers.randomBytes(32));
+            expect(storage.getDispute(unknownHash)).to.equal(undefined);
+        });
+    });
+
     describe("Edge cases and behavior", () => {
         it("should handle multiple different disputes", () => {
             const dispute1 = factory.signedDispute();
             const dispute2 = factory.signedDispute();
             const dispute3 = factory.signedDispute();
 
-            const hash1 = storage.storeDispute(dispute1);
-            const hash2 = storage.storeDispute(dispute2);
-            const hash3 = storage.storeDispute(dispute3);
+            const hash1 = storage.storeDisputeConfirmation(
+                { signedDispute: dispute1, signatures: [] },
+                CHAIN_EVENT
+            );
+            const hash2 = storage.storeDisputeConfirmation(
+                { signedDispute: dispute2, signatures: [] },
+                CHAIN_EVENT
+            );
+            const hash3 = storage.storeDisputeConfirmation(
+                { signedDispute: dispute3, signatures: [] },
+                CHAIN_EVENT
+            );
 
             // All hashes should be different
             expect(hash1).to.not.equal(hash2);
@@ -226,28 +419,9 @@ describe("DisputeStorage", () => {
             ).to.equal(dispute3);
         });
 
-        it("should maintain signatures across different storage methods", () => {
-            // Store with storeDispute first
-            const hash1 = storage.storeDispute(mockSignedDispute);
-
-            // Add a signature through storeDisputeConfirmation
-            const disputeWithSignature = {
-                signedDispute: mockSignedDispute,
-                signatures: [sig()]
-            };
-
-            const hash2 =
-                storage.storeDisputeConfirmation(disputeWithSignature);
-
-            expect(hash1).to.equal(hash2);
-
-            const stored = storage.getDisputeConfirmation(hash1);
-            expect(stored?.signatures).to.have.lengthOf(1);
-        });
-
         it("should handle large signature arrays efficiently", () => {
             const largeSignatureArray = Array.from({ length: 100 }, () =>
-                sig()
+                coSignature(mockDisputeHash)
             );
             const disputeWithManySignatures = {
                 ...mockDisputeConfirmation,
@@ -255,7 +429,8 @@ describe("DisputeStorage", () => {
             };
 
             const hash = storage.storeDisputeConfirmation(
-                disputeWithManySignatures
+                disputeWithManySignatures,
+                CHAIN_EVENT
             );
 
             const stored = storage.getDisputeConfirmation(hash);

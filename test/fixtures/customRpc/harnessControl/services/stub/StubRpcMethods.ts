@@ -1698,6 +1698,24 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.waitForHeldAuditingDataRebuild();
     }
 
+    /** Park every dispute audit's verdict until restored. */
+    public stubHoldDisputeValidationResult(): boolean {
+        this.service.installDisputeValidationResultHold();
+        return true;
+    }
+
+    /** Release parked audit verdicts and restore the real method. */
+    public restoreDisputeValidationResult(): boolean {
+        return this.service.releaseDisputeValidationResultHold();
+    }
+
+    /** Resolves once `minimumCount` audit verdicts are parked; parked count. */
+    public waitForHeldDisputeValidationResults(
+        minimumCount: number
+    ): Promise<number> {
+        return this.service.waitForHeldDisputeValidationResults(minimumCount);
+    }
+
     /** Hold the discovery join for `holdMs` so an abort can land inside it. */
     public stubHoldDiscoveryJoin(holdMs: number): boolean {
         this.service.installDiscoveryJoinHold(holdMs);

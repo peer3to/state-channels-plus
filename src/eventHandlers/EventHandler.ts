@@ -5,6 +5,7 @@ import P2pEventHooks from "@/P2pEventHooks";
 import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
 import Storage from "@/storage";
+import { DisputeConfirmationOrigin } from "@/storage/DisputeStorage";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import {
@@ -412,7 +413,12 @@ export class EventHandler {
         }
 
         if (isFinal) {
-            this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+            this.storage.disputes.storeDisputeConfirmation(
+                disputeConfirmation,
+                {
+                    origin: DisputeConfirmationOrigin.CHAIN_EVENT
+                }
+            );
             let genesis: ReductionGenesis;
             try {
                 if (!disputeAuditingData) {
@@ -652,7 +658,9 @@ export class EventHandler {
         forkId: ForkId,
         disputeConfirmation: DisputeConfirmationStruct
     ): Promise<void> {
-        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
+        this.storage.disputes.storeDisputeConfirmation(disputeConfirmation, {
+            origin: DisputeConfirmationOrigin.CHAIN_EVENT
+        });
         await P2pEventHooksUtils.notifyDisputeUpdate({
             channelId,
             forkId,

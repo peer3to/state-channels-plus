@@ -1,9 +1,14 @@
 // @spec-test-coverage-ignore: pinned sync staging exercised by explicit component and E2E declarations
+import { randomWallet } from "../factory";
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
-import { ZeroHash } from "ethers";
+import { getBytes, keccak256, ZeroHash } from "ethers";
 
 export async function assertComputedSuccessorSync(
     h: MathPeerTestHarness,
@@ -19,22 +24,7 @@ export async function assertComputedSuccessorSync(
     try {
         await h.control(source).stub.startTryReduce(sourceForkId).request();
         await waitFor(async () => (await hold.entered()) === 1);
-        const successor = await h.execOnHost(
-            source,
-            async (sm, { forkId }) => {
-                const disputes = await sm.agreementManager.getForkDisputes(
-                    (await sm.eventSyncService.loadSynchronizedWindowCommitments(
-                        sm.channelId,
-                        forkId
-                    ))!
-                );
-                return (await sm.reductionManager.computeReductionLocally(
-                    forkId,
-                    disputes
-                ))!.reducedForkId;
-            },
-            { forkId: sourceForkId }
-        );
+        const successor = await computeSuccessorForkId(h, source, sourceForkId);
         expect(
             await h.execOnHost(
                 source,
@@ -77,6 +67,253 @@ export async function assertComputedSuccessorSync(
     } finally {
         await hold.release();
     }
+}
+
+/**
+ * The observer already stores the committed dispute from its on-chain event.
+ * The source's successor sync payload carries that dispute with extra
+ * co-signatures appended. The sync completes and the stored copy keeps the
+ * chain's signatures.
+ */
+export async function assertSyncKeepsChainDisputeConfirmation(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const chainCopies = await readWindowDisputeConfirmations(
+        h,
+        observer,
+        sourceForkId
+    );
+    // The event path stored the chain's copy of every window commitment.
+    expect(chainCopies).to.not.have.lengthOf(0);
+    for (const chainCopy of chainCopies) {
+        expect(chainCopy.confirmation, chainCopy.commitment).to.not.equal(
+            undefined
+        );
+    }
+
+    const { disputeHash } = await applyInflatedSuccessorSync(h, sourceForkId);
+
+    expect(chainCopies.map((copy) => copy.commitment)).to.include(disputeHash);
+    expect(
+        await readWindowDisputeConfirmations(h, observer, sourceForkId)
+    ).to.deep.equal(chainCopies);
+}
+
+/**
+ * The observer's commit handler passes its fork-relevance check, then parks
+ * after its dispute audit. A successor sync payload stores that dispute first,
+ * with extra co-signatures, and moves the observer past the fork. Released,
+ * the handler stores the chain's copy, which replaces the synced one.
+ */
+export async function assertChainCopyReplacesSyncedDisputeConfirmation(
+    h: MathPeerTestHarness
+): Promise<void> {
+    // Peers exist only once staging has started.
+    const observerStub = () => h.control(h.getPeer(2)).stub;
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+        beforeDispute: async () => {
+            await observerStub().stubHoldDisputeValidationResult().request();
+        },
+        // The observer's commit handling is parked, so its event counts wait.
+        disputingPeerIndices: [0, 3]
+    });
+    const observer = h.getPeer(2);
+    try {
+        const commitments = await readWindowDisputeConfirmations(
+            h,
+            observer,
+            sourceForkId
+        );
+        expect(commitments).to.not.have.lengthOf(0);
+        // Every commit handler is past its relevance check and nothing is stored.
+        await observerStub()
+            .waitForHeldDisputeValidationResults(commitments.length)
+            .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+        for (const commitment of commitments) {
+            expect(commitment.confirmation, commitment.commitment).to.equal(
+                undefined
+            );
+        }
+
+        const { disputeHash, chainCopy, inflatedSignatures } =
+            await applyInflatedSuccessorSync(h, sourceForkId);
+        const synced = await readDisputeConfirmation(h, observer, disputeHash);
+        expect(synced!.signatures).to.deep.equal(inflatedSignatures);
+
+        await observerStub().restoreDisputeValidationResult().request();
+        await h.assert.dispute.committedWait({
+            peersIndices: [observer.index],
+            expectedCount: commitments.length
+        });
+
+        expect(
+            await readDisputeConfirmation(h, observer, disputeHash)
+        ).to.deep.equal(chainCopy);
+    } finally {
+        await observerStub().restoreDisputeValidationResult().request();
+    }
+}
+
+// The stored confirmation of every commitment in the fork's on-chain window.
+function readWindowDisputeConfirmations(
+    h: MathPeerTestHarness,
+    peer: TestPeer<HarnessControlRpc, MathStateMachine>,
+    forkId: ForkId
+) {
+    return h.execOnHost(
+        peer,
+        async (sm, args) => {
+            const commitments =
+                await sm.stateChannelManagerContract.getWindowCommitments(
+                    sm.channelId,
+                    args.forkId
+                );
+            return commitments.map((commitment) => {
+                const stored =
+                    sm.storage.disputes.getDisputeConfirmation(commitment);
+                return {
+                    commitment,
+                    confirmation: stored && {
+                        encodedDispute: stored.signedDispute.encodedDispute,
+                        signature: stored.signedDispute.signature,
+                        signatures: stored.signatures
+                    }
+                };
+            });
+        },
+        { forkId }
+    );
+}
+
+function readDisputeConfirmation(
+    h: MathPeerTestHarness,
+    peer: TestPeer<HarnessControlRpc, MathStateMachine>,
+    disputeHash: string
+) {
+    return h.execOnHost(
+        peer,
+        async (sm, args) => {
+            const stored = sm.storage.disputes.getDisputeConfirmation(
+                args.disputeHash
+            );
+            return (
+                stored && {
+                    encodedDispute: stored.signedDispute.encodedDispute,
+                    signature: stored.signedDispute.signature,
+                    signatures: stored.signatures
+                }
+            );
+        },
+        { disputeHash }
+    );
+}
+
+/**
+ * The observer (peer 2) applies the source's (peer 0) successor sync payload
+ * after two extra co-signatures are appended to its first dispute
+ * confirmation. The sync is accepted and moves the observer to the successor.
+ */
+async function applyInflatedSuccessorSync(
+    h: MathPeerTestHarness,
+    sourceForkId: ForkId
+) {
+    const source = h.getPeer(0);
+    const observer = h.getPeer(2);
+    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
+        outcome: "hold",
+        at: "setState"
+    });
+    try {
+        await h.control(source).stub.startTryReduce(sourceForkId).request();
+        await waitFor(async () => (await hold.entered()) === 1);
+        const successor = await computeSuccessorForkId(h, source, sourceForkId);
+        const response = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.remoteRpc.spectateService
+                    .onSpectateRequest({
+                        channelId: sm.channelId,
+                        forkId: args.forkId
+                    })
+                    .request(args.source),
+            { source: source.address, forkId: successor }
+        );
+        const payload = Codec.decode(
+            response.encodedSyncPayload,
+            Type.SyncPayload
+        );
+        const [window] = payload.disputeWindows;
+        expect(window.forkId).to.equal(sourceForkId);
+        const [supplied] = window.disputeConfirmations;
+        const disputeHash = keccak256(supplied.signedDispute.encodedDispute);
+        // The source stored this copy from its own on-chain event.
+        const chainCopy = {
+            encodedDispute: supplied.signedDispute.encodedDispute,
+            signature: supplied.signedDispute.signature,
+            signatures: [...supplied.signatures]
+        };
+        const inflatedSignatures = [
+            ...supplied.signatures,
+            randomWallet().signMessageSync(getBytes(disputeHash)),
+            randomWallet().signMessageSync(getBytes(disputeHash))
+        ];
+        window.disputeConfirmations[0] = {
+            signedDispute: supplied.signedDispute,
+            signatures: inflatedSignatures
+        };
+
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                forkId: successor,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+
+        expect(accepted).to.equal(true);
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            successor
+        );
+        return { disputeHash, chainCopy, inflatedSignatures };
+    } finally {
+        await hold.release();
+    }
+}
+
+// The fork id the source's local reduction of `sourceForkId` produces.
+function computeSuccessorForkId(
+    h: MathPeerTestHarness,
+    source: TestPeer<HarnessControlRpc, MathStateMachine>,
+    sourceForkId: ForkId
+): Promise<ForkId> {
+    return h.execOnHost(
+        source,
+        async (sm, { forkId }) => {
+            const disputes = await sm.agreementManager.getForkDisputes(
+                (await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                    sm.channelId,
+                    forkId
+                ))!
+            );
+            return (await sm.reductionManager.computeReductionLocally(
+                forkId,
+                disputes
+            ))!.reducedForkId;
+        },
+        { forkId: sourceForkId }
+    );
 }
 
 export async function assertPinnedHeight(

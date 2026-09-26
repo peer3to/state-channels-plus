@@ -69,6 +69,7 @@ type InboundMessageLogKey = string;
 export type StubKey =
     | "discoveryJoinHold"
     | "auditingDataRebuild"
+    | "disputeValidationResult"
     | "snapshotPostSend"
     | "expiredCalldataPost"
     | "broadcast"
@@ -520,6 +521,8 @@ export class StubService extends ANetworkRpcService<
     /** State for the dispute-audit hold at the on-chain-slashes query. */
     heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
     heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
+    /** State for the hold after a dispute audit computed its verdict. */
+    heldDisputeValidationResult?: HeldOnChainSlashesQueryState;
     /** State for the hold on this peer's snapshot post at its send. */
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
     /** The first parked send's custom revert name once released, or null when it was mined. */
@@ -527,6 +530,8 @@ export class StubService extends ANetworkRpcService<
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
+    /** Checks run on each parked dispute audit; each resolves its waiter. */
+    private readonly heldDisputeValidationResultWaiters: (() => void)[] = [];
     private readonly heldSnapshotPostSendWaiters: (() => void)[] = [];
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
@@ -2091,6 +2096,82 @@ export class StubService extends ANetworkRpcService<
             await gate;
             return original(...args);
         }) as typeof disputeManager.getAuditingData;
+    }
+
+    /**
+     * Run every real dispute audit (`DisputeValidationService.validateDispute`),
+     * then park its verdict until released. The commit handler has already
+     * passed its fork-relevance check, so it stores the dispute only after
+     * the release.
+     */
+    public installDisputeValidationResultHold(): void {
+        const validationService = this.sm.disputeValidationService;
+        if (!this.stubOriginals.has("disputeValidationResult")) {
+            this.stubOriginals.set(
+                "disputeValidationResult",
+                validationService.validateDispute.bind(validationService)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "disputeValidationResult"
+        ) as typeof validationService.validateDispute;
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldDisputeValidationResult = held;
+        validationService.validateDispute = async (...args) => {
+            const isValid = await original(...args);
+            held.entered += 1;
+            this.heldDisputeValidationResultWaiters
+                .slice()
+                .forEach((check) => check());
+            await gate;
+            return isValid;
+        };
+    }
+
+    public releaseDisputeValidationResultHold(): boolean {
+        this.heldDisputeValidationResult?.release();
+        this.heldDisputeValidationResult = undefined;
+        this.heldDisputeValidationResultWaiters.splice(0);
+        const original = this.stubOriginals.get("disputeValidationResult");
+        if (original === undefined) return false;
+        this.sm.disputeValidationService.validateDispute =
+            original as typeof this.sm.disputeValidationService.validateDispute;
+        this.stubOriginals.delete("disputeValidationResult");
+        return true;
+    }
+
+    /** Resolve with the parked count once at least `minimumCount` audits are held. */
+    public waitForHeldDisputeValidationResults(
+        minimumCount: number
+    ): Promise<number> {
+        const held = this.heldDisputeValidationResult;
+        if (!held) {
+            return Promise.reject(
+                new Error("disputeValidationResult hold not installed")
+            );
+        }
+        if (held.entered >= minimumCount) return Promise.resolve(held.entered);
+        return new Promise((resolve) => {
+            const check = () => {
+                if (held.entered < minimumCount) return;
+                const waiters = this.heldDisputeValidationResultWaiters;
+                waiters.splice(waiters.indexOf(check), 1);
+                resolve(held.entered);
+            };
+            this.heldDisputeValidationResultWaiters.push(check);
+        });
     }
 
     /**

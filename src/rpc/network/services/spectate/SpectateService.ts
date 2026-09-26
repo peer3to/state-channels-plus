@@ -5,6 +5,7 @@ import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import type { ReductionComputation } from "@/stateManager/reduction/ReductionComputationService";
+import { DisputeConfirmationOrigin } from "@/storage/DisputeStorage";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
@@ -1062,7 +1063,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
                 for (const dw of syncPayload.disputeWindows) {
                     for (const dispute of dw.disputeConfirmations) {
-                        storage.disputes.storeDisputeConfirmation(dispute);
+                        storage.disputes.storeDisputeConfirmation(dispute, {
+                            origin: DisputeConfirmationOrigin.SYNC
+                        });
                     }
                     storage.stateSnapshots.storeStateSnapshot(
                         StateSnapshot.from(dw.latestStateSnapshot)
