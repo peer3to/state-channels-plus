@@ -143,7 +143,7 @@ Finality arrives by exactly one of three routes:
   chain holds, never from the dispute's own latest state, which the disputer writes. It cannot change while a
   proof against the dispute can still land: a successor-fork update may only target the latest undisputed fork
   and a disputed fork advances only by reduction
-  ([`REQ-ENFSNAP-4-ESP98F`](../enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)), joins and top-ups are
+  ([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)), joins and top-ups are
   refused on a disputed fork
   ([`REQ-ENFADM-2-K6K9SP` (Membership-split correctness)](../enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp)), and
   uploads are admitted only when anchored exactly at the chain's inbound head
