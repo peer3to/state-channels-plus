@@ -18,10 +18,19 @@ import { ethers } from "ethers";
  * old channel's peers.
  */
 export async function assertLeftParticipantParticipatesInNextChannel() {
+    // Each channel idles while the test drives the other (the leave, the next
+    // open, the other channel's blocks), so the writer window must outlast
+    // that or an honest peer posts a timeout dispute over the idle slot.
     const { h, channelId, targeted } =
         await TargetedChannelJoinFixture.unopened(
             "reuse-committed-participant",
-            3
+            3,
+            {
+                p2pTime: 15,
+                agreementTime: 6,
+                chainFallbackTime: 4,
+                evidenceTime: 4
+            }
         );
     await h.lifecycle.openChannelForParticipants([0, 1, 2]);
     await h.network.joinSelectedKey([0, 1, 2], channelId);
