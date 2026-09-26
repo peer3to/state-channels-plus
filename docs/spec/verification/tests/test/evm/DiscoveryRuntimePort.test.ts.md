@@ -9,6 +9,9 @@
 These cases drive the public signer/runtime boundary. They prove input validation occurs before lifecycle mutation, the exact serializable topic and options reach the host, matching-phase leave returns true and settles the pending join, post-handoff leave returns false without cancelling negotiation, optional timeout semantics cross the port, a selected channel cannot overlap discovery, and matching chains into negotiation without a client-side internal call.
 The pending-participant leave case authors through `keepAuthoringUntil` until the joiner is promoted, since the
 block that carries the join is the first one whose author has already received the join's inbound event.
+The two evidence-expired authored-leave cases stage the refusal against a real window: another participant's
+self-removal opens the window covering the fork before the fallback fires, the leaver's upload stays parked until that
+window stopped taking evidence, and the recorded revert is the contract's own `RaceConditionDisputeEvidencePeriodExpired`.
 
 ## Tests and covered test IDs
 
