@@ -26,8 +26,8 @@ commitment helpers (which look the window up by the shared
 [`_disputeCommitmentHash`](./utils/DisputeUtils.sol.md)), threshold-set derivation,
 `canParticipateInDisputes`, block authenticity, and
 the enumerable open-channel append/removal helpers, and the channel-open and fork-disputed predicates
-([`_isChannelOpen`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L218),
-[`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L224)).
+([`_isChannelOpen`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L207),
+[`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L213)).
 
 Every member is `internal`, so nothing here appears in a facet's ABI; each body is
 dead-code-eliminated into the facets that actually call it. Compiled standalone the contract is
@@ -35,7 +35,7 @@ dead-code-eliminated into the facets that actually call it. Compiled standalone 
 
 ## Key design decisions
 
-Current upload eligibility is the snapshot participant set plus JOINs after its inbound boundary through the latest inbound head, minus on-chain slashes. The lower boundary is excluded and the head included. Historical proof derivation explicitly keeps the zero stop hash; bounding current upload rights does not change historical thresholds. See [StateChannelCommon.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L592).
+Current upload eligibility is the snapshot participant set plus JOINs after its inbound boundary through the latest inbound head, minus on-chain slashes. The lower boundary is excluded and the head included. Historical proof derivation explicitly keeps the zero stop hash; bounding current upload rights does not change historical thresholds. See [StateChannelCommon.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L587).
 
 1. **Shared-validation-by-inheritance:** one implementation of every multi-path predicate, which is
    the mechanism for [`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c). Everything is `internal`, so a predicate's code is
@@ -60,7 +60,7 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    that `open` and [JoinChannelFacet](./JoinChannelFacet.sol.md) can evaluate them as internal calls
    while the external `isChannelOpen`/`isForkDisputed` selectors route to
    [UtilityFacet](./UtilityFacet.sol.md)
-   ([#L218](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L218)).
+   ([#L207](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L207)).
    `JoinChannelFacet` previously reached `isForkDisputed` by an external self-call; it now calls the
    internal directly, which removes a call frame from the join path.
 4. **Pending means unconsumed.** `_getPendingParticipants` walks the inbound chain from the channel's
@@ -68,14 +68,18 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    applied. The earlier unbounded walk counted every JOIN ever recorded, including the original
    participants' open joins: a leaver stayed "pending" after its reduction and a slashed inbound joiner
    stayed in the eligibility set ([cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md)).
-   `reduce` is the one reader that keeps the unbounded walk for slash eligibility: after a reduction is
-   mined the snapshot lists only the survivors, and a late reducer must still fold the same slashes
-   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)).
+   Two readers keep the unbounded walk: `reduce` for slash eligibility, because after a reduction is
+   mined the snapshot lists only the survivors and a late reducer must still fold the same slashes
+   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)), and the milestone-finality
+   read in [DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md) for its historical joiners.
+   That read takes the chain snapshot participants, which no adoption can change while a proof against the
+   dispute can land ([StateSnapshotFacet.sol.md](StateSnapshotFacet.sol.md)), and subtracts only the slashes
+   the dispute commits, never the live slash set.
 5. **The rejected inbound replay names the state it was seeded with.**
    `_applyInboundMessages` sets the state machine to `encodedStateMachineState` once and then walks
    every message; when a message is refused it raises
    `ErrorDisputeStateMachineInboundProcessingFailed(blockIndex, messageIndex, participant, messageType, stateMachineStateHash)`
-   ([#L546](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L546)).
+   ([#L535](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L535)).
    The two indices locate the message but not the input it was applied to, and the same message can
    be valid or invalid depending on the seed state, so the seed's hash is what makes a rejected
    replay reproducible. It is `if (!success) revert`, not `require`: the hash is over the whole
@@ -83,7 +87,7 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    of every successful walk.
 6. **The reduced-result commit names a missing window before it names a deadline.**
    `_commitToDisputeReducedResult` checks window existence first
-   ([#L641](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L641)),
+   ([#L635](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L635)),
    because `_isKillPeriodExpired` derives its deadline from a zero
    `lastEvidenceSubmissionTimestamp` when no window was created and would report a deadline that
    reads as long past for a call refused precisely because nothing has expired. Every production
@@ -141,10 +145,10 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                         | Gap / divergence |
 | ---------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CONTRACT-ARCH-2-BE651C`](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c) | Covered               | **Here:** single inherited implementations of shared predicates, including the channel-open and fork-disputed predicates now owned here ([#L218](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L218)). **Other files:** [UtilityFacet](./UtilityFacet.sol.md) exposes the same predicates externally by wrapping these internals, so the routed view and the internal caller cannot diverge. | None.            |
+| [`REQ-CONTRACT-ARCH-2-BE651C`](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c) | Covered               | **Here:** single inherited implementations of shared predicates, including the channel-open and fork-disputed predicates now owned here ([#L207](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L207)). **Other files:** [UtilityFacet](./UtilityFacet.sol.md) exposes the same predicates externally by wrapping these internals, so the routed view and the internal caller cannot diverge. | None.            |
 | [`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)            | Covered               | **Here:** append-only slash storage + timestamp-bounded queries. **Other files:** writers in [FraudProofFacet](./FraudProofFacet.sol.md)/[DisputeFraudProofFacet](./DisputeFraudProofFacet.sol.md).                                                                                                                                                                                                                              | None.            |
 | [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)                      | Covered               | **Here:** append-on-open and idempotent swap-and-pop removal repair the reverse index. **Other files:** proxy and snapshot facet call the helpers only at successful lifecycle boundaries; UtilityFacet exposes safe pages.                                                                                                                                                                                                      | None.            |
-| [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)                         | Covered               | **Here:** [\_canParticipateInDisputes](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L592) derives current snapshot membership plus joins strictly after its inbound boundary, excluding chain slashes. **Other files:** [DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md) enforces upload admission.                                                                                 | None.            |
+| [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)                         | Covered               | **Here:** [\_canParticipateInDisputesNow](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L587) derives current snapshot membership plus joins strictly after its inbound boundary, excluding chain slashes. **Other files:** [DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md) enforces upload admission.                                                                              | None.            |
 
 ## Component test obligations
 

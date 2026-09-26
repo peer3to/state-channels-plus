@@ -26,6 +26,8 @@ classification.
 
 The conditional-window refusal has its own channel/fork error, `RaceConditionDisputeWindowNotOpen`, so the client does not classify it as evidence expiry or participation failure.
 
+Every `RaceCondition*` error is declared in one block. The membership-freeze refusal is named for what it refuses. `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId, killPeriodEnd, currentTimestamp)` ([#L138](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L138)) is the one refusal of both snapshot adoption paths. It names the refused fork and carries the kill-period comparison: `currentTimestamp >= killPeriodEnd` marks a permanent same-fork refusal, `currentTimestamp < killPeriodEnd` a refusal that waits for the kill period. `RaceConditionDisputeInboundNotLatest(latestInboundMessageBlockHash, disputeInboundMessageBlockHash)` ([#L143](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L143)) carries the chain's inbound head and the dispute's anchor, so the client recovers to that head. `RaceConditionJoinChannelForkDisputed` ([#L126](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L126)) refuses both a join and a top-up on a disputed fork.
+
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
 2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
    populates the value the caller supplied alongside the value the contract required, so the

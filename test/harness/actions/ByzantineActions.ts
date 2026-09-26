@@ -2,7 +2,7 @@
 import { Block } from "@/models";
 import type Rpc from "@/rpc/Rpc";
 import type { Address } from "@/types/types";
-import { ForkId, Bytes, BlockHeight } from "@/types/types";
+import { ForkId, Bytes, BlockHeight, Hash } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
 import * as factory from "@test/factory";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -108,24 +108,31 @@ export class ByzantineActions<
             height: BlockHeight;
             forkId?: ForkId;
             encodedData?: Bytes;
+            authentic?: boolean;
+            previousBlockHash?: Hash;
         }
-    ): Promise<BlockStruct> {
+    ): Promise<{ block: BlockStruct; encodedSignedBlock: string }> {
         const peer = this.harness.getPeer(peerIndex);
         this.harness.contextApi.markMaliciousPeer({
             maliciousPeerIndex: peerIndex
         });
 
-        const { encodedBlock } = await this.harness
+        const { encodedBlock, encodedSignedBlock } = await this.harness
             .control(peer)
             .byzantine.postJunkCalldataOnChain({
                 height: options.height,
                 forkId: options.forkId,
-                encodedData: options.encodedData
+                encodedData: options.encodedData,
+                authentic: options.authentic,
+                previousBlockHash: options.previousBlockHash
             })
             .request();
 
         this.logger.info(`Junk calldata posted on-chain by peer ${peerIndex}`);
-        return Codec.decode(encodedBlock, Type.Block);
+        return {
+            block: Codec.decode(encodedBlock, Type.Block),
+            encodedSignedBlock
+        };
     }
 
     async postTamperedDisputeWith(

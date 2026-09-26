@@ -248,7 +248,7 @@ export class TransitionActions<
         peerIndex?: number;
         forkId?: string;
     }): Promise<StateSnapshot | undefined> {
-        return this.requestPostSnapshot(options, false);
+        return this.requestPostSnapshot(options);
     }
 
     async postSnapshotWait(options?: {
@@ -260,7 +260,7 @@ export class TransitionActions<
         // a mined transaction on a loaded farm outlasts the RPC budget. The
         // barrier below is the completion signal; a failed post surfaces as
         // a detached host error at quiesce.
-        const expectedSnapshot = await this.requestPostSnapshot(options, false);
+        const expectedSnapshot = await this.requestPostSnapshot(options);
         if (!expectedSnapshot) return undefined;
 
         const timeoutMs =
@@ -289,8 +289,7 @@ export class TransitionActions<
     }
 
     private async requestPostSnapshot(
-        options: { peerIndex?: number; forkId?: string } | undefined,
-        awaitCompletion: boolean
+        options: { peerIndex?: number; forkId?: string } | undefined
     ): Promise<StateSnapshot | undefined> {
         const { peerIndex = 0 } = options || {};
         const forkId = options?.forkId || this.harness.activeForkId;
@@ -304,9 +303,7 @@ export class TransitionActions<
         }
 
         const transition = this.harness.control(peer).transition;
-        const result = awaitCompletion
-            ? await transition.postStateSnapshotWait(forkId).request()
-            : await transition.postStateSnapshot(forkId).request();
+        const result = await transition.postStateSnapshot(forkId).request();
         return result
             ? StateSnapshot.from(
                   Codec.decode(result.encodedSnapshot, Type.StateSnapshot)
