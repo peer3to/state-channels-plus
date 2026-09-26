@@ -17,6 +17,13 @@ contract StateChannelManagerStorage {
     // Time within more dispute can be submitted during the challenge period
     uint256 internal evidenceTime;
     uint256 internal gasLimit;
+    // Upper bound on a channel's participant union, counterpart to the
+    // two-participant minimum. Off-chain agreement needs a signature from every
+    // participant, so the union size bounds how many confirmation signatures a
+    // valid block carries and therefore what a client must retain. The
+    // duplicate-participant scan at open is quadratic in the union, so the
+    // bound also keeps that loop's gas finite.
+    uint256 internal maxChannelParticipants;
 
     AStateMachine stateMachineImplementation;
 

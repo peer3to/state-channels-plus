@@ -6,6 +6,7 @@ import {
     sendRpcResponseSafely,
     invokeRpcEndpoint
 } from "../RpcDispatch";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import type { AGuard } from "@/rpc/network/guards/AGuard";
 import { runGuards } from "@/rpc/network/guards/runGuards";
@@ -55,7 +56,10 @@ abstract class ANetworkRpcService<
                     error: errorMessage(e),
                     stack: e instanceof Error ? e.stack : undefined
                 });
-                this.p2pManager.disconnectConnection(responseTransport);
+                this.p2pManager.disconnectConnection(
+                    responseTransport,
+                    DisconnectPolicy.ALLOW
+                );
             }
         );
     }
@@ -108,7 +112,10 @@ abstract class ANetworkRpcService<
                     error: errorMessage(error),
                     stack: error instanceof Error ? error.stack : undefined
                 });
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.ALLOW
+                );
             },
             onSyncSendError: (error) => {
                 this.logger.error("Unhandled RPC handler exception", {

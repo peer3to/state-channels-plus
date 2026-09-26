@@ -60,6 +60,7 @@ export class HarnessContext {
 }
 
 export type HarnessDeploymentParams = {
+    maxChannelParticipants?: number;
     signer: Signer;
     stateMachineGasLimit: number;
     disputeExecutionGasLimit: number;
@@ -113,6 +114,7 @@ export type HarnessConstructorOptions<
  * Options for configuring the test harness
  */
 export type HarnessOptions = {
+    maxChannelParticipants?: number;
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
      *
@@ -138,7 +140,7 @@ export type HarnessOptions = {
     stateMachineGasLimit?: number;
     disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
-    /** Maximum SDK peers to boot at once. Defaults to all requested peers. */
+    /** Maximum SDK peers to boot at once. Defaults to two; see PeerTestHarness.setup. */
     peerSetupConcurrency?: number;
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;

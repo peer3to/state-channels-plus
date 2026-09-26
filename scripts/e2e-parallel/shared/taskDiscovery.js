@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 const { createHash } = require("crypto");
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
@@ -99,18 +100,46 @@ function extractMochaTests(filePath) {
     return { tests, requiresFileFallback };
 }
 
-function enumerateMochaTests(filePath) {
+// Tests are discovered from their TypeScript sources (labels, log names and
+// spec anchors stay tied to the source path) but run from the compiled twin
+// under dist/ by default: no transpile in the child or its worker threads,
+// with source maps keeping stack traces on the .ts lines. `--source-tests`
+// runs the sources under ts-node as before.
+const COMPILED_ROOT = "dist";
+
+function compiledTestPath(filePath) {
+    const relative = path.relative(process.cwd(), path.resolve(filePath));
+    return path.join(COMPILED_ROOT, relative.replace(/\.ts$/, ".js"));
+}
+
+function runnableTestPath(filePath, compiled) {
+    if (!compiled) return filePath;
+    const target = compiledTestPath(filePath);
+    if (!fs.existsSync(target)) {
+        throw new Error(
+            `Compiled test missing: ${target} (build with \`yarn test:parallel:build\`, or pass --source-tests)`
+        );
+    }
+    return target;
+}
+
+function enumerateMochaTests(filePath, compiled = true) {
+    const loaderArgs = compiled
+        ? ["-r", "hardhat/register"]
+        : [
+              "-r",
+              "ts-node/register/transpile-only",
+              "-r",
+              "tsconfig-paths/register",
+              "-r",
+              "hardhat/register"
+          ];
     const result = spawnSync(
         process.execPath,
         [
-            "-r",
-            "ts-node/register/transpile-only",
-            "-r",
-            "tsconfig-paths/register",
-            "-r",
-            "hardhat/register",
+            ...loaderArgs,
             path.join(__dirname, "enumerateMochaTests.js"),
-            path.resolve(filePath)
+            path.resolve(runnableTestPath(filePath, compiled))
         ],
         {
             cwd: process.cwd(),
@@ -152,7 +181,8 @@ function discoverTasks(
     testDir,
     grep,
     e2eDir = path.resolve("test/e2e"),
-    testPattern = DEFAULT_MOCHA_TEST_PATTERN
+    testPattern = DEFAULT_MOCHA_TEST_PATTERN,
+    { compiled = false } = {}
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
         .filter(isMochaTestFile)
@@ -165,12 +195,16 @@ function discoverTasks(
             resolvedFile.startsWith(`${resolvedE2eDir}${path.sep}`) ||
             resolvedFile === resolvedE2eDir;
         const { tests, requiresFileFallback } = extractMochaTests(f);
+        // a source file without tests (worker entries, helpers next to the
+        // tests) has nothing to run and may not even be part of the build
+        if (!requiresFileFallback && tests.length === 0) continue;
+        const runFile = runnableTestPath(f, compiled);
         if (requiresFileFallback) {
-            for (const fullTitle of enumerateMochaTests(f)) {
+            for (const fullTitle of enumerateMochaTests(f, compiled)) {
                 const taskGrep = `^${escapeRegex(fullTitle)}$`;
                 tasks.push({
                     label: `test:${path.basename(f)}:${fullTitle}`,
-                    args: ["test", "--no-compile", f, "--grep", taskGrep],
+                    args: ["test", "--no-compile", runFile, "--grep", taskGrep],
                     logName: sanitizeFileName(
                         `${path.basename(f, path.extname(f))}__${fullTitle}`
                     ),
@@ -188,7 +222,7 @@ function discoverTasks(
             );
             tasks.push({
                 label: `test:${path.basename(f)}:${test}`,
-                args: ["test", "--no-compile", f, "--grep", taskGrep],
+                args: ["test", "--no-compile", runFile, "--grep", taskGrep],
                 logName,
                 fullTitle,
                 runner: TASK_RUNNERS.HARDHAT,
@@ -205,6 +239,7 @@ function discoverTasks(
 }
 
 module.exports = {
+    compiledTestPath,
     DEFAULT_MOCHA_TEST_PATTERN,
     getStringLiteralValue,
     isDescribeCallee,

@@ -31,11 +31,13 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [channelKey.ts](./channelKey.ts.md)
 - [config.ts](./config.ts.md)
 - [contractAbi.ts](./contractAbi.ts.md)
+- [hpAddressKey.ts](./hpAddressKey.ts.md)
 - [contractSize.ts](./contractSize.ts.md)
 - [discoveryKey.ts](./discoveryKey.ts.md)
 - [errorMessage.ts](./errorMessage.ts.md)
 - [errorPeerAddress.ts](./errorPeerAddress.ts.md)
 - [evmErrorHandler.ts](./evmErrorHandler.ts.md)
+- [gas.ts](./gas.ts.md)
 - [hash.ts](./hash.ts.md)
 - [index.ts](./index.ts.md)
 - [localDiamond.ts](./localDiamond.ts.md)
@@ -76,11 +78,13 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [channelKey.ts](../../../../../../src/utils/channelKey.ts) | [channelKey.ts.md](./channelKey.ts.md) |
 | [config.ts](../../../../../../src/utils/config.ts) | [config.ts.md](./config.ts.md) |
 | [contractAbi.ts](../../../../../../src/utils/contractAbi.ts) | [contractAbi.ts.md](./contractAbi.ts.md) |
+| [hpAddressKey.ts](../../../../../../src/utils/hpAddressKey.ts) | [hpAddressKey.ts.md](./hpAddressKey.ts.md) |
 | [contractSize.ts](../../../../../../src/utils/contractSize.ts) | [contractSize.ts.md](./contractSize.ts.md) |
 | [discoveryKey.ts](../../../../../../src/utils/discoveryKey.ts) | [discoveryKey.ts.md](./discoveryKey.ts.md) |
 | [errorMessage.ts](../../../../../../src/utils/errorMessage.ts) | [errorMessage.ts.md](./errorMessage.ts.md) |
 | [errorPeerAddress.ts](../../../../../../src/utils/errorPeerAddress.ts) | [errorPeerAddress.ts.md](./errorPeerAddress.ts.md) |
 | [evmErrorHandler.ts](../../../../../../src/utils/evmErrorHandler.ts) | [evmErrorHandler.ts.md](./evmErrorHandler.ts.md) |
+| [gas.ts](../../../../../../src/utils/gas.ts) | [gas.ts.md](./gas.ts.md) |
 | [hash.ts](../../../../../../src/utils/hash.ts) | [hash.ts.md](./hash.ts.md) |
 | [index.ts](../../../../../../src/utils/index.ts) | [index.ts.md](./index.ts.md) |
 | [localDiamond.ts](../../../../../../src/utils/localDiamond.ts) | [localDiamond.ts.md](./localDiamond.ts.md) |
@@ -90,3 +94,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [scheduler.ts](../../../../../../src/utils/scheduler.ts) | [scheduler.ts.md](./scheduler.ts.md) |
 | [set.ts](../../../../../../src/utils/set.ts) | [set.ts.md](./set.ts.md) |
 | [stateChannelManager.ts](../../../../../../src/utils/stateChannelManager.ts) | [stateChannelManager.ts.md](./stateChannelManager.ts.md) |
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [SignatureUtils.ts](SignatureUtils.ts.md) | normalizeSignature converts valid byte representations to lowercase hex without signer recovery. | [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |

@@ -18,6 +18,8 @@ class HolepunchTransport extends NetworkTransport {
             this,
             holepunchPeerInfo
         );
+        // A suspended key is refused at registration; nothing else to wire.
+        if (this.isClosed) return;
         this.holepunchSocket.on("data", async (data: any) => {
             this.onMessage(data);
         });

@@ -89,6 +89,8 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
+    function getMaxChannelParticipants() public view virtual returns (uint256);
+
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view

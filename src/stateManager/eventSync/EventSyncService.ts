@@ -1,5 +1,6 @@
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
+import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import { TimeConfig, timeoutWaitTime } from "@/types";
 import {
@@ -7,6 +8,7 @@ import {
     BlockCalldata,
     BlockHeight,
     ChannelId,
+    ChecksumAddress,
     ForkId,
     Hash,
     Timestamp
@@ -16,6 +18,7 @@ import {
     convertEthersValue,
     DetachedPromises,
     hash,
+    getChecksumAddress,
     Logger,
     Type
 } from "@/utils";
@@ -23,7 +26,11 @@ import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ChannelBalanceStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import {
+    MessageBlockStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
@@ -63,6 +70,15 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
 const LOG_RECOVERY_ATTEMPTS = 3;
 // one span already covers the whole window the calldata can be in
 const CALLDATA_RECOVERY_ATTEMPTS = 1;
+
+export type PinnedChainMembership = {
+    blockNumber: number;
+    blockHash: string;
+    timestamp: Timestamp;
+    snapshot: StateSnapshotStruct;
+    balance: ChannelBalanceStruct;
+    slashed: ChecksumAddress[];
+};
 
 export default class EventSyncService {
     /** Calldata recoveries currently querying or scheduling validation. */
@@ -292,19 +308,97 @@ export default class EventSyncService {
         return undefined;
     }
 
+    public async readPinnedChainMembership(
+        channelId: ChannelId
+    ): Promise<PinnedChainMembership> {
+        const latest = await this.getProvider().getBlock("latest");
+        if (!latest?.hash)
+            throw new Error("Membership read could not read the chain head");
+        const contract = this.stateChannelManagerContract;
+        const results = await contract.multicall.staticCall(
+            [
+                contract.interface.encodeFunctionData(
+                    "getOnChainSlashedParticipants",
+                    [channelId]
+                ),
+                contract.interface.encodeFunctionData("getStateSnapshot", [
+                    channelId
+                ]),
+                contract.interface.encodeFunctionData("getChannelBalance", [
+                    channelId
+                ])
+            ],
+            { blockTag: latest.number }
+        );
+        const [slashed] = contract.interface.decodeFunctionResult(
+            "getOnChainSlashedParticipants",
+            results[0]
+        );
+        const [snapshot] = contract.interface.decodeFunctionResult(
+            "getStateSnapshot",
+            results[1]
+        );
+        const [balance] = contract.interface.decodeFunctionResult(
+            "getChannelBalance",
+            results[2]
+        );
+        return {
+            snapshot: convertEthersValue(snapshot),
+            balance: convertEthersValue(balance),
+            blockNumber: latest.number,
+            blockHash: latest.hash,
+            timestamp: latest.timestamp,
+            slashed: slashed.map((address: string) =>
+                getChecksumAddress(address)
+            )
+        };
+    }
+
+    /** Pull missing membership through the same handlers as live events. */
+    public async synchronizeChainMembership(
+        channelId: ChannelId,
+        membership: PinnedChainMembership
+    ): Promise<void> {
+        const snapshot = StateSnapshot.from(membership.snapshot);
+        const inbound = await this.loadSynchronizedInboundRun(
+            membership.balance.latestInboundMessageBlockHash,
+            snapshot.latestInboundMessageBlockHash,
+            snapshot.timestamp,
+            channelId
+        );
+        if (!inbound)
+            throw new Error("Membership inbound messages unavailable");
+        for (const block of inbound) {
+            await this.eventHandler.onInboundMessagesProcessed(
+                channelId,
+                block,
+                {
+                    blockNumber: 0,
+                    logIndex: 0
+                }
+            );
+        }
+        await this.eventHandler.onStateSnapshotUpdated(
+            channelId,
+            membership.snapshot,
+            {
+                blockNumber: 0,
+                logIndex: 0
+            }
+        );
+        await this.recoverOnChainSlashes(channelId, undefined, membership);
+    }
+
     /** Recover authoritative slashes through the ordinary timestamped event handlers. */
     public async recoverOnChainSlashes(
         channelId: ChannelId,
-        previouslyObserved?: readonly Address[]
+        previouslyObserved?: readonly Address[],
+        observedMembership?: PinnedChainMembership
     ): Promise<boolean> {
-        const latest = await this.getProvider().getBlock("latest");
-        if (!latest)
-            throw new Error("Slash recovery could not read the chain head");
-        const expected =
-            await this.stateChannelManagerContract.getOnChainSlashedParticipants(
-                channelId,
-                { blockTag: latest.number }
-            );
+        const membership =
+            observedMembership ??
+            (await this.readPinnedChainMembership(channelId));
+        const expected = membership.slashed;
         const probe = () =>
             this.localDiamondContract.getOnChainSlashedParticipants(channelId);
         const initial = await probe();
@@ -316,7 +410,7 @@ export default class EventSyncService {
         const recovered = await this.recoverLogsUntil({
             channelId,
             eventNames: ["ChainSlashed", "DisputeKilled"],
-            toBlock: latest.number,
+            toBlock: membership.blockNumber,
             span: this.getBlockSpan(this.timeConfig.evidenceTime * 2),
             attempts: LOG_RECOVERY_ATTEMPTS,
             dispatch: "awaited",

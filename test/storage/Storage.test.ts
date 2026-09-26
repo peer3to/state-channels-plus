@@ -1,4 +1,5 @@
 import * as factory from "../factory";
+import { QueueAdmissionFixture } from "../fixtures/QueueAdmissionFixture";
 import { BlockCoordinates, Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import { ForkId } from "@/types/types";
@@ -162,5 +163,138 @@ describe("Storage", () => {
             );
             expect(snapshot2!.toStruct()).to.not.equal(snapshot1!.toStruct());
         });
+    });
+});
+
+describe("Storage participant union", () => {
+    it("stored lookup equals direct computation with the same snapshots", () => {
+        const f = new QueueAdmissionFixture();
+        const initial = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        const previous = StateSnapshot.from({
+            ...initial.toStruct(),
+            forkId: initial.snapshotDataHash
+        });
+        const resulting = factory.stateSnapshot({
+            forkId: previous.forkID,
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address, f.wallets[1].address]
+            }
+        });
+        const storage = new Storage();
+        const direct = storage.getParticipantsUnionFromSnapshots(
+            previous,
+            resulting
+        );
+        expect(
+            storage.stateSnapshots.getStateSnapshotByHash(resulting.hash)
+        ).to.equal(undefined);
+        storage.stateSnapshots.storeStateSnapshot(previous);
+        storage.stateSnapshots.storeStateSnapshot(resulting);
+        expect(
+            storage.getParticipantsUnion(
+                { forkId: previous.forkID, height: 0 },
+                resulting.hash
+            )
+        ).to.deep.equal(direct);
+        expect(direct).to.deep.equal([
+            f.wallets[0].address,
+            f.wallets[1].address
+        ]);
+    });
+    it("unions overlapping snapshots and canonicalizes addresses without storing a result", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [
+                    f.wallets[0].address,
+                    f.wallets[1].address.toLowerCase()
+                ]
+            }
+        });
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address, f.wallets[2].address]
+            }
+        });
+        const storage = new Storage();
+        expect(
+            storage.getParticipantsUnionFromSnapshots(previous, resulting)
+        ).to.deep.equal([
+            f.wallets[0].address,
+            f.wallets[1].address,
+            f.wallets[2].address
+        ]);
+        expect(
+            storage.stateSnapshots.getStateSnapshotByHash(resulting.hash)
+        ).to.equal(undefined);
+    });
+
+    it("preserves both sides of disjoint membership changes", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(previous, resulting)
+        ).to.deep.equal([f.wallets[0].address, f.wallets[1].address]);
+    });
+
+    it("accepts an absent previous snapshot", () => {
+        const f = new QueueAdmissionFixture();
+        const resulting = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[1].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(
+                undefined,
+                resulting
+            )
+        ).to.deep.equal([f.wallets[1].address]);
+    });
+
+    it("accepts an absent resulting snapshot", () => {
+        const f = new QueueAdmissionFixture();
+        const previous = factory.stateSnapshot({
+            snapshotData: {
+                ...factory.snapshotData(),
+                participants: [f.wallets[0].address]
+            }
+        });
+        expect(
+            new Storage().getParticipantsUnionFromSnapshots(previous, undefined)
+        ).to.deep.equal([f.wallets[0].address]);
+    });
+
+    it("returns an empty union for absent or empty snapshots", () => {
+        const storage = new Storage();
+        const empty = factory.stateSnapshot({
+            snapshotData: { ...factory.snapshotData(), participants: [] }
+        });
+        expect(
+            storage.getParticipantsUnionFromSnapshots(undefined, undefined)
+        ).to.deep.equal([]);
+        expect(
+            storage.getParticipantsUnionFromSnapshots(empty, empty)
+        ).to.deep.equal([]);
     });
 });

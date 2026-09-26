@@ -48,6 +48,15 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         // not ready
         return this.blockValidationStrategy.channelNotOpened(entry);
     }
+    public async malformedConfirmationSignatures(
+        _entry: QueuedBlockEntry,
+        _signatures: Set<Signature>
+    ): Promise<BlockValidationResult> {
+        throw new Error(
+            "Calldata confirmations contain no confirmation signatures"
+        );
+    }
+
     public async notAllSingersAreParticipants(
         _entry: QueuedBlockEntry,
         _unexpectedSignatures: Set<Signature>,

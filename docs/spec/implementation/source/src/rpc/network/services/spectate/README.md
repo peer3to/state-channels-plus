@@ -16,3 +16,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | --- | --- |
 | [SpectateRpcMethods.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateRpcMethods.ts) | [SpectateRpcMethods.ts.md](./SpectateRpcMethods.ts.md) |
 | [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts) | [SpectateService.ts.md](./SpectateService.ts.md) |
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [SpectateService.ts](SpectateService.ts.md) | Source admission reuses this existing sync method unchanged. | [`REQ-GOSSIP-4-J5Z4DF`](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) |

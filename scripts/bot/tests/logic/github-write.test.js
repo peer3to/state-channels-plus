@@ -1,0 +1,491 @@
+const assert = require("node:assert/strict");
+const { GitHubWriter, actionsBotId } = require("../../github-write");
+const { request } = require("../fixtures/records");
+const { RecordedGitHub } = require("../fixtures/github");
+const input = request();
+const thread = {
+    id: "thread1",
+    isResolved: false,
+    comments: { nodes: [{ databaseId: 30 }] }
+};
+const observed = {
+    threads: [thread],
+    inline: [{ id: 30, user: { id: 9, type: "Bot" } }]
+};
+function fixture(records) {
+    const wire = new RecordedGitHub(records);
+    return {
+        wire,
+        writer: new GitHubWriter(input, {
+            token: "recorded-boundary-token",
+            botId: 9,
+            exchange: wire.exchange.bind(wire)
+        })
+    };
+}
+async function rejectEdit(kind, change, expectedCode) {
+    const item = {
+        id: 30,
+        user: { id: 9, type: "Bot" },
+        body: "Observed text",
+        issue_url: `https://api.github.com/repos/${input.repository.name}/issues/6`
+    };
+    const supplied = { kind, item: structuredClone(item) };
+    const fresh = structuredClone(item);
+    if (change === "observed-author") supplied.item.user.id = 7;
+    if (change === "fresh-author") fresh.user.id = 7;
+    if (change === "body") fresh.body = "Edited meanwhile";
+    const { writer, wire } = fixture(
+        change === "observed-author"
+            ? []
+            : [
+                  {
+                      path: `/repos/${input.repository.name}${kind === "comment" ? "/issues/comments/30" : "/pulls/6/reviews/30"}`,
+                      response: fresh
+                  }
+              ]
+    );
+    await assert.rejects(writer.editGeneral(supplied, "Replacement"), {
+        code: expectedCode
+    });
+    wire.done();
+}
+describe("review CI mutation ownership", function () {
+    it("bounds repeated network exceptions without resetting read retry count", async function () {
+        let calls = 0;
+        const waits = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async (ms) => waits.push(ms),
+            exchange: async () => {
+                calls++;
+                throw new TypeError("network unavailable");
+            }
+        });
+        await assert.rejects(writer.api("/pulls/6"), TypeError);
+        assert.equal(calls, 3);
+        assert.deepEqual(waits, [1000, 2000]);
+    });
+    it("rejects a foreign observed comment author before editing", async function () {
+        await rejectEdit("comment", "observed-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign observed review author before editing", async function () {
+        await rejectEdit("review", "observed-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign freshly fetched comment author", async function () {
+        await rejectEdit("comment", "fresh-author", "UNAUTHORIZED");
+    });
+    it("rejects a foreign freshly fetched review author", async function () {
+        await rejectEdit("review", "fresh-author", "UNAUTHORIZED");
+    });
+    it("preserves a comment edited after observation", async function () {
+        await rejectEdit("comment", "body", "CONTEXT_UNAVAILABLE");
+    });
+    it("preserves a review edited after observation", async function () {
+        await rejectEdit("review", "body", "CONTEXT_UNAVAILABLE");
+    });
+    it("retries GraphQL queries but never blindly retries mutations", async function () {
+        const waits = [];
+        const wire = new RecordedGitHub([
+            { path: "/graphql", method: "POST", status: 500, response: {} },
+            {
+                path: "/graphql",
+                method: "POST",
+                response: { data: { ok: true } }
+            },
+            { path: "/graphql", method: "POST", status: 500, response: {} }
+        ]);
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            exchange: wire.exchange.bind(wire),
+            wait: async (ms) => waits.push(ms)
+        });
+        assert.deepEqual(await writer.graph("query { ok }", {}), { ok: true });
+        await assert.rejects(
+            writer.graph("mutation { change }", {}),
+            (error) => error.diagnostics.status === 500
+        );
+        assert.deepEqual(waits, [1000]);
+        wire.done();
+    });
+    it("bounds transient read exhaustion and preserves final diagnostics", async function () {
+        let calls = 0,
+            cancelled = 0;
+        const waits = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async (ms) => waits.push(ms),
+            exchange: async () => {
+                calls++;
+                return {
+                    ok: false,
+                    status: 503,
+                    headers: new Headers({ "x-github-request-id": "last" }),
+                    body: {
+                        cancel: async () => {
+                            cancelled++;
+                        }
+                    }
+                };
+            }
+        });
+        await assert.rejects(
+            writer.api("/pulls/6"),
+            (error) =>
+                error.diagnostics.status === 503 &&
+                error.diagnostics.operation === "GET /pulls/6" &&
+                error.diagnostics.requestId === "last"
+        );
+        assert.equal(calls, 3);
+        assert.equal(cancelled, 3);
+        assert.deepEqual(waits, [1000, 2000]);
+    });
+    it("replaces signals after network errors and does not retry thrown writes", async function () {
+        const signals = [];
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            wait: async () => {},
+            exchange: async (_url, options) => {
+                signals.push(options.signal);
+                if (signals.length === 1 || options.method !== "GET")
+                    throw new TypeError("lost connection");
+                return new Response(JSON.stringify({ number: 6 }));
+            }
+        });
+        assert.equal((await writer.api("/pulls/6")).number, 6);
+        assert.notEqual(signals[0], signals[1]);
+        await assert.rejects(writer.comment("finding"), TypeError);
+        assert.equal(signals.length, 3);
+    });
+    it("recovers a transient read without retrying a rejected mutation", async function () {
+        const route = `/repos/${input.repository.name}/pulls/6`;
+        const wire = new RecordedGitHub([
+            { path: route, status: 503, response: {} },
+            { path: route, response: { number: 6 } },
+            {
+                path: `/repos/${input.repository.name}/issues/6/comments`,
+                method: "POST",
+                status: 422,
+                response: {}
+            }
+        ]);
+        const writer = new GitHubWriter(input, {
+            token: "recorded",
+            botId: 9,
+            exchange: wire.exchange.bind(wire),
+            wait: async () => {}
+        });
+        assert.equal((await writer.api("/pulls/6")).number, 6);
+        await assert.rejects(writer.comment("A finding"), (error) => {
+            assert.equal(error.diagnostics.status, 422);
+            assert.equal(
+                error.diagnostics.operation,
+                "POST /issues/6/comments"
+            );
+            return true;
+        });
+        wire.done();
+    });
+    it("posts located findings as inline comments and keeps section headings in the review body", async function () {
+        const { writer, wire } = fixture([
+            {
+                path: `/repos/${input.repository.name}/pulls/6/reviews`,
+                method: "POST",
+                inspect: (body) => {
+                    assert.equal(body.commit_id, input.head);
+                    assert.equal(
+                        body.body,
+                        "## Security\n\nCross-cutting issue."
+                    );
+                    assert.deepEqual(body.comments, [
+                        {
+                            path: "src/file.js",
+                            line: 12,
+                            side: "RIGHT",
+                            body: "Trigger, impact and fix."
+                        }
+                    ]);
+                },
+                response: { id: 42 }
+            }
+        ]);
+        await writer.batch(
+            [
+                {
+                    path: "src/file.js",
+                    line: 12,
+                    body: "Trigger, impact and fix."
+                },
+                { path: null, line: null, body: "Cross-cutting issue." }
+            ],
+            "## Security\n\nCross-cutting issue."
+        );
+        wire.done();
+    });
+    it("replies only to the root of an existing bot-owned thread", async function () {
+        const { writer, wire } = fixture([
+            {
+                path: `/repos/${input.repository.name}/pulls/6/comments/30/replies`,
+                method: "POST",
+                inspect: (body) => assert.equal(body.body, "New evidence."),
+                response: { id: 31 }
+            }
+        ]);
+        assert.equal(
+            (await writer.reply(thread, "New evidence.", observed)).id,
+            31
+        );
+        wire.done();
+    });
+    it("rejects a reply or resolution on another author's thread", async function () {
+        const { writer, wire } = fixture([]);
+        const foreign = {
+            ...observed,
+            inline: [{ id: 30, user: { id: 7, type: "User" } }]
+        };
+        await assert.rejects(writer.reply(thread, "New evidence.", foreign), {
+            code: "UNAUTHORIZED"
+        });
+        await assert.rejects(writer.setResolved(thread, true, foreign), {
+            code: "UNAUTHORIZED"
+        });
+        wire.done();
+    });
+    it("resolves an observed bot thread through the fixed mutation", async function () {
+        const { writer, wire } = fixture([
+            {
+                path: "/graphql",
+                method: "POST",
+                inspect: (body) => {
+                    assert.ok(body.query.includes("resolveReviewThread"));
+                    assert.deepEqual(body.variables, { id: "thread1" });
+                },
+                response: {
+                    data: {
+                        resolveReviewThread: {
+                            thread: { id: "thread1", isResolved: true }
+                        }
+                    }
+                }
+            }
+        ]);
+        await writer.setResolved(thread, true, observed);
+        wire.done();
+    });
+    it("leaves an already matching resolution state unchanged", async function () {
+        const { writer, wire } = fixture([]);
+        assert.equal(
+            (await writer.setResolved(thread, false, observed)).unchanged,
+            true
+        );
+        wire.done();
+    });
+    it("dismisses only the bot's own stale approval", async function () {
+        const { writer, wire } = fixture([
+            {
+                path: `/repos/${input.repository.name}/pulls/6/reviews/40/dismissals`,
+                method: "PUT",
+                response: { id: 40 }
+            }
+        ]);
+        const review = {
+            id: 40,
+            user: { id: 9, type: "Bot" },
+            state: "APPROVED",
+            commit_id: "b".repeat(40)
+        };
+        await writer.dismissOwnStale(review);
+        await assert.rejects(
+            writer.dismissOwnStale({ ...review, user: { id: 7, type: "User" } })
+        );
+        await assert.rejects(
+            writer.dismissOwnStale({ ...review, commit_id: input.head })
+        );
+        wire.done();
+    });
+    it("does not take ownership of a human thread merely because the bot replied", async function () {
+        const { writer, wire } = fixture([]);
+        const humanThread = {
+            ...thread,
+            comments: { nodes: [{ databaseId: 29 }, { databaseId: 30 }] }
+        };
+        await assert.rejects(
+            writer.setResolved(humanThread, true, {
+                ...observed,
+                threads: [humanThread]
+            }),
+            { code: "UNAUTHORIZED" }
+        );
+        wire.done();
+    });
+
+    it("loads every page of conversation comments and prior reviews", async function () {
+        const first = Array.from({ length: 100 }, (_, id) => ({ id: id + 1 }));
+        const prefix = `/repos/${input.repository.name}`;
+        const { writer, wire } = fixture([
+            {
+                path: `${prefix}/issues/6/comments?per_page=100&page=1`,
+                response: first
+            },
+            {
+                path: `${prefix}/issues/6/comments?per_page=100&page=2`,
+                response: [{ id: 101 }]
+            },
+            {
+                path: `${prefix}/pulls/6/reviews?per_page=100&page=1`,
+                response: first
+            },
+            {
+                path: `${prefix}/pulls/6/reviews?per_page=100&page=2`,
+                response: [{ id: 102 }]
+            }
+        ]);
+        assert.equal((await writer.pages("/issues/6/comments")).at(-1).id, 101);
+        assert.equal((await writer.pages("/pulls/6/reviews")).at(-1).id, 102);
+        wire.done();
+    });
+    it("loads paginated review threads and all replies before returning observations", async function () {
+        const lastPage = { hasNextPage: false, endCursor: null };
+        const firstThread = {
+            id: "thread1",
+            isResolved: false,
+            comments: {
+                nodes: [{ databaseId: 30 }],
+                pageInfo: { hasNextPage: true, endCursor: "reply-next" }
+            }
+        };
+        const { writer, wire } = fixture([
+            {
+                path: "/graphql",
+                method: "POST",
+                response: {
+                    data: {
+                        repository: {
+                            databaseId: 1,
+                            pullRequest: {
+                                number: 6,
+                                reviewThreads: {
+                                    nodes: [firstThread],
+                                    pageInfo: {
+                                        hasNextPage: true,
+                                        endCursor: "thread-next"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                path: "/graphql",
+                method: "POST",
+                inspect: (body) =>
+                    assert.deepEqual(body.variables, {
+                        id: "thread1",
+                        cursor: "reply-next"
+                    }),
+                response: {
+                    data: {
+                        node: {
+                            id: "thread1",
+                            comments: {
+                                nodes: [{ databaseId: 31 }],
+                                pageInfo: lastPage
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                path: "/graphql",
+                method: "POST",
+                inspect: (body) =>
+                    assert.equal(body.variables.cursor, "thread-next"),
+                response: {
+                    data: {
+                        repository: {
+                            databaseId: 1,
+                            pullRequest: {
+                                number: 6,
+                                reviewThreads: {
+                                    nodes: [
+                                        {
+                                            id: "thread2",
+                                            isResolved: true,
+                                            comments: {
+                                                nodes: [{ databaseId: 32 }],
+                                                pageInfo: lastPage
+                                            }
+                                        }
+                                    ],
+                                    pageInfo: lastPage
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ]);
+        const threads = await writer.threads();
+        assert.deepEqual(
+            threads.map((thread) => thread.id),
+            ["thread1", "thread2"]
+        );
+        assert.deepEqual(
+            threads[0].comments.nodes.map((comment) => comment.databaseId),
+            [30, 31]
+        );
+        wire.done();
+    });
+});
+
+describe("GitHub Actions publisher identity", function () {
+    it("resolves the fixed GitHub Actions bot through a read-only lookup", async function () {
+        const wire = new RecordedGitHub([
+            {
+                path: "/users/github-actions%5Bbot%5D",
+                response: {
+                    id: 41898282,
+                    login: "github-actions[bot]",
+                    type: "Bot"
+                }
+            }
+        ]);
+        assert.equal(
+            await actionsBotId("recorded-token", wire.exchange.bind(wire)),
+            41898282
+        );
+        wire.done();
+    });
+    it("rejects a different actor returned by the identity lookup", async function () {
+        const wire = new RecordedGitHub([
+            {
+                path: "/users/github-actions%5Bbot%5D",
+                response: { id: 7, login: "maintainer", type: "User" }
+            }
+        ]);
+        await assert.rejects(
+            actionsBotId("recorded-token", wire.exchange.bind(wire)),
+            { code: "UNAUTHORIZED" }
+        );
+        wire.done();
+    });
+    it("fails visibly when the publisher identity cannot be read", async function () {
+        const wire = new RecordedGitHub([
+            {
+                path: "/users/github-actions%5Bbot%5D",
+                status: 403,
+                response: { message: "denied" }
+            }
+        ]);
+        await assert.rejects(
+            actionsBotId("recorded-token", wire.exchange.bind(wire)),
+            { code: "CONTEXT_UNAVAILABLE" }
+        );
+        wire.done();
+    });
+});

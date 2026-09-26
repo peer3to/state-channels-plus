@@ -1,4 +1,5 @@
 import SpectateService, { type SyncRequest } from "./SpectateService";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { NetworkTransport } from "@/transport";
 import { Bytes } from "@/types";
@@ -25,7 +26,11 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
         if (!peerAddress) {
             // HandshakeCompletedGuard should guarantee peerAddress is present.
             // If it's not, treat as malicious/broken peer.
-            this.service.p2pManager.disconnectAndBlacklistPeer(senderTransport);
+            this.service.p2pManager.disconnectConnection(
+                senderTransport,
+                DisconnectPolicy.BLACKLIST,
+                "spectate request without peer address"
+            );
             throw new Error("onSpectateRequest - missing peer address");
         }
         // Generate payload to prove the latest possible snapshot

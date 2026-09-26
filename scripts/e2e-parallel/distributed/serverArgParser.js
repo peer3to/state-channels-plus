@@ -6,7 +6,17 @@ const {
 } = require("../shared/constants");
 const { validateCidr } = require("./egressPolicy");
 
+// The published package ships scripts/e2e-parallel without scripts/bot, so the
+// review config loads only when a review flag is used (as server.js does).
+function reviewConfig() {
+    return require("../../bot/config");
+}
+
 const DEFAULTS = {
+    review: false,
+    reviewProvider: undefined,
+    reviewModel: undefined,
+    reviewEffort: undefined,
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
     maxCompressedBytes: 2 * 1024 ** 3,
@@ -76,8 +86,39 @@ function parseServerArgs(argv, env = process.env) {
         ...DEFAULTS,
         name: env.SCP_TEST_WORKER_NAME
     };
+    let reviewEffortProvided = false;
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
+        // One review provider per worker; the model name is optional and
+        // defaults to that provider's DEFAULT_MODELS entry.
+        const provider = /^--review-(codex|claude)(?:=|$)/.exec(arg)?.[1];
+        if (provider) {
+            if (result.review)
+                throw new Error(
+                    "Use only one of --review-codex and --review-claude"
+                );
+            const inline = arg.split(/=(.*)/s)[1];
+            const next = argv[i + 1];
+            result.review = true;
+            result.reviewProvider = provider;
+            result.reviewModel = reviewConfig().DEFAULT_MODELS[provider];
+            if (inline !== undefined) result.reviewModel = inline;
+            // Any "-" argument is a flag (e.g. -w, -i); model names never start with one.
+            else if (next !== undefined && !next.startsWith("-")) {
+                result.reviewModel = next;
+                i++;
+            }
+            continue;
+        }
+        if (arg === "--review-effort" || arg.startsWith("--review-effort=")) {
+            const inline = arg.split(/=(.*)/s)[1];
+            const raw = inline === undefined ? argv[++i] : inline;
+            if (!raw || raw.startsWith("-"))
+                throw new Error("--review-effort requires a value");
+            result.reviewEffort = raw;
+            reviewEffortProvided = true;
+            continue;
+        }
         if (arg === "--allow-shared-host") {
             result.allowSharedHost = true;
             continue;
@@ -151,6 +192,21 @@ function parseServerArgs(argv, env = process.env) {
         throw new Error(
             "Worker name must match [a-z0-9-] and be at most 48 characters"
         );
+    }
+    if (reviewEffortProvided && !result.review) {
+        throw new Error(
+            "--review-effort requires --review-codex or --review-claude"
+        );
+    }
+    if (result.review) {
+        const { DEFAULT_EFFORT, validReviewSetting } = reviewConfig();
+        result.reviewEffort ??= DEFAULT_EFFORT;
+        if (!validReviewSetting(result.reviewModel)) {
+            throw new Error(`Invalid review model ${result.reviewModel}`);
+        }
+        if (!validReviewSetting(result.reviewEffort)) {
+            throw new Error(`Invalid review effort ${result.reviewEffort}`);
+        }
     }
     result.deniedPrivateCidrs.forEach(validateCidr);
     return result;

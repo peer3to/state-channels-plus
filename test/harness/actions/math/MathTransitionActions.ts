@@ -39,6 +39,18 @@ export class MathTransitionActions extends TransitionActions<
         return this.submitNext((contract) => contract.add(value), options);
     }
 
+    async insertParticipantOffChain(
+        participant: string,
+        amount: bigint,
+        options?: TransitionOptions
+    ) {
+        return this.submitNext(
+            (contract) =>
+                contract.insertParticipantOffChain(participant, amount),
+            options
+        );
+    }
+
     override async advanceState(
         options?: MathAdvanceStateOptions
     ): Promise<void> {

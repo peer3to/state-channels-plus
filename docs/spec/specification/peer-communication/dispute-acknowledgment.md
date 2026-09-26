@@ -44,8 +44,10 @@ it.
    the chain; it acknowledges when the dispute exists and records that it acknowledged `F` to this
    peer (its own defense against later false tolerance claims).
 5. **Record results.** An acknowledging peer is recorded as knowing `F` is dead. A peer that
-   rejects, errors, or stays silent through the window is terminated and excluded — refusing to
-   acknowledge a chain-verifiable fact is treated as misbehavior (see
+   rejects, errors, or stays silent through the window takes a counted close under
+   [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](rpc.md#req-rpc-6-e60s4j): refusing a chain-verifiable fact is suspect but
+   not proof, so the close spends one of the peer's bounded retries and records no verdict, and the
+   close that reaches the bound suspends the peer for the session (see
    [Security considerations](#security-considerations) for the safety analysis of that rule).
 6. **Consequence wiring.** Block validation consults the record: blocks on `F` from a recorded
    acknowledger are knowing dead-fork extension (attributable misbehavior); from an unrecorded
@@ -62,11 +64,11 @@ it.
 
 ## Failure outcomes
 
-| Failure                                                  | Outcome                                                                                                                                            |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicate acknowledgment request (same fork, same peers) | Protocol violation: terminate and exclude the requester.                                                                                           |
-| Responder rejects, errors, or times out                  | Terminate and exclude the responder (chain-verifiable-fact rule).                                                                                  |
-| Request to a peer that has not yet observed the dispute  | The responder's chain fallback resolves it; a peer whose chain view genuinely lags is exposed to the exclusion rule — see the open decision below. |
+| Failure                                                  | Outcome                                                                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate acknowledgment request (same fork, same peers) | Protocol violation: terminate and exclude the requester.                                                                           |
+| Responder rejects, errors, or times out                  | Counted close against the responder; no verdict below the bound (chain-verifiable-fact rule).                                      |
+| Request to a peer that has not yet observed the dispute  | The responder's chain fallback resolves it; a peer whose chain view genuinely lags spends one retry — see the open decision below. |
 
 ## Requirements and invariants
 
@@ -93,11 +95,12 @@ MUST keep the tolerant outcome.
 ## Security considerations
 
 The round converts "cannot know who knew" into signed, recorded knowledge — the evidentiary
-foundation for punishing dead-fork extension without punishing honest stragglers. The aggressive
-rule — silence or refusal is exclusion — assumes every honest connected peer can verify the fact
-within the window; a peer with a lagging or failing chain view is excluded despite honesty. That
-conflation of unavailability with misbehavior is the same open fault-taxonomy decision as the sync
-service's [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) family and needs the same resolution. A malicious requester probing with rounds for
+foundation for punishing dead-fork extension without punishing honest stragglers. The rule for
+silence or refusal assumes every honest connected peer can verify the fact within the window; a peer
+with a lagging or failing chain view fails it despite honesty. The counted close bounds that cost: one
+retry per failure, suspension for the session only at the bound, and never a recorded verdict. The
+residual conflation of unavailability with misbehavior at the bound is the same open fault-taxonomy
+decision as the sync service's [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) family. A malicious requester probing with rounds for
 undisputed forks is bounded by the responder's chain fallback (the claim is checkable) and the
 duplicate rule.
 
@@ -113,6 +116,6 @@ duplicate rule.
 
 ## Future Work
 
-_Non-normative._ Split honest-unavailable from refusing responders (retry/grace before exclusion —
-the [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) fault taxonomy); consider carrying compact dispute references in the request so a lagging
+_Non-normative._ Split honest-unavailable from refusing responders below the bound (a grace round
+before the counted close — the [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) fault taxonomy); consider carrying compact dispute references in the request so a lagging
 responder can verify without its own chain round trip.

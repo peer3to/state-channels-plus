@@ -1,4 +1,9 @@
 import { Status } from "@/types";
+import {
+    assertStateApplicationCache,
+    assertCacheDuringSnapshotPreparation,
+    assertReductionCache
+} from "@test/fixtures/StateApplicationEligibilityFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -8,6 +13,25 @@ import { expect } from "chai";
 // folded into the scheduled timeout check.
 
 describe("Unit: StateApplicationService", function () {
+    it("failed chain membership inspection restores VM state without publishing storage, fork or eligibility", async () => {
+        await assertStateApplicationCache("failed-chain-read");
+    });
+    it("snapshot preparation preserves the complete previous cache for concurrent intake until publication", async () => {
+        await assertCacheDuringSnapshotPreparation();
+    });
+    it("successful reduction replaces the old-fork cache with its committed genesis participants", async () => {
+        await assertReductionCache(false);
+    });
+    it("cancelled reduction cannot publish its prepared participant set or fork", async () => {
+        await assertReductionCache(true);
+    });
+    it("successful same-fork snapshot replacement publishes its participant set atomically", async () => {
+        await assertStateApplicationCache("success");
+    });
+    it("failed snapshot inspection restores the VM without publishing eligibility", async () => {
+        await assertStateApplicationCache("failed-read");
+    });
+
     it("applying a snapshot that lists me → PARTICIPATING recomputed from a wrong SYNCED", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);

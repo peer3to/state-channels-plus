@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared deployment setup for real test sessions; executable evidence belongs to its calling test declarations
 import type {
     HarnessDeploymentConfig,
     HarnessLocalStateMachineDeploymentParams,
@@ -6,7 +7,10 @@ import type {
 import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 
-import { deployFullStack } from "../../../scripts/V1/deploy";
+import {
+    deployFullStack,
+    DEFAULT_MAX_CHANNEL_PARTICIPANTS
+} from "../../../scripts/V1/deploy";
 import type { MathStateMachine } from "@typechain-types";
 import { MathStateMachine__factory } from "@typechain-types";
 import { ContractFactory, Signer } from "ethers";
@@ -17,7 +21,11 @@ export async function deployDefaultMathOnChainContracts(
     const deployment = await deployFullStack(params.signer, {
         stateMachineArtifact: MathStateMachineArtifact,
         consumerFacetArtifact: MathConsumerFacetArtifact,
-        stateMachineArgs: [params.stateMachineGasLimit],
+        stateMachineArgs: [
+            params.stateMachineGasLimit,
+            params.maxChannelParticipants ?? DEFAULT_MAX_CHANNEL_PARTICIPANTS
+        ],
+        maxChannelParticipants: params.maxChannelParticipants,
         consumerFacetArgs: [],
         timeConfig: params.timeConfig,
         disputeExecutionGasLimit: params.disputeExecutionGasLimit,
@@ -37,7 +45,8 @@ export async function deployDefaultMathLocalStateMachine(
     );
     const response = await params.signer.sendTransaction(
         await stateMachineFactory.getDeployTransaction(
-            params.stateMachineGasLimit
+            params.stateMachineGasLimit,
+            params.maxChannelParticipants ?? DEFAULT_MAX_CHANNEL_PARTICIPANTS
         )
     );
     const receipt = await response.wait();

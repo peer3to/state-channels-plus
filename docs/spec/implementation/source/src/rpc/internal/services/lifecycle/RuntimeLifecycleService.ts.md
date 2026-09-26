@@ -11,6 +11,8 @@ Owns per-child readiness, per-call quiescence and response-before-close coordina
 
 ## Key design decisions
 
+The service opts out of the root's disposal drain (`awaitedByDisposalDrain` is false): a parent-requested disposal runs as one of its handlers and replies only after the disposal that drains the domain handlers, so waiting on it would wait on itself.
+
 A closed or absent parent still allows final child cleanup without an acknowledgement. The creation owner marks expected worker shutdown before closing its port, so this path cannot race the later parent cleanup into a false exit report.
 
 Cleanup delegates to [runCleanup.ts](../../../../utils/runCleanup.ts.md), which attempts all ordered steps before reporting the first failure. Caller-owned disposal promises and acknowledgement rules remain in this owner.

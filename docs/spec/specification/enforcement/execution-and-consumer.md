@@ -80,6 +80,10 @@ transition, identically in fraud-proof replay and local-mirror evaluation
 manager's specified delegation points; its failures propagate exactly as the enclosing operation's
 atomicity rules state, and it cannot reach protocol storage outside its call's scope.
 
+A consumer may define a balance-funded off-chain insertion transition ([`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../protocol-model/state-machines.md#req-sm-11-vvp01c)). It remains
+subject to deterministic execution, participant enumeration, and balance conservation. This optional
+consumer capability is not a required protocol endpoint and does not broaden chain dispute eligibility.
+
 ## Assumptions and constraints
 
 - The integrator machine honors the deterministic-replay contract

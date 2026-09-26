@@ -2,9 +2,11 @@ import { Codec, Type } from "./Codec";
 import { isEthersResult } from "./EthersResultProxy";
 import type { CustomEvmError } from "./evmErrorHandler";
 import { hash } from "./hash";
+import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
 import Clock from "@/Clock";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type PeerProfile from "@/PeerProfile";
 import type Rpc from "@/rpc/Rpc";
@@ -24,6 +26,7 @@ import {
     BlockOrSnapshot,
     Bytes,
     ForkId,
+    FunctionSelector,
     Hash,
     Timestamp
 } from "@/types/types";
@@ -91,6 +94,13 @@ export class LoggerUtils {
         number
     > = new WeakMap();
     private static nextTransportDebugId = 1;
+    /**
+     * Selector to function name over the whole SDK contract surface: the local
+     * diamond's own functions plus every selector the manager proxy routes.
+     * Built on first use, since most log lines never need it. A map lookup is
+     * total, so peer-controlled calldata can never reach an ABI parse.
+     */
+    private static functionNames?: Map<FunctionSelector, string>;
 
     // ====================================
     // SIMPLE FORMATTERS
@@ -204,13 +214,36 @@ export class LoggerUtils {
 
     static getContractCallMetadata(data: Bytes, contractAddress?: Address) {
         const encodedData = ethers.hexlify(data);
+        const functionSelector = encodedData.slice(0, 10);
         return {
             ...(contractAddress
                 ? { contractAddress: contractAddress.toString() }
                 : {}),
-            functionSelector: encodedData.slice(0, 10),
+            functionSelector,
+            functionName: this.getFunctionName(functionSelector),
             calldataBytes: ethers.dataLength(encodedData)
         };
+    }
+
+    /** Metadata of the aggregated gas usage table: the rows and their count. */
+    static getGasUsageMetadata(gasUsage: GasUsageRow[]) {
+        return { functionCount: gasUsage.length, gasUsage };
+    }
+
+    /**
+     * The function a selector names on the SDK contract surface. A selector
+     * that surface does not declare is its own name, so an unknown call still
+     * identifies itself.
+     */
+    private static getFunctionName(functionSelector: FunctionSelector): string {
+        this.functionNames ??= new Map(
+            localDiamondAbi
+                .filter((fragment) =>
+                    ethers.FunctionFragment.isFunction(fragment)
+                )
+                .map((fragment) => [fragment.selector, fragment.name])
+        );
+        return this.functionNames.get(functionSelector) ?? functionSelector;
     }
 
     /**

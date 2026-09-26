@@ -68,17 +68,26 @@ describe("E2E: Is Fork Disputed", function () {
             });
         });
 
-        it("should disconnect non-responding peers after acknowledgment timeout", async function () {
+        it("should strike non-responding peers after acknowledgment timeout and let them reconnect", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
             await h.rpc.requestFakeDisputeWithSpiedDisconnect({
                 requestingPeer: 0
             });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 0,
-                expectedFinalCount: 0,
-                timeoutMs: h.event.protocolEventTimeoutMs()
-            });
+            // Silence within the window is not proven misbehaviour: each
+            // silent peer takes one strike, no verdict, and may reconnect.
+            for (const index of [1, 2]) {
+                await h.assert.rpc.peerStruckWithoutBlacklist({
+                    observer: h.getPeer(0),
+                    target: h.getPeer(index)
+                });
+            }
+            for (const index of [1, 2]) {
+                await h.rpc.waitForHandshakeCompleted(
+                    0,
+                    h.getPeer(index).address
+                );
+            }
         });
     });
 

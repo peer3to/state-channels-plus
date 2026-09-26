@@ -1,7 +1,16 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    assertOffChainPromotion,
+    assertVerifiedSyncPromotion,
+    assertPromotionBeforeReceiverApplication
+} from "@test/fixtures/OffChainPromotionFixture";
 import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
+import {
+    assertSpectatorSilence,
+    assertSpectatorRejectedWork
+} from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
@@ -18,6 +27,33 @@ import { ethers } from "ethers";
  * Tests spectator joining, syncing, and fork traversal mechanisms.
  */
 describe("E2E: Spectate Service", function () {
+    it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
+        await assertPromotionBeforeReceiverApplication(true);
+    });
+    it("spectator rejects an invalid envelope without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("invalid");
+    });
+    it("spectator parks not-ready work without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("not-ready");
+    });
+
+    it("new participant gossip can precede another peer applying insertion", async () => {
+        await assertPromotionBeforeReceiverApplication();
+    });
+    it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
+        await assertVerifiedSyncPromotion();
+    });
+    it("spectators apply fresh and late confirmations without relaying and still serve sync", async () => {
+        await assertSpectatorSilence();
+    });
+    it("spectator becomes participant through an off-chain balance transfer", async () => {
+        await assertOffChainPromotion(TestSession.getHarness());
+    });
+
+    it("full-capacity insertion advances the turn without promoting a spectator", async () => {
+        await assertOffChainPromotion(TestSession.getHarness(), true);
+    });
+
     describe("Guard Protection", function () {
         it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
@@ -1224,7 +1260,7 @@ describe("E2E: Spectate Service", function () {
             // Fire two concurrent startSync calls for the same peer on peer 0.
             // `sync()` marks `inFlightByPeerAddress` synchronously before its
             // background request completes (a full spectate RTT), so the second
-            // must be dropped before it hits the wire. Both control round-trips
+            // must share the pending result. Both control round-trips
             // land well inside that window.
             await Promise.all([
                 h
@@ -1253,7 +1289,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Unprovable sync target mutually blacklists both peers", function () {
-        it("an above-latest target can't be proven, so requester and responder blacklist each other", async function () {
+        it("an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
@@ -1265,8 +1301,8 @@ describe("E2E: Spectate Service", function () {
             // Ask for a height far above anything the responder can prove. p2p
             // sync is mutual-cooperation: an unprovable request is a cooperation
             // failure, so the responder cuts the requester (and never serves a
-            // downgraded latest-height proof), and the failed request cuts the
-            // responder in turn.
+            // downgraded latest-height proof). The refusal is not proof of the
+            // responder's misbehaviour, so the requester only strikes it.
             await h
                 .control(requester)
                 .spectate.startSync(responder.address, forkId, 9999)
@@ -1280,14 +1316,10 @@ describe("E2E: Spectate Service", function () {
                         .request(),
                 h.event.protocolEventTimeoutMs()
             );
-            await waitFor(
-                async () =>
-                    await h
-                        .control(requester)
-                        .query.isBlacklisted(responder.address)
-                        .request(),
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
         });
     });
 

@@ -21,6 +21,14 @@ function derivePoolKeys(secret) {
         .digest();
     return {
         workerTopic,
+        reviewTopic: crypto
+            .createHash("sha256")
+            .update(`peer3:review:topic:v${PROTOCOL_VERSION}\0${secret}`)
+            .digest(),
+        reviewOrchestratorTopic: crypto
+            .createHash("sha256")
+            .update(`peer3:review:orchestrator:v${PROTOCOL_VERSION}\0${secret}`)
+            .digest(),
         orchestratorTopic: crypto
             .createHash("sha256")
             .update(

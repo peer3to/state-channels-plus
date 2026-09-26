@@ -15,8 +15,11 @@ struct MathState {
 
 contract MathStateMachine is AStateMachine {
     MathState state;
+    uint256 public immutable maxChannelParticipants;
 
-    constructor(uint256 _gasLimit) AStateMachine(_gasLimit) {
+    constructor(uint256 _gasLimit, uint256 _maxChannelParticipants) AStateMachine(_gasLimit) {
+        require(_maxChannelParticipants > 0, "MathStateMachine: invalid maximum participants");
+        maxChannelParticipants = _maxChannelParticipants;
         gasLimit = _gasLimit;
     }
 
@@ -32,6 +35,25 @@ contract MathStateMachine is AStateMachine {
         state.number += _number;
         state.currentTurnIndex++;
         return state.number;
+    }
+
+    function insertParticipantOffChain(address participant, uint256 amount) public {
+        address author = _tx.header.participant;
+        require(author == getNextToWrite(), "MathStateMachine: insert only next player can write");
+        require(participant != address(0), "MathStateMachine: insert zero participant");
+        uint256 authorIndex = state.participants.length;
+        for (uint256 i = 0; i < state.participants.length; i++) {
+            require(state.participants[i] != participant, "MathStateMachine: insert duplicate participant");
+            if (state.participants[i] == author) authorIndex = i;
+        }
+        require(authorIndex < state.participants.length, "MathStateMachine: insert author not participant");
+        require(state.balances[authorIndex] >= amount, "MathStateMachine: insert insufficient balance");
+        if (state.participants.length < maxChannelParticipants) {
+            state.balances[authorIndex] -= amount;
+            // Append preserves array order; the next turn uses the new roster length.
+            _appendParticipant(participant, amount);
+        }
+        state.currentTurnIndex++;
     }
 
     function getSum() public view returns (uint256) {
@@ -130,12 +152,16 @@ contract MathStateMachine is AStateMachine {
                 return true;
             }
         }
-        state.participants.push(joinChannel.participant);
-        state.balances.push(joinChannel.balance.amount);
+        _appendParticipant(joinChannel.participant, joinChannel.balance.amount);
+        return true;
+    }
+
+    function _appendParticipant(address participant, uint256 amount) internal {
+        state.participants.push(participant);
+        state.balances.push(amount);
         if (state.participants.length == 1) {
             state.currentTurnIndex = 0;
         }
-        return true;
     }
 
     function addBalance(Balance memory balance1, Balance memory balance2)

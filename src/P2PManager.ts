@@ -2,19 +2,23 @@ import type { CustomRpcConstructor } from "./rpc/network/registry";
 import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
-import { Address } from "./types/types";
+import { Address, PeerKey } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
+import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
+import type PeerProfile from "@/PeerProfile";
 import ProfileManager from "@/ProfileManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import type StateManager from "@/stateManager";
+import type { BlacklistReason } from "@/storage/BlacklistStorage";
 import {
     NetworkTransport,
     LoopbackTransport,
     TransportType
 } from "@/transport";
+import { isNetworkTransport } from "@/transport/NetworkTransport";
 import { Status } from "@/types";
 import { isEngagedStatus } from "@/types/flags";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
@@ -31,7 +35,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     stateManager: StateManager<TCustomRpc>;
     logger: Logger;
     p2pSigner: P2pSigner<TCustomRpc>;
-    profileManager = new ProfileManager();
+    profileManager: ProfileManager;
     localRpc: TCustomRpc;
     remoteRpc: RemoteRpcProxyType<TCustomRpc>;
     /** In-process transport used for "send to self" (no-target) delivery. */
@@ -67,6 +71,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         customRpcOptions?: any
     ) {
         this.stateManager = stateManager;
+        this.profileManager = new ProfileManager(
+            stateManager.storage.blacklist
+        );
         this.logger = stateManager.logger.child({ component: "P2PManager" });
         this.rpcRouter = new NetworkRpcRouter(this.self);
         if (config.DEBUG_LOCAL_TRANSPORT) {
@@ -270,21 +277,38 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
-        if (config.DEBUG_LOCAL_TRANSPORT) {
-            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
-                await LocalDiscoveryServer.tryStart();
-                await LocalDiscoveryServer.connectToPeers(
-                    this.self,
-                    normalizedKey,
-                    this.stateManager.signerAddress.toString()
-                );
+        const join = (async () => {
+            if (config.DEBUG_LOCAL_TRANSPORT) {
+                if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                    await LocalDiscoveryServer.tryStart();
+                    await LocalDiscoveryServer.connectToPeers(
+                        this.self,
+                        normalizedKey,
+                        this.stateManager.signerAddress.toString()
+                    );
+                }
+            } else {
+                const topic = Buffer.from(normalizedKey.slice(2), "hex");
+                await this.holepunch.join(topic);
             }
-        } else {
-            const topic = Buffer.from(normalizedKey.slice(2), "hex");
-            await this.holepunch.join(topic);
-        }
+        })();
 
-        if (!initialSync) return;
+        if (!initialSync) {
+            await join;
+            return;
+        }
+        // An abort during the join answers the pending connect now rather
+        // than when the join returns: the disposal the abort starts closes
+        // the port, and a reply that only leaves after that never arrives.
+        // The wait settles on abort and on disposal, so racing it is enough;
+        // the join finishes in the background under that disposal. Any other
+        // settlement keeps waiting for the join as before.
+        await Promise.race([join, initialSync]);
+        if (this.stateManager.isDisposed) {
+            this.settleInitialSync(false);
+            return;
+        }
+        await join;
         // The status may have left OPENED during the discovery join (chain
         // genesis, abort). Nothing later would settle the wait, so settle now.
         if (this.stateManager.isDisposed) {
@@ -371,7 +395,120 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         }
     }
 
-    public disconnectConnection(transport: NetworkTransport) {
+    /**
+     * The single owner of every disconnect. The policy is a required argument
+     * so no close inherits another caller's decision: `ALLOW` closes only,
+     * `allowRetry(n)` closes until the peer's session bound is reached,
+     * `SUSPEND` bars the peer for this session, and `BLACKLIST` also records
+     * the verdict. A transport closes that one pipe; an address closes every
+     * live transport of that identity and still records a strike or a verdict
+     * when none is live. `verifiedPeerAddress` is the EVM identity a transport
+     * already proved but has not registered yet (the handshake acknowledgement
+     * is still outstanding); a suspension that lands on such a transport bars
+     * that identity together with the transport's own key.
+     */
+    public disconnectConnection(
+        peer: NetworkTransport | Address,
+        policy: DisconnectPolicy,
+        reason?: BlacklistReason,
+        verifiedPeerAddress?: Address
+    ) {
+        // Transports may come from another module graph, so the structural
+        // check decides, not `instanceof`.
+        const isTransport = isNetworkTransport(peer);
+        const profile = isTransport
+            ? this.profileManager.getProfileForFault(peer)
+            : this.profileManager.getProfileByEvmAddress(peer);
+        const appliedTier = this.resolveDisconnectTier(peer, profile, policy);
+        const isPunitive =
+            appliedTier === DisconnectTier.BLACKLIST ||
+            appliedTier === DisconnectTier.SUSPEND;
+        // A plain close takes only the pipe it was asked about.
+        if (isTransport && !isPunitive) {
+            this.closeConnection(peer);
+            return;
+        }
+        if (isPunitive) {
+            const isBlacklist = appliedTier === DisconnectTier.BLACKLIST;
+            this.logger.warn(
+                isBlacklist
+                    ? "Disconnecting and blacklisting peer"
+                    : "Disconnecting and suspending peer",
+                isTransport
+                    ? LoggerUtils.getTransportMetadata(peer)
+                    : { peerAddress: peer, reason }
+            );
+            // A proven peer is excluded by identity; an unproven transport by
+            // its own handle.
+            const target = isTransport ? peer.peerAddress || peer : peer;
+            if (isBlacklist) this.profileManager.blacklistPeer(target, reason);
+            else this.profileManager.suspendPeer(target);
+            if (!isBlacklist && verifiedPeerAddress) {
+                this.profileManager.suspendPeer(verifiedPeerAddress);
+            }
+        }
+        // A punitive close, or a close by address, takes every live transport
+        // of the identity with it.
+        const transports = new Set<NetworkTransport>(
+            profile?.getLiveTransports() ?? []
+        );
+        if (isTransport) transports.add(peer);
+        for (const transport of transports) this.closeConnection(transport);
+    }
+
+    /**
+     * Collapses the bounded tier onto a constant one. Each `ALLOW_RETRY` close
+     * counts against the peer's single session counter, keyed by its EVM
+     * address once proven and by its Hyperswarm key before; the close that
+     * reaches the bound is applied as `SUSPEND`, every earlier one as
+     * `ALLOW`. A transport with no key at all stays `ALLOW`, and so does a
+     * transport this node already closed: that close stated its own policy,
+     * and the request it rejected on the way out is not a second event.
+     */
+    private resolveDisconnectTier(
+        peer: NetworkTransport | Address,
+        profile: PeerProfile | undefined,
+        policy: DisconnectPolicy
+    ): DisconnectTier {
+        if (policy.tier !== DisconnectTier.ALLOW_RETRY) return policy.tier;
+        if (isNetworkTransport(peer) && peer.isClosed) {
+            return DisconnectTier.ALLOW;
+        }
+        const key = profile
+            ? this.profileManager.profileKey(profile)
+            : isNetworkTransport(peer)
+              ? undefined
+              : peer;
+        if (!key) return DisconnectTier.ALLOW;
+        const boundReached = this.profileManager.countRetryDisconnect(
+            key,
+            policy.maxRetries
+        );
+        return boundReached ? DisconnectTier.SUSPEND : DisconnectTier.ALLOW;
+    }
+
+    public disconnectAndBlacklistPeerByEvmAddress(
+        evmAddress: Address,
+        reason?: BlacklistReason
+    ) {
+        this.disconnectConnection(
+            evmAddress,
+            DisconnectPolicy.BLACKLIST,
+            reason
+        );
+    }
+
+    public disconnectAndBlacklistPeers(
+        peers: Iterable<Address>,
+        reason?: BlacklistReason
+    ) {
+        for (const peer of peers) {
+            this.disconnectAndBlacklistPeerByEvmAddress(peer, reason);
+        }
+    }
+
+    /** The close itself, shared by every policy. Never punitive. */
+    private closeConnection(transport: NetworkTransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
         this.rpcRouter.rejectPendingRpcRequestsForTransport(
@@ -395,44 +532,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         }
     }
 
-    public disconnectAndBlacklistPeer(transport: NetworkTransport) {
-        this.logger.warn(
-            "Disconnecting and blacklisting peer transport",
-            LoggerUtils.getTransportMetadata(transport)
-        );
-        const transportToDisconnect = transport.peerAddress
-            ? this.profileManager.blacklistPeer(transport.peerAddress)
-            : this.profileManager.blacklistPeer(transport);
-        if (transportToDisconnect && transportToDisconnect !== transport) {
-            this.disconnectConnection(transportToDisconnect);
-        }
-        this.disconnectConnection(transport);
-    }
-
-    public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
-        this.logger.warn("Disconnecting and blacklisting peer address", {
-            peerAddress: evmAddress
-        });
-        const transport = this.profileManager.blacklistPeer(evmAddress);
-        if (transport) this.disconnectConnection(transport);
-    }
-
-    public disconnectAndBlacklistPeers(peers: Iterable<Address>) {
-        for (const peer of peers) {
-            this.disconnectAndBlacklistPeerByEvmAddress(peer);
-        }
-    }
-
     public isBlacklisted(evmAddress: Address): boolean {
-        return (
-            this.profileManager.getProfileByEvmAddress(evmAddress)
-                ?.isBlackListed || false
-        );
+        return this.profileManager.isBlacklisted(evmAddress);
+    }
+
+    public isSuspended(key: PeerKey): boolean {
+        return this.profileManager.isSuspended(key);
     }
 
     public disconnectAll() {
         for (const transport of this.openConnections) {
-            this.disconnectConnection(transport);
+            this.disconnectConnection(transport, DisconnectPolicy.ALLOW);
         }
     }
 
