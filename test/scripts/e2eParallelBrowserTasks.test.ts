@@ -12,6 +12,7 @@ import {
     writeGateTree,
     writeIdlingGate
 } from "../fixtures/distributed/browserGateTrees";
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import fs from "fs";
 import path from "path";
@@ -196,8 +197,8 @@ const {
     ) => number;
 };
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const REPO_TEST_DIR = path.resolve(__dirname, "..");
+const REPO_ROOT = repoRoot();
+const REPO_TEST_DIR = path.join(repoRoot(), "test");
 const RUNNER_IMAGE = path.join(
     REPO_ROOT,
     "scripts",
@@ -511,11 +512,24 @@ describe("browser warm-up selection", function () {
         expect(resolveWarmUps([MOCHA_TASK])).to.deep.equal([]);
     });
 
-    it("leaves every build to the prepare script in distributed mode", function () {
-        // A worker builds in its own prepare script; the orchestrator must not.
+    it("warms only the browser typecheck in distributed mode when a gate is scheduled", function () {
+        // Workers build forge in their prepare script and carry Chromium in
+        // their image; the typecheck runs once here instead of in every prepare.
         expect(
-            resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK], true)
-        ).to.deep.equal([]);
+            resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK], true).map(
+                (warmUp) => warmUp.message
+            )
+        ).to.deep.equal([
+            "Typechecking the browser sources before the browser tier..."
+        ]);
+    });
+
+    it("skips the browser typecheck in distributed mode for a Mocha-only (--e2e-only) run", function () {
+        expect(resolveWarmUps([MOCHA_TASK], true)).to.deep.equal([]);
+    });
+
+    it("skips the browser typecheck in distributed mode for a forge-only run", function () {
+        expect(resolveWarmUps([FORGE_TASK], true)).to.deep.equal([]);
     });
 });
 
@@ -887,13 +901,20 @@ describe("browser tier environment", function () {
         expect(browserChromiumFailure()).to.equal(null);
     });
 
-    it("keeps the worker prepare script typechecking the browser sources", function () {
+    it("keeps the browser typecheck out of both worker prepare scripts", function () {
+        // A worker prepares every run it serves, browser gates or not; the
+        // typecheck belongs to runs that schedule a gate.
         const packageJson = JSON.parse(
             fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8")
         ) as { scripts: Record<string, string> };
         expect(
-            packageJson.scripts["test:parallel:prepare:cached-contracts"]
-        ).to.contain("yarn typecheck:browser");
+            [
+                "test:parallel:prepare",
+                "test:parallel:prepare:cached-contracts"
+            ].filter((script) =>
+                packageJson.scripts[script].includes("typecheck:browser")
+            )
+        ).to.deep.equal([]);
     });
 
     it("pins the runner image to the Playwright version yarn.lock resolves", function () {

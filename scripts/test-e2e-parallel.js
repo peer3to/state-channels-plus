@@ -159,32 +159,40 @@ function validateDiscoveryResults(
 }
 
 /**
- * What a run has to warm before it admits a task, in order. Distributed workers
- * build in their prepare script, so only the local path warms anything: forge
- * so concurrent tasks never race on a cold via_ir build, Chromium because a gate
- * cannot run without it, and the browser typecheck so one run performs it once
- * rather than per gate. A tier with no scheduled task warms nothing.
+ * What a run has to warm before it admits a task, in order: forge so concurrent
+ * tasks never race on a cold via_ir build, Chromium because a gate cannot run
+ * without it, and the browser typecheck so one run performs it once rather than
+ * per gate. A tier with no scheduled task warms nothing. Distributed workers
+ * build forge in their prepare script and carry Chromium in their image, so a
+ * distributed run warms only the typecheck: it checks the same sources the
+ * workers receive, and running it here keeps it out of every worker prepare,
+ * which a run without browser gates would otherwise pay for.
  */
 function resolveWarmUps(tasks, distributed) {
-    if (distributed) return [];
     return [
         {
             runner: TASK_RUNNERS.FORGE,
+            local: true,
             message: "Warming the Foundry build before the forge tier...",
             warm: forgeBuildFailure
         },
         {
             runner: TASK_RUNNERS.BROWSER,
+            local: true,
             message: "Checking Chromium before the browser tier...",
             warm: browserChromiumFailure
         },
         {
             runner: TASK_RUNNERS.BROWSER,
+            local: false,
             message:
                 "Typechecking the browser sources before the browser tier...",
             warm: browserTypecheckFailure
         }
-    ].filter(({ runner }) => countTasksForRunner(tasks, runner) > 0);
+    ]
+        .filter(({ local }) => !distributed || !local)
+        .filter(({ runner }) => countTasksForRunner(tasks, runner) > 0)
+        .map(({ runner, message, warm }) => ({ runner, message, warm }));
 }
 
 /**

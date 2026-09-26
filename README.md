@@ -168,8 +168,8 @@ on.
 
 The gates load `src` through Vite, so the tier needs only a typecheck of
 `tsconfig.browser.json` (`yarn typecheck:browser`), not a build. Local runs
-perform it once before scheduling rather than once per gate, while distributed
-runs get it from the worker's prepare script.
+and distributed runs both perform it once before scheduling, and only when the
+run holds a gate; distributed workers never run it in their prepare script.
 
 ```shell
 yarn test:parallel --browser-only

@@ -113,8 +113,8 @@ function browserChromiumFailure() {
 /**
  * Typecheck the browser sources before any browser gate is scheduled. The gates
  * load `src` through Vite, so `dist/browser` is not an input, and one run needs
- * the check once rather than once per gate. Distributed workers run it in their
- * prepare script; the local path has no such step, so it runs once here.
+ * the check once rather than once per gate. Local and distributed runs both
+ * perform it here, and only when the run schedules a gate.
  */
 function browserTypecheckFailure() {
     const [command, ...args] = BROWSER_TYPECHECK_COMMAND;
