@@ -25,14 +25,16 @@ export default class ParticipantTimeoutService {
 
     /**
      * Single owner for scheduling a timeout check. `reason` prefixes the task
-     * label so the scheduled work stays identifiable in the logs.
+     * label so the scheduled work stays identifiable in the logs. `isForced`
+     * is set only by the pipeline rejecting the participant's posted block.
      */
     public scheduleCheck(
         forkId: ForkId,
         blockHeight: BlockHeight,
         participantAddress: Address,
         delayMs: number,
-        reason: string
+        reason: string,
+        isForced = false
     ): void {
         if (!this.stateManager.isActiveFork(forkId)) return;
         this.stateManager.timeoutManager.scheduleTask(
@@ -40,7 +42,8 @@ export default class ParticipantTimeoutService {
                 this.tryTimeoutParticipant(
                     forkId,
                     blockHeight,
-                    participantAddress
+                    participantAddress,
+                    isForced
                 ),
             delayMs,
             `${reason} - fork ${forkId} - block ${blockHeight} - participant ${participantAddress}`
@@ -51,7 +54,8 @@ export default class ParticipantTimeoutService {
     private async tryTimeoutParticipant(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        participantAddress: Address
+        participantAddress: Address,
+        isForced = false
     ): Promise<void> {
         const sm = this.stateManager;
         if (!sm.isActiveFork(forkId)) return;
@@ -77,6 +81,12 @@ export default class ParticipantTimeoutService {
             forkId,
             height: blockHeight
         });
+        // previous height not stored yet -> the check armed at that turn judges this one
+        if (
+            !previousBlockOrSnapshot.block &&
+            !previousBlockOrSnapshot.stateSnapshot
+        )
+            return;
         // check is good time to timeout
         const previousRelevantTimestamp = previousBlockOrSnapshot.block
             ? previousBlockOrSnapshot.block.getRelevantTimestamp(
@@ -107,7 +117,8 @@ export default class ParticipantTimeoutService {
                 blockHeight,
                 participantAddress,
                 difference * 1000,
-                "timeoutParticipantDelayed"
+                "timeoutParticipantDelayed",
+                isForced
             );
             return;
         }
@@ -169,7 +180,8 @@ export default class ParticipantTimeoutService {
                     forkId,
                     blockHeight,
                     participantAddress,
-                    "previousOnChainBlockValidation"
+                    "previousOnChainBlockValidation",
+                    isForced
                 );
                 return;
             }
@@ -203,7 +215,8 @@ export default class ParticipantTimeoutService {
                         blockHeight,
                         participantAddress,
                         difference * 1000,
-                        "timeoutParticipantDelayed"
+                        "timeoutParticipantDelayed",
+                        isForced
                     );
                     return;
                 }
@@ -220,13 +233,13 @@ export default class ParticipantTimeoutService {
                 participantAddress
             );
         if (commitment.found) {
-            // Commitment found, but block not accepted by BlockConfirmation pipeline -> proceed no timeout force
-            return await this.createTimeOutDispute(
+            // Commitment found, but block not accepted by BlockConfirmation pipeline
+            return await this.onPostedCommitment(
                 forkId,
                 blockHeight,
                 participantAddress,
                 timeoutMinTimestamp,
-                true
+                isForced
             );
         }
 
@@ -253,7 +266,8 @@ export default class ParticipantTimeoutService {
                 forkId,
                 blockHeight,
                 participantAddress,
-                "currentOnChainBlockValidation"
+                "currentOnChainBlockValidation",
+                isForced
             );
             return;
         }
@@ -271,13 +285,13 @@ export default class ParticipantTimeoutService {
                 participantAddress
             );
         if (commitment.found) {
-            // commitment exists on-chain, but block confirmation pipeline didn't accept it -> proceed no timeout force
-            return await this.createTimeOutDispute(
+            // commitment exists on-chain, but block confirmation pipeline didn't accept it
+            return await this.onPostedCommitment(
                 forkId,
                 blockHeight,
                 participantAddress,
                 timeoutMinTimestamp,
-                true
+                isForced
             );
         }
         // block not found on-chain -> normal timeout
@@ -294,14 +308,59 @@ export default class ParticipantTimeoutService {
         forkId: ForkId,
         blockHeight: BlockHeight,
         participantAddress: Address,
-        reason: string
+        reason: string,
+        isForced: boolean
     ): void {
         this.scheduleCheck(
             forkId,
             blockHeight,
             participantAddress,
             1000,
-            `timeoutParticipantAfterOnChainValidation - ${reason}`
+            `timeoutParticipantAfterOnChainValidation - ${reason}`,
+            isForced
+        );
+    }
+
+    /**
+     * A plain check hands the posted block back so the pipeline judges it; a
+     * rejection requests the forced check. A forced timeout is slashable
+     * unless it names the writer at the next height.
+     */
+    private async onPostedCommitment(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        timeoutMinTimestamp: Timestamp,
+        isForced: boolean
+    ): Promise<void> {
+        const sm = this.stateManager;
+        if (!isForced) {
+            this.logger.info(
+                "tryTimeoutParticipant - posted block handed to the pipeline",
+                { forkId, blockHeight, participantAddress }
+            );
+            const posted = sm.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                blockHeight,
+                participantAddress
+            );
+            if (posted) await sm.blockQueueManager.ingestPostedBlock(posted);
+            return;
+        }
+        const isWritersTurn = await sm.withMutex(
+            async () =>
+                sm.storage.blocks.getNextBlockHeight(forkId) === blockHeight &&
+                (await sm.diamondStateMachine.getNextToWrite()) ===
+                    participantAddress,
+            { taskName: "forced timeout writer check" }
+        );
+        if (!isWritersTurn) return;
+        await this.createTimeOutDispute(
+            forkId,
+            blockHeight,
+            participantAddress,
+            timeoutMinTimestamp,
+            true
         );
     }
 

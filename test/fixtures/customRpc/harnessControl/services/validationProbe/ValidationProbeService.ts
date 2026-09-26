@@ -7,7 +7,6 @@ import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
-import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockOrigin, getSourcePeers } from "@/storage/QueueStorage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
@@ -84,7 +83,7 @@ export type IsDisputedForkProbe = {
 };
 
 export type BlockProbeOptions = {
-    strategy?: "active" | "dispute" | "spectating";
+    strategy?: "active" | "dispute" | "spectating" | "calldata";
     encodedDispute?: string;
     /** Supplier of this copy, recorded in the per-source contribution map. */
     senderAddress?: Address;
@@ -715,10 +714,7 @@ export class ValidationProbeService extends ANetworkRpcService<
         if (strategyName === "spectating")
             strategy = sm.spectatingValidationStrategy;
         if (strategyName === "calldata")
-            strategy = new CalldataCommittedStrategy(
-                sm.disputeManager,
-                sm.blockValidationStrategy
-            );
+            strategy = sm.calldataCommittedStrategy;
         if (strategyName === "dispute") {
             const { dispute } = await sm.disputeManager.constructDispute(
                 sm.forkId
@@ -845,11 +841,7 @@ export class ValidationProbeService extends ANetworkRpcService<
                 strategy = sm.spectatingValidationStrategy;
                 break;
             case "calldata":
-                // built as EventHandler builds it for a CalldataPosted event
-                strategy = new CalldataCommittedStrategy(
-                    sm.disputeManager,
-                    sm.blockValidationStrategy
-                );
+                strategy = sm.calldataCommittedStrategy;
                 break;
             default:
                 strategy = sm.blockValidationStrategy;
@@ -994,7 +986,9 @@ export class ValidationProbeService extends ANetworkRpcService<
                   )
                 : options?.strategy === "spectating"
                   ? sm.spectatingValidationStrategy
-                  : sm.getActiveValidationStrategy();
+                  : options?.strategy === "calldata"
+                    ? sm.calldataCommittedStrategy
+                    : sm.getActiveValidationStrategy();
 
         const recorded: RecordedValidationRun["recorded"] = {
             disputedForkIds: [],

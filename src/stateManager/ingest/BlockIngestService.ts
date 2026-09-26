@@ -73,7 +73,8 @@ export default class BlockIngestService {
             await sm.mutex.lock({ taskName: "onBlockConfirmation" });
 
             strategy =
-                options?.validationStrategy || sm.getActiveValidationStrategy();
+                options?.validationStrategy ||
+                sm.getActiveValidationStrategy(entry.block);
             block = entry.block;
 
             // A fork transition can land while we wait for the mutex, so the

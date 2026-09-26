@@ -20,7 +20,7 @@
 ## Responsibility and observable boundary
 
 The chain-intake brain: per-event handlers that first replicate into the mirror, then act —
-`onBlockCalldataPosted` (store record before first await, ingest with the calldata strategy),
+`onBlockCalldataPosted` (store record before first await, then hand the posted block to the block pipeline's posted-block entry point, which carries the chain commitment on the work item),
 `onDisputeCommitted` (dedup by dispute hash, relevance gate, queue purge, ack round, audit
 dispatch, final/expired/auditable branches, evidence-improvement comparison),
 `onDisputeKilled` (record slash, exclude disputer, replacement evidence when the window empties),

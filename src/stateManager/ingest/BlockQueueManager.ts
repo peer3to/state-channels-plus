@@ -14,6 +14,7 @@ import {
 import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
+    BlockCalldata,
     ChannelId,
     ForkId,
     Hash,
@@ -70,7 +71,7 @@ export default class BlockQueueManager {
             if (this.stateManager.isDisposed) return true;
             const strategy =
                 options.validationStrategy ||
-                this.stateManager.getActiveValidationStrategy();
+                this.stateManager.getActiveValidationStrategy(options);
 
             const isAuthentic =
                 await this.stateManager.validationService.isBlockConfirmationAuthentic(
@@ -215,6 +216,19 @@ export default class BlockQueueManager {
         this.recoverySuppressedUntil.clear();
     }
 
+    /** Ingest a block posted as calldata; the chain, not a peer, supplied it. */
+    public async ingestPostedBlock(
+        blockCalldata: BlockCalldata
+    ): Promise<boolean> {
+        return this.ingestBlockConfirmation(
+            { signedBlock: blockCalldata.signedBlock, signatures: [] },
+            {
+                origin: BlockOrigin.CALLDATA,
+                onChainTimestamp: Number(blockCalldata.onChainTimestamp)
+            }
+        );
+    }
+
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
         const activeForkId = forkId ?? this.stateManager.forkId;
         // A scheduled forkId is not authority - a fork transition may have
@@ -315,7 +329,8 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
-                strategy ?? this.stateManager.getActiveValidationStrategy()
+                strategy ??
+                    this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }
@@ -435,7 +450,7 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
-                this.stateManager.getActiveValidationStrategy()
+                this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }
@@ -578,7 +593,7 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             await this.handleStoredBlockConfirmationMerge(
                 entry,
-                this.stateManager.getActiveValidationStrategy()
+                this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }

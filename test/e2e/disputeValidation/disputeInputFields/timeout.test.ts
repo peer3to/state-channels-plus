@@ -139,7 +139,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 const customError = tryDecodeCustomError(error);
                 if (!customError) throw error;
                 if (
-                    customError.errorDescription.name !==
+                    customError.name !==
                     "RaceConditionDisputeTimeoutWindowCreatedTooEarly"
                 ) {
                     throw error;

@@ -130,7 +130,7 @@ public target; callers cannot clear or replace the ID through another public sig
 participant sets self-removal, captures `N`, substitutes one eligible `onLeaveTurn`, and falls back to the
 normal self-removal dispute at the first `N + 1`-block or configured watchdog bound. Bounded time to fallback takes precedence over waiting a full healthy writer rotation. Completion requires
 settled observed removal before terminal disposal. A non-committed runtime disposes immediately, concurrent
-channel work is rejected, and repeated leave calls share one operation. A fallback that cannot start a dispute rejects the leave operation; it must not leave its caller waiting indefinitely. Explicit runtime disposal is local shutdown: it rejects a pending leave without waiting for an in-flight dispute upload. Callers should use graceful leave when they need completed channel exit.
+channel work is rejected, and repeated leave calls share one operation. A fallback that cannot start a dispute rejects the leave operation; it must not leave its caller waiting indefinitely. An authored exit's fallback refused because the fork's dispute window already holds commitments past its evidence period is not such a failure: that window settles the fork, so the leave waits for the settlement. Explicit runtime disposal is local shutdown: it rejects a pending leave without waiting for an in-flight dispute upload. Callers should use graceful leave when they need completed channel exit.
 
 ## Assumptions
 

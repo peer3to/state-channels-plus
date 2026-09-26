@@ -310,7 +310,7 @@ describe("Unit: StoredBlockMergeService", function () {
 
         // EventHandler always builds {signedBlock, signatures: []} from a
         // CalldataPosted event, so the merge must exit through
-        // noNewSignaturesOnExistingBlock - not the unreachable-tripwire throw
+        // noNewSignaturesOnExistingBlock
         const r = await h.transition.runStoredBlockMerge({
             peerIndex: 0,
             confirmation: {
@@ -328,14 +328,13 @@ describe("Unit: StoredBlockMergeService", function () {
         );
     });
 
-    it("under CalldataCommittedStrategy a genuine new signature → the unreachable tripwire throws", async function () {
+    it("under CalldataCommittedStrategy a genuine new signature from a merged gossip copy → BROADCAST and persisted, as the live strategy", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1, { timeConfig: MERGE_TIME_CONFIG });
         const forkId = h.activeForkId!;
 
-        // a signature the writer never saw, handed to the merge as if a
-        // calldata event carried it - the event shape forbids this, so the
-        // strategy's tripwire must fail loudly instead of gossiping
+        // a signature the writer never saw: a queued calldata copy that merged
+        // a gossip copy carries it, and the calldata strategy judges it as gossip
         const writer = await h.query.getNextPeerToWrite();
         const silenced = h.peers.find((p) => p.index !== writer.index)!;
         await h.byzantine.stubBroadcast(silenced.index);
@@ -360,26 +359,51 @@ describe("Unit: StoredBlockMergeService", function () {
             ).length
         ).to.be.greaterThan(0);
 
-        let thrown: Error | undefined;
-        try {
-            await h.transition.runStoredBlockMerge({
-                peerIndex: writer.index,
-                confirmation: {
-                    signedBlock: Codec.decode(
-                        writerBundle!.encodedSignedBlock,
-                        Type.SignedBlock
-                    ),
-                    signatures:
-                        silencedBundle!.confirmationSignatures.map(String)
-                },
-                strategy: "calldata"
-            });
-        } catch (error) {
-            thrown = error as Error;
-        }
-        expect(thrown, "the tripwire should reject the merge").to.not.be
-            .undefined;
-        expect(String(thrown)).to.contain("goodNewSignaturesOnExistingBlock");
+        const newSignatures = silencedBundle!.confirmationSignatures.filter(
+            (s) => !writerBundle!.confirmationSignatures.includes(s)
+        );
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: writer.index,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    writerBundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: silencedBundle!.confirmationSignatures.map(String)
+            },
+            strategy: "calldata"
+        });
+        expect(r.result).to.equal(BlockValidationResult.BROADCAST);
+        expect(r.persistedSignatures).to.include.members(newSignatures);
+    });
+
+    it("under CalldataCommittedStrategy a stray signature → stripped as the live strategy does, lands DUPLICATE", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const forkId = h.activeForkId!;
+
+        const bundle = await h
+            .control(h.getPeer(0))
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const outsider = ethers.Wallet.createRandom();
+        const straySignature = await outsider.signMessage(
+            ethers.getBytes(bundle!.hash)
+        );
+
+        const r = await h.transition.runStoredBlockMerge({
+            peerIndex: 0,
+            confirmation: {
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: [...bundle!.confirmationSignatures, straySignature]
+            },
+            strategy: "calldata"
+        });
+        expect(r.result).to.equal(BlockValidationResult.DUPLICATE);
+        expect(r.persistedSignatures).to.not.include(straySignature);
     });
 
     it("under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped", async function () {
