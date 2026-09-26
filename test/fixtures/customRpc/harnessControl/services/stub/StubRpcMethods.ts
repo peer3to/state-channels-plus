@@ -544,7 +544,17 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             );
         }
         // Capture a real proof now; later chain progress makes it stale.
-        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
+        return this.stubSpectatePayload(
+            Codec.encode(syncPayload, Type.SyncPayload) as string
+        );
+    }
+
+    /**
+     * Make `spectateService.onSpectateRequest` always answer with
+     * `encodedSyncPayload` (a crafted proof); restore with restoreSpectateStaleProof.
+     */
+    public stubSpectatePayload(encodedSyncPayload: string): boolean {
+        const service = this.p2pManager.localRpc.spectateService;
         if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
             this.service.stubOriginals.set(
                 "spectateCreateRpcMethods",
@@ -1736,6 +1746,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const outcome = this.service.snapshotPostSendOutcome;
         this.service.releaseSnapshotPostSendHold();
         return (await outcome) ?? null;
+    }
+
+    /** Fail this peer's first `failures` adopt-only snapshot posts at their send; record every multicall's call names. */
+    public stubFailFirstAdoptionPost(failures: number = 1): boolean {
+        this.service.installAdoptionPostFailure(failures);
+        return true;
+    }
+
+    /** The multicall call names recorded so far by the adoption-post failure stub. */
+    public getRecordedMulticallNames(): string[][] {
+        return this.service.recordedMulticallNames;
+    }
+
+    /** Restore the real send; the recorded multicall call names. */
+    public restoreAdoptionPost(): string[][] {
+        return this.service.restoreAdoptionPostFailure();
     }
 
     /** Resolves once a post is parked at its send; parked count. */

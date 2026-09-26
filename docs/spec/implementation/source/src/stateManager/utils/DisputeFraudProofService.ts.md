@@ -1,6 +1,6 @@
 # DisputeFraudProofService.ts — Source Report
 
-> **Source:** [src/stateManager/utils/DisputeFraudProofService.ts](../../../../../../../src/stateManager/utils/DisputeFraudProofService.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/stateManager/dispute/DisputeFraudProofService.ts](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/dispute-pipeline.md](../../../../views/architecture/sdk/dispute-pipeline.md)
 
 ## Contents
@@ -41,9 +41,9 @@ reason, and the `Timeout*` set) — one per audited dispute, first failure wins.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                            | Specification IDs                                                                                                    |
-| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| [DisputeFraudProofService.ts](../../../../../../../src/stateManager/utils/DisputeFraudProofService.ts) | [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) |
+| Source file                                                                                              | Specification IDs                                                                                                    |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| [DisputeFraudProofService.ts](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts) | [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

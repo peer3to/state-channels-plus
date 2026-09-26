@@ -783,7 +783,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     /// the historic set a dispute commits to at its inbound anchor; `_canParticipateInDisputesNow` is live eligibility
     function _getHistoricThresholdSet(Dispute memory dispute) internal view returns (address[] memory thresholdSet) {
         bytes32 channelId = dispute.input.channelId;
-        // the chain set is frozen for the kill period (adoption onto the fork or any ancestor reduced into it refused)
+        // the chain set cannot move while a proof can land: adoption targets only the latest undisputed fork, a
+        // disputed fork advances only by reduction, and joins and top-ups are refused on a disputed fork
         address[] memory participants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
             _getSnapshotParticipants(channelId),
             _derivePendingParticipantsFromInboundHash(

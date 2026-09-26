@@ -329,17 +329,8 @@ export default class ReductionExecutor {
         }
     }
 
+    // the reduce lands alone; adopting the reduced fork is a separate post
     private async prepareSubmission(candidate: LocalReductionCandidate) {
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                this.stateManager.channelId
-            )
-        );
-        const { calldata: forkCalldata } =
-            this.stateManager.snapshotUpdateService.buildForkSnapshotCalldata(
-                candidate.reducedGenesisSnapshot,
-                currentOnChainSnapshot
-            );
         const reduceCalldata =
             this.reductionComputationService.buildReduceAndFinalizeCalldata(
                 candidate.disputes,
@@ -348,7 +339,35 @@ export default class ReductionExecutor {
                 candidate.reduceData.inboundMessageBlocks,
                 candidate.reducedForkId
             );
-        return { calldata: [reduceCalldata, forkCalldata] };
+        return { calldata: [reduceCalldata] };
+    }
+
+    // a failed adoption post is retried once; a refusal on chain is final
+    private adoptReducedFork(forkId: ForkId, retries: number): void {
+        DetachedPromises.collect(
+            this.stateManager.snapshotUpdateService
+                .postStateSnapshotWait(forkId, { forkAdoptionOnly: true })
+                .then(
+                    () => undefined,
+                    (error) => {
+                        if (retries === 0 || this.stateManager.isDisposed)
+                            throw error;
+                        this.logger.warn(
+                            "Fork adoption post failed, retrying once",
+                            {
+                                forkId,
+                                error: errorMessage(error)
+                            }
+                        );
+                        this.stateManager.timeoutManager.scheduleTask(
+                            () => this.adoptReducedFork(forkId, retries - 1),
+                            this.stateManager.timeConfig.chainFallbackTime *
+                                1000,
+                            `adoptReducedFork-${forkId}`
+                        );
+                    }
+                )
+        );
     }
 
     private async simulateSubmission(
@@ -363,20 +382,6 @@ export default class ReductionExecutor {
             return "submit";
         } catch (error) {
             const customError = tryDecodeCustomError(error);
-            if (
-                customError?.name ===
-                    "RaceConditionSnapshotUpdateDisputedFork" &&
-                submission.calldata.length > 1
-            ) {
-                this.logger.info("Reduction submits without fork adoption", {
-                    forkId,
-                    candidateForkId: candidate.reducedForkId,
-                    customError:
-                        LoggerUtils.getCustomEvmErrorMetadata(customError)
-                });
-                submission.calldata.splice(1);
-                return this.simulateSubmission(forkId, candidate, submission);
-            }
             const status = await this.classifyReductionRace(
                 customError?.name,
                 forkId,
@@ -419,15 +424,13 @@ export default class ReductionExecutor {
                 if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
+                // the reduce is mined -> adopt the latest undisputed fork
+                if (!this.stateManager.isDisposed)
+                    this.adoptReducedFork(candidate.reducedForkId, 1);
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
-                let adoptionFrozen = false;
-                const handlers: RaceConditionErrorHandlers = {
-                    RaceConditionSnapshotUpdateDisputedFork: () => {
-                        adoptionFrozen = true;
-                    }
-                };
+                const handlers: RaceConditionErrorHandlers = {};
                 for (const errorName of REDUCTION_RACE_ERRORS) {
                     handlers[errorName] = () => {
                         raceErrorName = errorName;
@@ -440,17 +443,6 @@ export default class ReductionExecutor {
                     signer: this.stateManager.signer,
                     handlers
                 });
-                // a dispute reached the reduced fork after the simulation -> land the reduce alone
-                if (
-                    handled &&
-                    adoptionFrozen &&
-                    submission.calldata.length > 1
-                ) {
-                    this.submitDetached(forkId, candidate, {
-                        calldata: submission.calldata.slice(0, 1)
-                    });
-                    return;
-                }
                 if (handled && raceErrorName) {
                     const status = await this.classifyReductionRace(
                         raceErrorName,

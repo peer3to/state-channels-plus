@@ -28,7 +28,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062) | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
 | [`OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385`](open-questions.md#oq-impl-sync-in-flight-1-wc8385)               | Ordinary sync collision before intake eligibility recheck                                                                         | Engineer review | [Owner](source/src/stateManager/ingest/BlockQueueManager.ts.md)                                                                                                                                       | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                   | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
-| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb) | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code   | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
+| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                               | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
 
@@ -277,9 +277,9 @@ closed networks" as an explicit, documented limitation. See
 
 Status: Open, non-blocking performance follow-up. Current behavior retained by Luka on 2026-09-07.
 
-Each sync currently establishes its own chain-finality decisions and builds its own complete
-snapshot-update simulation. This deliberately keeps calldata inclusion independent of another
-sync's local verification progress. A matching locally proven successor is reusable evidence,
+Each sync currently establishes its own chain-finality decisions and recomputes every reduction the
+chain has not finalized. This deliberately keeps verification independent of another sync's local
+verification progress. A matching locally proven successor is reusable evidence,
 but it does not prove that the chain has executed the reduction. See the
 [SpectateService report](source/src/rpc/network/services/spectate/SpectateService.ts.md#key-design-decisions).
 

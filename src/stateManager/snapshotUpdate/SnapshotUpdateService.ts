@@ -45,9 +45,10 @@ export default class SnapshotUpdateService {
     }
 
     public async postStateSnapshot(
-        forkId: ForkId
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
     ): Promise<StateSnapshot | undefined> {
-        const submission = await this.submitStateSnapshot(forkId);
+        const submission = await this.submitStateSnapshot(forkId, options);
         if (!submission) return undefined;
 
         DetachedPromises.collect(submission.completion);
@@ -55,19 +56,25 @@ export default class SnapshotUpdateService {
     }
 
     /** Resolves false only when the chain refused the post on a disputed fork. */
-    public async postStateSnapshotWait(forkId: ForkId): Promise<boolean> {
-        const submission = await this.submitStateSnapshot(forkId);
+    public async postStateSnapshotWait(
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
+    ): Promise<boolean> {
+        const submission = await this.submitStateSnapshot(forkId, options);
         return submission?.completion ?? true;
     }
 
     private async submitStateSnapshot(
-        forkId: ForkId
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
     ): Promise<SnapshotSubmission | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData = await this.prepareUpdateSnapshotSameFork(
-            forkId,
-            forkData.expectedSnapshot
-        );
+        const sameForkData: typeof forkData = options?.forkAdoptionOnly
+            ? { canPost: true, callData: [], outboundMessageBlocks: [] }
+            : await this.prepareUpdateSnapshotSameFork(
+                  forkId,
+                  forkData.expectedSnapshot
+              );
 
         const callData = [...forkData.callData, ...sameForkData.callData];
         const expectedSnapshot =
@@ -156,6 +163,12 @@ export default class SnapshotUpdateService {
                             );
                             throw new Error(
                                 `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
+                            );
+                        },
+                        RaceConditionSnapshotUpdateNotLatestFork: () => {
+                            this.logger.warn(
+                                "postStateSnapshot: a later reduction landed first; the next post adopts it",
+                                { forkId }
                             );
                         },
                         RaceConditionSnapshotUpdateDisputedFork: () => {

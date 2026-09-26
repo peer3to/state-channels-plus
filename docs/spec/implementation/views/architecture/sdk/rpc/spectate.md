@@ -159,17 +159,17 @@ enumerated abort conditions in
 8. **Disputed / requested-fork check.** Latest mode (no requested fork): the tip fork must **not** be
    disputed on-chain (`getDisputeWindowCreationTimestamp == 0`). Pinned mode: `finalForkId ==
 requested forkId`.
-9. **Milestone proof.** `verifyMilestones.staticCall(...)` proves the state proof; latest finalized
-   state hash must match `hash(latestFinalizedEncodedState)`.
-10. **Outbound range #2.** `verifyOutboundMessageBlocks` from fork genesis → latest finalized
-    snapshot.
+9. **Milestone proof.** `verifyMilestones.staticCall(...)` proves the state proof from the fork genesis, or from the
+   on-chain snapshot when it is on the proven fork; latest finalized state hash must match
+   `hash(latestFinalizedEncodedState)`.
+10. **Outbound range #2.** `verifyOutboundMessageBlocks` from fork genesis (or the on-chain snapshot on the proven
+    fork, with the blocks pruned to its outbound head) → latest finalized snapshot.
 11. **Channel-balance invariant.** `verifyBalanceInvariantCheckSnapshot.staticCall(...)` on the
     latest finalized snapshot ([`INV-MSG-6-1C22RD`](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-6-1c22rd) / §6 of the protocol doc); abort on failure. This is the
     check that stops an economically unsound (undercollateralized) but internally consistent
     snapshot — §4.1.
-12. **Simulated advance.** `tryMulticallSnapshotUpdate` `staticCall`s the pending
-    `reduceAndFinalize` + `updateStateSnapshotFork` + `updateStateSnapshotSameFork` multicall; a
-    revert aborts, except `RaceConditionSnapshotUpdateDisputedFork` (either adoption call refused a disputed fork), which is accepted. Proves the teleport would actually succeed on-chain without sending a tx.
+12. **No simulated advance.** Verification is historic: on the proven fork, steps 9 and 10 start from the current
+    on-chain snapshot, so pruned history is never needed; nothing simulates an adoption against the live chain.
 13. **Persist.** `persistSyncPayload` under the state-manager mutex: skipped if local storage is
     already ahead; aborts on any finalized-block conflict with local storage; otherwise stores
     disputes, snapshots, states, inbound/outbound blocks and sets latest state.
@@ -227,7 +227,7 @@ contract logic, trusting nothing in the payload (§3.3):
   [../../open-questions.md](../../../../../specification/open-questions.md) [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx): even a _unanimous_ colluding participant
   set cannot get a newcomer to trust an unbacked snapshot, because agreement is not economic
   soundness and the invariant is checked against chain-anchored deposits/withdrawals.
-- A claim that would not actually apply on-chain fails the `multicall` `staticCall` (step 12).
+- A claim that does not verify from the current on-chain snapshot forward fails steps 9-11.
 - A finalized block conflicting with local storage aborts persistence (step 13).
 
 **Residual — [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx) dependency.** The balance-invariant check is trustworthy here _only because_ the
@@ -369,9 +369,6 @@ _Non-normative._
   §4.5).
 - Track the on-chain-snapshot-update invariant enforcement ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx)) so protection does not depend on
   the client always spectating (§4.1).
-- Resolve the spectate-simulation consumer-side-effect stubbing so the step-12 multicall simulation
-  is feasible when `withdraw` touches external assets
-  ([../../protocol/cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md) §3.2 TODO).
 
 ## Implementation traceability
 

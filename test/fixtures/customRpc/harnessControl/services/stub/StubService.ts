@@ -67,6 +67,7 @@ export type StubKey =
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
+    | "adoptionPostFailure"
     | "expiredCalldataPost"
     | "broadcast"
     | "calldataPosting"
@@ -511,6 +512,8 @@ export class StubService extends ANetworkRpcService<
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
     /** The first parked send's custom revert name once released, or null when it was mined. */
     snapshotPostSendOutcome?: Promise<string | null>;
+    /** Call names of every multicall this peer sent while the adoption-post failure stub was installed. */
+    recordedMulticallNames: string[][] = [];
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
@@ -1310,21 +1313,37 @@ export class StubService extends ANetworkRpcService<
         this.syncWindowHold?.release();
     }
 
+    // records each sync's supplied windows and those the chain had not finalized, which the sync must reduce
     public recordSyncReductionWindows(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.tryMulticallSnapshotUpdate.bind(service);
+        const original = service.applySyncResponse.bind(service);
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
         this.syncReductionWindows = [];
         this.restoreSyncReductionRecorder = () => {
-            service.tryMulticallSnapshotUpdate = original;
+            service.applySyncResponse = original;
         };
-        service.tryMulticallSnapshotUpdate = async (...args) => {
-            this.syncReductionWindows.push({
-                suppliedForks: args[2].disputeWindows.map(
-                    (window) => window.forkId
-                ),
-                reductionForks: args[3].map((window) => window.forkId)
-            });
-            return await original(...args);
+        service.applySyncResponse = async (
+            peerAddress,
+            syncRequest,
+            encodedSyncPayload
+        ) => {
+            const suppliedForks = Codec.decode(
+                encodedSyncPayload,
+                Type.SyncPayload
+            ).disputeWindows.map((window) => window.forkId);
+            const reductionForks: ForkId[] = [];
+            for (const forkId of suppliedForks) {
+                if (
+                    !(await contract.isReduceChallengePeriodExpired(
+                        syncRequest.channelId,
+                        forkId
+                    ))
+                )
+                    reductionForks.push(forkId);
+            }
+            this.syncReductionWindows.push({ suppliedForks, reductionForks });
+            return await original(peerAddress, syncRequest, encodedSyncPayload);
         };
     }
 
@@ -2161,6 +2180,55 @@ export class StubService extends ANetworkRpcService<
         return true;
     }
 
+    /**
+     * Fail this peer's first `failures` adopt-only snapshot posts (a multicall
+     * whose only call is `updateStateSnapshotFork`) at their send, and record
+     * the call names of every multicall the peer sends; later sends run for real.
+     */
+    public installAdoptionPostFailure(failures: number): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("adoptionPostFailure")) {
+            this.stubOriginals.set("adoptionPostFailure", contract.multicall);
+        }
+        const original = this.stubOriginals.get(
+            "adoptionPostFailure"
+        ) as StateChannelManagerInterface["multicall"];
+        this.recordedMulticallNames = [];
+        let failed = 0;
+        contract.multicall = new Proxy(original, {
+            apply: (target, receiver, parameters) => {
+                const names = (parameters[0] as string[]).map(
+                    (data) =>
+                        contract.interface.parseTransaction({ data })?.name ??
+                        "unknown"
+                );
+                this.recordedMulticallNames.push(names);
+                if (
+                    failed < failures &&
+                    names.length === 1 &&
+                    names[0] === "updateStateSnapshotFork"
+                ) {
+                    failed++;
+                    return Promise.reject(
+                        new Error("injected adoption post send failure")
+                    );
+                }
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
+    }
+
+    /** Restore the real send; the call names recorded while installed. */
+    public restoreAdoptionPostFailure(): string[][] {
+        const original = this.stubOriginals.get("adoptionPostFailure");
+        if (original !== undefined) {
+            this.sm.stateChannelManagerContract.multicall =
+                original as StateChannelManagerInterface["multicall"];
+            this.stubOriginals.delete("adoptionPostFailure");
+        }
+        return this.recordedMulticallNames;
+    }
+
     /** Resolve with the parked count once a post is held at its send. */
     public waitForHeldSnapshotPostSend(): Promise<number> {
         const held = this.heldSnapshotPostSend;
@@ -2552,19 +2620,24 @@ export class StubService extends ANetworkRpcService<
 
         contract.multicall = this.asRecordingContractMethod(
             contract.multicall,
-            (calls: string[], overrides?: unknown) =>
-                record(
+            (calls: string[], overrides?: unknown) => {
+                const send = () =>
+                    Reflect.apply(originals.multicall, contract, [
+                        calls,
+                        ...(overrides ? [overrides] : [])
+                    ]);
+                const described = this.describeMulticall(calls);
+                // only dispute uploads are recorded; snapshot posts and reductions pass through
+                if (!described.encodedDispute) return send();
+                return record(
                     {
-                        ...this.describeMulticall(calls),
+                        ...described,
                         method: "multicall",
                         gasLimit: this.overrideGasLimit(overrides)
                     },
-                    () =>
-                        Reflect.apply(originals.multicall, contract, [
-                            calls,
-                            ...(overrides ? [overrides] : [])
-                        ])
-                )
+                    send
+                );
+            }
         );
     }
 

@@ -1,7 +1,13 @@
+import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
-import { Codec, tryDecodeCustomError, Type } from "@/utils";
+import { Codec, Type } from "@/utils";
+import {
+    applyAnchoredSyncPayload,
+    forgedOutboundBlock,
+    stageAnchoredSyncPayload
+} from "@test/fixtures/HistoricSyncStaging";
 import {
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
@@ -211,6 +217,7 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("applySyncResponse", function () {
+        // verification is historic: a dispute landing after the proof was served does not change what it proves
         it("a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
@@ -236,8 +243,8 @@ describe("Unit: SpectateService", function () {
                 payload!.encodedSyncPayload,
                 Type.SyncPayload
             );
-            // the same-fork call is in the simulation, and the fork was
-            // undisputed when the proof was served
+            // the proof advances the fork, and the fork was undisputed when
+            // the proof was served
             expect(decodedPayload.milestoneSnapshots.length).to.be.greaterThan(
                 0
             );
@@ -278,109 +285,6 @@ describe("Unit: SpectateService", function () {
                 ).to.equal(false);
             } finally {
                 await stub.restoreRecordedSyncRejections().request();
-            }
-
-            await h.dispute.resolveDisputeWait({ forkId });
-        });
-
-        it("a same-fork proof whose disputed fork is past its kill period and not yet reduced → accepted as a race, responder neither rejected nor blacklisted", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            const forkId = h.activeForkId!;
-            const responder = h.getPeer(0);
-            const requester = h.getPeer(2);
-
-            const latestHeight = await h
-                .control(responder)
-                .query.getLatestBlockHeight(forkId)
-                .request();
-            expect(latestHeight).to.not.equal(null);
-            const payload = await h
-                .control(responder)
-                .spectate.generateSyncPayload(
-                    h.channelId,
-                    forkId,
-                    latestHeight!
-                )
-                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-            expect(payload).to.not.equal(null);
-            const decodedPayload = Codec.decode(
-                payload!.encodedSyncPayload,
-                Type.SyncPayload
-            );
-            expect(decodedPayload.milestoneSnapshots.length).to.be.greaterThan(
-                0
-            );
-
-            // no reduction may land, so the fork stays disputed past its kill
-            // period -> the same-fork advance is refused for good, not deferred
-            const reductions = await Promise.all(
-                h.peers.map((peer) =>
-                    h.rpcStub.holdReductionAttempt(peer.index, "submit")
-                )
-            );
-            try {
-                await h.tamper.postTamperedDispute(1, (dispute) => {
-                    dispute.input.stateProof.milestones = [];
-                    dispute.input.stateProof.signedBlocks = [];
-                });
-                await waitFor(
-                    async () =>
-                        (await h.query.killPeriod(forkId, requester.index))
-                            .isExpired,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(
-                    (await h.channelManager.getStateSnapshot(h.channelId))
-                        .forkId
-                ).to.equal(forkId);
-                // the chain refuses this fork's same-fork advance by name
-                const prepared = await h
-                    .control(responder)
-                    .transition.prepareUpdateSnapshotSameFork(forkId)
-                    .request();
-                let refusal: unknown;
-                try {
-                    await responder.p2pInstance.stateChannelManagerContract.multicall.staticCall(
-                        prepared.callData
-                    );
-                    expect.fail("expected the disputed fork to refuse");
-                } catch (error) {
-                    refusal = error;
-                }
-                expect(
-                    tryDecodeCustomError(refusal)?.errorDescription.name
-                ).to.equal("RaceConditionSnapshotUpdateDisputedFork");
-
-                const stub = h.control(requester).stub;
-                await stub.recordSyncRejections().request();
-                try {
-                    const accepted = await h
-                        .control(requester)
-                        .spectate.applySyncResponse(
-                            responder.address,
-                            forkId,
-                            latestHeight!,
-                            payload!.encodedSyncPayload
-                        )
-                        .request({
-                            timeoutMs: h.event.protocolEventTimeoutMs()
-                        });
-                    expect(accepted).to.equal(true);
-                    expect(
-                        await stub.restoreRecordedSyncRejections().request()
-                    ).to.deep.equal([]);
-                    expect(
-                        await h
-                            .control(requester)
-                            .query.isBlacklisted(responder.address)
-                            .request()
-                    ).to.equal(false);
-                } finally {
-                    await stub.restoreRecordedSyncRejections().request();
-                }
-            } finally {
-                for (const reduction of reductions) await reduction.release();
             }
 
             await h.dispute.resolveDisputeWait({ forkId });
@@ -482,21 +386,37 @@ describe("Unit: SpectateService", function () {
         });
     });
 
-    describe("tryMulticallSnapshotUpdate", function () {
-        it("the exact target snapshot lands first → accepts the benign height race", async function () {
+    describe("historic verification", function () {
+        it("on-chain snapshot ahead of the payload genesis on the same fork → milestones and outbound verified from it, accepted", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const forkId = h.activeForkId!;
-            const source = h.getPeer(0);
-            const staleOnChainSnapshot =
-                await h.channelManager.getStateSnapshot(h.channelId);
+            const responder = h.getPeer(0);
+            const requester = h.getPeer(2);
+            const posted = await h.transition.postSnapshotWait({
+                peerIndex: responder.index,
+                forkId: String(forkId)
+            });
+            expect(posted).to.not.equal(undefined);
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
             const latestHeight = await h
-                .control(source)
+                .control(responder)
                 .query.getLatestBlockHeight(forkId)
                 .request();
             expect(latestHeight).to.not.equal(null);
+            // the chain sits strictly between the fork genesis and the proven target
+            const onChainSnapshot = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(onChainSnapshot.forkID).to.equal(forkId);
+            expect(onChainSnapshot.blockHeight).to.be.greaterThan(0);
+            expect(onChainSnapshot.blockHeight).to.be.lessThan(latestHeight!);
+
             const payload = await h
-                .control(source)
+                .control(responder)
                 .spectate.generateSyncPayload(
                     h.channelId,
                     forkId,
@@ -505,30 +425,165 @@ describe("Unit: SpectateService", function () {
                 .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             expect(payload).to.not.equal(null);
 
-            const postedSnapshot = await h.transition.postSnapshotWait({
-                peerIndex: source.index,
-                forkId: String(forkId)
-            });
-            expect(postedSnapshot).to.not.equal(undefined);
-            const currentOnChainSnapshot = StateSnapshot.from(
-                await h.channelManager.getStateSnapshot(h.channelId)
-            );
-            expect(currentOnChainSnapshot.hash).to.equal(postedSnapshot!.hash);
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            try {
+                const accepted = await h
+                    .control(requester)
+                    .spectate.applySyncResponse(
+                        responder.address,
+                        forkId,
+                        latestHeight!,
+                        payload!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                expect(accepted).to.equal(true);
+                expect(
+                    await stub.restoreRecordedSyncRejections().request()
+                ).to.deep.equal([]);
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
+        });
+    });
 
-            await h
-                .control(source)
-                .stub.stubNextReductionSimulationError(
-                    "RaceConditionBlockHeightTooOld"
-                )
-                .request();
-            const accepted = await h
-                .control(source)
-                .spectate.tryMulticallSnapshotUpdate(
-                    StateSnapshot.from(staleOnChainSnapshot).encode() as string,
-                    payload!.encodedSyncPayload
-                )
-                .request();
-            expect(accepted).to.equal(true);
+    describe("historic verification persistence", function () {
+        it("a milestone prepended below the on-chain anchor carrying a block and a snapshot above it → sync accepted, neither is stored", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, onChainSnapshot, payload } =
+                await stageAnchoredSyncPayload(h);
+            const anchor = onChainSnapshot.blockHeight;
+            const milestones = payload.stateProof.milestones;
+            const first = milestones[0].blockConfirmations[0];
+            const firstHeight = Block.fromBlockConfirmation(first).height;
+            // the honest proof starts above the anchor; the prepended milestone
+            // starts below it, so verifyMilestones skips it without any check
+            expect(firstHeight).to.be.greaterThan(anchor);
+            const copyAt = (height: number, timestampShift: bigint) => {
+                const block = Codec.decode(
+                    first.signedBlock.encodedBlock,
+                    Type.Block
+                );
+                block.transaction.header.transactionCnt = BigInt(height);
+                block.transaction.header.timestamp =
+                    BigInt(block.transaction.header.timestamp) + timestampShift;
+                return {
+                    signedBlock: {
+                        encodedBlock: Codec.encode(block, Type.Block) as string,
+                        signature: first.signedBlock.signature
+                    },
+                    signatures: first.signatures
+                };
+            };
+            const planted = copyAt(firstHeight, 1n);
+            milestones.unshift({
+                blockConfirmations: [copyAt(anchor - 1, 2n), planted]
+            });
+            const plantedSnapshot = {
+                ...payload.milestoneSnapshots[0],
+                timestamp: BigInt(payload.milestoneSnapshots[0].timestamp) + 1n
+            };
+            payload.milestoneSnapshots.unshift(plantedSnapshot);
+            const encodedSyncPayload = Codec.encode(
+                payload,
+                Type.SyncPayload
+            ) as string;
+            const servers = h.peers.slice();
+            for (const peer of servers)
+                await h
+                    .control(peer)
+                    .stub.stubSpectatePayload(encodedSyncPayload)
+                    .request();
+            try {
+                const spectator = await h.join.addSpectatorWait();
+                const stored = await h.execOnHost(
+                    h.getPeer(spectator.index),
+                    (sm, a) => ({
+                        belowAnchor: Array.from(
+                            { length: a.anchor },
+                            (_, height) => height
+                        ).filter(
+                            (height) =>
+                                !!sm.storage.blocks.getBlock(a.forkId, height)
+                        ),
+                        firstVerifiedBlockHash:
+                            sm.storage.blocks.getBlock(a.forkId, a.firstHeight)
+                                ?.hash ?? null,
+                        plantedStored: !!sm.storage.blocks.getBlock(
+                            a.plantedHash
+                        ),
+                        plantedSnapshotStored:
+                            !!sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                a.plantedSnapshotHash
+                            )
+                    }),
+                    {
+                        forkId,
+                        anchor,
+                        firstHeight,
+                        plantedHash: Block.fromBlockConfirmation(planted).hash,
+                        plantedSnapshotHash:
+                            StateSnapshot.from(plantedSnapshot).hash
+                    }
+                );
+                expect(stored).to.deep.equal({
+                    belowAnchor: [],
+                    firstVerifiedBlockHash:
+                        Block.fromBlockConfirmation(first).hash,
+                    plantedStored: false,
+                    plantedSnapshotStored: false
+                });
+            } finally {
+                for (const peer of servers)
+                    await h
+                        .control(peer)
+                        .stub.restoreSpectateStaleProof()
+                        .request();
+            }
+        });
+    });
+
+    describe("historic verification rejections", function () {
+        it("proof ending at the on-chain height with another snapshot → rejected, the proof does not extend the on-chain snapshot", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload, onChainSnapshot) => {
+                    payload.milestoneSnapshots.at(-1)!.blockHeight = BigInt(
+                        onChainSnapshot.blockHeight
+                    );
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([
+                "proof does not extend the on-chain snapshot"
+            ]);
+        });
+
+        it("milestone snapshot above the on-chain anchor altered → rejected, milestones invalid", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    const last = payload.milestoneSnapshots.at(-1)!;
+                    last.timestamp = BigInt(last.timestamp) + 1n;
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["milestones invalid"]);
+        });
+
+        it("outbound block above the on-chain anchor forged → rejected, latest-fork outbound blocks invalid", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    payload.outboundMessageBlocksOfTheLatestFork.push(
+                        forgedOutboundBlock(payload)
+                    );
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([
+                "latest-fork outbound blocks invalid"
+            ]);
         });
     });
 

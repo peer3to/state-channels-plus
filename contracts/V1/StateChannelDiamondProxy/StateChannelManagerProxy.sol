@@ -75,6 +75,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(DisputeFraudProofFacet.isDisputeInboundHashValid.selector, _disputeFraudProofFacet);
         _registerRoute(StateSnapshotFacet.updateStateSnapshotFork.selector, _stateSnapshotFacet);
         _registerRoute(StateSnapshotFacet.updateStateSnapshotSameFork.selector, _stateSnapshotFacet);
+        _registerRoute(StateSnapshotFacet.isExtendingOnChainSnapshot.selector, _stateSnapshotFacet);
         _registerRoute(JoinChannelFacet.joinChannel.selector, _joinChannelFacet);
         _registerRoute(JoinChannelFacet.topUpBalance.selector, _joinChannelFacet);
         _registerRoute(StateProofFacet.verifyStateProof.selector, _stateProofFacet);

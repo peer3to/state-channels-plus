@@ -319,10 +319,11 @@ Current dispute upload eligibility now uses the snapshot participant set plus th
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
 retain their historical pending walk, and the milestone-finality read is judged against the dispute's historic threshold:
-a participant set no adoption can change while its disputes can be killed (same-fork advances refused on a disputed
-fork, successor-fork updates during the target's kill period, joins and top-ups refused on a disputed fork, and uploads
-admitted only when anchored exactly at the chain's inbound head), minus only the slashes the dispute lists
-([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the freeze after the
+the chain's snapshot participants plus the joiners up to the dispute's inbound anchor, a set no adoption can change
+while its disputes can be killed (successor-fork updates only onto the latest undisputed fork, same-fork advances
+refused on a disputed fork, joins and top-ups refused on a disputed fork, and uploads admitted only when anchored
+exactly at the chain's inbound head), minus only the slashes the dispute lists
+([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the disputed-fork refusal after the
 evidence period ends waits for that window's settlement instead of rejecting ([`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq), resolved). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 
@@ -352,11 +353,11 @@ Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specif
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
-Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
+Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only reduction from standing in for chain execution. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
 
-The retained sync design keeps each request's snapshot-update simulation complete independently
+The retained sync design keeps each request's reduction verification complete independently
 of concurrent local proof work. Local verification is not evidence of chain execution, so it
-cannot alone remove reduction calldata. Reusing verified work remains a non-blocking
+cannot alone skip a request's own reduction check. Reusing verified work remains a non-blocking
 [implementation performance question](../implementation/open-questions.md#oq-impl-sync-1-hjc60d);
 proof validation and blacklist liability are unchanged.
 

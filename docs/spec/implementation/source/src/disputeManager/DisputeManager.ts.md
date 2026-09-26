@@ -63,8 +63,9 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
 4. **Data-availability decision by finality probe.** Auditing calldata is posted iff the proof's
    last milestone is not provably final to everyone (`isLastMilestoneFinalByEveryone.staticCall`,
    [#L552](../../../../../../src/disputeManager/DisputeManager.ts#L552)); a known-final anchor
-   spares the calldata cost. The on-chain predicate judges the chain snapshot set, frozen for the kill
-   period, plus the joiners at or below the dispute's anchor, minus the dispute's own `onChainSlashes`, so
+   spares the calldata cost. The on-chain predicate judges the chain snapshot set, which cannot move
+   while a proof can land (adoption targets only the latest undisputed fork, a disputed fork advances only by
+   reduction), plus the joiners at or below the dispute's anchor, minus the dispute's own `onChainSlashes`, so
    this construction-time probe and a later fraud-proof read of the committed dispute agree.
 5. **Construction aborts on partial data.** `getAuditingData` flags any locally unbackable element
    (`isPartial`) and `constructDispute` throws rather than submitting a dispute the node cannot

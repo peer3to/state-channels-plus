@@ -32,31 +32,32 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorSnapshotGenesisTimestampMismatch(genesisTimestamp, newStateSnapshot.timestamp)
         );
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
-        bool updated = false;
+        bytes32 latestForkId = currentStateSnapshot.forkId;
+        bool reachable = false;
+        DisputeWindow storage disputeWindow = disputeWindowMap[latestForkId];
         while (disputeWindow.reducedResult.forkId != bytes32(0)) {
             (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
             if (!challengePeriodExpired) break;
-            if (disputeWindow.reducedResult.forkId == targetForkId) {
-                // the target and every fork it was reduced into must be past its kill period -> a later
-                // fork's committed dispute is judged against the participant set it saw
-                bytes32 forkId = targetForkId;
-                while (forkId != bytes32(0)) {
-                    DisputeWindow storage window = disputeWindowMap[forkId];
-                    (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(window, _getEvidenceTime());
-                    require(
-                        !_isDisputeWidnowCreated(window) || killPeriodExpired,
-                        RaceConditionSnapshotUpdateDisputedFork(channelId, forkId, killPeriodEnd, block.timestamp)
-                    );
-                    forkId = window.reducedResult.forkId;
-                }
-                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
-                updated = true;
-                break;
-            }
-            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
+            latestForkId = disputeWindow.reducedResult.forkId;
+            if (latestForkId == targetForkId) reachable = true;
+            disputeWindow = disputeWindowMap[latestForkId];
         }
-        require(updated, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        require(reachable, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        // adoption changes the current state -> only the latest fork, and never a disputed one
+        require(targetForkId == latestForkId, RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId));
+        require(
+            !_isForkDisputed(channelId, targetForkId), RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId)
+        );
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
+    }
+
+    /// a proof ending at `target` extends the chain's snapshot: another fork is linked by reductions, not here;
+    /// on the same fork only the chain's snapshot itself or a newer one extends it
+    function isExtendingOnChainSnapshot(bytes32 channelId, StateSnapshot memory target) public view returns (bool) {
+        StateSnapshot memory current = stateSnapshots[channelId];
+        if (current.forkId != target.forkId) return true;
+        return keccak256(abi.encode(target)) == keccak256(abi.encode(current))
+            || UtilityFacet(utilityFacetAddress).isSnapshotNewer(target, current);
     }
 
     function updateStateSnapshotSameFork(
@@ -90,12 +91,7 @@ contract StateSnapshotFacet is StateChannelCommon {
             )
         );
         if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
-            (, uint256 killPeriodEnd) = _isKillPeriodExpired(
-                disputeData[channelId].disputeWindowMap[currentStateSnapshot.forkId], _getEvidenceTime()
-            );
-            revert RaceConditionSnapshotUpdateDisputedFork(
-                channelId, currentStateSnapshot.forkId, killPeriodEnd, block.timestamp
-            );
+            revert RaceConditionSnapshotUpdateDisputedFork(channelId, currentStateSnapshot.forkId);
         }
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);

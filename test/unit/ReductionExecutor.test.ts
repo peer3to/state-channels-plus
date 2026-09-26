@@ -1,10 +1,10 @@
 import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
-import { assertReduceLandsWithoutFrozenForkAdoption } from "@test/fixtures/ReducedForkKillPeriodStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 describe("Unit: ReductionExecutor", function () {
     // a reduce whose inbound run this peer cannot walk yields no reduce data.
@@ -317,6 +317,102 @@ describe("Unit: ReductionExecutor", function () {
         });
     });
 
+    describe("fork adoption after the reduce", function () {
+        it("the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index
+            );
+            // only this peer reduces; the others keep their reduction timers held
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+
+            const chainForkId = async () =>
+                (await h.channelManager.getStateSnapshot(h.channelId))
+                    .forkId as ForkId;
+            await waitFor(
+                async () =>
+                    (await adoption.recorded()).filter(
+                        (names) =>
+                            names.length === 1 &&
+                            names[0] === "updateStateSnapshotFork"
+                    ).length === 2 && (await chainForkId()) !== sourceForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            const recorded = await adoption.restore();
+            const reducedForkId = (
+                await h.channelManager.getReducedResult(
+                    h.channelId,
+                    sourceForkId
+                )
+            ).reducedForkId as ForkId;
+
+            // the reduce is its own transaction, never bundled with the adoption
+            expect(recorded).to.deep.include(["reduceAndFinalize"]);
+            expect(
+                recorded.some(
+                    (names) =>
+                        names.length > 1 &&
+                        names.includes("updateStateSnapshotFork")
+                )
+            ).to.equal(false);
+            expect(await chainForkId()).to.equal(reducedForkId);
+        });
+
+        it("the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index,
+                2
+            );
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+            // after the reduction-task restore, which resets scheduleTask
+            const tasks = await h.rpcStub.recordScheduledTasks(reducer.index);
+
+            const adoptionPosts = async () =>
+                (await adoption.recorded()).filter(
+                    (names) =>
+                        names.length === 1 &&
+                        names[0] === "updateStateSnapshotFork"
+                ).length;
+            try {
+                await waitFor(
+                    async () => (await adoptionPosts()) === 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const retries = (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith("adoptReducedFork-")
+                );
+                // one retry scheduled, and nothing after the second failure
+                expect(retries).to.have.length(1);
+                expect(await adoptionPosts()).to.equal(2);
+                await TestSession.settleDetached({
+                    expectedErrorIncludes: "injected adoption post send failure"
+                });
+                expect(
+                    (
+                        await h.channelManager.getReducedResult(
+                            h.channelId,
+                            sourceForkId
+                        )
+                    ).reducedForkId
+                ).to.not.equal(ZeroHash);
+                expect(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId
+                ).to.equal(sourceForkId);
+            } finally {
+                await tasks.restore();
+                await adoption.restore();
+            }
+        });
+    });
+
     describe("getSyncedForkDisputes", function () {
         // a dispute commitment lands on-chain before our onDisputeCommitted
         // handler stores the struct. tryReduce firing in that gap used to
@@ -427,20 +523,6 @@ describe("Unit: ReductionExecutor", function () {
                 sourceForkId: forkId,
                 peerIndices: [observerIndex, 1, 3]
             });
-        });
-    });
-
-    // the chain refuses adopting a fork whose kill period is open, so a
-    // reduction bundled with that adoption must still land its reduce
-    describe("reduced fork already in its kill period", function () {
-        it("the simulation meets the reduced fork's open window → the reduce lands alone, the chain snapshot waits, no host errors", async function () {
-            const h = TestSession.getHarness();
-            await assertReduceLandsWithoutFrozenForkAdoption(h, "simulation");
-        });
-
-        it("the send meets the reduced fork's open window → the reduce is resubmitted alone, the chain snapshot waits, no host errors", async function () {
-            const h = TestSession.getHarness();
-            await assertReduceLandsWithoutFrozenForkAdoption(h, "send");
         });
     });
 });

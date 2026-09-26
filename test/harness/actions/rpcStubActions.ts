@@ -897,6 +897,25 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Fail a peer's first `failures` adopt-only snapshot posts at their send;
+     * later sends run for real. `restore` returns every multicall's call names.
+     */
+    async failFirstAdoptionPost(
+        peerIndex: number,
+        failures: number = 1
+    ): Promise<{
+        recorded: () => Promise<string[][]>;
+        restore: () => Promise<string[][]>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubFailFirstAdoptionPost(failures).request();
+        return {
+            recorded: () => ctl().getRecordedMulticallNames().request(),
+            restore: () => ctl().restoreAdoptionPost().request()
+        };
+    }
+
     async restoreDisputeInitiationAndDispute(
         peerIndex: number,
         forkId: ForkId
