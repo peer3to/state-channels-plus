@@ -5,6 +5,7 @@ import {
     serializeTransactionResponse,
     type SerializedTransactionResponse
 } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
+import { withGasHeadroom } from "@/utils/gas";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -75,5 +76,31 @@ export async function assertRuntimeSignerFields(
         );
         expect(restored.toJSON()).to.deep.equal(mined.toJSON());
         expect(await restored.confirmations()).to.be.greaterThan(0);
+    }, inline);
+}
+
+export async function assertRuntimeSignerGasHeadroom(
+    inline: boolean
+): Promise<void> {
+    await withRuntimeRpc(async (sdk) => {
+        const signer = sdk.instance.chainSigner;
+        const provider = signer.provider!;
+        const request = {
+            to: ethers.Wallet.createRandom().address,
+            value: 1n,
+            data: "0x1234"
+        };
+        const estimate = await provider.estimateGas({
+            ...request,
+            from: await signer.getAddress()
+        });
+        // Explicit estimates and sends without a limit both carry the headroom,
+        // whichever side of the runtime port holds the key.
+        expect(await signer.estimateGas(request)).to.equal(
+            withGasHeadroom(estimate)
+        );
+        const response = await signer.sendTransaction(request);
+        expect((await response.wait())?.status).to.equal(1);
+        expect(response.gasLimit).to.equal(withGasHeadroom(estimate));
     }, inline);
 }

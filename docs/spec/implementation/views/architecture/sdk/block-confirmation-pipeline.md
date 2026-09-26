@@ -148,7 +148,7 @@ possibly per-peer — deliberately not per-service limits) is not implemented ye
 before production — tracked in [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Current: the implementation matches the mutex boundary — signature merging into stored blocks
-([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L505)) and all
+([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L513)) and all
 ingest/queue work run without the mutex; per-entry caps exist; the RPC rate limit does not.
 
 ## 4. Stage: intake, authentication, deduplication, queueing
@@ -205,7 +205,7 @@ entry) and then decides:
 - fork disputed → clear fork, drop;
 - block became stored → stored-merge path;
 - **known stale fork** (disputed, or we hold its genesis snapshot or any block
-  — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L505)) → drop
+  — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L513)) → drop
   silently (we are ahead; probing would blacklist honest stragglers);
 - **unknown fork** → request spectate sync once from each source peer and the
   author (`spectateService.sync`); a failed sync punishes them. This is the admitted-source expiry probe. A still-unknown sender after refresh triggers ordinary sync and ends intake without retention;

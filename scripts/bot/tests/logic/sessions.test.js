@@ -1,0 +1,950 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { Sessions } = require("../../sessions");
+const { DEFAULTS } = require("../../config");
+const { digest } = require("../../data");
+const { binding } = require("../../protocol");
+const { request, result } = require("../fixtures/records");
+async function fixture(body) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "review-sessions-"));
+    const sessions = new Sessions(root, {
+        ...DEFAULTS,
+        queueMs: 2000,
+        validationMs: 1000
+    });
+    await sessions.initialize();
+    try {
+        await body(sessions);
+    } finally {
+        await sessions.close();
+        await fs.rm(root, { recursive: true });
+    }
+}
+async function separate(change) {
+    await fixture(async (sessions) => {
+        const first = request();
+        const second = request({ attempt: "attempt-2", ...change });
+        let executions = 0;
+        const run = async () => {
+            executions++;
+            return result(first);
+        };
+        const a = await sessions.submit(
+            first,
+            digest("context"),
+            run,
+            async () => true
+        );
+        const bPromise = sessions.submit(
+            second,
+            digest("context"),
+            run,
+            async () => true
+        );
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(executions, 1);
+        await sessions.acknowledge(first, a.executionId);
+        const b = await bPromise;
+        assert.equal(executions, 2);
+        assert.notEqual(a.executionId, b.executionId);
+    });
+}
+async function separateUnfinished(change) {
+    await fixture(async (sessions) => {
+        const first = request();
+        const second = request({ attempt: "retry", ...change });
+        let release, started;
+        const ready = new Promise((resolve) => {
+            started = resolve;
+        });
+        const held = new Promise((resolve) => {
+            release = resolve;
+        });
+        let executions = 0;
+        const a = sessions.submit(
+            first,
+            digest("context"),
+            async () => {
+                executions++;
+                started();
+                await held;
+                return result(first);
+            },
+            async () => true
+        );
+        await ready;
+        const b = sessions.submit(
+            second,
+            digest("context"),
+            async () => {
+                executions++;
+                return result(second);
+            },
+            async () => true
+        );
+        try {
+            const slot = sessions.slots.get(sessions.key(first));
+            assert.equal(slot.active.deliveries.length, 1);
+            assert.equal(slot.pending.length, 1);
+            assert.equal(executions, 1);
+        } finally {
+            release();
+        }
+        const one = await a;
+        await sessions.acknowledge(first, one.executionId);
+        const two = await b;
+        assert.equal(executions, 2);
+        assert.notEqual(one.executionId, two.executionId);
+        assert.deepEqual(one.binding, binding(first));
+        assert.deepEqual(two.binding, binding(second));
+    });
+}
+describe("review sessions", function () {
+    it("queues an incompatible head while review is unfinished", async function () {
+        await separateUnfinished({ head: "f".repeat(40) });
+    });
+    it("queues an incompatible merge base while review is unfinished", async function () {
+        await separateUnfinished({ mergeBase: "f".repeat(40) });
+    });
+    it("queues an incompatible bot revision while review is unfinished", async function () {
+        await separateUnfinished({ botRevision: "f".repeat(40) });
+    });
+    it("queues an incompatible skill while review is unfinished", async function () {
+        await separateUnfinished({ skillDigest: digest("new skill") });
+    });
+    it("queues an incompatible policy while review is unfinished", async function () {
+        await separateUnfinished({ policyDigest: digest("new policy") });
+    });
+    it("queues an incompatible runtime while review is unfinished", async function () {
+        await separateUnfinished({ runtime: "codex-next" });
+    });
+    it("queues incompatible operations while review is unfinished", async function () {
+        await separateUnfinished({ operations: ["review"] });
+    });
+    it("queues incompatible read scope while review is unfinished", async function () {
+        await separateUnfinished({ readScope: ["source"] });
+    });
+    it("queues incompatible resolved threads while review is unfinished", async function () {
+        await separateUnfinished({
+            resolvedThreads: [{ id: "thread", comments: [1] }]
+        });
+    });
+    it("attaches an equivalent retry during setup without a finished evidence snapshot", async function () {
+        await fixture(async (sessions) => {
+            let release, started;
+            const ready = new Promise((resolve) => {
+                started = resolve;
+            });
+            const held = new Promise((resolve) => {
+                release = resolve;
+            });
+            const first = request();
+            const second = request({
+                attempt: "retry",
+                caller: "9".repeat(64),
+                run: { id: 1, attempt: 2 }
+            });
+            let executions = 0;
+            const a = sessions.submit(
+                first,
+                digest("first pending snapshot"),
+                async () => {
+                    executions++;
+                    started();
+                    await held;
+                    return result(first);
+                },
+                async () => true
+            );
+            await ready;
+            const b = sessions.submit(
+                second,
+                digest("retry pending snapshot"),
+                async () => {
+                    throw new Error(
+                        "Equivalent retry must not execute another model"
+                    );
+                },
+                async () => {
+                    throw new Error(
+                        "Unfinished evidence cannot be freshness-tested"
+                    );
+                }
+            );
+            try {
+                const slot = sessions.slots.get(sessions.key(first));
+                assert.equal(slot.active.deliveries.length, 2);
+                assert.equal(slot.pending.length, 0);
+            } finally {
+                release();
+            }
+            const [one, two] = await Promise.all([a, b]);
+            assert.equal(executions, 1);
+            assert.equal(one.executionId, two.executionId);
+            assert.deepEqual(two.binding, binding(second));
+        });
+    });
+    it("holds a fifth PR until one of four global owners releases", async function () {
+        await fixture(async (sessions) => {
+            sessions.limits.concurrency = 4;
+            const inputs = [6, 7, 8, 9].map((pr) =>
+                request({ pr, attempt: `pr-${pr}` })
+            );
+            const active = await Promise.all(
+                inputs.map((input) =>
+                    sessions.submit(
+                        input,
+                        digest("context"),
+                        async () => result(input),
+                        async () => true
+                    )
+                )
+            );
+            let started = false;
+            const fifth = request({ pr: 10, attempt: "fifth" });
+            const queued = sessions.submit(
+                fifth,
+                digest("context"),
+                async () => {
+                    started = true;
+                    return result(fifth);
+                },
+                async () => true
+            );
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            assert.equal(started, false);
+            await sessions.acknowledge(inputs[0], active[0].executionId);
+            await queued;
+            assert.equal(started, true);
+            assert.equal(sessions.running, 4);
+        });
+    });
+    it("recovers late receipt delivery after restart without rerunning or rolling back the baseline", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            let executions = 0;
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async () => {
+                    executions++;
+                    return result(input);
+                },
+                async () => true
+            );
+            await sessions.finish(sessions.key(input), output.executionId);
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                const receipt = {
+                    version: 1,
+                    binding: binding(input),
+                    kind: "review",
+                    complete: true,
+                    round: 2,
+                    actions: []
+                };
+                await restarted.acknowledge(input, output.executionId, receipt);
+                assert.equal((await restarted.baseline(input)).round, 2);
+                await restarted.acknowledge(input, output.executionId, {
+                    ...receipt,
+                    round: 1
+                });
+                assert.equal((await restarted.baseline(input)).round, 2);
+                await assert.rejects(
+                    restarted.acknowledge(input, "foreign", receipt),
+                    { code: "UNAUTHORIZED" }
+                );
+                assert.equal(executions, 1);
+            } finally {
+                await restarted.close();
+            }
+        });
+    });
+    it("reloads a stored review whose closed finding predates the evidence rule", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const legacy = result(input, {
+                recommendation: "comment",
+                findings: [
+                    {
+                        id: "FO1",
+                        body: "Evidence boundary",
+                        path: null,
+                        line: null,
+                        threadId: null,
+                        status: "fixed",
+                        human: null,
+                        evidence: []
+                    }
+                ]
+            });
+            legacy.report += `\n## Correctness\n- [x] **[FO1] General PR comment**\n<!-- pr-review-finding ${JSON.stringify({ id: "FO1", kind: "general", evidence: [] })} -->\n<!-- human:FO1:start -->\n<!-- human:FO1:end -->\n<!-- ai:FO1:start -->\nEvidence boundary\n<!-- ai:FO1:end -->\n`;
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async () => legacy,
+                async () => true
+            );
+            await sessions.finish(sessions.key(input), output.executionId);
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                assert.equal(restarted.attempts.size, 1);
+            } finally {
+                await restarted.close();
+            }
+        });
+    });
+    it("preserves the native conversation across setup failure and worker restart", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            sessions.previous.set(key, { sessionId: "existing-chat" });
+            await assert.rejects(
+                sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => {
+                        throw new Error("setup failed before resume");
+                    },
+                    async () => true
+                )
+            );
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            try {
+                await reopened.initialize();
+                assert.equal(
+                    reopened.previous.get(key).sessionId,
+                    "existing-chat"
+                );
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
+    it("does not reuse an incomplete review that an older worker marked published", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            const output = result(input, { recommendation: "comment" });
+            output.coverage.complete = false;
+            output.coverage.missing = ["Full source review"];
+            await fs.writeFile(
+                path.join(sessions.root, `${key}.json`),
+                JSON.stringify({
+                    request: input,
+                    result: output,
+                    sessionId: "old-chat"
+                })
+            );
+            await fs.writeFile(
+                path.join(sessions.root, `${key}-baseline.json`),
+                JSON.stringify({
+                    head: input.head,
+                    mergeBase: input.mergeBase,
+                    sessionId: "old-chat",
+                    round: 1
+                })
+            );
+            assert.equal(await sessions.baseline(input), null);
+            await sessions.submit(
+                request({ attempt: "next" }),
+                digest("next"),
+                async () => {
+                    assert.equal(await sessions.baseline(input), null);
+                    return result(input);
+                },
+                async () => true
+            );
+            await sessions.close();
+            const restarted = new Sessions(sessions.root, sessions.limits);
+            try {
+                await restarted.initialize();
+                assert.equal(await restarted.baseline(input), null);
+            } finally {
+                await restarted.close();
+            }
+        });
+    });
+    it("migrates a confirmed legacy receipt before the next attempt overwrites the registry", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const key = sessions.key(input);
+            await fs.writeFile(
+                path.join(sessions.root, `${key}.json`),
+                JSON.stringify({
+                    request: input,
+                    result: result(input),
+                    sessionId: "owned-session",
+                    status: "released"
+                })
+            );
+            await fs.writeFile(
+                path.join(
+                    sessions.root,
+                    `${key}-receipt-${input.attempt}.json`
+                ),
+                JSON.stringify({
+                    version: 1,
+                    binding: binding(input),
+                    kind: "review",
+                    complete: true,
+                    round: 1,
+                    actions: []
+                })
+            );
+            await sessions.initialize();
+            const recorded = JSON.parse(
+                await fs.readFile(
+                    path.join(sessions.root, `${key}-baseline.json`),
+                    "utf8"
+                )
+            );
+            assert.equal(recorded.head, input.head);
+            assert.equal(recorded.sessionId, "owned-session");
+        });
+    });
+    it("records an incremental baseline only after confirmed publication and removes it at cleanup", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const output = await sessions.submit(
+                input,
+                digest("context"),
+                async (execution) => {
+                    execution.sessionId = "same-chat";
+                    return result(input);
+                },
+                async () => true
+            );
+            const file = path.join(
+                sessions.root,
+                `${sessions.key(input)}-baseline.json`
+            );
+            await assert.rejects(fs.access(file), { code: "ENOENT" });
+            await sessions.acknowledge(input, output.executionId, {
+                version: 1,
+                binding: binding(input),
+                kind: "review",
+                complete: true,
+                round: 1,
+                actions: []
+            });
+            assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")), {
+                head: input.head,
+                mergeBase: input.mergeBase,
+                sessionId: "same-chat",
+                // The confirmed result's runtime names the session's provider.
+                sessionProvider: "codex",
+                round: 1
+            });
+            await sessions.removeRecords(sessions.key(input));
+            await assert.rejects(fs.access(file), { code: "ENOENT" });
+        });
+    });
+    it("does not coalesce differing permitted operations", async function () {
+        await separate({ operations: ["review"] });
+    });
+    it("does not coalesce differing context read scopes", async function () {
+        await separate({ readScope: ["source"] });
+    });
+    it("shares one review when only the target tip differs", async function () {
+        await fixture(async (sessions) => {
+            const first = request(),
+                second = request({
+                    base: "f".repeat(40),
+                    attempt: "attempt-2",
+                    caller: "9".repeat(64),
+                    operations: ["propose-replies", "review"]
+                });
+            let executions = 0;
+            const run = async () => {
+                executions++;
+                return result(first);
+            };
+            const a = await sessions.submit(
+                first,
+                digest("context"),
+                run,
+                async () => true
+            );
+            const b = await sessions.submit(
+                second,
+                digest("context"),
+                run,
+                async () => true
+            );
+            assert.equal(executions, 1);
+            assert.equal(a.executionId, b.executionId);
+            assert.deepEqual(a.binding, binding(first));
+            assert.deepEqual(b.binding, binding(second));
+        });
+    });
+    it("keeps correction ownership and immutable per-caller result revisions", async function () {
+        await fixture(async (sessions) => {
+            const first = request();
+            const a = await sessions.submit(
+                first,
+                digest("context"),
+                async () => result(first),
+                async () => true
+            );
+            const correction = {
+                version: 1,
+                kind: "missing-accounting",
+                binding: binding(first),
+                executionId: a.executionId,
+                resultRevision: 0,
+                effectiveIdentity: a.effectiveIdentity,
+                ids: ["comment:7"]
+            };
+            let calls = 0;
+            const run = async (execution, prompt) => {
+                calls++;
+                assert.ok(prompt.includes("comment:7"));
+                return result(first);
+            };
+            const b = await sessions.correct(first, correction, run);
+            assert.equal(a.revision, 0);
+            assert.equal(b.revision, 1);
+            assert.deepEqual(await sessions.correct(first, correction, run), b);
+            assert.equal(calls, 1);
+            await assert.rejects(
+                sessions.correct(
+                    first,
+                    { ...correction, ids: ["comment:8"] },
+                    run
+                ),
+                { code: "ACCOUNTING_INCOMPLETE" }
+            );
+        });
+    });
+    it("rejects correction after validation ownership expires", async function () {
+        await fixture(async (sessions) => {
+            const first = request();
+            const a = await sessions.submit(
+                first,
+                digest("context"),
+                async () => result(first),
+                async () => true
+            );
+            await sessions.finish(sessions.key(first), a.executionId);
+            await assert.rejects(
+                sessions.correct(
+                    first,
+                    {
+                        version: 1,
+                        kind: "missing-accounting",
+                        binding: binding(first),
+                        executionId: a.executionId,
+                        resultRevision: 0,
+                        effectiveIdentity: a.effectiveIdentity,
+                        ids: ["comment:7"]
+                    },
+                    async () => result(first)
+                ),
+                { code: "VALIDATION_EXPIRED" }
+            );
+        });
+    });
+    it("shares one review between equivalent local and CI requests", async function () {
+        await fixture(async (sessions) => {
+            const first = request(),
+                second = request({
+                    mode: "local",
+                    run: { id: 0, attempt: 1 },
+                    caller: "8".repeat(64),
+                    attempt: "local-1"
+                });
+            let executions = 0;
+            const run = async () => {
+                executions++;
+                return result(first);
+            };
+            const a = await sessions.submit(
+                first,
+                digest("context"),
+                run,
+                async () => true
+            );
+            const b = await sessions.submit(
+                second,
+                digest("context"),
+                run,
+                async () => true
+            );
+            assert.equal(executions, 1);
+            assert.equal(a.executionId, b.executionId);
+            assert.deepEqual(a.binding, binding(first));
+            assert.deepEqual(b.binding, binding(second));
+        });
+    });
+    it("queues a different head until the active turn ends", async function () {
+        await separate({ head: "f".repeat(40) });
+    });
+    it("does not reuse a result for changed effective inputs on the same head", async function () {
+        await separate({ policyDigest: digest("changed policy") });
+    });
+    it("keeps the other caller attached after one disconnects", async function () {
+        await fixture(async (sessions) => {
+            const first = request(),
+                second = request({ caller: "8".repeat(64), attempt: "second" });
+            let release;
+            const held = new Promise((resolve) => {
+                release = resolve;
+            });
+            let executions = 0;
+            const run = async () => {
+                executions++;
+                await held;
+                return result(first);
+            };
+            const a = sessions.submit(
+                first,
+                digest("context"),
+                run,
+                async () => true
+            );
+            await new Promise((resolve) => setImmediate(resolve));
+            const b = sessions.submit(
+                second,
+                digest("context"),
+                run,
+                async () => true
+            );
+            // Delivery has no transport ownership: dropping a transport cannot stop
+            // another authenticated subscriber's session execution.
+            release();
+            const output = await b;
+            await a;
+            assert.deepEqual(output.binding, binding(second));
+            assert.equal(executions, 1);
+        });
+    });
+    it("rejects crossed attempt identities without another execution", async function () {
+        await fixture(async (sessions) => {
+            const first = request();
+            await sessions.submit(
+                first,
+                digest("context"),
+                async () => result(first),
+                async () => true
+            );
+            await assert.rejects(
+                sessions.submit(
+                    { ...first, head: "f".repeat(40) },
+                    digest("context"),
+                    async () => {
+                        throw new Error("must not execute");
+                    },
+                    async () => true
+                ),
+                { code: "INVALID_REQUEST" }
+            );
+        });
+    });
+    it("replays a durable failed attempt after restart without running it again", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const { ReviewError } = require("../../errors");
+            await assert.rejects(
+                sessions.submit(
+                    input,
+                    digest("context"),
+                    async () => {
+                        throw new ReviewError("LOGIN_EXPIRED");
+                    },
+                    async () => true
+                ),
+                { code: "LOGIN_EXPIRED" }
+            );
+            // Wait for the original ownership release, then reopen the real registry.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            await reopened.initialize();
+            try {
+                await assert.rejects(
+                    reopened.submit(
+                        input,
+                        digest("context"),
+                        async () => {
+                            throw new Error("must not execute");
+                        },
+                        async () => true
+                    ),
+                    { code: "LOGIN_EXPIRED" }
+                );
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
+
+    it("rejects queue overflow and expires a queued request without dispatch", async function () {
+        await fixture(async (sessions) => {
+            sessions.limits = {
+                ...sessions.limits,
+                maxPending: 1,
+                queueMs: 20
+            };
+            const input = request();
+            await sessions.submit(
+                input,
+                digest("context"),
+                async () => result(input),
+                async () => true
+            );
+            let executions = 0;
+            const run = async () => {
+                executions++;
+                return result(input);
+            };
+            const queued = sessions.submit(
+                request({ attempt: "queued", head: "f".repeat(40) }),
+                digest("context"),
+                run,
+                async () => true
+            );
+            const timedOut = assert.rejects(queued, { code: "QUEUE_TIMEOUT" });
+            await assert.rejects(
+                sessions.submit(
+                    request({ attempt: "overflow", head: "f".repeat(40) }),
+                    digest("context"),
+                    run,
+                    async () => true
+                ),
+                { code: "BUSY" }
+            );
+            await timedOut;
+            assert.equal(executions, 0);
+        });
+    });
+    it("rechecks queued head freshness and exits stale without retargeting", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const active = await sessions.submit(
+                input,
+                digest("context"),
+                async () => result(input),
+                async () => true
+            );
+            let executions = 0;
+            const queued = sessions.submit(
+                request({ attempt: "stale-queued", head: "f".repeat(40) }),
+                digest("context"),
+                async () => {
+                    executions++;
+                    return result(input);
+                },
+                async () => false
+            );
+            const stale = assert.rejects(queued, { code: "STALE_HEAD" });
+            await sessions.acknowledge(input, active.executionId);
+            await stale;
+            assert.equal(executions, 0);
+        });
+    });
+    it("replays the exact corrected revision after restart without another turn", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            const initial = await sessions.submit(
+                input,
+                digest("context"),
+                async () => result(input),
+                async () => true
+            );
+            const correction = {
+                version: 1,
+                kind: "missing-accounting",
+                binding: binding(input),
+                executionId: initial.executionId,
+                resultRevision: 0,
+                effectiveIdentity: initial.effectiveIdentity,
+                ids: ["comment:7"]
+            };
+            const corrected = await sessions.correct(
+                input,
+                correction,
+                async () => result(input)
+            );
+            await sessions.acknowledge(input, initial.executionId);
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            await reopened.initialize();
+            try {
+                const replay = await reopened.correct(
+                    input,
+                    correction,
+                    async () => {
+                        throw new Error("Must not execute another turn");
+                    }
+                );
+                assert.deepEqual(replay, corrected);
+                assert.equal(replay.revision, 1);
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
+    it("quarantines interrupted native ownership on restart", async function () {
+        await fixture(async (sessions) => {
+            const { writeJson } = require("../../data");
+            await writeJson(sessions.root, "1-6.json", {
+                executionId: "interrupted",
+                effective: digest("context"),
+                sessionId: "native-owned",
+                status: "unpublished"
+            });
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            await reopened.initialize();
+            try {
+                await assert.rejects(
+                    reopened.submit(
+                        request(),
+                        digest("context"),
+                        async () => {
+                            throw new Error(
+                                "Must not overlap an unverified process"
+                            );
+                        },
+                        async () => true
+                    ),
+                    { code: "SERVICE_UNAVAILABLE" }
+                );
+                assert.equal(
+                    reopened.previous.get("1-6").sessionId,
+                    "native-owned"
+                );
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
+
+    it("does not extend the active review deadline on keepalive or reconnect", async function () {
+        await fixture(async (sessions) => {
+            const input = request();
+            let executions = 0,
+                stopped = false;
+            const run = async (execution) => {
+                executions++;
+                execution.budget.limit = 60;
+                return execution.budget.run(
+                    () => new Promise(() => {}),
+                    async () => {
+                        stopped = true;
+                    }
+                );
+            };
+            const first = sessions.submit(
+                input,
+                digest("context"),
+                run,
+                async () => true
+            );
+            const firstFailure = assert.rejects(first, {
+                code: "REVIEW_TIMEOUT"
+            });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            const active = sessions.slots.get(sessions.key(input)).active;
+            const remaining = active.budget.remaining();
+            const rejoined = sessions.submit(
+                input,
+                digest("context"),
+                run,
+                async () => true
+            );
+            const secondFailure = assert.rejects(rejoined, {
+                code: "REVIEW_TIMEOUT"
+            });
+            assert.ok(active.budget.remaining() <= remaining);
+            await Promise.all([firstFailure, secondFailure]);
+            assert.equal(executions, 1);
+            assert.equal(stopped, true);
+            assert.equal(active.budget.remaining(), 0);
+        });
+    });
+    it("persists a shared timeout separately for a joined caller and replays both after restart", async function () {
+        await fixture(async (sessions) => {
+            const first = request();
+            const second = request({
+                attempt: "retry",
+                caller: "9".repeat(64)
+            });
+            let started,
+                executions = 0,
+                stopped = false;
+            const ready = new Promise((resolve) => {
+                started = resolve;
+            });
+            const run = async (execution) => {
+                executions++;
+                execution.budget.limit = 60;
+                started();
+                return execution.budget.run(
+                    () => new Promise(() => {}),
+                    async () => {
+                        stopped = true;
+                    }
+                );
+            };
+            const a = assert.rejects(
+                sessions.submit(
+                    first,
+                    digest("context"),
+                    run,
+                    async () => true
+                ),
+                { code: "REVIEW_TIMEOUT" }
+            );
+            await ready;
+            const b = assert.rejects(
+                sessions.submit(
+                    second,
+                    digest("context"),
+                    run,
+                    async () => true
+                ),
+                { code: "REVIEW_TIMEOUT" }
+            );
+            assert.equal(
+                sessions.slots.get(sessions.key(first)).active.deliveries
+                    .length,
+                2
+            );
+            await Promise.all([a, b]);
+            assert.equal(stopped, true);
+            await sessions.close();
+            const reopened = new Sessions(sessions.root, sessions.limits);
+            await reopened.initialize();
+            try {
+                for (const input of [first, second]) {
+                    const saved = reopened.attempts.get(
+                        reopened.attemptKey(input)
+                    );
+                    assert.deepEqual(saved.failure.binding, binding(input));
+                    assert.equal(saved.failure.code, "REVIEW_TIMEOUT");
+                    await assert.rejects(
+                        reopened.submit(
+                            input,
+                            digest("context"),
+                            run,
+                            async () => true
+                        ),
+                        { code: "REVIEW_TIMEOUT" }
+                    );
+                }
+                assert.equal(executions, 1);
+                assert.equal(reopened.busy(reopened.key(first)), false);
+            } finally {
+                await reopened.close();
+            }
+        });
+    });
+});

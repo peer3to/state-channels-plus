@@ -9,9 +9,13 @@ export async function assertSyncedLeaverSkipsSubmission(
 ) {
     let leave: Promise<void> | undefined;
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+        disputingPeerIndices: [2],
         beforeDispute: async () => {
+            // The leaver must commit its own dispute; sibling uploads can
+            // otherwise consume the evidence window before it submits.
+            await h.dispute.suppressDisputeInitiation([0, 1, 3]);
             // The deliberately invalid author must not start an unrelated
-            // honest timeout while the other peers submit their disputes.
+            // honest timeout while the leaver submits its dispute.
             await h.rpcStub.suppressTimeoutCheck(1);
             const leaver = h.getPeer(2);
             leave = leaver.p2pInstance.p2pSigner.leaveChannel();
@@ -20,6 +24,17 @@ export async function assertSyncedLeaverSkipsSubmission(
         }
     });
     const target = h.getPeer(2);
+    await h.assert.dispute.committedWait({
+        peersIndices: [0],
+        expectedCount: 1
+    });
+    expect(
+        await h.execOnHost(
+            target,
+            (sm, { forkId }) => sm.storage.disputes.didIDispute(forkId),
+            { forkId: sourceForkId }
+        )
+    ).to.equal(true);
     const events = await h.rpcStub.holdReductionRace(target.index);
     const application = await h.rpcStub.holdReductionGenesisApplication(
         target.index,
@@ -51,6 +66,14 @@ export async function assertSyncedLeaverSkipsSubmission(
         expect(await h.control(target).query.getStatus().request()).to.equal(
             Status.NOT_OPENED
         );
+        // Leave completion can precede the reduction attempt's final reads.
+        await waitFor(
+            async () =>
+                (await h
+                    .control(target)
+                    .stub.getReductionAttemptsInFlight()
+                    .request()) === 0
+        );
         await h.control(target).stub.recordChainMembershipReads().request();
         let settlementReads: number;
         try {
@@ -68,13 +91,6 @@ export async function assertSyncedLeaverSkipsSubmission(
                 .request();
         }
         expect(settlementReads).to.equal(0);
-        await waitFor(
-            async () =>
-                (await h
-                    .control(target)
-                    .stub.getReductionAttemptsInFlight()
-                    .request()) === 0
-        );
         expect(await submit.entered()).to.equal(0);
         expect(
             await h.control(target).stub.getReductionSubmitCallCount().request()

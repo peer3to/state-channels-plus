@@ -1,0 +1,32 @@
+{
+    "sourceRepository": "coding-skills",
+    "sourceCommit": "96edeb694bb64b79c4f0b03964452938b4c7ef1e",
+    "files": [
+        {
+            "source": "review-pr/SKILL.md",
+            "destination": "SKILL.md",
+            "sourceSha256": "026eaf8234f01422061b790e74ff0b6ab9e3f095bb72f586a1c2f405c8051e84"
+        },
+        {
+            "source": "review-pr/references/publishing.md",
+            "destination": "references/publishing.md",
+            "sourceSha256": "e7b42833a0273463054e1cbef295f559e9f2cafe795f9a3cfb87331cc9d1cfdd"
+        },
+        {
+            "source": "review-implementation/SKILL.md",
+            "destination": "inherited/review-implementation/SKILL.md",
+            "sourceSha256": "e3f457f06721b8172e8bf931a2ac6d27405292057392854dd7a08a499f107410"
+        },
+        {
+            "source": "review-implementation/example-review.md",
+            "destination": "inherited/review-implementation/example-review.md",
+            "sourceSha256": "47be3fa98a6a604c289c6fb3f9dba676d439272f07829ff4f4aa4db4985cbb5e"
+        }
+    ],
+    "portedPublisher": {
+        "source": "review-pr/scripts/publish-review.mjs",
+        "sourceSha256": "ccbed4df11407b49496e4bddebd4f6f447351dff2a736cf14fd69560f440b616",
+        "owners": ["../review-format.js", "../github-write.js"],
+        "maintenance": "Independent CommonJS port; upstream manual skill and extension are unchanged."
+    }
+}

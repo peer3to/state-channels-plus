@@ -1,6 +1,7 @@
 import type ClientChainSigner from "./signer/ClientChainSigner";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type { EventBus } from "@/events/EventBus";
+import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import type { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
@@ -83,6 +84,17 @@ export default class P2pInstance<
         client.onClosed(() => {
             if (!this.disposal) void this.dispose();
         });
+    }
+
+    /**
+     * Gas used per contract function by the transactions the SDK runtime sent
+     * for this peer. Transactions the application sends with its own signer
+     * are not included. The host waits a bounded time for outstanding
+     * receipts; a receipt still pending when the bound expires shows up on a
+     * later read.
+     */
+    public getGasUsageTable(): Promise<GasUsageRow[]> {
+        return this.chainSigner.getGasUsageTable();
     }
 
     public dispose(): Promise<void> {

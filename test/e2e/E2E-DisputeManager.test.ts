@@ -72,6 +72,45 @@ describe("E2E: Dispute Manager", function () {
             );
         });
 
+        it("every honest peer racing to dispute the same invalid block lands its dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({ peerCount: 4 });
+            const forkId = h.activeForkId!;
+            const offender = await h.query.getNextPeerToWrite();
+            const disputers = h.peers
+                .filter((peer) => peer.index !== offender.index)
+                .map((peer) => peer.index);
+            // Record each honest peer's upload while still sending it for real.
+            const recorders = await Promise.all(
+                disputers.map((index) =>
+                    h.rpcStub.recordDisputeSubmissions(index, { forward: true })
+                )
+            );
+            try {
+                await h.byzantine.submitInvalidStateTransitionBlock(
+                    offender.index
+                );
+                // Every honest disputer lands in the window, including the
+                // ones whose transactions execute after another's dispute.
+                await h.assert.dispute.initiatedAndCommitedWait({
+                    peersIndices: disputers,
+                    expectedCount: disputers.length,
+                    initiatedWithAuditingData: false
+                });
+                for (const recorder of recorders)
+                    for (const submission of await recorder.submissions()) {
+                        expect(submission.method).to.equal("multicall");
+                        // The chain signer supplies the gas: estimate plus headroom.
+                        expect(submission.gasLimit).to.equal(null);
+                    }
+                await h.dispute.resolveDisputeWait({ forkId });
+            } finally {
+                await Promise.all(
+                    recorders.map((recorder) => recorder.restore())
+                );
+            }
+        });
+
         it("should post a dispute WITH auditing calldata on a pending-join fork", async function () {
             const h = TestSession.getHarness();
             // "calldata-backed" = the pending inbound join leaves the head

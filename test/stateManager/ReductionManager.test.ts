@@ -484,8 +484,11 @@ describe("ReductionManager", function () {
             try {
                 stub.startTryReduce(sourceForkId);
                 // The gas-limit read is reached only after the local install,
-                // so the attempt has already settled with the reduced fork.
+                // but the detached caller's outcome callback may still be pending.
                 await waitFor(async () => (await hold.entered()) === 1);
+                await waitFor(
+                    async () => stub.getTryReduceOutcome()?.settled === true
+                );
                 expect(stub.getTryReduceOutcome()?.result).to.be.a("string");
                 stub.abortDetached();
                 await waitFor(async () => sm.isDisposed);

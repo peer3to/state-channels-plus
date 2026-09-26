@@ -5,7 +5,10 @@ import {
     serializeTransactionResponse
 } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
 import { assertIsolatedReplacementDetection } from "@test/fixtures/node/IsolatedReplacementFixture";
-import { assertRuntimeSignerFields } from "@test/fixtures/RuntimeSignerFixture";
+import {
+    assertRuntimeSignerFields,
+    assertRuntimeSignerGasHeadroom
+} from "@test/fixtures/RuntimeSignerFixture";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
@@ -15,6 +18,12 @@ describe("chain signer serialization", () => {
     });
     it("preserves full transaction fields and byte message signatures through an SDK worker", async () => {
         await assertRuntimeSignerFields(false);
+    });
+    it("adds gas headroom to estimates and limitless sends through an inline SDK", async () => {
+        await assertRuntimeSignerGasHeadroom(true);
+    });
+    it("adds gas headroom to estimates and limitless sends through an SDK worker", async () => {
+        await assertRuntimeSignerGasHeadroom(false);
     });
     it("round-trips a normalized transaction request", async () => {
         const [sender, recipient] = await ethers.getSigners();

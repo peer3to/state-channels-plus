@@ -196,15 +196,52 @@ async function main(options = {}) {
             );
         }
     });
+    let review = null;
+    if (config.review) {
+        const { ReviewService } = require("../../bot/server");
+        review = new ReviewService({
+            stateRoot: path.join(config.workRoot, "review"),
+            provider: config.reviewProvider,
+            model: config.reviewModel,
+            effort: config.reviewEffort
+        });
+        try {
+            await review.start();
+        } catch (error) {
+            await review.close();
+            hostLock.release();
+            throw error;
+        }
+    }
     console.log(`Starting worker ${config.name}; announcing availability`);
-    const pool = await createPool({
-        announceTopics: [keys.workerTopic],
-        lookupTopics: [keys.orchestratorTopic],
-        dht: config.dht,
-        keyPair: loadWorkerKeyPair(config.workRoot, config.name),
-        refreshIntervalMs: DISCOVERY_REFRESH_MS,
-        onDialActivity: (line) => console.log(`[dial] ${line}`)
-    });
+    if (review)
+        console.log(
+            `Offering ${review.config.provider} reviews with ${review.config.model} at ${review.config.effort} effort`
+        );
+    let pool;
+    try {
+        pool = await createPool({
+            announceTopics: [
+                keys.workerTopic,
+                ...(review ? [keys.reviewTopic] : [])
+            ],
+            lookupTopics: [
+                keys.orchestratorTopic,
+                ...(review ? [keys.reviewOrchestratorTopic] : [])
+            ],
+            dht: config.dht,
+            keyPair: loadWorkerKeyPair(config.workRoot, config.name),
+            refreshIntervalMs: DISCOVERY_REFRESH_MS,
+            onDialActivity: (line) => console.log(`[dial] ${line}`)
+        });
+    } catch (error) {
+        try {
+            if (review) await review.close();
+        } finally {
+            hostLock.release();
+        }
+        throw error;
+    }
     let shuttingDown = false;
     let removeSignalHandlers = () => {};
 
@@ -479,7 +516,11 @@ async function main(options = {}) {
                     closeConnection(connection, "worker server shutting down")
                 )
             );
-            await pool.close();
+            try {
+                if (review) await review.close();
+            } finally {
+                await pool.close();
+            }
         } finally {
             hostLock.release();
             removeSignalHandlers();
@@ -564,7 +605,7 @@ async function main(options = {}) {
             closeStream(stream, error.message);
             return;
         }
-        const peer = new ProtocolPeer(stream);
+        const peer = new ProtocolPeer(stream, { review: Boolean(review) });
         peer.on("protocolError", (error) =>
             console.log(
                 `[dial] protocol error from ${peerId ? peerId.slice(0, 12) : "unknown"}: ${error.message}`
@@ -700,6 +741,30 @@ async function main(options = {}) {
             }
             if (message.kind === "HEARTBEAT") {
                 connection.lastHeartbeat = Date.now();
+                return;
+            }
+            if (message.kind.startsWith("REVIEW_")) {
+                if (!review)
+                    throw new Error("Worker review service is disabled");
+                if (message.kind === "REVIEW_HELLO") {
+                    if (
+                        connection.review ||
+                        message.header.reviewVersion !== 1 ||
+                        message.body.length
+                    )
+                        throw new Error("Invalid review negotiation");
+                    connection.review = review.attach(
+                        connection.peer,
+                        connection.peerId
+                    );
+                    await connection.peer.send("REVIEW_READY", {
+                        reviewVersion: 1
+                    });
+                } else {
+                    if (!connection.review)
+                        throw new Error("Review service is not negotiated");
+                    connection.review.consume(message);
+                }
                 return;
             }
             if (message.kind === "LEASE_REQUEST") {
@@ -1395,11 +1460,11 @@ async function main(options = {}) {
 
     const handleSignal = (code) => {
         if (shuttingDown) process.exit(code);
-        const forcedExit = setTimeout(
-            () => process.exit(code),
-            SHUTDOWN_TIMEOUT_MS
-        );
-        forcedExit.unref();
+        // Review teardown owns native process termination and must finish before exit.
+        const forcedExit = review
+            ? null
+            : setTimeout(() => process.exit(code), SHUTDOWN_TIMEOUT_MS);
+        forcedExit?.unref();
         shutdown(code).then(
             () => process.exit(code),
             (error) => {
@@ -1420,7 +1485,7 @@ async function main(options = {}) {
         `Worker ${config.name} ready on topic ${keys.workerTopic.toString("hex").slice(0, 12)} ` +
             `(peer ${pool.publicKey.toString("hex").slice(0, 12)})`
     );
-    return { pool, manager, environmentManager, shutdown };
+    return { pool, manager, environmentManager, review, shutdown };
 }
 
 function capabilities(config, environmentManager, authorization) {
@@ -1429,6 +1494,7 @@ function capabilities(config, environmentManager, authorization) {
         isolation: null
     };
     return {
+        ...(config.review ? { review: true } : {}),
         distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
         slots: config.slots,
         workers: config.workers,
