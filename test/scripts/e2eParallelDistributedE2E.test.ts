@@ -35,6 +35,7 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
@@ -461,7 +462,7 @@ describe("distributed parallel runner", function () {
                             name: "old-worker",
                             capabilities: {
                                 distributedProtocol:
-                                    DISTRIBUTED_PROTOCOL_VERSION - 1
+                                    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL - 1
                             }
                         });
                     } catch {}

@@ -10,7 +10,10 @@ const {
 } = require("./authentication");
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer,
+    minimumProtocolForRunner,
+    runnersForDistributedProtocol,
     waitForMessage
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
@@ -21,6 +24,8 @@ const {
     shortConnectionHash
 } = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
+const { manifestForDistributedProtocol } = require("./runtimeBundle");
+const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
@@ -117,13 +122,54 @@ function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
 }
 
+/** The runners the worker host can execute; throws for an unleasable host. */
 function assertCompatibleWorkerProtocol(capabilities) {
-    if (capabilities?.distributedProtocol === DISTRIBUTED_PROTOCOL_VERSION) {
-        return;
-    }
-    throw new Error(
-        `Distributed worker protocol mismatch: orchestrator requires ${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    const runners = runnersForDistributedProtocol(
+        capabilities?.distributedProtocol
     );
+    if (runners) return runners;
+    throw new Error(
+        `Distributed worker protocol mismatch: orchestrator accepts ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL}-${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    );
+}
+
+/**
+ * The warning for tasks no connected worker could run. They are left out of
+ * the run rather than failing it; the lines name each task and the protocol a
+ * worker host needs to run it.
+ */
+function formatSkippedTasksNotice(tasks) {
+    const byRunner = new Map();
+    for (const task of tasks) {
+        const runner = normalizeTaskRunner(task.runner);
+        if (!byRunner.has(runner)) byRunner.set(runner, []);
+        byRunner.get(runner).push(task);
+    }
+    const lines = [];
+    for (const [runner, skipped] of byRunner) {
+        const required = minimumProtocolForRunner(runner);
+        lines.push(
+            `Skipping ${skipped.length} ${runner} task(s): no connected worker supports the ${runner} runner` +
+                (required
+                    ? `; a worker host on distributed protocol ${required} or newer runs them.`
+                    : ".")
+        );
+        for (const task of skipped) lines.push(`  - ${task.label}`);
+    }
+    return lines;
+}
+
+/** Print the skip notice, and add it to the GitHub job summary when there is one. */
+function reportSkippedTasks(tasks, env = process.env) {
+    const lines = formatSkippedTasksNotice(tasks);
+    for (const line of lines) console.warn(`WARNING: ${line}`);
+    if (env.GITHUB_STEP_SUMMARY) {
+        fs.appendFileSync(
+            env.GITHUB_STEP_SUMMARY,
+            `> [!WARNING]\n${lines.map((line) => `> ${line}`).join("\n")}\n\n`
+        );
+    }
+    return lines;
 }
 
 function promoteAttemptLog(logDir, assignment, worker, code, attempt = {}) {
@@ -481,13 +527,22 @@ async function runDistributed(options) {
                           assignment.workerId
                 });
             }
-            if (coordinator.finish().done) {
-                queueMicrotask(() => finishRun().catch(completedReject));
-            }
+            settleRun();
         }
     });
 
     let finishing = false;
+
+    // Drops what no connected worker can run once nothing else is left, then
+    // finishes the run if that was the last work.
+    function settleRun() {
+        if (finishing) return;
+        const skipped = coordinator.skipUnservable();
+        if (skipped.length) reportSkippedTasks(skipped);
+        if (coordinator.finish().done) {
+            queueMicrotask(() => finishRun().catch(completedReject));
+        }
+    }
 
     async function cancelRun() {
         if (finishing) return;
@@ -545,8 +600,11 @@ async function runDistributed(options) {
                 );
                 return;
             }
+            let runners;
             try {
-                assertCompatibleWorkerProtocol(ready.header.capabilities);
+                runners = assertCompatibleWorkerProtocol(
+                    ready.header.capabilities
+                );
             } catch (error) {
                 info.ban(true);
                 if (!warnedIncompatibleWorkers.has(workerId)) {
@@ -570,6 +628,9 @@ async function runDistributed(options) {
                 failure: null,
                 memoryGb: ready.header.capabilities.memoryGb,
                 capabilities: ready.header.capabilities,
+                distributedProtocol:
+                    ready.header.capabilities.distributedProtocol,
+                runners,
                 heartbeatTimeoutMs:
                     ready.header.capabilities.heartbeatTimeoutMs || 15000,
                 heartbeat: null,
@@ -626,9 +687,11 @@ async function runDistributed(options) {
             clearRediscoveryTimeout();
             workerLabelById.set(workerId, worker.label);
             console.log(
-                `Connected to worker ${workerName(worker)}; requesting lease`
+                `Connected to worker ${workerName(worker)} (protocol ${worker.distributedProtocol}: ${[...runners].join(", ")}); requesting lease`
             );
-            coordinator.registerWorker(workerId);
+            coordinator.registerWorker(workerId, {
+                canRun: (task) => runners.has(normalizeTaskRunner(task.runner))
+            });
             peer.on("message", (message) => {
                 worker.heartbeat.received();
                 handleMessage(worker, message).catch((error) =>
@@ -689,7 +752,10 @@ async function runDistributed(options) {
             await sendBundle(
                 worker.peer,
                 options.archivePath,
-                options.manifest,
+                manifestForDistributedProtocol(
+                    options.manifest,
+                    worker.distributedProtocol
+                ),
                 undefined,
                 (need) => {
                     const archiveMb = (need.archiveBytes / 1024 / 1024).toFixed(
@@ -755,6 +821,7 @@ async function runDistributed(options) {
                 await worker.peer.send("NO_TASK_AVAILABLE", {
                     requestId: message.header.requestId
                 });
+                settleRun();
                 return;
             }
             const wireAssignment = {
@@ -993,6 +1060,8 @@ async function runDistributed(options) {
         const wasCurrent = workers.get(worker.id) === worker;
         if (wasCurrent) workers.delete(worker.id);
         if (closeReason) worker.peer.close(closeReason);
+        // The worker that could run the remaining tasks may be the one gone.
+        settleRun();
         if (
             !finishing &&
             wasCurrent &&
@@ -1073,6 +1142,7 @@ async function runDistributed(options) {
     return {
         failed: state.failed,
         completed: state.completed,
+        skipped: state.skipped,
         sumDurationMs: state.sumDurationMs,
         ...resourceStats,
         workers: workerLabels,
@@ -1088,6 +1158,7 @@ module.exports = {
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
+    formatSkippedTasksNotice,
     formatWorkerDispositions,
     formatWorkerSummary,
     ingestAttemptLogMessage,
@@ -1096,6 +1167,7 @@ module.exports = {
     promoteStarvationAttemptLog,
     recordWorkerFailure,
     recordWorkerRetirement,
+    reportSkippedTasks,
     runDistributed,
     validateWorkerStats,
     workerFaultStatus

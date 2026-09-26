@@ -123,6 +123,43 @@ function isExcludedSourcePath(relative) {
     return EXCLUDED_SOURCE_ROOTS.has(root);
 }
 
+/** The cache identity a worker host keys an uploaded workspace by. */
+function computeWorkspaceId({
+    rootProjectPath,
+    runnerEntry,
+    distributedProtocol,
+    repositories
+}) {
+    return crypto
+        .createHash("sha256")
+        .update(
+            JSON.stringify({
+                rootProjectPath,
+                runnerEntry,
+                distributedProtocol,
+                repositories: repositories.map(({ path, name }) => ({
+                    path,
+                    name
+                }))
+            })
+        )
+        .digest("hex");
+}
+
+/**
+ * The manifest as offered to a worker host speaking an older accepted
+ * protocol. Such a host checks the declared protocol against its own exactly,
+ * and the workspace identity follows it so that host keeps a separate cache.
+ */
+function manifestForDistributedProtocol(manifest, distributedProtocol) {
+    if (manifest.distributedProtocol === distributedProtocol) return manifest;
+    return {
+        ...manifest,
+        distributedProtocol,
+        workspaceId: computeWorkspaceId({ ...manifest, distributedProtocol })
+    };
+}
+
 async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
     const repositories = discoverRepositories(projectRoot);
     const repositoryRoots = repositories.map((entry) => entry.root);
@@ -207,20 +244,12 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
         left.path.localeCompare(right.path)
     );
     const runnerEntry = `${runnerRepository.path}/scripts/e2e-parallel/distributed/worker.js`;
-    const workspaceId = crypto
-        .createHash("sha256")
-        .update(
-            JSON.stringify({
-                rootProjectPath,
-                runnerEntry,
-                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
-                repositories: repositoryManifest.map(({ path, name }) => ({
-                    path,
-                    name
-                }))
-            })
-        )
-        .digest("hex");
+    const workspaceId = computeWorkspaceId({
+        rootProjectPath,
+        runnerEntry,
+        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
+        repositories: repositoryManifest
+    });
     const sourceDigest = crypto
         .createHash("sha256")
         .update(JSON.stringify(sourceFilesManifest))
@@ -385,5 +414,7 @@ module.exports = {
     gitSourceFiles,
     buildRuntimeManifest,
     buildRuntimeBundle,
+    computeWorkspaceId,
+    manifestForDistributedProtocol,
     buildDeltaBundle
 };

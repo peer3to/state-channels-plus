@@ -468,4 +468,41 @@ describe("distributed task coordinator", function () {
         expect(duplicate.attemptId).not.to.equal(original.attemptId);
         expect(coordinator.requestTask("other")).to.equal(null);
     });
+    it("hands a worker only the tasks its runners allow and leaves the rest queued for another", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" },
+            task("mocha")
+        ]);
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        coordinator.registerWorker("new");
+        expect(coordinator.requestTask("old").task.label).to.equal("mocha");
+        expect(coordinator.requestTask("old")).to.equal(null);
+        expect(coordinator.requestTask("new").task.label).to.equal("gate");
+    });
+
+    it("skips unservable tasks only once nothing else is queued or running and a worker is registered", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" },
+            task("mocha")
+        ]);
+        expect(coordinator.skipUnservable()).to.deep.equal([]);
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        const running = coordinator.requestTask("old");
+        expect(coordinator.skipUnservable()).to.deep.equal([]);
+        coordinator.completeAttempt("old", {
+            attemptId: running.attemptId,
+            code: 0
+        });
+        expect(
+            coordinator
+                .skipUnservable()
+                .map((entry: { label: string }) => entry.label)
+        ).to.deep.equal(["gate"]);
+        expect(coordinator.finish()).to.include({ done: true, completed: 1 });
+        expect(coordinator.finish().skipped).to.have.length(1);
+    });
 });

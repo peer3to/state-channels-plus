@@ -80,6 +80,9 @@ class TaskCoordinator {
         this.nextAttemptId = 1;
         this.completedTaskIds = new Set();
         this.failedTaskIds = new Set();
+        // Tasks no registered worker can run, dropped once nothing else is left.
+        this.skipped = [];
+        this.skippedTaskIds = new Set();
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
         this.speculative = options.speculative === true;
@@ -87,16 +90,27 @@ class TaskCoordinator {
         this.onResult = options.onResult || (() => {});
     }
 
-    registerWorker(workerId) {
-        if (!this.workers.has(workerId)) {
-            this.workers.set(workerId, { idle: false });
-        }
+    /**
+     * `canRun` says which tasks this worker may be handed; a worker registered
+     * without one takes every task.
+     */
+    registerWorker(workerId, options = {}) {
+        const existing = this.workers.get(workerId);
+        const canRun = options.canRun || existing?.canRun || (() => true);
+        if (existing) existing.canRun = canRun;
+        else this.workers.set(workerId, { idle: false, canRun });
     }
 
     requestTask(workerId) {
         this.registerWorker(workerId);
         const worker = this.workers.get(workerId);
-        const queued = this.queue.shift() || this.speculativeTask(workerId);
+        const index = this.queue.findIndex((entry) =>
+            worker.canRun(entry.task)
+        );
+        const queued =
+            index === -1
+                ? this.speculativeTask(workerId)
+                : this.queue.splice(index, 1)[0];
         if (!queued) {
             worker.idle = true;
             return null;
@@ -121,9 +135,11 @@ class TaskCoordinator {
                 .filter((assignment) => assignment.workerId === workerId)
                 .map((assignment) => assignment.taskId)
         );
+        const canRun = this.workers.get(workerId)?.canRun || (() => true);
         const candidate = active
             .filter(
                 (assignment) =>
+                    canRun(assignment.task) &&
                     !this.completedTaskIds.has(assignment.taskId) &&
                     !workerTaskIds.has(assignment.taskId) &&
                     !this.replications.has(`${assignment.taskId}:${workerId}`)
@@ -245,6 +261,29 @@ class TaskCoordinator {
         return lost.length;
     }
 
+    /**
+     * Drop the queued tasks no registered worker can run, once they are all
+     * that is left: nothing is assigned and every queued task is unservable.
+     * Returns the dropped tasks; they count as neither passed nor failed.
+     */
+    skipUnservable() {
+        // With no worker registered there is nobody to judge servability by;
+        // the run waits for rediscovery instead.
+        if (!this.queue.length || this.assignments.size || !this.workers.size)
+            return [];
+        const workers = [...this.workers.values()];
+        const servable = (task) =>
+            workers.some((worker) => worker.canRun(task));
+        if (this.queue.some((entry) => servable(entry.task))) return [];
+        const skipped = this.queue;
+        this.queue = [];
+        for (const entry of skipped) {
+            this.skippedTaskIds.add(String(entry.seq));
+            this.skipped.push(entry.task);
+        }
+        return skipped.map((entry) => entry.task);
+    }
+
     finish() {
         const queued = new Set(this.queue.map((entry) => String(entry.seq)));
         const assigned = new Set(
@@ -257,7 +296,8 @@ class TaskCoordinator {
             const memberships = [
                 queued.has(taskId),
                 assigned.has(taskId),
-                this.completedTaskIds.has(taskId)
+                this.completedTaskIds.has(taskId),
+                this.skippedTaskIds.has(taskId)
             ].filter(Boolean).length;
             if (memberships === 0) orphaned.push(taskId);
             else if (memberships > 1) conflicting.push(taskId);
@@ -269,11 +309,12 @@ class TaskCoordinator {
         }
         return {
             done:
-                this.completed === this.tasks.length &&
+                this.completed + this.skipped.length === this.tasks.length &&
                 this.queue.length === 0 &&
                 this.assignments.size === 0,
             completed: this.completed,
             failed: this.failed,
+            skipped: this.skipped,
             sumDurationMs: this.sumDurationMs,
             pending: this.queue.length + this.assignments.size
         };
