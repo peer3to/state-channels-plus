@@ -1610,6 +1610,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             Reflect.set(contract, "multicall", counted);
             return true;
         }
+        if (at === "sendWait") {
+            // Record every chain write and hold each sent transaction's
+            // receipt wait, so its outcome lands only after the release.
+            const contract = this.service.sm.stateChannelManagerContract;
+            const multicall = contract.multicall;
+            this.service.stubOriginals.set(
+                "reductionSubmitMulticall",
+                multicall
+            );
+            this.service.reductionSubmitCalls = 0;
+            const held = async (...parameters: unknown[]) => {
+                this.service.reductionSubmitCalls += 1;
+                const tx = await Reflect.apply(multicall, contract, parameters);
+                return new Proxy(tx, {
+                    get: (target, key) => {
+                        if (key === "wait") {
+                            return (...waitArgs: Parameters<typeof tx.wait>) =>
+                                resume(() => target.wait(...waitArgs));
+                        }
+                        const value = Reflect.get(target, key, target);
+                        return typeof value === "function"
+                            ? value.bind(target)
+                            : value;
+                    }
+                });
+            };
+            for (const key of Object.getOwnPropertyNames(multicall)) {
+                if (key in held) continue;
+                Object.defineProperty(
+                    held,
+                    key,
+                    Object.getOwnPropertyDescriptor(multicall, key)!
+                );
+            }
+            Reflect.set(contract, "multicall", held);
+            return true;
+        }
         const computation = manager["reductionComputationService"];
         const original = computation.compute.bind(computation);
         this.service.stubOriginals.set("reductionCompute", original);
@@ -1672,6 +1709,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Chain writes attempted by a reduction submission since the submit hold was installed. */
     public getReductionSubmitCallCount(): number {
         return this.service.reductionSubmitCalls;
+    }
+
+    /**
+     * Let the held reduction calls go on while the wrappers stay installed, so
+     * the chain writes that follow the release are still counted.
+     */
+    public releaseHeldReductionAttempt(): boolean {
+        this.service.reductionAttemptGate?.release();
+        return true;
     }
 
     public restoreReductionAttempt(): boolean {

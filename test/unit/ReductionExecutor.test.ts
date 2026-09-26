@@ -1,7 +1,10 @@
 import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
-import { assertReduceLandsWithoutFrozenForkAdoption } from "@test/fixtures/ReducedForkKillPeriodStaging";
+import {
+    assertReduceLandsWithoutFrozenForkAdoption,
+    assertResubmitAfterChannelResetSendsNothing
+} from "@test/fixtures/ReducedForkKillPeriodStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -441,6 +444,11 @@ describe("Unit: ReductionExecutor", function () {
         it("the send meets the reduced fork's open window → the reduce is resubmitted alone, the chain snapshot waits, no host errors", async function () {
             const h = TestSession.getHarness();
             await assertReduceLandsWithoutFrozenForkAdoption(h, "send");
+        });
+
+        it("the refused send's outcome arrives after a channel reset → the reduce alone is not resubmitted for the channel left", async function () {
+            const h = TestSession.getHarness();
+            await assertResubmitAfterChannelResetSendsNothing(h);
         });
     });
 });

@@ -162,15 +162,17 @@ export type ReductionApplicationControl =
 /** Which stage of a reduction attempt the attempt hold pauses. */
 /**
  * Where a reduction attempt pauses: before any executor work, at the synced
- * dispute read, at candidate computation, or at the submission's gas-limit
- * read (after the local install, before the chain write).
+ * dispute read, at candidate computation, at the submission's gas-limit read
+ * (after the local install, before the chain write), or at the receipt wait
+ * of a transaction the submission already sent (`sendWait`).
  */
 export type ReductionAttemptHoldPoint =
     | "attempt"
     | "admission"
     | "disputes"
     | "compute"
-    | "submit";
+    | "submit"
+    | "sendWait";
 /**
  * What the paused call does once released: continue with the real call,
  * return `undefined` (the executor's "data unavailable" branch), or throw
