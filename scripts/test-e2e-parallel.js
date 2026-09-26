@@ -172,25 +172,25 @@ function resolveWarmUps(tasks, distributed) {
     return [
         {
             runner: TASK_RUNNERS.FORGE,
-            local: true,
+            localOnly: true,
             message: "Warming the Foundry build before the forge tier...",
             warm: forgeBuildFailure
         },
         {
             runner: TASK_RUNNERS.BROWSER,
-            local: true,
+            localOnly: true,
             message: "Checking Chromium before the browser tier...",
             warm: browserChromiumFailure
         },
         {
             runner: TASK_RUNNERS.BROWSER,
-            local: false,
+            localOnly: false,
             message:
                 "Typechecking the browser sources before the browser tier...",
             warm: browserTypecheckFailure
         }
     ]
-        .filter(({ local }) => !distributed || !local)
+        .filter(({ localOnly }) => !distributed || !localOnly)
         .filter(({ runner }) => countTasksForRunner(tasks, runner) > 0)
         .map(({ runner, message, warm }) => ({ runner, message, warm }));
 }
