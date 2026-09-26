@@ -15,6 +15,7 @@ import {
     writeGateTree,
     writeIdlingGate
 } from "../fixtures/distributed/browserGateTrees";
+import { forkedWorkerEnvironment } from "../fixtures/distributed/forkedWorkerEnvironment";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import fs from "fs";
@@ -966,6 +967,30 @@ describe("browser tier environment", function () {
         expect(forked.SCP_BROWSER_CONTAINED).to.equal("1");
         expect(forked.HOME).to.equal("/environment/home");
         expect(forked.SCP_TEST_POOL_SECRET).to.equal(undefined);
+    });
+
+    it("forks the real guest's worker with the browser names, its own home and ordered module paths", async function () {
+        // The builder alone cannot catch a hand-written env returning to the
+        // guest's fork call: this reads what the forked worker received.
+        const { env, guestRoot } = await forkedWorkerEnvironment({
+            PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright",
+            SCP_BROWSER_CONTAINED: "1",
+            NODE_PATH: "/source/modules",
+            SCP_TEST_POOL_SECRET: "must not cross"
+        });
+        expect(env.PLAYWRIGHT_BROWSERS_PATH).to.equal("/ms-playwright");
+        expect(env.SCP_BROWSER_CONTAINED).to.equal("1");
+        expect(env.SCP_TEST_POOL_SECRET).to.equal(undefined);
+        expect(env.HOME).to.equal(path.join(guestRoot, "home"));
+        const modulePaths = env.NODE_PATH.split(path.delimiter);
+        expect(modulePaths).to.have.length(3);
+        expect(modulePaths[0]).to.match(
+            /[\\/]workspace[\\/]runner[\\/]node_modules$/
+        );
+        expect(modulePaths[1]).to.match(
+            /[\\/]workspace[\\/]project[\\/]node_modules$/
+        );
+        expect(modulePaths[2]).to.equal("/source/modules");
     });
 
     it("forks a worker with no browser variables when the environment declares none", function () {
