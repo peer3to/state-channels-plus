@@ -405,7 +405,8 @@ describe("Codec", function () {
     });
 
     it("round-trips DisputeLastMilestoneNotFinalAndNoAuditingData fraud proof", function () {
-        const value = codecValues.booleanProof();
+        // same { latestStateSnapshot } shape
+        const value = codecValues.invalidDisputeReasonProof();
         const type =
             DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData;
         const encoded = Codec.encode(value, type);

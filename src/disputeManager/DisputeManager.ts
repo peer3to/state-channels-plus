@@ -582,7 +582,8 @@ class DisputeManager {
 
         const isLastMilestoneFinalByEveryone =
             await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                draftDispute
+                draftDispute,
+                auditingData.latestStateSnapshot
             );
         const postedAuditingData = !isLastMilestoneFinalByEveryone;
 
