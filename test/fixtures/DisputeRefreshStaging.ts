@@ -14,6 +14,7 @@ export async function assertDisputeRefreshPolicy(
         | "repeat"
         | "concurrent"
         | "read-failure"
+        | "tolerated-read-failure"
         | "unrelated"
         | "disposed"
         | "ineligible"
@@ -79,7 +80,11 @@ export async function assertDisputeRefreshPolicy(
             at: "send"
         }
     });
-    if (mode === "read-failure") {
+    // the same authoritative read failure, reached through the lost-race
+    // wrapper: it is not the lost race, so the wrapper must rethrow it
+    const readFails =
+        mode === "read-failure" || mode === "tolerated-read-failure";
+    if (readFails) {
         await h.control(peer).stub.stubFailOnChainSlashesRead().request();
     }
     await h.control(peer).stub.recordSlashRecoveries().request();
@@ -93,6 +98,11 @@ export async function assertDisputeRefreshPolicy(
                         sm.disputeManager.dispute(sm.forkId),
                         sm.disputeManager.dispute(sm.forkId)
                     ]);
+                } else if (args.mode === "tolerated-read-failure") {
+                    await sm.disputeManager.disputeToleratingLostRace(
+                        sm.forkId,
+                        "onChainSlashed"
+                    );
                 } else {
                     await sm.disputeManager.dispute(sm.forkId);
                     if (args.mode === "repeat")
@@ -125,7 +135,7 @@ export async function assertDisputeRefreshPolicy(
                   ? 2
                   : 1
         );
-        if (mode === "read-failure")
+        if (readFails)
             expect(result.error).to.contain("authoritative slash read failed");
         else if (mode === "unrelated")
             expect(result.error).to.contain(
@@ -139,7 +149,7 @@ export async function assertDisputeRefreshPolicy(
         await recorder.release();
         await recorder.restore();
         await h.control(peer).stub.restoreSlashRecoveries().request();
-        if (mode === "read-failure")
+        if (readFails)
             await h.control(peer).stub.restoreOnChainSlashesRead().request();
     }
 }

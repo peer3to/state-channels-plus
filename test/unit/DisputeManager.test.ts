@@ -81,6 +81,12 @@ describe("Unit: DisputeManager", function () {
             "read-failure"
         );
     });
+    it("a failed authoritative slash read is rethrown by the lost-race wrapper, not contained", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "tolerated-read-failure"
+        );
+    });
     it("an unrelated upload error does not enter slash recovery", async function () {
         await assertDisputeRefreshPolicy(TestSession.getHarness(), "unrelated");
     });
