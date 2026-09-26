@@ -26,9 +26,8 @@ type ParallelTask = {
     isE2E: boolean;
 };
 
-const { BROWSER_TEST_TASK, discoverBrowserTasks } =
+const { discoverBrowserTasks } =
     require("../../scripts/e2e-parallel/shared/browserTaskDiscovery.js") as {
-        BROWSER_TEST_TASK: string;
         discoverBrowserTasks: (
             testDir: string,
             grep?: string,
@@ -39,11 +38,15 @@ const { BROWSER_TEST_TASK, discoverBrowserTasks } =
             preGrepTaskCount: number;
         };
     };
-const { BROWSER_TYPECHECK_COMMAND, DEFAULT_BROWSER_TEST_PATTERN } =
-    require("../../scripts/e2e-parallel/shared/browserConfig.js") as {
-        BROWSER_TYPECHECK_COMMAND: string[];
-        DEFAULT_BROWSER_TEST_PATTERN: string;
-    };
+const {
+    BROWSER_TEST_TASK,
+    BROWSER_TYPECHECK_COMMAND,
+    DEFAULT_BROWSER_TEST_PATTERN
+} = require("../../scripts/e2e-parallel/shared/browserConfig.js") as {
+    BROWSER_TEST_TASK: string;
+    BROWSER_TYPECHECK_COMMAND: string[];
+    DEFAULT_BROWSER_TEST_PATTERN: string;
+};
 const { runBrowserGate } =
     require("../../scripts/e2e-parallel/shared/browserRunner.js") as {
         runBrowserGate: (

@@ -69,8 +69,4 @@ function discoverBrowserTasks(testDir, grep, options = {}) {
     return filterByGrep(files, tasks, grep);
 }
 
-module.exports = {
-    DEFAULT_BROWSER_TEST_PATTERN,
-    BROWSER_TEST_TASK,
-    discoverBrowserTasks
-};
+module.exports = { discoverBrowserTasks };
