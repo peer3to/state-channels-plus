@@ -104,10 +104,10 @@ Ordered verification; any failure aborts the sync with no partial effect:
    period expired. Recompute each reduction the chain has not finalized locally and require it to
    produce the claimed successor fork; for a chain-finalized window, require the chain-recorded
    result to equal the claimed successor. More than one unreduced window in the walk aborts.
-   Each sync independently establishes the reduction calls needed for its snapshot-update
-   simulation. A reduction proven locally by another concurrent sync does not establish that
-   it exists on-chain and cannot by itself justify omitting its calldata. This keeps the
-   simulation complete even when concurrent requests share local verification state.
+   Each sync independently establishes which reductions the chain has finalized. A reduction
+   proven locally by another concurrent sync does not establish that it exists on-chain, so this
+   sync recomputes it. This keeps verification complete even when concurrent requests share local
+   verification state.
 5. **Verify the genesis.** The walked-to fork id must equal the payload's genesis identity, the
    genesis must satisfy the genesis-shape rules, and the genesis state hash must match the encoded
    genesis state.
@@ -125,8 +125,10 @@ Ordered verification; any failure aborts the sync with no partial effect:
     make a newcomer adopt an undercollateralized snapshot
     ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6).
 11. **No adoption is simulated.** Verification is historic: on the proven fork, finality (step 9) and outbound blocks
-    (step 7) are verified from the current on-chain snapshot forward, so history the chain pruned is never needed, and
-    a dispute landing after the proof was served does not change what it proves. A responder answers with the latest
+    (step 7) are verified from the current on-chain snapshot forward, so history the chain pruned is never needed. For a
+    pinned request, a dispute landing after the proof was served does not change what it proves. A latest-mode request
+    still aborts at step 8 when the final fork is disputed by then
+    ([`FIND-SYNC-2-VV16K8`](../../audit/open-findings.md#find-sync-2-vv16k8)). A responder answers with the latest
     provable state.
 12. **Persist** the verified payload atomically through the storage system
     ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
