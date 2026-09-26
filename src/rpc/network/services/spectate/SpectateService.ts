@@ -321,10 +321,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.milestoneSnapshots.length > 0
                     ? syncPayload.milestoneSnapshots.at(-1)!
                     : syncPayload.latestForkGenesisSnapshot;
-            // the proof must extend the chain's snapshot: on its fork, that snapshot itself or a newer one
+            // the proof must extend the step-1 snapshot every other check here is anchored on
             if (
-                !(await stateManager.stateChannelManagerContract.isExtendingOnChainSnapshot.staticCall(
-                    channelId,
+                !(await diamondStateMachine.localDiamondContract.isExtendingOnChainSnapshot.staticCall(
+                    onChainSnapshot.toStruct(),
                     latestFinalizedSnapshot
                 ))
             )

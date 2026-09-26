@@ -571,6 +571,70 @@ describe("Unit: SpectateService", function () {
             expect(rejections).to.deep.equal(["milestones invalid"]);
         });
 
+        it("every milestone below the on-chain anchor with a forged newer snapshot → rejected, milestones invalid", async function () {
+            const h = TestSession.getHarness();
+            let forgedHash = "";
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                h,
+                (payload, onChainSnapshot) => {
+                    const first =
+                        payload.stateProof.milestones[0].blockConfirmations[0];
+                    const block = Codec.decode(
+                        first.signedBlock.encodedBlock,
+                        Type.Block
+                    );
+                    block.transaction.header.transactionCnt = BigInt(
+                        onChainSnapshot.blockHeight - 1
+                    );
+                    // no participant signed this snapshot; only the skipped milestone stands behind it
+                    const forged = payload.milestoneSnapshots.at(-1)!;
+                    forged.timestamp = BigInt(forged.timestamp) + 1n;
+                    payload.milestoneSnapshots = [forged];
+                    forgedHash = String(StateSnapshot.from(forged).hash);
+                    const encodedBelow = Codec.encode(
+                        block,
+                        Type.Block
+                    ) as string;
+                    // an unsigned block at the proved height, linked to the first; the anchor height is skipped
+                    const top = Codec.decode(encodedBelow, Type.Block);
+                    top.transaction.header.transactionCnt = BigInt(
+                        forged.blockHeight
+                    );
+                    top.previousBlockHash = ethers.keccak256(encodedBelow);
+                    top.stateSnapshotHash = StateSnapshot.from(forged).hash;
+                    payload.stateProof.signedBlocks = [];
+                    payload.stateProof.milestones = [
+                        {
+                            blockConfirmations: [
+                                encodedBelow,
+                                Codec.encode(top, Type.Block) as string
+                            ].map((encodedBlock) => ({
+                                signedBlock: {
+                                    encodedBlock,
+                                    signature: first.signedBlock.signature
+                                },
+                                signatures: []
+                            }))
+                        }
+                    ];
+                }
+            );
+            // the forged snapshot was never installed as the requester's state
+            expect(
+                await h.execOnHost(
+                    h.getPeer(2),
+                    (sm, a) =>
+                        !!sm.storage.stateSnapshots.getStateSnapshotByHash(
+                            a.forgedHash
+                        ),
+                    { forgedHash }
+                ),
+                "forged snapshot installed"
+            ).to.equal(false);
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["milestones invalid"]);
+        });
+
         it("outbound block above the on-chain anchor forged → rejected, latest-fork outbound blocks invalid", async function () {
             const { accepted, rejections } = await applyAnchoredSyncPayload(
                 TestSession.getHarness(),
