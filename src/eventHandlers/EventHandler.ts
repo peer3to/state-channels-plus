@@ -4,10 +4,8 @@ import { Block, StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
-import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import Storage from "@/storage";
 import { DisputeConfirmationOrigin } from "@/storage/DisputeStorage";
-import { BlockOrigin } from "@/storage/QueueStorage";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import {
@@ -31,7 +29,6 @@ import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import {
-    BlockConfirmationStruct,
     MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct
@@ -319,21 +316,10 @@ export class EventHandler {
         );
         this.p2pEventHooks.onPostedCalldata?.();
 
-        const blockConfirmation: BlockConfirmationStruct = {
+        await this.stateManager.blockQueueManager.ingestPostedBlock({
             signedBlock,
-            signatures: []
-        };
-        await this.stateManager.blockQueueManager.ingestBlockConfirmation(
-            blockConfirmation,
-            {
-                origin: BlockOrigin.CALLDATA,
-                onChainTimestamp: Number(timestamp),
-                validationStrategy: new CalldataCommittedStrategy(
-                    this.stateManager.disputeManager,
-                    this.stateManager.blockValidationStrategy
-                )
-            }
-        );
+            onChainTimestamp: timestamp
+        });
     }
 
     async onDisputeCommitted(
@@ -948,7 +934,7 @@ export class EventHandler {
         } catch (error) {
             const customError = tryDecodeCustomError(error);
             if (
-                customError?.errorDescription.name ===
+                customError?.name ===
                 "RaceConditionDisputeEvidencePeriodExpired"
             ) {
                 this.logger.info(

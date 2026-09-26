@@ -14,7 +14,7 @@
 Implementation:
 [`StateTransitionService`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionService.ts#L7),
 [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6).
-Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L61)
+Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66)
 via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L493).
 
 ## 1. Purpose & position in the protocol
@@ -91,7 +91,7 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    channel gate, disputed-fork gate, non-current-fork recovery scheduling, queueing with the
    fixed `firstSeenAt + agreementTime` lifetime and per-entry structural caps. Intake wraps all
    of this in a try/catch: any exception becomes a `false` verdict
-   ([`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L61),
+   ([`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L66),
    catch block) — decode failure is a handled protocol failure, never an escaping rejection.
 4. **Verdict-to-penalty mapping** _(RPC layer)_: the boolean keep-connection verdict is the
    pipeline's entire answer to the RPC layer.

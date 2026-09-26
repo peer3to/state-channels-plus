@@ -22,6 +22,7 @@ import BlockQueueManager from "./ingest/BlockQueueManager";
 import FraudProofService from "./utils/FraudProofService";
 import AValidationStrategy from "./validationStrategy/AValidationStrategy";
 import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
+import CalldataCommittedStrategy from "./validationStrategy/CalldataCommittedStrategy";
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import DisputeManager from "@/disputeManager";
@@ -38,7 +39,7 @@ import Storage from "@/storage";
 
 import { Status, TimeConfig } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
-import { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import { Address, ChannelId, ForkId, Hash, Timestamp } from "@/types/types";
 import {
     DebugProxy,
     Mutex,
@@ -91,6 +92,7 @@ class StateManager<
     private latestForkId: ForkId = NULL;
     blockValidationStrategy: BlockValidationStrategy;
     spectatingValidationStrategy: SpectatingValidationStrategy;
+    calldataCommittedStrategy: CalldataCommittedStrategy;
     eventHandler: EventHandler;
     private _status: Status = Status.NOT_OPENED;
     timeoutManager: TimeoutManager;
@@ -278,6 +280,10 @@ class StateManager<
             this.p2pManager,
             this.blockQueueManager,
             this.logger
+        );
+        this.calldataCommittedStrategy = new CalldataCommittedStrategy(
+            this.participantTimeoutService,
+            this.blockValidationStrategy
         );
     }
     /**
@@ -510,10 +516,19 @@ class StateManager<
         }
     }
 
-    public getActiveValidationStrategy(): AValidationStrategy {
-        return isCommittedParticipantStatus(this.status)
-            ? this.blockValidationStrategy
-            : this.spectatingValidationStrategy;
+    /**
+     * `committed` is the copy under judgment: a participant judges one that
+     * carries an on-chain timestamp with the calldata strategy (the
+     * participant strategy plus the chain-only deviations).
+     */
+    public getActiveValidationStrategy(committed?: {
+        onChainTimestamp?: Timestamp;
+    }): AValidationStrategy {
+        if (!isCommittedParticipantStatus(this.status))
+            return this.spectatingValidationStrategy;
+        return committed?.onChainTimestamp !== undefined
+            ? this.calldataCommittedStrategy
+            : this.blockValidationStrategy;
     }
 }
 export default StateManager;

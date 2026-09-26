@@ -14,7 +14,7 @@ It also owns cached authorization for block contributions; it does not announce 
 
 Source eligibility is the inclusive OR of the chain current/pending cache and the current verified off-chain union, with known slashes first. Positive lookups perform no chain or VM read. Each miss awaits one pinned state read and any missing-event recovery and then checks membership again. Commits and state adoption publish complete local sets synchronously. Membership is stored in three plain address sets: chain members, local members and known slashes. Lookups have no channel/fork metadata checks. Channel changes and shutdown clear cached sets. This gate authorizes gossip contributions; post-handshake engagement and chain dispute standing remain different operations. An unobserved chain change can remain stale on positive hits. See [getCachedSourceEligibility](../../../../../../../src/stateManager/membership/MembershipService.ts#L57).
 
-Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute; only failure of that fallback rejects pending leave.
+Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A snapshot post that resolves `false` (the chain refused it on a disputed fork, already logged at warn by the post) or throws (logged at error) first attempts the dispute; a failure of that fallback rejects pending leave, except an evidence-expired refusal, which leaves it awaiting settlement.
 
 startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L236).
 
@@ -32,7 +32,7 @@ Committed membership classification uses the shared two-status predicate. Force-
    names abort the state manager after restoring `SYNCED` and clearing the force-join marker
    ([#L162](../../../../../../../src/stateManager/membership/MembershipService.ts#L162)):
    `RaceConditionJoinChannelExpired`, `RaceConditionSnapshotForkMismatch`,
-   `RaceConditionJoinChannelSnapshotMismatch`, `RaceConditionForceInboundJoinForkDisputed`,
+   `RaceConditionJoinChannelSnapshotMismatch`, `RaceConditionJoinChannelForkDisputed`,
    `ErrorJoinChannelInvalidSignature` and `ErrorJoinChannelConfirmationNotThresholdSigned`. Each
    says the confirmation the joiner already signed can never be accepted — the deadline passed, the
    snapshot or fork it pinned is gone, the fork is disputed, the joiner's own signature does not
@@ -114,7 +114,9 @@ commitment exists. An uncertain outcome keeps pending status and the force-join 
 on-chain membership read can reconcile it as success. A duplicate result proving the participant already
 exists returns success while preserving pending state.
 `topUpBalance` is the one receipt-gated update
-for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
+for a supplied balance on pending or participating state; failure preserves that committed runtime. A first join refused
+with `RaceConditionJoinChannelForkDisputed` ([#L164](../../../../../../src/stateManager/membership/MembershipService.ts#L164)) aborts and returns `false`; a top-up refused on a
+disputed fork with the same error returns `false` through its decoded-error branch ([#L206](../../../../../../src/stateManager/membership/MembershipService.ts#L206)). Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
 
 # Terminal leave contribution

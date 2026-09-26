@@ -959,6 +959,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             } catch (e) {
                 const custom = tryDecodeCustomError(e);
                 if (
+                    custom?.name === "RaceConditionSnapshotUpdateDisputedFork"
+                ) {
+                    this.logger.debug(
+                        "Spectate multicall target fork is disputed",
+                        { forkId: syncPayload.latestForkGenesisSnapshot.forkId }
+                    );
+                    return true;
+                }
+                if (
                     custom?.name === "RaceConditionBlockHeightTooOld" &&
                     syncPayload.milestoneSnapshots.length > 0
                 ) {

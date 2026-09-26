@@ -3,7 +3,8 @@ import { Codec, hash, Type } from "@/utils";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
 import {
     assertDisputeRefreshPolicy,
-    assertBackgroundDisputeFailure
+    assertBackgroundDisputeFailure,
+    assertInboundHeadMovedDuringUpload
 } from "@test/fixtures/DisputeRefreshStaging";
 import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@test/fixtures/DisputeSigningStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
 
@@ -1059,6 +1061,10 @@ describe("Unit: DisputeManager", function () {
             expect(r.disputed).to.equal(false);
         });
 
+        it("an inbound block landing after construction refuses the upload and rolls the dispute back without a re-upload", async function () {
+            await assertInboundHeadMovedDuringUpload(TestSession.getHarness());
+        });
+
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
@@ -1106,6 +1112,323 @@ describe("Unit: DisputeManager", function () {
                 )
             ).to.deep.equal([]);
             await scheduled.restore();
+        });
+
+        it("RaceConditionDisputeTimeoutCalldataPosted → the refused timeout is dropped and the posted block our marker withheld is stored, with no recheck", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            // no timeout check runs -> only the refusal can hand the block back
+            await h.rpcStub.suppressTimeoutCheck(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutCalldataPosted",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                // the plain timeout upload holds the marker while the post lands
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { authored, startHeight } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the handler finished: its ingest met the marker and dropped the block
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                const inPipeline = async () =>
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.queues.getQueuedEntry(args.blockHash) !==
+                                undefined ||
+                            sm.storage.blocks.getBlock(args.blockHash) !==
+                                undefined,
+                        { blockHash: authored.hash }
+                    );
+                expect(await inPipeline()).to.equal(false);
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.deep.equal({ isForced: false, participant: writer });
+
+                await recorder.release();
+                await refused;
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+                // the refusal handed it back: it lands within a task tick.
+                // Timeout checks are suppressed, and any chain redelivery is
+                // seconds away, so this short bound is the attribution.
+                await waitFor(async () => await inPipeline(), 3000);
+                const timeouts = (await recorder.submissions()).map(
+                    (submission) =>
+                        Codec.decode(submission.encodedDispute, Type.Dispute)
+                            .input.timeout
+                );
+                expect(timeouts.map((t) => t.isForced)).to.deep.equal([false]);
+                expect(
+                    (await tasks.tasks()).filter(
+                        (task) =>
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterEarlySubmission"
+                            ) ||
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterPostedBlockRejected"
+                            )
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("a refusal other than the posted-calldata race while a posted block lands → the withheld block is handed back and stored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            // no timeout check runs -> only the failed upload can hand the block back
+            await h.rpcStub.suppressTimeoutCheck(observer.index);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // a refusal the contract raises before its posted-calldata check
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError: "ErrorCantParticipateInDispute",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { authored } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                // the handler finished: its ingest met the marker and dropped the block
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                const inPipeline = async () =>
+                    await h.execOnHost(
+                        observer,
+                        (sm, args) =>
+                            sm.storage.queues.getQueuedEntry(args.blockHash) !==
+                                undefined ||
+                            sm.storage.blocks.getBlock(args.blockHash) !==
+                                undefined,
+                        { blockHash: authored.hash }
+                    );
+                expect(await inPipeline()).to.equal(false);
+
+                await recorder.release();
+                await refused;
+                // the failed upload handed it back: it lands within a task tick.
+                // Timeout checks are suppressed, and any chain redelivery is
+                // seconds away, so this short bound is the attribution.
+                await waitFor(async () => await inPipeline(), 3000);
+                expect(
+                    (await tasks.tasks()).filter(
+                        (task) =>
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterEarlySubmission"
+                            ) ||
+                            task.taskName.startsWith(
+                                "timeoutParticipantAfterPostedBlockRejected"
+                            )
+                    )
+                ).to.deep.equal([]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("RaceConditionDisputeTimeoutNotMinTimestamp while a posted block lands → the refusal re-arms the check and the withheld block is stored", async function () {
+            // outcome test: the re-armed check hands the block back. A chain
+            // event redelivery would store it too, so the stored block alone
+            // is not attribution - the re-arm task assertion below is.
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            // the other participant must not gossip its copy to the observer
+            await h.byzantine.stubBroadcast(1);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutNotMinTimestamp",
+                        customErrorArgs: ["2", "1"],
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                const { startHeight } =
+                    await h.transition.postNextBlockOnlyOnChainWait({
+                        observerIndex: observer.index
+                    });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, startHeight)
+                        .request()
+                ).to.equal(null);
+
+                await recorder.release();
+                await refused;
+                await waitFor(
+                    async () =>
+                        (await h
+                            .control(observer)
+                            .query.getBlockByHeight(forkId, startHeight)
+                            .request()) !== null,
+                    h.event.hostExecTimeoutMs()
+                );
+                expect(
+                    (await recorder.submissions()).map(
+                        (submission) =>
+                            Codec.decode(
+                                submission.encodedDispute,
+                                Type.Dispute
+                            ).input.timeout.isForced
+                    )
+                ).to.deep.equal([false]);
+                // the early-refusal re-arm is what carries this fork forward
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith(
+                            "timeoutParticipantAfterEarlySubmission"
+                        )
+                    )
+                ).to.not.have.length(0);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+                await tasks.restore();
+            }
+        });
+
+        it("RaceConditionDisputeTimeoutCalldataPosted, then an authentic block failing its state transition → the fraud-proof dispute carries no timeout", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const writer = await h
+                .control(observer)
+                .query.getNextToWrite()
+                .request();
+            const writerPeer = h.peers.find((p) => p.address === writer)!;
+            await h.dispute.suppressDisputeInitiation([1, 2]);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    hold: true,
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeTimeoutCalldataPosted",
+                        at: "send",
+                        times: 1
+                    }
+                }
+            );
+            try {
+                const refused = h
+                    .control(observer)
+                    .stub.startTimeoutConstruction(writer, 2)
+                    .request({ timeoutMs: h.event.hostExecTimeoutMs() });
+                await recorder.waitUntilHeld();
+                h.event.resetEventSpies();
+                await h.byzantine.postJunkCalldataOnChain(writerPeer.index, {
+                    height: 2,
+                    authentic: true
+                });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [observer.index]
+                );
+                await recorder.release();
+                await refused;
+
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const [plain, fraud] = await recorder.submissions();
+                expect(
+                    Codec.decode(plain.encodedDispute, Type.Dispute).input
+                        .timeout.participant
+                ).to.equal(writer);
+                expect(
+                    Codec.decode(fraud.encodedDispute, Type.Dispute).input
+                        .timeout.participant
+                ).to.equal(ZeroAddress);
+                expect(fraud.fraudProofParticipants).to.deep.equal([writer]);
+            } finally {
+                await recorder.release();
+                await recorder.restore();
+            }
         });
 
         it("RaceConditionDisputeEvidencePeriodExpired at send → rejects and the marker rolls back", async function () {

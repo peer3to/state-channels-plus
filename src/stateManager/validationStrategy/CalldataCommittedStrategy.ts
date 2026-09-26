@@ -3,8 +3,8 @@ import AValidationStrategy, {
 } from "./AValidationStrategy";
 import BlockValidationStrategy from "./BlockValidationStrategy";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
-import DisputeManager from "@/disputeManager";
 import { Block } from "@/models";
+import type ParticipantTimeoutService from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
 import {
@@ -14,7 +14,7 @@ import {
 
 export default class CalldataCommittedStrategy extends AValidationStrategy {
     constructor(
-        private readonly disputeManager: DisputeManager,
+        private readonly participantTimeoutService: ParticipantTimeoutService,
         private readonly blockValidationStrategy: BlockValidationStrategy
     ) {
         super();
@@ -30,17 +30,15 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async authenticateBlockFailed(
-        _block: BlockConfirmationStruct
+        blockConfirmation: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
         // The block is committed on-chain by a participant (otherwise we're not interested in the calldata) -> the participant created an objective fault
-        // TODO - fraud proof for this
-        // TODO - dispute - give context
+        // no fraud proof proves a bad signature -> force the author's timeout
+        this.forceTimeout(Block.fromBlockConfirmation(blockConfirmation));
         return BlockValidationResult.DISPUTE;
     }
-    public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
-        throw new Error(
-            "CalldataCommittedStrategy - wrongChannel should not be collected"
-        );
+    public async wrongChannel(block: Block): Promise<BlockValidationResult> {
+        return this.blockValidationStrategy.wrongChannel(block);
     }
     public async channelNotOpened(
         entry: QueuedBlockEntry
@@ -49,23 +47,26 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         return this.blockValidationStrategy.channelNotOpened(entry);
     }
     public async malformedConfirmationSignatures(
-        _entry: QueuedBlockEntry,
-        _signatures: Set<Signature>
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
     ): Promise<BlockValidationResult> {
-        throw new Error(
-            "Calldata confirmations contain no confirmation signatures"
+        // a queued calldata copy merges gossip copies' signatures -> judged as gossip
+        return this.blockValidationStrategy.malformedConfirmationSignatures(
+            entry,
+            signatures
         );
     }
 
     public async notAllSingersAreParticipants(
-        _entry: QueuedBlockEntry,
-        _unexpectedSignatures: Set<Signature>,
-        _participantSnapshots?: ParticipantSnapshots
+        entry: QueuedBlockEntry,
+        unexpectedSignatures: Set<Signature>,
+        participantSnapshots?: ParticipantSnapshots
     ): Promise<BlockValidationResult> {
-        // Calldata confirmations carry only the author's signature, and the
-        // author was already authenticated against the chain event.
-        throw new Error(
-            "CalldataCommittedStrategy - notAllSingersAreParticipants should not be relevant/called"
+        // a queued calldata copy merges gossip copies' signatures -> judged as gossip
+        return this.blockValidationStrategy.notAllSingersAreParticipants(
+            entry,
+            unexpectedSignatures,
+            participantSnapshots
         );
     }
     public async noNewSignaturesOnExistingBlock(
@@ -76,20 +77,17 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         );
     }
     public async goodNewSignaturesOnExistingBlock(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
-        // Unreachable tripwire: the calldata event always carries
-        // signatures: [], so the merge never finds new signatures here.
-        throw new Error(
-            "CalldataCommittedStrategy - goodNewSignaturesOnExistingBlock should not be relevant/called"
+        // a queued calldata copy merges gossip copies' signatures -> judged as gossip
+        return this.blockValidationStrategy.goodNewSignaturesOnExistingBlock(
+            block
         );
     }
     public async blockAuthorIsNotParticipant(
-        _entry: QueuedBlockEntry
+        entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        throw new Error(
-            "CalldataCommittedStrategy - blockAuthorIsNotParticipant should not be collected"
-        );
+        return this.blockValidationStrategy.blockAuthorIsNotParticipant(entry);
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
@@ -146,6 +144,7 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         // We have to FORCE TIMEOUT this - the force timeout challenge HAS TO require that presenting this calldata on-chain is linked to the dispute.StateProof for the disputeFraudProof to be accepted,
         // otherwise our dispute.StateProof will reveal information for the timeout peer to do a dispute containing a double sign or invalid state transition fraud proof, which when reduce will cancel the timeout
+        this.forceTimeout(entry.block);
         return this.blockValidationStrategy.blockIsNotLinkedAndIsNotFirstBlock(
             entry
         );
@@ -172,6 +171,16 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         // Chain commitment timing is checked objectively before this hook.
         throw new Error(
             "Subjective timing is not applicable to chain-committed blocks"
+        );
+    }
+    private forceTimeout(block: Block): void {
+        this.participantTimeoutService.scheduleCheck(
+            block.forkId,
+            block.height,
+            block.author,
+            0,
+            "timeoutParticipantAfterPostedBlockRejected",
+            true
         );
     }
 }

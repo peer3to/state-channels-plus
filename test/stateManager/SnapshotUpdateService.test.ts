@@ -30,21 +30,38 @@ describe("SnapshotUpdateService", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
         await h.transition.advanceState();
+        const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-        const result = await h.execOnHost(
-            h.getPeer(0),
-            async (sm) => {
-                const posted = await sm.snapshotUpdateService[
-                    "postStateSnapshotWait"
-                ](sm.forkId);
-                return {
-                    posted: posted !== undefined
-                };
-            },
-            {}
+        const posted = await h.execOnHost(h.getPeer(0), (sm) =>
+            sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
         );
 
-        expect(result.posted).to.equal(true);
+        expect(posted).to.equal(true);
+        expect(await h.query.getOnChainSnapshotHash()).to.not.equal(
+            snapshotBefore
+        );
+    });
+
+    it("resolves false when a dispute commits between preparation and send", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup();
+        const send = await h.rpcStub.holdSnapshotPostSend(0);
+        let refusal: string | null = null;
+        try {
+            const posted = h.execOnHost(h.getPeer(0), (sm) =>
+                sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
+            );
+            await send.waitUntilHeld();
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+                dispute.input.stateProof.signedBlocks = [];
+            });
+            refusal = await send.release();
+            expect(await posted).to.equal(false);
+        } finally {
+            await send.release();
+        }
+        expect(refusal).to.equal("RaceConditionSnapshotUpdateDisputedFork");
     });
 
     it("blocks fork calldata while the current dispute has no final reduced result", async function () {
@@ -114,9 +131,9 @@ describe("SnapshotUpdateService", function () {
                 const prepared = await sm.snapshotUpdateService[
                     "prepareUpdateSnapshotSameFork"
                 ](args.forkId);
-                const posted = await sm.snapshotUpdateService[
-                    "postStateSnapshotWait"
-                ](args.forkId);
+                const posted = await sm.snapshotUpdateService.postStateSnapshot(
+                    args.forkId
+                );
                 return {
                     canPost: prepared.canPost,
                     callDataCount: prepared.callData.length,
