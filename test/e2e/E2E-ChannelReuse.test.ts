@@ -1,6 +1,7 @@
 import { DisconnectTier } from "@/DisconnectPolicy";
 import { Status } from "@/types";
 import { assertClean } from "@test/fixtures/DiscoveryRuntimePortStaging";
+import { assertLeftParticipantParticipatesInNextChannel } from "@test/fixtures/ReusedParticipantStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -48,6 +49,10 @@ describe("E2E: Channel reuse", function () {
             oldChannelParticipant: false,
             firstPeerChannel: channelId
         });
+    });
+
+    it("a participant that left through its authored exit participates in the next channel on the same runtime", async function () {
+        await assertLeftParticipantParticipatesInNextChannel();
     });
 
     it("one runtime completes two leave and reconnect cycles", async function () {
