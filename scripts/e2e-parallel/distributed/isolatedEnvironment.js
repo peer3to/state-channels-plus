@@ -928,6 +928,12 @@ class UnsafeHostBackend {
             {
                 env: {
                     ...process.env,
+                    // The fresh HOME hides the host's Playwright cache, so the
+                    // browser gates would find no Chromium; keep pointing at it
+                    // unless the operator chose a path.
+                    PLAYWRIGHT_BROWSERS_PATH:
+                        process.env.PLAYWRIGHT_BROWSERS_PATH ||
+                        hostPlaywrightBrowsersPath(),
                     HOME: home,
                     SCP_ISOLATED_ROOT: handle.root
                 },
@@ -952,6 +958,22 @@ class UnsafeHostBackend {
     async listOrphans() {
         return [];
     }
+}
+
+/**
+ * Where Playwright keeps its browsers on this host when PLAYWRIGHT_BROWSERS_PATH
+ * is unset, resolved against the real HOME. Mirrors Playwright's own default
+ * cache directory.
+ */
+function hostPlaywrightBrowsersPath() {
+    const cacheDirectory =
+        process.platform === "darwin"
+            ? path.join(os.homedir(), "Library", "Caches")
+            : process.platform === "win32"
+              ? process.env.LOCALAPPDATA ||
+                path.join(os.homedir(), "AppData", "Local")
+              : process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+    return path.join(cacheDirectory, "ms-playwright");
 }
 
 class IsolatedEnvironment extends EventEmitter {

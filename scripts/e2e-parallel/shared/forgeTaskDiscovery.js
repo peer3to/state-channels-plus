@@ -2,7 +2,12 @@ const fs = require("fs");
 const path = require("path");
 const { globSync } = require("glob");
 const { DEFAULT_FORGE_THREADS, FORGE_TEST_TASK } = require("./forgeConfig");
-const { escapeRegex, sanitizeFileName } = require("./taskDiscovery");
+const {
+    duplicateNames,
+    escapeRegex,
+    filterByGrep,
+    sanitizeFileName
+} = require("./taskDiscovery");
 const { TASK_RUNNERS } = require("./taskRunners");
 
 // Foundry does not confine test contracts to `*.t.sol`, so the glob has to
@@ -297,14 +302,9 @@ function extractForgeTestContracts(filePath) {
  * instead of scheduling that silently.
  */
 function assertUniqueContractNames(discovered) {
-    const filesByContract = new Map();
-    for (const { file, contract } of discovered) {
-        if (!filesByContract.has(contract)) filesByContract.set(contract, []);
-        filesByContract.get(contract).push(file);
-    }
-    const duplicates = [...filesByContract.entries()]
-        .filter(([, files]) => files.length > 1)
-        .map(([contract, files]) => `${contract} (${files.join(", ")})`);
+    const duplicates = duplicateNames(
+        discovered.map(({ file, contract }) => ({ name: contract, file }))
+    );
     if (duplicates.length > 0) {
         throw new Error(
             `Duplicate Foundry test contract name(s): ${duplicates.join("; ")}. ` +
@@ -347,7 +347,7 @@ function discoverForgeTasks(testDir, grep, options = {}) {
         extractForgeTestContracts(file).map((contract) => ({ file, contract }))
     );
     assertUniqueContractNames(discovered);
-    let tasks = discovered.map(({ file, contract }) => ({
+    const tasks = discovered.map(({ file, contract }) => ({
         label: `forge:${path.basename(file)}:${contract}`,
         args: [
             FORGE_TEST_TASK,
@@ -363,12 +363,7 @@ function discoverForgeTasks(testDir, grep, options = {}) {
         runner: TASK_RUNNERS.FORGE,
         isE2E: false
     }));
-    const preGrepTaskCount = tasks.length;
-    if (grep) {
-        const matcher = new RegExp(grep);
-        tasks = tasks.filter((task) => matcher.test(task.fullTitle));
-    }
-    return { files, tasks, preGrepTaskCount };
+    return filterByGrep(files, tasks, grep);
 }
 
 module.exports = {
