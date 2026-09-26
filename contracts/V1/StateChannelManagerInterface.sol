@@ -235,7 +235,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
-    function isExtendingOnChainSnapshot(bytes32 channelId, StateSnapshot memory target)
+    function isExtendingOnChainSnapshot(StateSnapshot memory onChainSnapshot, StateSnapshot memory target)
         public
         view
         virtual

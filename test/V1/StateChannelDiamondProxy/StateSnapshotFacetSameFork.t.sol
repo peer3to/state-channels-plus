@@ -64,6 +64,7 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
 
     uint256 internal constant ALICE_PK = 0xA11CE;
     uint256 internal constant BOB_PK = 0xB0B;
+    uint256 internal constant OUTSIDER_PK = 0x0BAD;
     bytes32 internal constant CHANNEL_ID = keccak256("same-fork-channel");
     bytes32 internal constant SEEDED_FORK_ID = keccak256("same-fork-seeded-fork");
     // distinct and non-zero on both sides, so a swapped payload fails the oracle
@@ -165,42 +166,100 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
 
     function test_isExtendingOnChainSnapshot_newerOnSameFork_true() public {
         (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = onChain;
+        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
         target.blockHeight = ON_CHAIN_BLOCK_HEIGHT + 1;
-        assertTrue(harness.isExtendingOnChainSnapshot(CHANNEL_ID, target));
+        assertTrue(harness.isExtendingOnChainSnapshot(onChain, target));
     }
 
     function test_isExtendingOnChainSnapshot_equalAndIdentical_true() public {
         (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        assertTrue(harness.isExtendingOnChainSnapshot(CHANNEL_ID, onChain));
+        assertTrue(harness.isExtendingOnChainSnapshot(onChain, onChain));
     }
 
     function test_isExtendingOnChainSnapshot_equalHeightDifferentSnapshot_false() public {
         (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = onChain;
+        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
         target.snapshotData.stateMachineStateHash = keccak256("another state at the same height");
-        assertFalse(harness.isExtendingOnChainSnapshot(CHANNEL_ID, target));
+        assertFalse(harness.isExtendingOnChainSnapshot(onChain, target));
     }
 
     function test_isExtendingOnChainSnapshot_olderOnSameFork_false() public {
         (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = onChain;
+        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
         target.blockHeight = SUBMITTED_BLOCK_HEIGHT;
-        assertFalse(harness.isExtendingOnChainSnapshot(CHANNEL_ID, target));
+        assertFalse(harness.isExtendingOnChainSnapshot(onChain, target));
     }
 
     // another fork is linked through reductions, which this decision does not judge
     function test_isExtendingOnChainSnapshot_otherFork_true() public {
         (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = onChain;
+        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
         target.forkId = keccak256("another fork");
         target.blockHeight = SUBMITTED_BLOCK_HEIGHT;
-        assertTrue(harness.isExtendingOnChainSnapshot(CHANNEL_ID, target));
+        assertTrue(harness.isExtendingOnChainSnapshot(onChain, target));
     }
 
     function test_isExtendingOnChainSnapshot_routedThroughTheProxy() public view {
         StateSnapshot memory onChain = diamond.getStateSnapshot(CHANNEL_ID);
-        assertTrue(diamond.isExtendingOnChainSnapshot(CHANNEL_ID, onChain));
+        assertTrue(diamond.isExtendingOnChainSnapshot(onChain, onChain));
+    }
+
+    // every milestone starts below the chain height and none sits at it, so nothing is proven above the
+    // chain snapshot; a forged newer snapshot behind such a proof must not be adopted by anyone
+    function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof(
+    ) public {
+        StateSnapshot memory current = _advanceOnce();
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
+        StateSnapshot memory forged = snapshots[0];
+        address[] memory outsider = new address[](1);
+        outsider[0] = vm.addr(OUTSIDER_PK);
+        forged.snapshotData.participants = outsider;
+        forged.blockHeight = current.blockHeight + 10;
+        forged.timestamp = current.timestamp + 10;
+        snapshots[0] = forged;
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorInvalidStateProof.selector, current.forkId, uint256(1), uint256(1)));
+        vm.prank(vm.addr(OUTSIDER_PK));
+        diamond.updateStateSnapshotSameFork(CHANNEL_ID, proofs, snapshots, new MessageBlock[](0));
+        assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL_ID))), keccak256(abi.encode(current)));
+    }
+
+    // the same all-skipped proof still confirms the threshold snapshot itself, and nothing else
+    function test_verifyMilestones_everyMilestoneBelowThreshold_confirmsOnlyTheThresholdSnapshot() public {
+        StateSnapshot memory current = _advanceOnce();
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
+        assertTrue(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "confirms the threshold");
+        snapshots[0].blockHeight = current.blockHeight + 1;
+        assertFalse(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "advances past it");
+    }
+
+    /// one legitimate same-fork advance, so the chain height is above 0 and a lower milestone can be skipped
+    function _advanceOnce() internal returns (StateSnapshot memory current) {
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(ALICE_PK);
+        participants[1] = vm.addr(BOB_PK);
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
+            _makeSameForkSnapshot(CHANNEL_ID, participants, _privateKeys());
+        diamond.updateStateSnapshotSameFork(CHANNEL_ID, proofs, snapshots, new MessageBlock[](0));
+        current = diamond.getStateSnapshot(CHANNEL_ID);
+    }
+
+    /// one unsigned milestone whose only block is below `current`'s height, claiming `current` as its snapshot
+    function _allSkippedProof(StateSnapshot memory current)
+        internal
+        pure
+        returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots)
+    {
+        Block memory below;
+        below.transaction.header.channelId = CHANNEL_ID;
+        below.transaction.header.forkId = current.forkId;
+        below.transaction.header.transactionCnt = current.blockHeight - 1;
+        proofs = new MilestoneProof[](1);
+        proofs[0].blockConfirmations = new BlockConfirmation[](1);
+        proofs[0].blockConfirmations[0].signedBlock = SignedBlock({encodedBlock: abi.encode(below), signature: ""});
+        proofs[0].blockConfirmations[0].signatures = new bytes[](0);
+        snapshots = new StateSnapshot[](1);
+        snapshots[0] = abi.decode(abi.encode(current), (StateSnapshot));
     }
 
     function _seededExtensionHarness()
