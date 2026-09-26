@@ -79,6 +79,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         this.service.releaseAdmissionMembership();
         return true;
     }
+    public releaseAdmissionInboundRun(): boolean {
+        this.service.releaseAdmissionInboundRun();
+        return true;
+    }
     public releaseAdmissionGossip(): boolean {
         this.service.releaseAdmissionGossip();
         return true;

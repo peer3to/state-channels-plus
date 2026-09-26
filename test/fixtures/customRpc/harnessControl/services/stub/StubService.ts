@@ -360,12 +360,14 @@ export class StubService extends ANetworkRpcService<
         proofSources: number;
         chainReads: number;
         membershipSyncs: number;
+        inboundRunLoads: number;
         localMembershipReads: number;
         syncRequests: number;
         broadcasts: number;
         holdGossip: boolean;
         heldGossip: (() => void)[];
         releaseMembership: () => void;
+        releaseInboundRun: () => void;
         restore: () => void;
     };
 
@@ -657,6 +659,9 @@ export class StubService extends ANetworkRpcService<
             holdGossip?: boolean;
             holdMembership?: boolean;
             failMembership?: boolean;
+            // park a membership synchronization once its inbound run loaded,
+            // before it writes anything
+            holdInboundRun?: boolean;
         } = {}
     ): void {
         this.restoreAdmissionObservation();
@@ -669,6 +674,7 @@ export class StubService extends ANetworkRpcService<
         const router = this.p2pManager.rpcRouter;
         const read = chain.readPinnedChainMembership.bind(chain);
         const synchronize = chain.synchronizeChainMembership.bind(chain);
+        const loadInboundRun = chain.loadSynchronizedInboundRun.bind(chain);
         const participants = machine.getParticipants.bind(machine);
         const broadcast = router.broadcastRpc.bind(router);
         const request = router.sendRpcRequest.bind(router);
@@ -679,6 +685,11 @@ export class StubService extends ANetworkRpcService<
             releaseMembership = resolve;
         });
         if (!options.holdMembership) releaseMembership();
+        let releaseInboundRun: () => void = () => {};
+        const inboundGate = new Promise<void>((resolve) => {
+            releaseInboundRun = resolve;
+        });
+        if (!options.holdInboundRun) releaseInboundRun();
         const observation = {
             completedIntakes: 0,
             completedSyncs: 0,
@@ -688,18 +699,21 @@ export class StubService extends ANetworkRpcService<
             proofSources: 0,
             chainReads: 0,
             membershipSyncs: 0,
+            inboundRunLoads: 0,
             localMembershipReads: 0,
             syncRequests: 0,
             broadcasts: 0,
             holdGossip: options.holdGossip ?? false,
             heldGossip: [] as (() => void)[],
             releaseMembership,
+            releaseInboundRun,
             restore: () => {
                 queue.ingestBlockConfirmation = intake;
                 spectate.sync = sync;
                 queues.createEntry = createEntry;
                 chain.readPinnedChainMembership = read;
                 chain.synchronizeChainMembership = synchronize;
+                chain.loadSynchronizedInboundRun = loadInboundRun;
                 machine.getParticipants = participants;
                 router.broadcastRpc = broadcast;
                 router.sendRpcRequest = request;
@@ -757,6 +771,12 @@ export class StubService extends ANetworkRpcService<
             observation.membershipSyncs++;
             return synchronize(...args);
         };
+        chain.loadSynchronizedInboundRun = async (...args) => {
+            const run = await loadInboundRun(...args);
+            observation.inboundRunLoads++;
+            await inboundGate;
+            return run;
+        };
         machine.getParticipants = async () => {
             observation.localMembershipReads++;
             return participants();
@@ -797,6 +817,7 @@ export class StubService extends ANetworkRpcService<
             proofSources: observation?.proofSources ?? 0,
             chainReads: observation?.chainReads ?? 0,
             membershipSyncs: observation?.membershipSyncs ?? 0,
+            inboundRunLoads: observation?.inboundRunLoads ?? 0,
             localMembershipReads: observation?.localMembershipReads ?? 0,
             syncRequests: observation?.syncRequests ?? 0,
             broadcasts: observation?.broadcasts ?? 0,
@@ -808,6 +829,10 @@ export class StubService extends ANetworkRpcService<
         this.admissionObservation?.releaseMembership();
     }
 
+    public releaseAdmissionInboundRun(): void {
+        this.admissionObservation?.releaseInboundRun();
+    }
+
     public releaseAdmissionGossip(): void {
         const observation = this.admissionObservation;
         if (!observation) return;
@@ -817,6 +842,7 @@ export class StubService extends ANetworkRpcService<
 
     public restoreAdmissionObservation(): void {
         this.releaseAdmissionMembership();
+        this.releaseAdmissionInboundRun();
         this.releaseAdmissionGossip();
         this.admissionObservation?.restore();
         this.admissionObservation = undefined;

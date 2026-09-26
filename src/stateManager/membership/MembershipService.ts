@@ -155,11 +155,15 @@ export default class MembershipService {
                 if (sm.isStaleChannelWork(generation)) return false;
                 for (const participant of membership.slashed)
                     this.observeOnChainSlash(participant);
+                // Every await past the first read is another place a reset
+                // can land: the synchronization stops before each write.
+                const isStale = () => sm.isStaleChannelWork(generation);
                 await sm.eventSyncService.synchronizeChainMembership(
                     channelId,
-                    membership
+                    membership,
+                    isStale
                 );
-                return true;
+                return !isStale();
             } catch (error) {
                 this.logger.warn("Source eligibility refresh unavailable", {
                     error: errorMessage(error)

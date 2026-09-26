@@ -275,7 +275,8 @@ export default class EventSyncService {
         upperBlockHash: Hash,
         lowerBlockHash: Hash,
         notBefore: Timestamp,
-        channelId: ChannelId = this.channelId
+        channelId: ChannelId = this.channelId,
+        isStale?: () => boolean
     ): Promise<MessageBlockStruct[] | undefined> {
         // the honest path holds the whole run -> no chain call at all
         let run = this.storage.inboundMessages.tryGetMessageBlocksInRange({
@@ -296,6 +297,7 @@ export default class EventSyncService {
                 span: this.getBlockSpan(latest.timestamp - notBefore),
                 attempts: LOG_RECOVERY_ATTEMPTS,
                 dispatch: "awaited",
+                isStale,
                 probe: () =>
                     this.storage.inboundMessages.tryGetMessageBlocksInRange({
                         upperBlockHash,
@@ -373,20 +375,29 @@ export default class EventSyncService {
     }
 
     /** Pull missing membership through the same handlers as live events. */
+    /**
+     * `isStale` reports that the caller's channel work was overtaken (a channel
+     * reset). Every write below is checked against it: a membership read for
+     * the channel left must not land in the next one.
+     */
     public async synchronizeChainMembership(
         channelId: ChannelId,
-        membership: PinnedChainMembership
+        membership: PinnedChainMembership,
+        isStale: () => boolean = () => false
     ): Promise<void> {
         const snapshot = StateSnapshot.from(membership.snapshot);
         const inbound = await this.loadSynchronizedInboundRun(
             membership.balance.latestInboundMessageBlockHash,
             snapshot.latestInboundMessageBlockHash,
             snapshot.timestamp,
-            channelId
+            channelId,
+            isStale
         );
+        if (isStale()) return;
         if (!inbound)
             throw new Error("Membership inbound messages unavailable");
         for (const block of inbound) {
+            if (isStale()) return;
             await this.eventHandler.onInboundMessagesProcessed(
                 channelId,
                 block,
@@ -396,6 +407,7 @@ export default class EventSyncService {
                 }
             );
         }
+        if (isStale()) return;
         await this.eventHandler.onStateSnapshotUpdated(
             channelId,
             membership.snapshot,
@@ -404,6 +416,7 @@ export default class EventSyncService {
                 logIndex: 0
             }
         );
+        if (isStale()) return;
         await this.recoverOnChainSlashes(channelId, undefined, membership);
     }
 
@@ -464,6 +477,8 @@ export default class EventSyncService {
         attempts: number;
         /** "detached" for a caller that must not await the dispatched pipeline */
         dispatch: "awaited" | "detached";
+        /** the caller's channel work was overtaken: stop before scheduling more */
+        isStale?: () => boolean;
         /** what local storage holds right now */
         probe: () => THeld | Promise<THeld>;
         isRecovered: (held: THeld) => boolean;
@@ -484,7 +499,9 @@ export default class EventSyncService {
         let scheduledLogCount = 0;
         for (
             let attempt = 0;
-            attempt < recovery.attempts && !recovery.isRecovered(held);
+            attempt < recovery.attempts &&
+            !recovery.isRecovered(held) &&
+            !recovery.isStale?.();
             attempt++
         ) {
             const fallback = Math.max(0, recovery.toBlock - span);
@@ -502,6 +519,7 @@ export default class EventSyncService {
                     fromBlock,
                     toBlock: recovery.toBlock
                 });
+                if (recovery.isStale?.()) break;
                 const missingLogs = isMissingLog
                     ? logs.filter((log) =>
                           this.isLogMissing(log, isMissingLog, held)

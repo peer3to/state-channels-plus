@@ -169,6 +169,98 @@ export async function refreshOvertakenByReset() {
     }
 }
 
+/**
+ * A refresh parked after its inbound run loaded, while a join is still pending
+ * on chain so that run holds a block: the channel reset lands there, and with
+ * `reselect` the runtime selects the same channel again before the refresh
+ * resumes. The resumed synchronization must write none of the channel left's
+ * inbound blocks, joiner eligibility or snapshot participants.
+ */
+export async function refreshOvertakenByResetMidSynchronization(
+    reselect: boolean
+) {
+    const h = MathTestSession.getHarness();
+    // the timeConfig keeps a 2-peer channel serving the joiner's sync
+    await h.lifecycle.start(2, 0, {
+        timeConfig: {
+            p2pTime: 2,
+            agreementTime: 4,
+            chainFallbackTime: 4,
+            evidenceTime: 6
+        }
+    });
+    const forkId = h.activeForkId!;
+    const { peer: joiner } = await h.join.addSpectatorAuthoring({
+        authoringPeerIndices: [0, 1],
+        minimumBlocks: 2,
+        maximumBlocks: 20
+    });
+    await h.assert.sync.peersInSyncWait();
+    await h.join.joinChannelWait({ joiner });
+    const peer = h.getPeer(0),
+        control = h.control(peer);
+    await waitFor(
+        async () =>
+            (await control.query
+                .getPendingInboundMessageBlockCount(forkId)
+                .request()) > 0
+    );
+    // the pending join is the newest block of the run the refresh loads
+    const joinBlockHash = await h.execOnHost(
+        peer,
+        async (sm, args) =>
+            String(
+                (
+                    await sm.eventSyncService.readPinnedChainMembership(
+                        args.channelId
+                    )
+                ).balance.latestInboundMessageBlockHash
+            ),
+        { channelId: h.channelId }
+    );
+    await control.stub.observeAdmission({ holdInboundRun: true }).request();
+    const pending = h.execOnHost(peer, (sm) =>
+        sm.membershipService.refreshOnChainEligibility()
+    );
+    try {
+        await waitFor(
+            async () =>
+                (await control.stub.getAdmissionObservation().request())
+                    .inboundRunLoads === 1
+        );
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                await sm.resetChannel();
+                if (args.reselect) await sm.setChannelId(args.channelId);
+            },
+            { reselect, channelId: h.channelId }
+        );
+        await control.stub.releaseAdmissionInboundRun().request();
+        const refreshed = await pending;
+        return {
+            refreshed,
+            joinBlockStored: await h.execOnHost(
+                peer,
+                (sm, args) =>
+                    sm.storage.inboundMessages.getMessageBlock(args.hash) !==
+                    undefined,
+                { hash: joinBlockHash }
+            ),
+            joiner: await control.query
+                .getSourceEligibility(joiner.address)
+                .request(),
+            participant: await control.query
+                .getSourceEligibility(h.getPeer(1).address)
+                .request()
+        };
+    } finally {
+        await control.stub.releaseAdmissionInboundRun().request();
+        await pending;
+        await control.stub.restoreAdmissionObservation().request();
+    }
+}
+
 export async function eligibilityAppearsDuringRefresh() {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 0, { maxChannelParticipants: 3 });

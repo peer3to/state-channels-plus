@@ -12,7 +12,8 @@ import {
     eligibilityAppearsDuringRefresh,
     observeSourceEligibility,
     observeSlashDuringRefresh,
-    refreshOvertakenByReset
+    refreshOvertakenByReset,
+    refreshOvertakenByResetMidSynchronization
 } from "@test/fixtures/SourceEligibilityFixture";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -115,6 +116,26 @@ describe("Unit: MembershipService", function () {
         expect(await refreshOvertakenByReset()).to.deep.equal({
             refreshed: false,
             membershipSyncs: 0
+        });
+    });
+    it("a refresh the channel reset overtakes after its inbound run loaded writes no inbound block or eligibility", async () => {
+        expect(
+            await refreshOvertakenByResetMidSynchronization(false)
+        ).to.deep.equal({
+            refreshed: false,
+            joinBlockStored: false,
+            joiner: SourceEligibility.ABSENT,
+            participant: SourceEligibility.ABSENT
+        });
+    });
+    it("a refresh the channel reset overtakes after its inbound run loaded writes nothing into the same channel selected again", async () => {
+        expect(
+            await refreshOvertakenByResetMidSynchronization(true)
+        ).to.deep.equal({
+            refreshed: false,
+            joinBlockStored: false,
+            joiner: SourceEligibility.ABSENT,
+            participant: SourceEligibility.ABSENT
         });
     });
     it("a committed off-chain addition during refresh is eligible when the chain result misses it", async () => {
