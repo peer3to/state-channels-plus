@@ -56,8 +56,11 @@ export default class SnapshotUpdateService {
     }
 
     /** Resolves false only when the chain refused the post on a disputed fork. */
-    public async postStateSnapshotWait(forkId: ForkId): Promise<boolean> {
-        const submission = await this.submitStateSnapshot(forkId);
+    public async postStateSnapshotWait(
+        forkId: ForkId,
+        options?: { forkAdoptionOnly?: boolean }
+    ): Promise<boolean> {
+        const submission = await this.submitStateSnapshot(forkId, options);
         return submission?.completion ?? true;
     }
 

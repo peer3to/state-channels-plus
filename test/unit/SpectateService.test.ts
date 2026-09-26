@@ -3,6 +3,10 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    applyAnchoredSyncPayload,
+    forgedOutboundBlock
+} from "@test/fixtures/HistoricSyncStaging";
+import {
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
@@ -438,6 +442,50 @@ describe("Unit: SpectateService", function () {
             } finally {
                 await stub.restoreRecordedSyncRejections().request();
             }
+        });
+    });
+
+    describe("historic verification rejections", function () {
+        it("proof ending at the on-chain height with another snapshot → rejected, the on-chain snapshot is not the proved snapshot", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload, onChainSnapshot) => {
+                    payload.milestoneSnapshots.at(-1)!.blockHeight = BigInt(
+                        onChainSnapshot.blockHeight
+                    );
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([
+                "on-chain snapshot is not the proved snapshot"
+            ]);
+        });
+
+        it("milestone snapshot above the on-chain anchor altered → rejected, milestones invalid", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    const last = payload.milestoneSnapshots.at(-1)!;
+                    last.timestamp = BigInt(last.timestamp) + 1n;
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["milestones invalid"]);
+        });
+
+        it("outbound block above the on-chain anchor forged → rejected, latest-fork outbound blocks invalid", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    payload.outboundMessageBlocksOfTheLatestFork.push(
+                        forgedOutboundBlock(payload)
+                    );
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([
+                "latest-fork outbound blocks invalid"
+            ]);
         });
     });
 

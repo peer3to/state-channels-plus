@@ -67,6 +67,7 @@ export type StubKey =
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
+    | "adoptionPostFailure"
     | "expiredCalldataPost"
     | "broadcast"
     | "calldataPosting"
@@ -511,6 +512,8 @@ export class StubService extends ANetworkRpcService<
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
     /** The first parked send's custom revert name once released, or null when it was mined. */
     snapshotPostSendOutcome?: Promise<string | null>;
+    /** Call names of every multicall this peer sent while the adoption-post failure stub was installed. */
+    recordedMulticallNames: string[][] = [];
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
@@ -2175,6 +2178,55 @@ export class StubService extends ANetworkRpcService<
             original as StateChannelManagerInterface["multicall"];
         this.stubOriginals.delete("snapshotPostSend");
         return true;
+    }
+
+    /**
+     * Fail this peer's first adopt-only snapshot post (a multicall whose only
+     * call is `updateStateSnapshotFork`) at its send, and record the call
+     * names of every multicall the peer sends; later sends run for real.
+     */
+    public installAdoptionPostFailure(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("adoptionPostFailure")) {
+            this.stubOriginals.set("adoptionPostFailure", contract.multicall);
+        }
+        const original = this.stubOriginals.get(
+            "adoptionPostFailure"
+        ) as StateChannelManagerInterface["multicall"];
+        this.recordedMulticallNames = [];
+        let failed = false;
+        contract.multicall = new Proxy(original, {
+            apply: (target, receiver, parameters) => {
+                const names = (parameters[0] as string[]).map(
+                    (data) =>
+                        contract.interface.parseTransaction({ data })?.name ??
+                        "unknown"
+                );
+                this.recordedMulticallNames.push(names);
+                if (
+                    !failed &&
+                    names.length === 1 &&
+                    names[0] === "updateStateSnapshotFork"
+                ) {
+                    failed = true;
+                    return Promise.reject(
+                        new Error("injected adoption post send failure")
+                    );
+                }
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
+    }
+
+    /** Restore the real send; the call names recorded while installed. */
+    public restoreAdoptionPostFailure(): string[][] {
+        const original = this.stubOriginals.get("adoptionPostFailure");
+        if (original !== undefined) {
+            this.sm.stateChannelManagerContract.multicall =
+                original as StateChannelManagerInterface["multicall"];
+            this.stubOriginals.delete("adoptionPostFailure");
+        }
+        return this.recordedMulticallNames;
     }
 
     /** Resolve with the parked count once a post is held at its send. */

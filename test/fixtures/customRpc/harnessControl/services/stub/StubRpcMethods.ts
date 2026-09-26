@@ -1738,6 +1738,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return (await outcome) ?? null;
     }
 
+    /** Fail this peer's first adopt-only snapshot post at its send; record every multicall's call names. */
+    public stubFailFirstAdoptionPost(): boolean {
+        this.service.installAdoptionPostFailure();
+        return true;
+    }
+
+    /** The multicall call names recorded so far by the adoption-post failure stub. */
+    public getRecordedMulticallNames(): string[][] {
+        return this.service.recordedMulticallNames;
+    }
+
+    /** Restore the real send; the recorded multicall call names. */
+    public restoreAdoptionPost(): string[][] {
+        return this.service.restoreAdoptionPostFailure();
+    }
+
     /** Resolves once a post is parked at its send; parked count. */
     public waitForHeldSnapshotPostSend(): Promise<number> {
         return this.service.waitForHeldSnapshotPostSend();

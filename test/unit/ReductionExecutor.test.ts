@@ -316,6 +316,51 @@ describe("Unit: ReductionExecutor", function () {
         });
     });
 
+    describe("fork adoption after the reduce", function () {
+        it("the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index
+            );
+            // only this peer reduces; the others keep their reduction timers held
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+
+            const chainForkId = async () =>
+                (await h.channelManager.getStateSnapshot(h.channelId))
+                    .forkId as ForkId;
+            await waitFor(
+                async () =>
+                    (await adoption.recorded()).filter(
+                        (names) =>
+                            names.length === 1 &&
+                            names[0] === "updateStateSnapshotFork"
+                    ).length === 2 && (await chainForkId()) !== sourceForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            const recorded = await adoption.restore();
+            const reducedForkId = (
+                await h.channelManager.getReducedResult(
+                    h.channelId,
+                    sourceForkId
+                )
+            ).reducedForkId as ForkId;
+
+            // the reduce is its own transaction, never bundled with the adoption
+            expect(recorded).to.deep.include(["reduceAndFinalize"]);
+            expect(
+                recorded.some(
+                    (names) =>
+                        names.length > 1 &&
+                        names.includes("updateStateSnapshotFork")
+                )
+            ).to.equal(false);
+            expect(await chainForkId()).to.equal(reducedForkId);
+        });
+    });
+
     describe("getSyncedForkDisputes", function () {
         // a dispute commitment lands on-chain before our onDisputeCommitted
         // handler stores the struct. tryReduce firing in that gap used to

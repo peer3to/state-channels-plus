@@ -9,17 +9,9 @@ import NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
 import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
-import {
-    Codec,
-    getChecksumAddress,
-    hash,
-    tryDecodeCustomError,
-    Type
-} from "@/utils";
+import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ethers } from "ethers";
 
 export interface SyncRequest {
     channelId: ChannelId;
@@ -191,7 +183,6 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             //      2.1) persist/update the localEVM with them
             //      2.2) verify that they're expired - if they're not expired abort
             //      2.3) reduce them if they're not already reduced (do this locally + package calldata for a single multicall later to the RPC node) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
-            //      Later this will be `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) a single atomic transaction that doesn't persist the state locally, so we don't have edge cases when we 'do' persit and when we 'do not'
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
             //      2.6) verify final genesisSnapshot is correct -> abort otherwise
@@ -200,9 +191,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             //      2.9) verify stateProof proves latest state -> abort otherwise
             //      2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
-            // 3) Finally - On the RPC node as a staticcall `eth_call`(multicall(reduceAll,updateStateSnapshotFork,updateStateSnapshotSameFork)) to deduct failure/success -> on failure abort
+            //      2.9 and 2.10 start at the on-chain snapshot when it is on the proven fork, so pruned history is never needed
+            // 3) no adoption is simulated against the live chain; the checks above are the verification
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            // This allows us to manually update the snapshot later at will AT LEAST to the state that we were synced (that's why we're reusing the solidity function, so we know that the TX will succeed)
             //
             // 5) set some syncFlag to true that will start executing the onBlockConfirmation pipeline with `SpectateStrategy` from un-finalized blocks
 
@@ -220,9 +211,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 (disputeWindow) => disputeWindow.forkId
             );
             // Another sync may have finalized this window only in the shared
-            // local EVM. Only chain finality can omit reduction from the multicall.
+            // local EVM. Only chain finality can skip the local reduction.
             // Read finality first: a later window fetch includes any reduction that
-            // lands between reads, while a false decision safely keeps its calldata.
+            // lands between reads, while a false decision safely reduces locally.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
@@ -474,7 +465,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            const { shouldAbort } = await this.persistSyncPayload(syncPayload);
+            const { shouldAbort } = await this.persistSyncPayload(
+                syncPayload,
+                onProvenFork ? onChainSnapshot.blockHeight : 0
+            );
             if (shouldAbort)
                 return this.rejectSync(
                     peerAddress,
@@ -892,8 +886,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return disputeWindows;
     }
 
+    // blocks and snapshots below `anchorHeight` were only link-checked, never verified -> not persisted
     public async persistSyncPayload(
-        syncPayload: SyncPayload
+        syncPayload: SyncPayload,
+        anchorHeight: number = 0
     ): Promise<{ shouldAbort: boolean }> {
         const stateManager = this.p2pManager.stateManager;
         return await stateManager.withMutex(
@@ -928,7 +924,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
                 const finalizedBlocks = this.getFinalizedBlocksFromStateProof(
                     syncPayload.stateProof
-                );
+                ).filter((block) => block.height >= anchorHeight);
                 if (this.hasAnyBlockConflict(finalizedBlocks)) {
                     return { shouldAbort: true };
                 }
@@ -959,9 +955,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
                 this.persistFinalizedBlocks(finalizedBlocks);
                 for (const snapshot of syncPayload.milestoneSnapshots)
-                    storage.stateSnapshots.storeStateSnapshot(
-                        StateSnapshot.from(snapshot)
-                    );
+                    if (Number(snapshot.blockHeight) >= anchorHeight)
+                        storage.stateSnapshots.storeStateSnapshot(
+                            StateSnapshot.from(snapshot)
+                        );
                 for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
                     storage.outboundMessages.store(omb);
                 for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)

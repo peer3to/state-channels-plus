@@ -342,6 +342,34 @@ export default class ReductionExecutor {
         return { calldata: [reduceCalldata] };
     }
 
+    // a failed adoption post is retried once; a refusal on chain is final
+    private adoptReducedFork(forkId: ForkId, retries: number): void {
+        DetachedPromises.collect(
+            this.stateManager.snapshotUpdateService
+                .postStateSnapshotWait(forkId, { forkAdoptionOnly: true })
+                .then(
+                    () => undefined,
+                    (error) => {
+                        if (retries === 0 || this.stateManager.isDisposed)
+                            throw error;
+                        this.logger.warn(
+                            "Fork adoption post failed, retrying once",
+                            {
+                                forkId,
+                                error: errorMessage(error)
+                            }
+                        );
+                        this.stateManager.timeoutManager.scheduleTask(
+                            () => this.adoptReducedFork(forkId, retries - 1),
+                            this.stateManager.timeConfig.chainFallbackTime *
+                                1000,
+                            `adoptReducedFork-${forkId}`
+                        );
+                    }
+                )
+        );
+    }
+
     private async simulateSubmission(
         forkId: ForkId,
         candidate: LocalReductionCandidate,
@@ -398,12 +426,7 @@ export default class ReductionExecutor {
                 await tx.wait();
                 // the reduce is mined -> adopt the latest undisputed fork
                 if (!this.stateManager.isDisposed)
-                    DetachedPromises.collect(
-                        this.stateManager.snapshotUpdateService.postStateSnapshot(
-                            candidate.reducedForkId,
-                            { forkAdoptionOnly: true }
-                        )
-                    );
+                    this.adoptReducedFork(candidate.reducedForkId, 1);
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
