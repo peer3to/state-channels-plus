@@ -7,9 +7,10 @@ import {
     removeScratchRoots,
     runGateLaunchProbe,
     runChromiumPreCheck,
+    runBrowserTypecheckCheck,
+    runBrowserOnlyRunner,
     browsersPathWith,
     waitForGateReady,
-    writeBuildCommand,
     writeGate,
     writeGateTree,
     writeIdlingGate
@@ -65,24 +66,15 @@ const { browserChromiumFailure } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
         browserChromiumFailure: () => Promise<Error | null>;
     };
-const {
-    TASK_RUNNERS,
-    countTasksForRunner,
-    requiresChainSlot,
-    tierBuildFailure
-} = require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
-    TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
-    tierBuildFailure: (
-        command: string,
-        args: string[],
-        messages: { missing: string; failed: string }
-    ) => Error | null;
-    countTasksForRunner: (
-        tasks: { runner?: string }[],
-        runner?: string
-    ) => number;
-    requiresChainSlot: (task: { runner?: string }) => boolean;
-};
+const { TASK_RUNNERS, countTasksForRunner, requiresChainSlot } =
+    require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+        TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
+        countTasksForRunner: (
+            tasks: { runner?: string }[],
+            runner?: string
+        ) => number;
+        requiresChainSlot: (task: { runner?: string }) => boolean;
+    };
 const { toWireTask, fromWireTask } =
     require("../../scripts/e2e-parallel/distributed/taskWire.js") as {
         toWireTask: (
@@ -553,43 +545,42 @@ describe("browser task admission order", function () {
 });
 
 describe("browser typecheck boundary", function () {
-    it("names the browser tier when its build command cannot be run", function () {
-        const failure = tierBuildFailure("scp-no-such-build-command", [], {
-            missing:
-                "Install the project dependencies, or re-run with --no-browser to skip the browser tier.",
-            failed: "unused"
-        });
-        expect(failure?.message).to.contain("Could not run");
-        expect(failure?.message).to.contain("--no-browser");
+    it("names the browser tier when yarn cannot be run for the browser typecheck", function () {
+        const output = runBrowserTypecheckCheck();
+        expect(output).to.match(/^FAILED /);
+        expect(output).to.contain("Could not run `yarn typecheck:browser`");
+        expect(output).to.contain("--no-browser");
     });
 
     it("preserves a nonzero browser typecheck exit in the diagnostic", function () {
-        const { command } = writeBuildCommand("build", "exit 3");
-        const failure = tierBuildFailure(command, [], {
-            missing: "unused",
-            failed: "Fix the build, or re-run with --no-browser."
-        });
-        expect(failure?.message).to.contain("exit 3");
-        expect(failure?.message).to.contain("--no-browser");
+        const output = runBrowserTypecheckCheck("exit 3");
+        expect(output).to.contain("`yarn typecheck:browser` failed (exit 3)");
+        expect(output).to.contain("browser typecheck");
+        expect(output).to.contain("--no-browser");
     });
 
     it("reports a browser typecheck killed by a signal as a failure", function () {
-        const { command } = writeBuildCommand(
-            "build",
-            "kill -TERM $$; sleep 5"
-        );
-        const failure = tierBuildFailure(command, [], {
-            missing: "unused",
-            failed: "Fix the build, or re-run with --no-browser."
-        });
-        expect(failure?.message).to.contain("signal SIGTERM");
+        const output = runBrowserTypecheckCheck("kill -TERM $$; sleep 5");
+        expect(output).to.contain("failed (signal SIGTERM)");
+        expect(output).to.contain("--no-browser");
     });
 
-    it("reports no failure for a build that succeeds", function () {
-        const { command } = writeBuildCommand("build", "exit 0");
-        expect(
-            tierBuildFailure(command, [], { missing: "u", failed: "u" })
-        ).to.equal(null);
+    it("reports no failure for a browser typecheck that succeeds", function () {
+        expect(runBrowserTypecheckCheck("exit 0")).to.equal("READY");
+    });
+
+    it("admits the gate once the browser typecheck passes", function () {
+        const run = runBrowserOnlyRunner("exit 0");
+        expect(run.gateRan).to.equal(true);
+    });
+
+    it("stops the run before admitting any gate when the browser typecheck fails", function () {
+        const run = runBrowserOnlyRunner("exit 3");
+        expect(run.status).to.not.equal(0);
+        expect(run.output).to.contain(
+            "`yarn typecheck:browser` failed (exit 3)"
+        );
+        expect(run.gateRan).to.equal(false);
     });
 });
 

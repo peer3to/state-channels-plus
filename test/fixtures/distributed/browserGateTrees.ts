@@ -265,3 +265,80 @@ export function browsersPathWith(builds: Array<"chromium" | "headless-shell">) {
     }
     return root;
 }
+
+/**
+ * A bin directory whose only command is a `yarn` running `script`, so a check
+ * that shells out to `yarn typecheck:browser` meets a controlled outcome.
+ * Without a script the directory is empty and `yarn` cannot be run at all.
+ */
+function yarnBin(script?: string) {
+    if (script === undefined) return scratchRoot("yarn-bin-");
+    return writeBuildCommand("yarn", script).root;
+}
+
+/**
+ * Run the runner's browser typecheck check in a child process whose PATH holds
+ * only a `yarn` running `yarnScript` (or no `yarn` at all). Prints "READY" when
+ * the check passes and "FAILED <message>" when it reports a failure.
+ */
+export function runBrowserTypecheckCheck(yarnScript?: string) {
+    const script = `
+        const { browserTypecheckFailure } = require(${JSON.stringify(TASK_RUNNERS)});
+        const failure = browserTypecheckFailure();
+        process.stdout.write(
+            failure ? "FAILED " + failure.message.replace(/\\s+/g, " ") : "READY"
+        );
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        env: { ...process.env, PATH: yarnBin(yarnScript) }
+    });
+    return `${result.stdout}${result.stderr}`;
+}
+
+/**
+ * Start the real runner with `--browser-only` in an owned project holding one
+ * gate that writes a marker file, with PATH giving it only a `yarn` running
+ * `yarnScript`. The marker shows whether the gate was ever admitted.
+ */
+export function runBrowserOnlyRunner(yarnScript: string) {
+    const project = scratchRoot("browser-runner-");
+    const marker = path.join(project, "gate-ran");
+    const gate = path.join(project, "test", "browser", "run-marker.mjs");
+    fs.mkdirSync(path.dirname(gate), { recursive: true });
+    fs.writeFileSync(
+        gate,
+        `import fs from "fs";\nfs.writeFileSync(${JSON.stringify(marker)}, "ran");\n`
+    );
+    // The runner launches a gate through the project's Hardhat CLI; this one
+    // stands in for `hardhat browser-test --script <gate>` by importing it.
+    const hardhat = path.join(project, "node_modules", "hardhat");
+    fs.mkdirSync(path.join(hardhat, "internal", "cli"), { recursive: true });
+    fs.writeFileSync(
+        path.join(hardhat, "package.json"),
+        JSON.stringify({ name: "hardhat", version: "0.0.0" })
+    );
+    fs.writeFileSync(
+        path.join(hardhat, "internal", "cli", "cli.js"),
+        'const script = process.argv[process.argv.indexOf("--script") + 1];\n' +
+            'import(require("url").pathToFileURL(script).href);\n'
+    );
+    const result = spawnSync(
+        process.execPath,
+        [
+            path.join(REPO_ROOT, "scripts", "test-e2e-parallel.js"),
+            "--browser-only"
+        ],
+        {
+            cwd: project,
+            encoding: "utf8",
+            env: { ...process.env, PATH: yarnBin(yarnScript) }
+        }
+    );
+    return {
+        status: result.status,
+        output: `${result.stdout}${result.stderr}`,
+        gateRan: fs.existsSync(marker)
+    };
+}
