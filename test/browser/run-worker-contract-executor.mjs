@@ -19,15 +19,14 @@ const require = createRequire(import.meta.url);
 // the crash-log smoke's crash is deliberate; every other console error fails
 const BROWSER_WORKER_CRASH_MESSAGE =
     "browser worker answer precompile async crash";
-// Budget for one in-page scenario. The slowest (the inline SDK host disposals)
-// takes ~39s on an idle machine, and a gate scheduled on a farm worker shares
-// its CPU with other tasks: at the old 45s it timed out at 45.04s there. Every
-// wait in this gate is sized from the same contention, including Playwright's
-// own default — module load waits for Vite to transpile all of `src` in the
-// page, the most load-sensitive step here.
-const SMOKE_TIMEOUT_MS = 120_000;
-// Uploads only have to reach the receiver, so they get a quarter of that.
-const UPLOAD_TIMEOUT_MS = SMOKE_TIMEOUT_MS / 4;
+// Budget for one in-page scenario. Each SDK setup shares its realm's stack
+// deployment (see sdkSetup.js), so no scenario pays for more than one deploy.
+const SMOKE_TIMEOUT_MS = 45_000;
+// Playwright's own default: module load waits for Vite to transpile all of
+// `src` in the page, the most load-sensitive step here.
+const PAGE_TIMEOUT_MS = 60_000;
+// Uploads only have to reach the receiver.
+const UPLOAD_TIMEOUT_MS = 15_000;
 // what the crash-log smoke files under; must match crash-log-smoke.js
 const CRASH_LOG_MAIN_PEER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const CRASH_LOG_MAIN_MARKER = "browser main entry";
@@ -180,7 +179,7 @@ try {
     browser = await launchChromium(chromium);
     const page = await browser.newPage();
     await installSdkRuntimeConfig(page, `http://127.0.0.1:${address.port}`);
-    page.setDefaultTimeout(SMOKE_TIMEOUT_MS);
+    page.setDefaultTimeout(PAGE_TIMEOUT_MS);
     const browserErrors = [];
 
     page.on("pageerror", (error) => {
