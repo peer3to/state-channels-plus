@@ -1,7 +1,11 @@
 // @spec-test-coverage-ignore: pinned sync staging exercised by explicit component and E2E declarations
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { getBytes, keccak256, Wallet, ZeroHash } from "ethers";
 
@@ -19,22 +23,7 @@ export async function assertComputedSuccessorSync(
     try {
         await h.control(source).stub.startTryReduce(sourceForkId).request();
         await waitFor(async () => (await hold.entered()) === 1);
-        const successor = await h.execOnHost(
-            source,
-            async (sm, { forkId }) => {
-                const disputes = await sm.agreementManager.getForkDisputes(
-                    (await sm.eventSyncService.loadSynchronizedWindowCommitments(
-                        sm.channelId,
-                        forkId
-                    ))!
-                );
-                return (await sm.reductionManager.computeReductionLocally(
-                    forkId,
-                    disputes
-                ))!.reducedForkId;
-            },
-            { forkId: sourceForkId }
-        );
+        const successor = await computeSuccessorForkId(h, source, sourceForkId);
         expect(
             await h.execOnHost(
                 source,
@@ -124,22 +113,7 @@ export async function assertSyncKeepsChainDisputeConfirmation(
     try {
         await h.control(source).stub.startTryReduce(sourceForkId).request();
         await waitFor(async () => (await hold.entered()) === 1);
-        const successor = await h.execOnHost(
-            source,
-            async (sm, { forkId }) => {
-                const disputes = await sm.agreementManager.getForkDisputes(
-                    (await sm.eventSyncService.loadSynchronizedWindowCommitments(
-                        sm.channelId,
-                        forkId
-                    ))!
-                );
-                return (await sm.reductionManager.computeReductionLocally(
-                    forkId,
-                    disputes
-                ))!.reducedForkId;
-            },
-            { forkId: sourceForkId }
-        );
+        const successor = await computeSuccessorForkId(h, source, sourceForkId);
         const response = await h.execOnHost(
             observer,
             async (sm, args) =>
@@ -197,6 +171,30 @@ export async function assertSyncKeepsChainDisputeConfirmation(
     } finally {
         await hold.release();
     }
+}
+
+// The fork id the source's local reduction of `sourceForkId` produces.
+function computeSuccessorForkId(
+    h: MathPeerTestHarness,
+    source: TestPeer<HarnessControlRpc, MathStateMachine>,
+    sourceForkId: ForkId
+): Promise<ForkId> {
+    return h.execOnHost(
+        source,
+        async (sm, { forkId }) => {
+            const disputes = await sm.agreementManager.getForkDisputes(
+                (await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                    sm.channelId,
+                    forkId
+                ))!
+            );
+            return (await sm.reductionManager.computeReductionLocally(
+                forkId,
+                disputes
+            ))!.reducedForkId;
+        },
+        { forkId: sourceForkId }
+    );
 }
 
 export async function assertPinnedHeight(
