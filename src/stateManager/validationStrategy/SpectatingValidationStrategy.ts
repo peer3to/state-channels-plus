@@ -4,6 +4,7 @@ import AValidationStrategy, {
 import type BlockValidationStrategy from "./BlockValidationStrategy";
 import type BlockQueueManager from "../ingest/BlockQueueManager";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
@@ -12,7 +13,7 @@ import {
     getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import { BlockValidationResult, Signature } from "@/types";
+import { Address, BlockValidationResult, Signature } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Logger } from "@/utils";
 import {
@@ -58,6 +59,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
                 return true;
             case BlockValidationResult.DISPUTE:
                 return false;
+            case BlockValidationResult.CLOSED:
+                // the strategy already closed it without a verdict
+                return true;
             default:
                 return true;
         }
@@ -72,7 +76,19 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
-    public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
+    public async wrongChannel(
+        _block: Block,
+        senderAddress?: Address
+    ): Promise<BlockValidationResult> {
+        // Same rule as the live strategy: a copy for another channel closes
+        // the sender's connection without a verdict.
+        if (senderAddress) {
+            this.p2pManager.disconnectConnection(
+                senderAddress,
+                DisconnectPolicy.ALLOW
+            );
+            return BlockValidationResult.CLOSED;
+        }
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(

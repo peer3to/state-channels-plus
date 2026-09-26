@@ -16,7 +16,8 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
      * is mutual-cooperation: a request must be answerable with a valid proof. A
      * missing peer address, or a target we can't prove (bad/above-latest height,
      * unknown fork), disconnects and blacklists the requester and throws, so its
-     * `.request(...)` rejects and it blacklists us in turn.
+     * `.request(...)` rejects and it blacklists us in turn. A request about
+     * another channel is closed without a verdict and also throws.
      */
     public async onSpectateRequest(
         syncRequest: SyncRequest
@@ -32,6 +33,22 @@ class SpectateServiceRpcMethods extends ANetworkRpcMethods<SpectateService> {
                 "spectate request without peer address"
             );
             throw new Error("onSpectateRequest - missing peer address");
+        }
+        // This runtime proves only the channel it serves now. A request about
+        // another one, such as the channel it left, is not judged: the
+        // connection closes without a verdict, so an honest peer still on that
+        // channel can reconnect while repeats cost a reconnect each.
+        const stateManager = this.service.p2pManager.stateManager;
+        if (String(syncRequest.channelId) !== String(stateManager.channelId)) {
+            this.service.logger.debug(
+                "Spectate request for another channel, disconnecting",
+                { peerAddress, channelId: syncRequest.channelId }
+            );
+            this.service.p2pManager.disconnectConnection(
+                senderTransport,
+                DisconnectPolicy.ALLOW
+            );
+            throw new Error("onSpectateRequest - not this runtime's channel");
         }
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)

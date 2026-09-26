@@ -15,7 +15,7 @@ Implementation:
 [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
 Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L359).
 Evidence consumer:
-[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
+[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L237).
 
 ## 1. Purpose & position in the protocol
 
@@ -72,7 +72,7 @@ survive the WebRTC transport upgrade, [./README.md](./README.md) §6.8):
 | ---------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `disputedForks: Set<ForkId>`                               | Forks for which this node already ran its outgoing round. | `requestDisputeAcknowledgment` (add-only)        | same method (dedup of the whole round)                                                                                                                                |
 | `myAcknowledgementsByAddress: Map<address, Set<ForkId>>`   | Forks **I acknowledged to** each peer (responder side).   | `IAcknowledgeDisputedFork` via the handler       | handler duplicate check                                                                                                                                               |
-| `peerAcknowledgementsByAddress: Map<address, Set<ForkId>>` | Forks **each peer acknowledged to me** (requester side).  | `peerAcknowledgesDisputedFork` on a `true` reply | [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220) — the Byzantine-build check |
+| `peerAcknowledgementsByAddress: Map<address, Set<ForkId>>` | Forks **each peer acknowledged to me** (requester side).  | `peerAcknowledgesDisputedFork` on a `true` reply | [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L237) — the Byzantine-build check |
 
 **Lifetime and cleanup: none.** All three structures are add-only for the life of the process;
 nothing prunes entries on fork resolution, channel close, peer blacklisting, or disposal.
@@ -155,7 +155,7 @@ its only effect is the same record a truthful `true` produces).
 ## 5. The evidence chain: what an ack buys
 
 The point of the bookkeeping is stage-gating the punishment for dead-fork gossip. In
-[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220):
+[`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L237):
 for a block arriving on a disputed fork, every source peer with a recorded
 `didPeerAcknowledgeDisputedFork(peer, forkId)` is disconnected + blacklisted; if **all**
 suppliers had acknowledged, the block is judged `DISCONNECT` (nothing honest to wait for),
@@ -292,6 +292,9 @@ and a mismatch costs a plain close with no verdict rather than a blacklist, beca
 honest former peers may still ask about the channel it left. Consequences (1) and the chain-read
 oracle are closed for the responder. The fork-only keying in (2) and (3) and signed
 acknowledgements remain open under [`OQ-36-WEN9T1`](../../../../open-questions.md#oq-36-wen9t1).
+The engineer later extended the same rule to the two other requests a former peer can still send: a
+block push for another channel ([state-transition.md](state-transition.md) §4.6) and a sync request
+for another channel ([SpectateRpcMethods](../../../../source/src/rpc/network/services/spectate/SpectateRpcMethods.ts.md)).
 
 ## 7. Failure outcomes
 

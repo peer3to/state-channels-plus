@@ -23,10 +23,11 @@ The audit-replay context: live gates off, per-block pre-state positioning, devia
 
 ## Key design decisions
 
-Sourceless historical replay strips irrelevant unrecoverable confirmations and continues the objective pipeline. It does not invent a signer or construct a fraud proof from an unrecoverable signature. Required proof evidence remains subject to the canonical on-chain verifier; historical membership is not replaced by today's network source filter. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L135).
+Sourceless historical replay strips irrelevant unrecoverable confirmations and continues the objective pipeline. It does not invent a signer or construct a fraud proof from an unrecoverable signature. Required proof evidence remains subject to the canonical on-chain verifier; historical membership is not replaced by today's network source filter. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L140).
 
 1. **Kill only on canonical failure:** a local linkage gap alone must not kill an honest dispute — the canonical structure predicate decides ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
 2. **Replay survives discovered double-signs** (the dispute may still be honest); the proof is stored for separate enforcement.
+3. **`CLOSED` cannot occur in replay** and throws like the other live-only results ([#L112](../../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L112)): replay has no transport to close.
 
 ## Inputs, outputs, state, and side effects
 

@@ -1,6 +1,10 @@
 import { DisconnectTier } from "@/DisconnectPolicy";
 import { Status } from "@/types";
 import { assertClean } from "@test/fixtures/DiscoveryRuntimePortStaging";
+import {
+    assertForeignChannelBlockClosesWithoutVerdict,
+    assertForeignChannelSyncRequestClosesWithoutVerdict
+} from "@test/fixtures/ForeignChannelStaging";
 import { assertLeftParticipantParticipatesInNextChannel } from "@test/fixtures/ReusedParticipantStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { waitFor } from "@test/utils/waitFor";
@@ -292,6 +296,14 @@ describe("E2E: Channel reuse", function () {
             strikes: 0
         });
         await disconnects.restore();
+    });
+
+    it("a peer pushing a block of the channel the runtime left is disconnected without a verdict", async function () {
+        await assertForeignChannelBlockClosesWithoutVerdict();
+    });
+
+    it("a peer asking the runtime to prove the channel it left is disconnected without a verdict", async function () {
+        await assertForeignChannelSyncRequestClosesWithoutVerdict();
     });
 
     it("explicit disposal still shuts down a runtime that was reused", async function () {

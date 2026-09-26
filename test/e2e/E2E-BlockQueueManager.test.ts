@@ -167,8 +167,9 @@ describe("E2E: BlockQueueManager", function () {
             waitForProcessed: false
         });
 
-        // Sent over the real state-transition RPC, the observer rejects it
-        // and cuts + blacklists the sending transport.
+        // Sent over the real state-transition RPC, the observer rejects it and
+        // cuts the sending transport without a verdict: the sender may still
+        // be on a channel this runtime has left.
         const sender = h.getPeer(1);
         expect(
             await h
@@ -189,16 +190,16 @@ describe("E2E: BlockQueueManager", function () {
 
         await waitFor(
             async () =>
-                await h
+                !(await h
                     .control(observer)
-                    .query.isBlacklisted(sender.address)
-                    .request(),
+                    .query.isConnectedTo(sender.address)
+                    .request()),
             h.event.protocolEventTimeoutMs()
         );
         expect(
             await h
                 .control(observer)
-                .query.isConnectedTo(sender.address)
+                .query.isBlacklisted(sender.address)
                 .request()
         ).to.equal(false);
         expect(

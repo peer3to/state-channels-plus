@@ -120,7 +120,12 @@ export default class BlockQueueManager {
                         this.stateManager.storage
                     )
                 });
-                return options.origin !== BlockOrigin.NETWORK;
+                // A copy the chain or a proof supplied is simply not this
+                // channel's; a peer's copy is judged by the strategy.
+                if (options.origin !== BlockOrigin.NETWORK) return true;
+                return strategy.interpretFinalValidationResult(
+                    await strategy.wrongChannel(block, options.senderAddress)
+                );
             }
 
             if (options.origin === BlockOrigin.NETWORK) {

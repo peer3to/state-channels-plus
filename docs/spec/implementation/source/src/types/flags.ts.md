@@ -24,11 +24,15 @@ short lifecycle meaning here, so state holders and consumers do not repeat a sec
 
 ## Key design decisions
 
-Engaged-status tests are independent declarations for each status and an unknown value; committed-status obligations remain separate. See [flags.ts](../../../../../../src/types/flags.ts#L32).
+Engaged-status tests are independent declarations for each status and an unknown value; committed-status obligations remain separate. See [flags.ts](../../../../../../src/types/flags.ts#L37).
 
-Engagement includes SYNCED, PENDING_PARTICIPANT and PARTICIPATING. Committed membership remains the narrower pending-or-participating set. See [flags.ts](../../../../../../src/types/flags.ts#L32).
+Engagement includes SYNCED, PENDING_PARTICIPANT and PARTICIPATING. Committed membership remains the narrower pending-or-participating set. See [flags.ts](../../../../../../src/types/flags.ts#L37).
 
-The shared predicate means only PENDING_PARTICIPANT or PARTICIPATING. It does not define synced, engaged, finalized or source-specific status policies. See [flags.ts](../../../../../../src/types/flags.ts#L26).
+The shared predicate means only PENDING_PARTICIPANT or PARTICIPATING. It does not define synced, engaged, finalized or source-specific status policies. See [flags.ts](../../../../../../src/types/flags.ts#L31).
+
+`BlockValidationResult.CLOSED` is appended last, so existing numeric values do not shift. It marks a
+hook that already closed its sender without a verdict, which callers must neither keep nor escalate.
+See [flags.ts](../../../../../../src/types/flags.ts#L13).
 
 `Status` is listed in lifecycle order. `DISCOVERING` is the only active caller-topic state and has no
 selected channel ID; later members describe targeted or open-channel progress.

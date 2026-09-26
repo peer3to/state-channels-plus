@@ -3,6 +3,10 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, tryDecodeCustomError, Type } from "@/utils";
 import {
+    assertSpectateRequestForAnotherChannelClosesWithoutVerdict,
+    NO_VERDICT
+} from "@test/fixtures/ForeignChannelStaging";
+import {
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
@@ -17,6 +21,11 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
+    it("a spectate request for another channel closes the asker without a verdict", async function () {
+        expect(
+            await assertSpectateRequestForAnotherChannelClosesWithoutVerdict()
+        ).to.deep.equal({ answer: "rejected", ...NO_VERDICT });
+    });
     it("concurrent identical sync requests share the completed result", async () => {
         await assertConcurrentPinnedRequests(TestSession.getHarness(), "same");
     });

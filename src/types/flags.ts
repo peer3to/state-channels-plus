@@ -5,7 +5,12 @@ export enum BlockValidationResult {
     DISPUTE,
     BROADCAST,
     NOT_ENOUGH_TIME,
-    DUPLICATE
+    DUPLICATE,
+    /**
+     * The strategy already closed the sender's connection without a verdict;
+     * the caller neither keeps it nor escalates to an exclusion.
+     */
+    CLOSED
 }
 
 export enum Status {

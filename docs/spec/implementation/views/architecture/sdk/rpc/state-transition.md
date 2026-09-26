@@ -34,7 +34,7 @@ Position in the flow:
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
   sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L519) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
-  ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
+  ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L23)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.
 - **Receiving side**: this service. It performs _no protocol validation of the payload itself_;
   it is deliberately a thin attribution-and-penalty shim in front of the pipeline. The
@@ -112,9 +112,10 @@ flowchart LR
 
 **Which failures yield `false`** is strategy policy, specified in
 [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9: inauthentic block
-(live/spectating strategies → `DISCONNECT`), and wrong-channel with an attributable sender
-(intake returns `!senderAddress`, always `false` on this path since the RPC path always
-attributes). Tolerated-`true` cases include duplicates, disputed-fork blocks, and unknown-fork
+(live/spectating strategies → `DISCONNECT`). A wrong-channel block with an attributable sender (always, on
+this path) is not a verdict: the strategy's `wrongChannel` hook closes the sender with
+`DisconnectPolicy.ALLOW` and returns `CLOSED`, which intake reports as `true`, so this caller neither
+keeps the connection nor blacklists. Tolerated-`true` cases include duplicates, disputed-fork blocks, and unknown-fork
 blocks (queued for the timeout sync probe). The catch-all also yields `false` — see the defect
 candidate in §4.1.
 
@@ -216,15 +217,19 @@ at this ingress.
 
 ### 4.6 Wrong-channel / wrong-fork traffic
 
-- **Wrong channel:** intake's channel gate. With an attributable sender (always, on this path)
-  the verdict is `false` → disconnect + blacklist. Deliberate severity: a handshake-completed
-  peer addressing the wrong channel is misdirected software or probing, and either way not a
-  useful peer. Evidence: E2E-BlockQueueManager ("wrong-channel block … cuts the transport").
+- **Wrong channel:** intake's channel gate, handled by the strategy's `wrongChannel` hook. With an
+  attributable sender (always, on this path) the sender's connection closes with
+  `DisconnectPolicy.ALLOW` and no verdict. _Engineer decision (2026-09-26), extended from
+  acknowledgement requests to block pushes:_ a runtime that has left a channel can still be reached by
+  that channel's honest peers, which cannot know it left; blacklisting them, as before, followed each
+  one by identity into every later channel. A peer repeating such pushes pays a reconnect for each.
+  Evidence: E2E-BlockQueueManager ("wrong-channel block … cuts the transport") and E2E-ChannelReuse
+  ("a peer pushing a block of the channel the runtime left …").
 - **Disputed fork:** tolerated-ignore at intake (fork queue cleared, connection kept) — the
   supplier may be an honest straggler that has not yet observed the dispute. Escalation to
   punishment is **acknowledgment-aware** and happens at validation, not ingress: suppliers who
   previously acknowledged the dispute are **knowingly** building/relaying on a dead fork and
-  are cut ([`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220));
+  are cut ([`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L237));
   see [./is-fork-disputed.md](./is-fork-disputed.md) §5 for that evidence chain.
 - **Unknown fork:** queued; an admitted source uses the queue-timeout probe; a failed sync punishes the
   suppliers ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §4.2 — note
@@ -249,7 +254,7 @@ Consistency check against the model doc's outcome table ([./README.md](./README.
 | Failure                                        | Consequence                                                 | Model-doc row                                                    | Match                                                                                                      |
 | ---------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Malformed / inauthentic confirmation           | Disconnect + blacklist by address (verdict `false`)         | "Block confirmation judged Byzantine (strategy verdict `false`)" | yes                                                                                                        |
-| Wrong-channel block (attributed sender)        | Disconnect + blacklist                                      | same row (verdict `false`)                                       | yes                                                                                                        |
+| Wrong-channel block (attributed sender)        | Disconnect without a verdict (`ALLOW`); caller told `true`  | "invalid but tolerated" row                                      | yes                                                                                                        |
 | Duplicate / disputed-fork / unknown-fork block | Ignore or queue; connection kept                            | "invalid but tolerated" row                                      | yes                                                                                                        |
 | Missing `peerAddress` behind guard             | Disconnect + blacklist of the addressless transport profile | listed under the service bullet §7                               | yes                                                                                                        |
 | **Ingest-internal error (chain read, bug)**    | Disconnect + blacklist of the sender                        | **not represented**                                              | **mismatch — the model table has no row attributing local failure to the peer; see §4.1 defect candidate** |

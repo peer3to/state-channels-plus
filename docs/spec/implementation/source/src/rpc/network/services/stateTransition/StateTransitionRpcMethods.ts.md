@@ -21,7 +21,8 @@
 
 `onBlockConfirmation`: the sole peer entry into the block pipeline. Attaches the authenticated
 sender as source attribution and hands the confirmation to ingest; a false verdict maps to
-disconnect+blacklist of the supplier.
+disconnect+blacklist of the supplier. A wrong-channel copy is not a false verdict: ingest's strategy
+hook has already closed the sender without one and reports `true`, so this endpoint does nothing more.
 
 ## Key design decisions
 

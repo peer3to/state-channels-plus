@@ -23,9 +23,10 @@ The strategy base: the verdict vocabulary (SUCCESS/NOT_READY/DISCONNECT/DISPUTE/
 
 ## Key design decisions
 
-The strategy contract includes unrecoverable confirmation values as an explicit deviation. Callers pass the classified rejected set; each strategy owns its consequence and returns the existing validation result. Work remains a QueuedBlockEntry with explicit origin and admitted source history. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/AValidationStrategy.ts#L46).
+The strategy contract includes unrecoverable confirmation values as an explicit deviation. Callers pass the classified rejected set; each strategy owns its consequence and returns the existing validation result. Work remains a QueuedBlockEntry with explicit origin and admitted source history. See [malformedConfirmationSignatures](../../../../../../../src/stateManager/validationStrategy/AValidationStrategy.ts#L53).
 
 1. **Strategy-complete deviations by construction:** every validation failure has a named hook, so adding a predicate without deciding its consequences per context cannot compile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
+2. **`wrongChannel` carries the sender only where one peer delivered the copy.** Admission passes the network sender ([#L43](../../../../../../../src/stateManager/validationStrategy/AValidationStrategy.ts#L43)); a queued entry reaches the hook with none. `CLOSED` is the result for a hook that already closed its sender without a verdict, so callers keep their hands off ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 
 ## Inputs, outputs, state, and side effects
 

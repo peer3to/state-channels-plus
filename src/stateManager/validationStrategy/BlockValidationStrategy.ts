@@ -5,6 +5,7 @@ import type BlockQueueManager from "../ingest/BlockQueueManager";
 import FraudProofService from "../utils/FraudProofService";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import DisputeManager from "@/disputeManager";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -14,7 +15,7 @@ import {
     getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import { BlockValidationResult, Signature, Status } from "@/types";
+import { Address, BlockValidationResult, Signature, Status } from "@/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
@@ -65,6 +66,9 @@ export default class BlockValidationStrategy extends AValidationStrategy {
                 return true;
             case BlockValidationResult.DISPUTE:
                 return false;
+            case BlockValidationResult.CLOSED:
+                // the strategy already closed it without a verdict
+                return true;
             default:
                 return true;
         }
@@ -74,7 +78,20 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         return BlockValidationResult.DISCONNECT;
     }
-    public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
+    public async wrongChannel(
+        _block: Block,
+        senderAddress?: Address
+    ): Promise<BlockValidationResult> {
+        // A peer still on another channel - such as one this runtime has left -
+        // cannot know it is talking to the wrong runtime. Its copy is refused
+        // without a verdict: the connection closes and it may reconnect.
+        if (senderAddress) {
+            this.p2pManager.disconnectConnection(
+                senderAddress,
+                DisconnectPolicy.ALLOW
+            );
+            return BlockValidationResult.CLOSED;
+        }
         return BlockValidationResult.DISCONNECT;
     }
     public async channelNotOpened(

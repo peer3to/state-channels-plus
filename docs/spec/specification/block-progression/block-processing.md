@@ -45,6 +45,8 @@ For each arriving confirmation:
    Failure ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)): peer-supplied → terminate the supplier; observed calldata → an objective fault by the
    poster (the required proof type is the open question [`OQ-22-99DDSZ` (Inauthentic on-chain calldata is not escalated)](../../implementation/open-questions.md#oq-22-99ddsz)).
 2. **Channel binding.** Reject a wrong-channel envelope before source refresh, proof work, or stored lookup.
+   A peer's copy closes that supplier's connection without a verdict: the supplier may still be on a channel
+   this runtime has left ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../settlement/lifecycle.md#req-lif-10-qr8nq9)).
 3. **Source check.** Network copies pass [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../peer-communication/block-gossip.md#req-gossip-4-j5z4df) before stored lookup or retention. Resolve sender eligibility through the membership owner. If still absent, await ordinary sync and end intake without queueing or merging the triggering copy. Eligible copies continue normally; slashed or unresolved copies are discarded.
 4. **Deduplicate** ([`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1)). A block already committed locally routes to the merge stage (Stage 2).
 5. **Dead-fork gate** ([`REQ-BLOCK-PIPE-9-QA66GT`](block-processing.md#req-block-pipe-9-qa66gt)). A fork the node
@@ -186,11 +188,14 @@ predicate establishes, never by who is processing it:
   from data the node already holds ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh)).
 - **Junk.** Invalid data that proves no participant fault: an author outside the participant
   union, a conflicting-but-unlinked block, an unlinked non-first block, undecodable or
-  authentication-failing data, a wrong-channel block, or a genesis conflict the node holds no
+  authentication-failing data, or a genesis conflict the node holds no
   genesis to disprove. The only offenders are the suppliers that carried it (transport
   attribution, never a channel signature). Special case: stray non-member signatures on an
   otherwise valid block are junk signatures, not a junk block — they are stripped, exactly their
   suppliers are penalized, and the block continues ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)).
+- **Foreign channel.** A block for a channel the node does not serve says nothing about this
+  channel's participants, and its supplier may still be on a channel the node has left. The
+  supplier's connection closes without a verdict; it may reconnect.
 - **Not-yet-ready.** No misbehavior is demonstrated; the node lacks the context to judge: channel
   not yet open or a block beyond the next expected height. The entry is restored to the queue unchanged; its fixed lifetime is not
   extended ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)).

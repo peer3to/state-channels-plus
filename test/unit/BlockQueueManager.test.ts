@@ -1,3 +1,4 @@
+import { DisconnectTier } from "@/DisconnectPolicy";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockConfirmationEthersType } from "@/types/ethers";
@@ -163,14 +164,21 @@ describe("Unit: BlockQueueManager", () => {
         }
     });
 
-    it("wrong channel is rejected before sender refresh or retention", async () => {
+    it("wrong channel closes the sender without a verdict before sender refresh or retention", async () => {
         const f = new QueueIntakeFixture();
         await f.start({ wrongChannel: true });
+        const disconnects = await f.h.rpcStub.recordDisconnects(0);
         try {
-            expect(await f.receive(f.strangers[0])).to.equal(false);
+            // The intake closed the sender itself, so it tells its caller to
+            // keep hands off rather than escalate to an exclusion.
+            expect(await f.receive(f.strangers[0])).to.equal(true);
             expect(await f.retention()).to.equal(null);
             expect((await f.observation()).chainReads).to.equal(0);
+            expect(await disconnects.disconnects()).to.deep.equal([
+                { peerAddress: f.strangers[0], tier: DisconnectTier.ALLOW }
+            ]);
         } finally {
+            await disconnects.restore();
             await f.close();
         }
     });
