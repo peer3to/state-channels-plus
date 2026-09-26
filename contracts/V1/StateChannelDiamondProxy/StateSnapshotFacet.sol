@@ -32,19 +32,23 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorSnapshotGenesisTimestampMismatch(genesisTimestamp, newStateSnapshot.timestamp)
         );
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
-        bool updated = false;
+        bytes32 latestForkId = currentStateSnapshot.forkId;
+        bool reachable = false;
+        DisputeWindow storage disputeWindow = disputeWindowMap[latestForkId];
         while (disputeWindow.reducedResult.forkId != bytes32(0)) {
             (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
             if (!challengePeriodExpired) break;
-            if (disputeWindow.reducedResult.forkId == targetForkId) {
-                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
-                updated = true;
-                break;
-            }
-            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
+            latestForkId = disputeWindow.reducedResult.forkId;
+            if (latestForkId == targetForkId) reachable = true;
+            disputeWindow = disputeWindowMap[latestForkId];
         }
-        require(updated, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        require(reachable, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        // adoption changes the current state -> only the latest fork, and never a disputed one
+        require(targetForkId == latestForkId, RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId));
+        require(
+            !_isForkDisputed(channelId, targetForkId), RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId)
+        );
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
     }
 
     function updateStateSnapshotSameFork(

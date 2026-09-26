@@ -137,6 +137,7 @@ error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );
 error RaceConditionSnapshotUpdateDisputedFork(bytes32 channelId, bytes32 forkId);
+error RaceConditionSnapshotUpdateNotLatestFork(bytes32 targetForkId, bytes32 latestForkId);
 error RaceConditionJoinChannelForkDisputed(bytes32 channelId, bytes32 forkId);
 error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
 error RaceConditionDisputeInboundNotLatest(
