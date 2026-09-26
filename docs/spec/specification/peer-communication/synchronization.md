@@ -113,17 +113,20 @@ Ordered verification; any failure aborts the sync with no partial effect:
    genesis state.
 6. **Short-circuit stale proofs.** If the on-chain snapshot is already at or past the proved
    position on the same fork, there is nothing to adopt; abort without penalty.
-7. **Verify the outbound ranges** linking on-chain tip → fork genesis → latest finalized snapshot.
+7. **Verify the outbound ranges** linking on-chain tip → fork genesis → latest finalized snapshot; on the proven fork
+   the range starts at the on-chain snapshot.
 8. **Check dispute status.** Latest-mode: the target fork must not be disputed on-chain.
    Pinned-mode: prove the pinned fork or a successor whose verified reduction lineage contains the pinned fork.
-9. **Verify finality.** The milestone proof must verify, and the claimed latest finalized state
-   hash must match the supplied encoded state.
+9. **Verify finality.** The milestone proof must verify from the fork genesis, or from the on-chain snapshot when it
+   is on the proven fork, and the claimed latest finalized state hash must match the supplied encoded state.
 10. **Check the channel-balance invariant** on the latest finalized snapshot against chain-anchored
     deposits and withdrawals — the defense that even a unanimous colluding participant set cannot
     make a newcomer adopt an undercollateralized snapshot
     ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6).
-11. **Simulate adoption.** Verify, without any on-chain transaction, that the implied snapshot
-    advance would succeed on-chain; a simulated revert aborts.
+11. **No adoption is simulated.** Verification is historic: on the proven fork, finality (step 9) and outbound blocks
+    (step 7) are verified from the current on-chain snapshot forward, so history the chain pruned is never needed, and
+    a dispute landing after the proof was served does not change what it proves. A responder answers with the latest
+    provable state.
 12. **Persist** the verified payload atomically through the storage system
     ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
     any conflict with locally finalized blocks. After a different fork is successfully installed,

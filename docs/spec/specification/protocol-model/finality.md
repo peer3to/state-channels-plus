@@ -144,7 +144,9 @@ Finality arrives by exactly one of three routes:
   Listing a slash the chain does not hold is provable fraud (`DisputeOnChainSlashesNotSubset`), and leaving one
   out only makes the threshold stricter. Upload admits only a dispute anchored exactly at the chain's inbound
   head ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)), which bounds the joiner walk. Unlike the
-  off-chain threshold, this set has an on-chain anchor that bounds it.
+  off-chain threshold, this set has an on-chain anchor that bounds it. The set is the participants after the
+  proof's latest block, so a leave inside the last milestone whose exit is not on chain drops the leaver from the
+  expected set; this is lenient to the disputer and never slashes an honest party.
 
 Sub-unanimous thresholds are not supported anywhere in the protocol definition.
 
