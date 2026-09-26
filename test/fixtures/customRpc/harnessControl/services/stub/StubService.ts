@@ -2620,19 +2620,24 @@ export class StubService extends ANetworkRpcService<
 
         contract.multicall = this.asRecordingContractMethod(
             contract.multicall,
-            (calls: string[], overrides?: unknown) =>
-                record(
+            (calls: string[], overrides?: unknown) => {
+                const send = () =>
+                    Reflect.apply(originals.multicall, contract, [
+                        calls,
+                        ...(overrides ? [overrides] : [])
+                    ]);
+                const described = this.describeMulticall(calls);
+                // only dispute uploads are recorded; snapshot posts and reductions pass through
+                if (!described.encodedDispute) return send();
+                return record(
                     {
-                        ...this.describeMulticall(calls),
+                        ...described,
                         method: "multicall",
                         gasLimit: this.overrideGasLimit(overrides)
                     },
-                    () =>
-                        Reflect.apply(originals.multicall, contract, [
-                            calls,
-                            ...(overrides ? [overrides] : [])
-                        ])
-                )
+                    send
+                );
+            }
         );
     }
 
