@@ -52,7 +52,7 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    verified from the current on-chain snapshot forward (step 2.9 threshold, step 2.10 lower bound with the blocks
    pruned to the on-chain outbound head), so pruned history is never needed and a dispute landing after the proof
    was served does not change what it proves. Reductions are verified on the local diamond (step 2.3) and the
-   balance invariant against chain totals (step 2.11); nothing simulates an adoption against the live chain.
+   balance invariant against chain totals (step 2.11); nothing simulates an adoption against the live chain. A proof that does not advance past the on-chain snapshot on its fork must end at exactly that snapshot (`isSnapshotNewer` decides "advance", so a fork genesis and block 0 both at height 0 are told apart) ([#L350](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L350)).
 8. **In-flight collisions answer `false` without cutting the peer; probes wait instead.** `sync` keeps
    one attempt per peer and answers a second caller `false` at once. `syncAfterInFlight` waits for the
    in-flight attempt and then runs its own, for a caller whose `false` must mean "peer cut" (the block

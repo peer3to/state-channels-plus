@@ -112,7 +112,8 @@ Ordered verification; any failure aborts the sync with no partial effect:
    genesis must satisfy the genesis-shape rules, and the genesis state hash must match the encoded
    genesis state.
 6. **Short-circuit stale proofs.** If the on-chain snapshot is already at or past the proved
-   position on the same fork, there is nothing to adopt; abort without penalty.
+   position on the same fork, there is nothing to adopt; abort without penalty. A proof that does not advance past
+   the on-chain snapshot must end at exactly that snapshot, or the proof does not extend from it.
 7. **Verify the outbound ranges** linking on-chain tip → fork genesis → latest finalized snapshot; on the proven fork
    the range starts at the on-chain snapshot.
 8. **Check dispute status.** Latest-mode: the target fork must not be disputed on-chain.
