@@ -25,7 +25,7 @@ P2pInstance remains the app-facing API and holds P2pRuntimeClientRoot directly. 
 
 `getGasUsageTable` is the caller-facing read of the peer's chain spending; it delegates to the client chain signer, which reaches the host's recorder over the port and answers rows the host has already settled. The host bounds that settle, so the read answers inside its port request timeout; a receipt still pending when the bound expires shows up on a later read. It covers only what the SDK runtime sent: a transaction the consuming application signs with its own wallet, an `open` among them, never reaches this signer and is not in the table. See [P2pInstance.ts](../../../../../../src/evm/P2pInstance.ts#L96).
 
-The constructor takes a ready communication root and the application objects assembled by setup. It exposes those objects directly and shares the root event bus. Disposal retains one promise, settles listener and root cleanup, then always disposes its application logger and reports any cleanup failure. Leave is an idempotent app operation that keeps the instance: `leaveChannel` memoizes the host request in `leavePromise` while it is pending ([#L119](../../../../../../src/evm/P2pInstance.ts#L131)), so repeated concurrent calls make one host request and receive the same promise, and it never calls `dispose()`. The memo is released in a `finally` ([#L120](../../../../../../src/evm/P2pInstance.ts#L132)) so the next channel gets its own leave; what a call after a failure sees is decided by the host's own memo, which keeps returning that failure instead of departing twice. Shutdown stays the separate explicit `dispose()`.
+The constructor takes a ready communication root and the application objects assembled by setup. It exposes those objects directly and shares the root event bus. Disposal retains one promise, settles listener and root cleanup, then always disposes its application logger and reports any cleanup failure. Leave is an idempotent app operation that keeps the instance: `leaveChannel` memoizes the host request in `leavePromise` while it is pending ([#L131](../../../../../../src/evm/P2pInstance.ts#L131)), so repeated concurrent calls make one host request and receive the same promise, and it never calls `dispose()`. The memo is released in a `finally` ([#L132](../../../../../../src/evm/P2pInstance.ts#L132)) so the next channel gets its own leave; what a call after a failure sees is decided by the host's own memo, which keeps returning that failure instead of departing twice. Shutdown stays the separate explicit `dispose()`.
 
 ## Inputs, outputs, state, and side effects
 
@@ -54,10 +54,10 @@ claims complete conformance for a requirement that depends on other files.
 - Role-consistent with the runtime views.
 - `leaveChannel` returns a promise that settles when the channel is given up and the runtime has been reset,
   and the instance stays usable afterwards, so departure is non-terminal for the SDK object
-  ([#L116](../../../../../../src/evm/P2pInstance.ts#L128), [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+  ([#L128](../../../../../../src/evm/P2pInstance.ts#L128), [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 - Releasing the leave memo only in `finally` keeps repeated concurrent calls sharing one host request while
   letting the _next_ channel have its own; the host's memo, not this one, is what makes a failed leave keep
-  returning the same failure ([#L119](../../../../../../src/evm/P2pInstance.ts#L131)).
+  returning the same failure ([#L131](../../../../../../src/evm/P2pInstance.ts#L131)).
 - `dispose` lets every teardown settle before the application logger and its descendants are disposed, so the
   realm stays reachable by a running collection until the client has finished closing
   ([`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
