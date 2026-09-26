@@ -4,6 +4,7 @@ import {
     DisputeStorage
 } from "@/storage/DisputeStorage";
 import { Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import {
     DisputeConfirmationStruct,
     SignedDisputeStruct
@@ -278,6 +279,59 @@ describe("DisputeStorage", () => {
                 firstCopy
             );
         });
+        it("keeps the first signed dispute when a later sync copy carries another disputer signature", () => {
+            const firstCopy = {
+                signedDispute: mockSignedDispute,
+                signatures: [coSignature(mockDisputeHash)]
+            };
+            storage.storeDisputeConfirmation(firstCopy, SYNC);
+            const otherSignature = coSignature(mockDisputeHash);
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: {
+                        encodedDispute: mockSignedDispute.encodedDispute,
+                        signature: otherSignature
+                    },
+                    signatures: [...firstCopy.signatures]
+                },
+                SYNC
+            );
+
+            const stored = storage.getDisputeConfirmation(mockDisputeHash);
+            expect(stored).to.equal(firstCopy);
+            expect(stored?.signedDispute.signature).to.equal(
+                mockSignedDispute.signature
+            );
+            expect(stored?.signedDispute.signature).to.not.equal(
+                otherSignature
+            );
+        });
+
+        it("takes the chain event's signed dispute when it replaces a sync copy", () => {
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            const chainSignedDispute = {
+                encodedDispute: mockSignedDispute.encodedDispute,
+                signature: coSignature(mockDisputeHash)
+            };
+
+            storage.storeDisputeConfirmation(
+                { signedDispute: chainSignedDispute, signatures: [] },
+                CHAIN_EVENT
+            );
+
+            const stored = storage.getDisputeConfirmation(mockDisputeHash);
+            expect(stored?.signedDispute).to.deep.equal(chainSignedDispute);
+            expect(stored?.signedDispute.signature).to.not.equal(
+                mockSignedDispute.signature
+            );
+        });
     });
 
     describe("READ - getDisputeConfirmation()", () => {
@@ -294,6 +348,38 @@ describe("DisputeStorage", () => {
             const nonExistentHash = ethers.hexlify(ethers.randomBytes(32));
             expect(storage.getDisputeConfirmation(nonExistentHash)).to.be
                 .undefined;
+        });
+    });
+
+    describe("READ - getDispute()", () => {
+        it("decodes the stored dispute across a sync store and a chain event replacement", () => {
+            const expected = Codec.decode(
+                mockSignedDispute.encodedDispute,
+                Type.Dispute
+            );
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: mockSignedDispute,
+                    signatures: [coSignature(mockDisputeHash)]
+                },
+                SYNC
+            );
+            expect(storage.getDispute(mockDisputeHash)).to.deep.equal(expected);
+
+            storage.storeDisputeConfirmation(
+                {
+                    signedDispute: {
+                        encodedDispute: mockSignedDispute.encodedDispute,
+                        signature: coSignature(mockDisputeHash)
+                    },
+                    signatures: []
+                },
+                CHAIN_EVENT
+            );
+            expect(storage.getDispute(mockDisputeHash)).to.deep.equal(expected);
+
+            const unknownHash = ethers.hexlify(ethers.randomBytes(32));
+            expect(storage.getDispute(unknownHash)).to.equal(undefined);
         });
     });
 

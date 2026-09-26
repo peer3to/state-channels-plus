@@ -7,6 +7,7 @@ import {
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
+    assertChainCopyReplacesSyncedDisputeConfirmation,
     assertComputedSuccessorSync,
     assertPinnedHeight,
     assertSyncKeepsChainDisputeConfirmation,
@@ -52,6 +53,11 @@ describe("Unit: SpectateService", function () {
     });
     it("successor sync with extra dispute co-signatures keeps the stored on-chain dispute confirmation", async function () {
         await assertSyncKeepsChainDisputeConfirmation(TestSession.getHarness());
+    });
+    it("a commit handler parked past its relevance check replaces a synced dispute confirmation with the chain copy", async function () {
+        await assertChainCopyReplacesSyncedDisputeConfirmation(
+            TestSession.getHarness()
+        );
     });
     it("pinned sync serves the exact current height", async function () {
         await assertPinnedHeight(TestSession.getHarness(), 0);
