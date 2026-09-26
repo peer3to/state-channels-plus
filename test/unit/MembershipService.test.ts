@@ -2,6 +2,7 @@ import { hash as randomHash } from "../factory";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
+import { assertLostRaceCallerTolerated } from "@test/fixtures/LostEvidenceRaceStaging";
 import {
     assertSlashAdmission,
     assertSlashRefreshFailure
@@ -23,6 +24,12 @@ import { ethers } from "ethers";
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.
 
 describe("Unit: MembershipService", function () {
+    it("a self-removal dispute that loses the redispute race reports it did not dispute", async function () {
+        await assertLostRaceCallerTolerated(
+            TestSession.getHarness(),
+            "startSelfRemovalDispute"
+        );
+    });
     it("an authoritative slash survives failed slash log recovery and repeated lookups", async () => {
         await assertSlashRefreshFailure();
     });

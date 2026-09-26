@@ -6,7 +6,6 @@ import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
-import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 
 type LeavePhase =
     | "starting"
@@ -147,6 +146,34 @@ export default class LeaveChannelService {
         }
     }
 
+    /**
+     * The authored exit's self-removal dispute did not land. The leave fails
+     * only when no dispute window covers the fork; see `awaitCoveringWindow`.
+     */
+    public onExitSelfRemovalNotStarted(forkId: ForkId): void {
+        const operation = this.operation;
+        if (
+            !operation ||
+            operation.phase !== "exit-authored" ||
+            operation.forkId !== forkId
+        )
+            return;
+        DetachedPromises.collect(
+            this.awaitCoveringWindow(operation, "exit-authored").then(
+                (covered) => {
+                    if (!covered)
+                        this.fail(
+                            operation,
+                            new Error(
+                                "Terminal channel leave failed to start a dispute"
+                            )
+                        );
+                },
+                (error) => this.fail(operation, error)
+            )
+        );
+    }
+
     public onExitFallbackFailed(forkId: ForkId, error: unknown): void {
         const operation = this.operation;
         if (
@@ -155,14 +182,10 @@ export default class LeaveChannelService {
             operation.forkId !== forkId
         )
             return;
-        // the window already holds commitments -> its reduction settles the leave
-        if (
-            tryDecodeCustomError(error)?.name ===
-            "RaceConditionDisputeEvidencePeriodExpired"
-        ) {
-            operation.phase = "awaiting-settlement";
-            return;
-        }
+        // A refusal because the fork's window already holds commitments never
+        // reaches here: `startSelfRemovalDispute` absorbs that lost race and
+        // the fallback reports it through `onExitSelfRemovalNotStarted`,
+        // which waits for the covering window.
         this.fail(operation, error);
     }
 
@@ -269,22 +292,73 @@ export default class LeaveChannelService {
             return;
         }
 
+        const forkId = operation.forkId;
         operation.phase = "disputing";
         this.logger.info(
             "Terminal channel leave starting self-removal dispute",
             {
-                forkId: operation.forkId,
+                forkId,
                 reason
             }
         );
+        const started =
+            await this.stateManager.membershipService.startSelfRemovalDispute(
+                forkId
+            );
+        // A settlement during the upload re-armed the leave on a newer fork,
+        // with its own attempt; this result belongs to the fork left behind.
         if (
-            !(await this.stateManager.membershipService.startSelfRemovalDispute(
-                operation.forkId
-            ))
+            this.operation !== operation ||
+            operation.phase !== "disputing" ||
+            operation.forkId !== forkId
         ) {
-            throw new Error("Terminal channel leave failed to start a dispute");
+            return;
+        }
+        if (!started) {
+            if (!(await this.awaitCoveringWindow(operation, "disputing"))) {
+                throw new Error(
+                    "Terminal channel leave failed to start a dispute"
+                );
+            }
+            return;
         }
         operation.phase = "awaiting-settlement";
+    }
+
+    /**
+     * A self-removal dispute that did not land fails the leave only when no
+     * dispute window covers the fork. When one does, another participant won
+     * the race to upload for it: that window's settlement moves the runtime to
+     * a new fork, where `onSettledStateObserved` either completes the leave or
+     * re-arms it, so the self-removal is retried once on that fork. Returns
+     * false only when the leave must fail.
+     */
+    private async awaitCoveringWindow(
+        operation: LeaveOperation,
+        phase: "disputing" | "exit-authored"
+    ): Promise<boolean> {
+        const sm = this.stateManager;
+        const forkId = operation.forkId;
+        const covered = await sm.stateChannelManagerContract.isForkDisputed(
+            sm.channelId,
+            forkId
+        );
+        // The leave moved on while the read ran; nothing here is current.
+        if (
+            this.operation !== operation ||
+            operation.phase !== phase ||
+            operation.forkId !== forkId
+        )
+            return true;
+        if (!covered) return false;
+        this.logger.info(
+            "Terminal channel leave waiting for the dispute window covering its fork",
+            { forkId }
+        );
+        operation.phase = "awaiting-settlement";
+        // The window may already have settled while the upload ran.
+        await this.onSettledStateObserved();
+        return true;
     }
 
     private fail(operation: LeaveOperation, error: unknown): void {

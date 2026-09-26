@@ -97,6 +97,19 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.service.sm.channelId as string;
     }
 
+    /**
+     * Highest chain block whose logs all completed. A log whose handler threw
+     * holds it below that block forever, so passing a block proves its logs'
+     * handlers resolved.
+     */
+    public getLatestProcessedEventBlock(): number | null {
+        return (
+            this.service.storage.eventSync.getLatestProcessedBlock(
+                this.service.sm.channelId
+            ) ?? null
+        );
+    }
+
     public getSignerAddress(): string {
         return this.service.sm.signerAddress as string;
     }

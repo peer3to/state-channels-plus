@@ -2,6 +2,7 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
 import { Codec, SignatureUtils, Type } from "@/utils";
+import { assertLeaveAwaitsCoveringWindowThenRetries } from "@test/fixtures/CoveredSelfRemovalStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
@@ -282,6 +283,12 @@ describe("E2E: Participant Lifecycle", function () {
 
         it("remaining peers do not blacklist the leaver after its exit and it can be force-joined back", async function () {
             await assertLeaverCanBeForceJoinedBackAfterExit();
+        });
+
+        it("a leave whose self-removal loses the race waits for the covering window and retries on the settled fork", async function () {
+            await assertLeaveAwaitsCoveringWindowThenRetries(
+                "before-settlement"
+            );
         });
 
         it("public terminal leave settles before disposal and excludes the former signer", async function () {

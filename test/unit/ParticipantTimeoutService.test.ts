@@ -7,6 +7,7 @@ import {
     checkTimeoutAfterDeadline,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
+import { assertLostRaceCallerTolerated } from "@test/fixtures/LostEvidenceRaceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -129,6 +130,13 @@ describe("Unit: ParticipantTimeoutService", function () {
             await recorder.restore();
             await tasks.restore();
         }
+    });
+
+    it("a timeout dispute that loses the redispute race resolves after one upload", async function () {
+        await assertLostRaceCallerTolerated(
+            TestSession.getHarness(),
+            "createTimeOutDispute"
+        );
     });
 
     describe("early chain timestamp refusal", function () {

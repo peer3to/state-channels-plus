@@ -51,6 +51,16 @@ export type ConstructDisputeResult = {
 // anyone's fraud. named so callers can tell it from a real construction failure
 export class PartialAuditingDataError extends Error {}
 
+/** Which caller asked for the upload; logged when it loses the race. */
+type DisputeUploadTrigger =
+    | "onDisputeCommitted"
+    | "onChainSlashed"
+    | "onDisputeKilled"
+    | "reduceEmptyExpiredWindow"
+    | "startSelfRemovalDispute"
+    | "createTimeOutDispute"
+    | "requestDispute";
+
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -92,6 +102,37 @@ class DisputeManager {
             this.logger.child({ component: "DisputeManager:Mutex" })
         );
         return this.self;
+    }
+
+    /**
+     * Upload evidence for a fork, tolerating the race every honest peer runs
+     * into. They all observe the same on-chain trigger and try; only the
+     * first upload wins, and the refusal `dispute` rethrows for the closed
+     * evidence period is the loser's expected outcome, not a failure. Every
+     * other failure propagates. `caller` names what asked for the upload.
+     * Every caller outside this class uploads through here, not `dispute`.
+     */
+    public async disputeToleratingLostRace(
+        forkId: ForkId,
+        caller: DisputeUploadTrigger
+    ): Promise<void> {
+        try {
+            await this.dispute(forkId);
+        } catch (error) {
+            const handled = await tryHandleEvmError(error, {
+                forkId,
+                logger: this.logger,
+                handlers: {
+                    RaceConditionDisputeEvidencePeriodExpired: () => {
+                        this.logger.info(
+                            "Another participant supplied replacement evidence",
+                            { forkId, channelId: this.channelId, caller }
+                        );
+                    }
+                }
+            });
+            if (!handled) throw error;
+        }
     }
 
     public async dispute(forkId: ForkId): Promise<void> {
@@ -245,8 +286,10 @@ class DisputeManager {
                     ) => {
                         // The error stays visible to the caller, but no
                         // dispute landed: the marker below rolls back so a
-                        // later window can take this peer's evidence.
-                        this.logger.error(
+                        // later window can take this peer's evidence. Not an
+                        // error here: `disputeToleratingLostRace` classifies
+                        // it as the expected loss of the race.
+                        this.logger.debug(
                             "dispute: evidence period already expired",
                             { forkId, channelId: this.channelId }
                         );
@@ -319,7 +362,10 @@ class DisputeManager {
     }
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
-        const attempt = this.dispute(forkId);
+        const attempt = this.disputeToleratingLostRace(
+            forkId,
+            "requestDispute"
+        );
         DetachedPromises.observe(attempt, (error) => {
             // The detached branch reaches the owning context's existing error
             // funnel even when a diagnostic collector observes the original.

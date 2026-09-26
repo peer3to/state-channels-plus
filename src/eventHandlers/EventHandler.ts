@@ -638,7 +638,10 @@ export class EventHandler {
             // through and schedule from the commitment handled here. If this
             // call uploads a fresh commitment, its event can reschedule the
             // reduction with the later window end.
-            await this.stateManager.disputeManager.dispute(forkId);
+            await this.stateManager.disputeManager.disputeToleratingLostRace(
+                forkId,
+                "onDisputeCommitted"
+            );
         }
 
         this.stateManager.reductionManager.schedule(
@@ -749,7 +752,10 @@ export class EventHandler {
                 );
         const participants = await this.diamondStateMachine.getParticipants();
         if (!isDisputed && participants.includes(participant.toString())) {
-            await this.stateManager.disputeManager.dispute(latestFork);
+            await this.stateManager.disputeManager.disputeToleratingLostRace(
+                latestFork,
+                "onChainSlashed"
+            );
         }
     }
 
@@ -918,25 +924,10 @@ export class EventHandler {
         const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) return;
 
-        // All honest peers can observe the kill and attempt to replace the
-        // dispute. Only the first upload wins; the others keep the intentional
-        // DisputeManager throw contained to this expected redispute race.
-        try {
-            await this.stateManager.disputeManager.dispute(forkId);
-        } catch (error) {
-            const customError = tryDecodeCustomError(error);
-            if (
-                customError?.name ===
-                "RaceConditionDisputeEvidencePeriodExpired"
-            ) {
-                this.logger.info(
-                    "onDisputeKilled: another participant supplied replacement evidence",
-                    { forkId, channelId }
-                );
-                return;
-            }
-            throw error;
-        }
+        await this.stateManager.disputeManager.disputeToleratingLostRace(
+            forkId,
+            "onDisputeKilled"
+        );
     }
 
     async onInboundMessagesProcessed(

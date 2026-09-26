@@ -76,19 +76,53 @@ sequenceDiagram
 
 ### 3.1 Local escalation (disputer role)
 
-Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L1),
-which is mutexed and idempotent per fork (`didIDispute` flag):
+Every trigger reaches [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L138),
+which is mutexed and idempotent per fork (`didIDispute` flag). Every trigger reaches it through
+[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L115)
+(below), since any of them can lose a race to another peer's upload; the block pipeline enters
+through `requestDispute`, which runs the same helper on a detached attempt:
 
-| Trigger                                                                                                         | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
-| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L478) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
-| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
-| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
-| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
-| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
-| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `EventHandler.canConstructMoreEvidence`                                                                | merged evidence                                                                                                                                           |
+| Trigger                                                                                                         | Site                                                                                                          | Dispute input it contributes                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)             | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
+| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L502) (§3.2)        | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
+| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                             | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
+| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                               | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
+| On-chain slash observed on an undisputed fork                                                                   | [`EventHandler.onChainSlashed`](../../../../../../src/eventHandlers/EventHandler.ts#L727)                     | `onChainSlashes` (via `disputeToleratingLostRace`)                                                                                                        |
+| Dispute killed, window empty                                                                                    | [`EventHandler.onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L882)                    | replacement evidence (via `disputeToleratingLostRace`)                                                                                                    |
+| Reduction found an empty window                                                                                 | [`ReductionExecutor.tryReduceLocked`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L197) | own view of the fork (via `disputeToleratingLostRace`)                                                                                                    |
+| Auditor holds more evidence than a valid observed dispute                                                       | [`EventHandler.canConstructMoreEvidence`](../../../../../../src/eventHandlers/EventHandler.ts#L669)           | merged evidence (via `disputeToleratingLostRace`)                                                                                                         |
+
+The last four rows are the same race seen from four places: every honest peer acts
+on the trigger and uploads its own view. The first rows can meet it too — every
+honest peer times out the same writer, and fraud or a self-removal can reach a
+window whose evidence period has already closed. Whether that is refused depends
+on the window (see the note below); when it is, the peer gets the contract's
+`RaceConditionDisputeEvidencePeriodExpired`, which `DisputeManager.dispute`
+deliberately rethrows (§4) after logging it at debug. Every row calls
+[`disputeToleratingLostRace(forkId, caller)`](../../../../../../src/disputeManager/DisputeManager.ts#L115),
+which lives on the manager — beside the rethrow it interprets, and reachable from
+the reducer as well as from the handlers. It matches the error through
+`tryHandleEvmError`'s typed handler map (so renaming the contract error breaks the
+build rather than the check), logs the lost race with the `caller` trigger as
+metadata, and returns; anything the map does not handle is rethrown unchanged.
+Without the containment a lost race left the handler's promise rejected with nobody
+awaiting it, the reducer's attempt reached `ReductionManager.failCompletion`
+→ `StateManager.abort()`, the timeout check failed its scheduled task, the
+self-removal rejected the leave fallback, and the block pipeline's detached attempt
+reached the top-level error funnel. A lost self-removal now reports that it did
+not dispute; the leave then waits for the window that covers the fork and retries
+once on the fork its settlement produces, failing only when no window covers it
+([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+
+Note what is _not_ first-wins: only a window that already exists with a closed
+evidence period refuses the upload, and `_uploadDispute` then lets exactly one
+through by the empty-window escape
+([`DisputeManagerFacet`](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L100)).
+The first upload on an undisputed fork creates the window
+([#L88](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L88)), and a
+second participant posting while that window's evidence period is still open is
+accepted and accumulates.
 
 ### 3.2 Timeout detection detail
 
@@ -130,7 +164,7 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L394)
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L440)
 assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
 
 1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
@@ -171,10 +205,13 @@ window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
-closed), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
-the chain's inbound head -> load the missing inbound run up to that head and
-rebuild). On failure the `didIDispute` flag is rolled back so a later attempt
-can retry.
+closed; `disputeToleratingLostRace` is the wrapper that contains that rethrow for
+every caller outside the manager, §3.1), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
+the chain's inbound head -> load the missing inbound run up to that head and rebuild). On failure the `didIDispute` flag
+is rolled back so a later attempt can retry. Rethrowing the expiry is the exception:
+a revert no handler in the map names is logged and absorbed after that rollback, so
+callers of `dispute` see a resolved promise for it and only a later window can carry
+this node's evidence.
 
 ## 5. Audit: validity and authorization checks
 
@@ -243,7 +280,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L316)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L359)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,
@@ -259,17 +296,21 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   `canConstructMoreEvidence`: construct our own dispute and compare
   `reduce([theirs])` with `reduce([ours, theirs])` on the `LocalDiamond`; a
   difference means our evidence changes the outcome → upload our dispute
-  (evidence accumulation). Otherwise schedule reduction at `killPeriodEnd`.
+  through `disputeToleratingLostRace` (evidence accumulation; the peers that
+  lose that race carry on and still schedule). The reduction is scheduled at
+  `killPeriodEnd` either way.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L876)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L882)):
 record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
-is current, upload replacement evidence (first honest peer wins).
+is current, upload replacement evidence through `disputeToleratingLostRace`
+(first honest peer wins; the losers' handling still resolves).
 
-**`ChainSlashed` event**: mirror the slash, blacklist the peer, and open a
-dispute on the current fork if it is not yet disputed and the slashed address
-is still a participant.
+**`ChainSlashed` event** ([`onChainSlashed`](../../../../../../src/eventHandlers/EventHandler.ts#L727)):
+mirror the slash, blacklist the peer, and open a dispute on the current fork —
+again through `disputeToleratingLostRace` — if it is not yet disputed and the
+slashed address is still a participant.
 
 ## 7. Reduction and successor-fork creation
 
@@ -289,7 +330,10 @@ is still a participant.
    the window's commitments from the chain, with any dispute whose event never
    reached us recovered by targeted log queries (3 attempts, widening span)
    — a reducer never reads a window its storage cannot back. Empty window →
-   upload our own dispute instead.
+   upload our own dispute instead, through `disputeToleratingLostRace` (§3.1):
+   every reducer of that window tries, the refused ones stand down and are
+   re-driven by the winner's `DisputeCommitted`, and only that containment keeps
+   an expected race off `failCompletion`'s `StateManager.abort()` path.
 4. **Compute.** `SCM.reduce.staticCall(disputes)` (order-independent
    deterministic reduction, [../protocol/disputes.md](../../../../specification/disputes/disputes.md))
    → `ReduceOutput`; `AgreementManager.getReduceData` resolves the reduced
@@ -313,7 +357,7 @@ is still a participant.
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L756)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L762)):
 mirror into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute locally; a mismatching
 `reducedForkId` → `SCM.challengeDisputeReduction(disputes, latestSnapshot, state, inboundBlocks)`

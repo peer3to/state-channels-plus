@@ -198,7 +198,11 @@ export default class MembershipService {
     public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
         const sm = this.stateManager;
         sm.storage.forceExit.setForceExit(true);
-        await sm.disputeManager.dispute(forkId);
+        // A lost race rolls the dispute marker back, so it reports false.
+        await sm.disputeManager.disputeToleratingLostRace(
+            forkId,
+            "startSelfRemovalDispute"
+        );
         return sm.storage.disputes.didIDispute(forkId);
     }
 
@@ -499,11 +503,8 @@ export default class MembershipService {
                                     "Self-removal dispute did not start",
                                     { forkId: block.forkId }
                                 );
-                                sm.leaveChannelService.onExitFallbackFailed(
-                                    block.forkId,
-                                    new Error(
-                                        "Terminal channel leave failed to start a dispute"
-                                    )
+                                sm.leaveChannelService.onExitSelfRemovalNotStarted(
+                                    block.forkId
                                 );
                             }
                         } catch (disputeError) {
@@ -538,11 +539,8 @@ export default class MembershipService {
                                 "Self-removal dispute did not start",
                                 { forkId: persistedBlock.forkId }
                             );
-                            sm.leaveChannelService.onExitFallbackFailed(
-                                persistedBlock.forkId,
-                                new Error(
-                                    "Terminal channel leave failed to start a dispute"
-                                )
+                            sm.leaveChannelService.onExitSelfRemovalNotStarted(
+                                persistedBlock.forkId
                             );
                         }
                     } catch (error) {

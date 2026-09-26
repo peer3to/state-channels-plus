@@ -426,6 +426,9 @@ export default class ParticipantTimeoutService {
         sm.storage.timeout.storeTimeout(forkId, timeout);
 
         // Time has fully elapsed - create dispute immediately
-        await sm.disputeManager.dispute(forkId);
+        await sm.disputeManager.disputeToleratingLostRace(
+            forkId,
+            "createTimeOutDispute"
+        );
     }
 }

@@ -11,6 +11,7 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
+import { assertRequestDisputeLostRaceTolerated } from "@test/fixtures/LostEvidenceRaceStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -48,6 +49,9 @@ describe("Unit: DisputeManager", function () {
         await TestSession.settleDetached({
             expectedErrorIncludes: "authoritative slash read failed"
         });
+    });
+    it("a requested fraud dispute that loses the redispute race settles without a detached error", async function () {
+        await assertRequestDisputeLostRaceTolerated(TestSession.getHarness());
     });
     it("a live fork change during a refused upload prevents obsolete recovery and re-entry", async function () {
         await assertRefusalAfterLiveForkSwitch(TestSession.getHarness());

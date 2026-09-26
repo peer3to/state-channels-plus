@@ -10,6 +10,10 @@ import {
     assertAuthoredLeaveFallback,
     assertExitFallbackFailureGuards
 } from "@test/fixtures/AuthoredLeaveFailureStaging";
+import {
+    assertAuthoredLeaveAwaitsCoveringWindow,
+    assertLeaveAwaitsCoveringWindowThenRetries
+} from "@test/fixtures/CoveredSelfRemovalStaging";
 import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
@@ -1046,6 +1050,12 @@ describe("discovery runtime port", function () {
     it("authored leave slow fallback settles through one dispute", async function () {
         await assertAuthoredLeaveFallback(true, "success");
     });
+    it("authored leave fallback waits for the window covering its fork after losing the self-removal race", async function () {
+        await assertAuthoredLeaveAwaitsCoveringWindow();
+    });
+    it("a self-removal refused after the leave re-armed on a newer fork leaves the newer attempt in charge", async function () {
+        await assertLeaveAwaitsCoveringWindowThenRetries("after-settlement");
+    });
     it("exit fallback failure ignores absent and awaiting-exit operations", async function () {
         await assertExitFallbackFailureGuards();
     });
@@ -1322,15 +1332,20 @@ describe("discovery runtime port", function () {
                 }
             }
         );
+        // The refusal is contained, and no window covers the fork, so the
+        // leave fails on its own terms.
         await expect(
             leaver.p2pInstance.p2pSigner.leaveChannel()
-        ).to.be.rejectedWith("RaceConditionDisputeEvidencePeriodExpired");
+        ).to.be.rejectedWith(
+            "Terminal channel leave failed to start a dispute"
+        );
         expect(await recorder.submissions()).to.have.length(1);
         expect(
             await h.control(leaver).query.didIDispute(h.activeForkId!).request()
         ).to.equal(false);
         await TestSession.settleDetached({
-            expectedErrorIncludes: "RaceConditionDisputeEvidencePeriodExpired"
+            expectedErrorIncludes:
+                "Terminal channel leave failed to start a dispute"
         });
     });
 
