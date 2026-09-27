@@ -34,7 +34,10 @@ describe("distributed setup failure cap", function () {
                     leaseSteps: Array(10).fill("outside-manifest")
                 }
             ],
-            { tasks: SETUP_CAP_TASKS, discoveryTimeoutMs: 5_000 }
+            // The cap ends the run on the third identical failure; the window
+            // only has to outlast a redial under load so the lost-worker path
+            // cannot win first.
+            { tasks: SETUP_CAP_TASKS, discoveryTimeoutMs: 20_000 }
         );
         expect({
             failure: run.failure?.message,
