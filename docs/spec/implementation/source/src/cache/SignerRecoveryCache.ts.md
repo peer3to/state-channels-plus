@@ -29,7 +29,7 @@ report is the listener's job.
 ## Key design decisions
 
 - **Detection lives in the one recovery path.** Every protocol signature is recovered through
-  [`recoverSigner`](../../../../../../src/cache/SignerRecoveryCache.ts#L93), so one check covers every
+  [`recoverSigner`](../../../../../../src/cache/SignerRecoveryCache.ts#L92), so one check covers every
   message kind without per-kind hooks.
 - **Canonical comparison.** A signature is compared in its ethers canonical 65-byte form
   ([`checkDoubleSignature`](../../../../../../src/cache/SignerRecoveryCache.ts#L70)); v 0/1, v >= 35 and

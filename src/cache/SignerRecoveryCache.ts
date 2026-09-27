@@ -49,8 +49,8 @@ const canonicalSignatures = new Map<SignerMessageKey, string>();
  */
 const doubleSignatureListeners = new Set<DoubleSignatureListener>();
 
-function keyOf(message: Uint8Array, signature: Signature): RecoveryKey {
-    return hexlify(message) + signature;
+function keyOf(messageHex: string, signature: Signature): RecoveryKey {
+    return messageHex + signature;
 }
 
 function setBounded<K, V>(map: Map<K, V>, key: K, value: V): void {
@@ -68,11 +68,10 @@ function setBounded<K, V>(map: Map<K, V>, key: K, value: V): void {
  * an honest signature never reports its signer.
  */
 function checkDoubleSignature(
-    message: Uint8Array,
+    messageHex: string,
     signature: Signature,
     signer: Address
 ): void {
-    const messageHex = hexlify(message);
     const key: SignerMessageKey = messageHex + signer;
     const canonical = EthersSignature.from(signature).serialized;
     const known = canonicalSignatures.get(key);
@@ -94,13 +93,14 @@ export function recoverSigner(
     message: Uint8Array,
     signature: Signature
 ): Address {
-    const key = keyOf(message, signature);
+    const messageHex = hexlify(message);
+    const key = keyOf(messageHex, signature);
     const cached = cache.get(key);
     if (cached !== undefined) return cached;
 
     const address = verifyMessage(message, signature) as Address;
     setBounded(cache, key, address);
-    checkDoubleSignature(message, signature, address);
+    checkDoubleSignature(messageHex, signature, address);
     return address;
 }
 
