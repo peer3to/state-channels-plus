@@ -153,11 +153,18 @@ function computeWorkspaceId({
  */
 function manifestForDistributedProtocol(manifest, distributedProtocol) {
     if (manifest.distributedProtocol === distributedProtocol) return manifest;
-    return {
+    const derived = {
         ...manifest,
         distributedProtocol,
         workspaceId: computeWorkspaceId({ ...manifest, distributedProtocol })
     };
+    // The spread drops the non-enumerable local root that keeps the host path
+    // off the wire; the delta upload still reads it on this side.
+    Object.defineProperty(derived, "localWorkspaceRoot", {
+        value: manifest.localWorkspaceRoot,
+        enumerable: false
+    });
+    return derived;
 }
 
 async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
