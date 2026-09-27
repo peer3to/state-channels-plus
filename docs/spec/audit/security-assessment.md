@@ -432,3 +432,20 @@ The engineer removed membership generations, pending-read invalidation and autom
 Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
 
 Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.
+
+## One signature per signer per message — 2026-09-27
+
+[`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../specification/protocol-model/identity.md#req-id-5-gw1zey) makes a second, different signature value by one key over one message a
+local exclusion offense for every protocol-object kind. The check sits in the one off-chain
+recovery path and compares canonical 65-byte forms, so a relayer that only re-encodes an honest
+signature (v 0/1, v >= 35, 64-byte compact) cannot frame its signer. The consequence falls on the
+recovered signer, never on the relaying peer, and a node never excludes itself. Alternate valid
+signatures in [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) still consume only their supplier's allowance; their signer is
+now also excluded.
+
+Residual risk: detection memory is per node, per thread and bounded, so a conflict spread across
+nodes, threads or beyond the bound goes unnoticed. Exclusion is local and is not slashing evidence.
+A participant running a random-nonce signer excludes itself from its honest peers whenever it
+re-signs; deterministic signing is a stated participant assumption. In inline mode several runtimes
+share one memo and all of them act on each report. Canonical-form enforcement on-chain is out of this
+change.

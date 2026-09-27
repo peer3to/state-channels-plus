@@ -5,6 +5,7 @@ import { hash } from "./hash";
 import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
+import type { DoubleSignatureReport } from "@/cache";
 import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { Block, StateSnapshot, StateProof } from "@/models";
@@ -504,6 +505,15 @@ export class LoggerUtils {
             transports: profile
                 .getLiveTransports()
                 .map((transport) => this.getTransportMetadata(transport))
+        };
+    }
+
+    static getDoubleSignatureMetadata(report: DoubleSignatureReport) {
+        return {
+            signer: report.signer,
+            message: this.formatHash(report.message),
+            firstSignature: this.formatHash(report.firstSignature),
+            secondSignature: this.formatHash(report.secondSignature)
         };
     }
 
