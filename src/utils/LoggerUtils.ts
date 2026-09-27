@@ -508,12 +508,21 @@ export class LoggerUtils {
         };
     }
 
-    static getDoubleSignatureMetadata(report: DoubleSignatureReport) {
+    /**
+     * `fullEvidence` keeps the whole digest and both canonical signatures so
+     * an exclusion can be verified later; otherwise they are shortened.
+     */
+    static getDoubleSignatureMetadata(
+        report: DoubleSignatureReport,
+        fullEvidence = false
+    ) {
+        const format = (value: string) =>
+            fullEvidence ? value : this.formatHash(value);
         return {
             signer: report.signer,
-            message: this.formatHash(report.message),
-            firstSignature: this.formatHash(String(report.firstSignature)),
-            secondSignature: this.formatHash(String(report.secondSignature))
+            message: format(String(report.message)),
+            firstSignature: format(String(report.firstSignature)),
+            secondSignature: format(String(report.secondSignature))
         };
     }
 

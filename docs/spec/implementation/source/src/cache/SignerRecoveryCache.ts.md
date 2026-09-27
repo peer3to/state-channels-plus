@@ -75,7 +75,10 @@ claims complete conformance for a requirement that depends on other files.
 ## Assumptions, dependencies, trust boundaries, and limits
 
 - Signers are deterministic; a random-nonce signer is reported whenever it re-signs.
-- Canonicalization is ethers `Signature.from(...).serialized`, which also rejects high-s values.
+- Canonicalization is ethers `Signature.from(...).serialized`. For 65-byte input ethers rejects
+  only s >= 2^255 and does not enforce low-s, so a signature and its flipped form (s, n - s) are two
+  canonical values. Relayer framing stays impractical: flipping an honest low-s signature lands in
+  the accepted window only with negligible probability.
   The on-chain canonical-form rules are not re-implemented here.
 - Detection is per thread and bounded. A worker thread without a registered listener detects but
   nobody acts; a conflict split across threads or nodes is not seen.

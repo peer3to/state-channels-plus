@@ -5,6 +5,7 @@ import type {
     LobbyRawMethod,
     NegotiationRawMethod
 } from "./ByzantineService";
+import { __doubleSignatureListenerCount } from "@/cache";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -49,17 +50,29 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
     }
 
     /**
-     * Recover each signature over the encoded message through the SDK's signer
-     * recovery, exactly as a receiving endpoint does, and return the recovered
-     * addresses in order.
+     * Start disposing this peer's P2PManager without awaiting it, recover each
+     * signature over the encoded message through the SDK's signer recovery in
+     * the same synchronous step, read the blacklist, then finish disposal.
      */
-    public recoverSignatures(
+    public async recoverDuringDisposal(
         encodedMessage: string,
         signatures: string[]
-    ): string[] {
-        return signatures.map((signature) =>
+    ) {
+        const p2pManager = this.p2pManager;
+        const listenersBefore = __doubleSignatureListenerCount();
+        const disposal = p2pManager.dispose();
+        const recovered = signatures.map((signature) =>
             String(SignatureUtils.getSignerAddress(encodedMessage, signature))
         );
+        const blacklisted = recovered.map((address) =>
+            p2pManager.isBlacklisted(address)
+        );
+        await disposal;
+        return {
+            recovered,
+            blacklisted,
+            removedListeners: listenersBefore - __doubleSignatureListenerCount()
+        };
     }
 
     /**

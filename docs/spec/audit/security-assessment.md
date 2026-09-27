@@ -439,10 +439,16 @@ Membership events now push into the fast sets without membership reads. A miss p
 local exclusion offense for every protocol-object kind. The check sits in the one off-chain
 recovery path and compares canonical 65-byte forms, so a relayer that only re-encodes an honest
 signature (v 0/1, v >= 35, 64-byte compact) cannot frame its signer. The consequence falls on the
-recovered signer, never on the relaying peer, and a node never excludes itself. Only signers the
-node's membership cache knows as channel members or eligible identities are excluded; a report about
-any other address is logged and dropped, so a peer cannot grow the unbounded blacklist with fresh
-keys (for example two join requests signed by one throwaway key with two nonces). Alternate valid
+recovered signer, never on the relaying peer, and a node never excludes itself. Only a signer the
+node's membership view knows as eligible at detection time is excluded, the same rule block ingest
+applies; a report about an absent or slashed address is logged at debug level with its eligibility
+and dropped, so a peer cannot grow the unbounded blacklist with fresh keys (for example two join
+requests signed by one throwaway key with two nonces). No chain read is made for a report, so an
+attacker cannot trigger refreshes this way. Residual risk: a one-off double signature by a joiner
+this node has not yet seen goes unpunished; a signer that keeps producing new values is caught once
+the node knows it. The blacklisting warning keeps the full digest and both canonical signatures so
+each exclusion can be verified later, and a double signature under the node's own key is logged at
+error level. Alternate valid
 signatures in [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) still consume only their supplier's allowance; their signer is
 now also excluded.
 

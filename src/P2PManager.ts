@@ -171,9 +171,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     /**
      * Blacklists the signer of a detected double signature. The signer is the
      * offender, never the peer that relayed it; this node never blacklists
-     * itself. Only channel members and eligible identities are blacklisted, so
-     * throwaway keys cannot grow the blacklist. Runs inside signer recovery,
-     * so it never throws.
+     * itself. Only signers the membership cache currently knows as eligible
+     * are blacklisted, so throwaway keys cannot grow the blacklist. Runs
+     * inside signer recovery, so it never throws.
      */
     private onDoubleSignature(report: DoubleSignatureReport): void {
         try {
@@ -181,22 +181,29 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             if (
                 addressesEqual(report.signer, this.stateManager.signerAddress)
             ) {
+                this.logger.error(
+                    "Double signature under this node's own key; the signer is non-deterministic or the key is used elsewhere",
+                    LoggerUtils.getDoubleSignatureMetadata(report, true)
+                );
                 return;
             }
-            if (
+            const eligibility =
                 this.stateManager.membershipService.getCachedSourceEligibility(
                     report.signer
-                ) === SourceEligibility.ABSENT
-            ) {
+                );
+            if (eligibility !== SourceEligibility.ELIGIBLE) {
                 this.logger.debug(
-                    "Double signature by a non-member; ignoring",
-                    LoggerUtils.getDoubleSignatureMetadata(report)
+                    "Double signature by a non-eligible signer; ignoring",
+                    {
+                        ...LoggerUtils.getDoubleSignatureMetadata(report),
+                        eligibility: SourceEligibility[eligibility]
+                    }
                 );
                 return;
             }
             this.logger.warn(
                 "Double signature detected; blacklisting the signer",
-                LoggerUtils.getDoubleSignatureMetadata(report)
+                LoggerUtils.getDoubleSignatureMetadata(report, true)
             );
             this.disconnectAndBlacklistPeerByEvmAddress(
                 report.signer,
