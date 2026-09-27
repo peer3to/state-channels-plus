@@ -53,7 +53,7 @@ message is reported and stored. One fuzzes the input size (up to 128 KiB) and th
 (the requirement ±300,000) directly on the machine: whenever the call succeeds, the transition saw
 at least its budget minus 20,000 gas at entry.
 
-Nine tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
+Ten tests cover the dispute fraud proof that replays: a timeout refuted by posted calldata. The
 staging (`test/V1/harness/TimeoutCalldataPostedStaging.sol`) uploads a timeout dispute by
 participant 1 against participant 0 for height 0 of the genesis fork, then has participant 0 post a
 signed block for that height in time, through the diamond's public entry points. The block's
@@ -68,12 +68,19 @@ attached gas assert that an honest `guardedAdd` refutation either kills the disp
 verdict, and that a `burn` refutation never kills it and slashes the submitter exactly when the call
 succeeds.
 
-Three of the nine post a block that is honest for its own base but not linked to the dispute's latest
+Three of the ten post a block that is honest for its own base but not linked to the dispute's latest
 state (`_stageTimeoutCalldataPostedOn`): a snapshot whose state hash names a forged genesis state
 (participant 0 holds a balance it never had), with that forged state and a `previousBlockHash`
 matching the forged snapshot; the real genesis snapshot with the forged state; and the real genesis
 snapshot and state with a `previousBlockHash` of another block. Each funded refutation succeeds as a
 call, leaves the timeout dispute committed, keeps the disputer standing and slashes the submitter.
+
+One of the ten gives the dispute a state proof with one signed block by participant 1
+(`_stageTimeoutCalldataPostedAfter`), signed as that block's canonical encoding plus one trailing
+zero word; it asserts that the bytes decode to the same block and hash differently. The dispute
+blames participant 0 for height 1, and the posted block builds on the genesis state through a
+snapshot that the proved block commits to, with a `previousBlockHash` of `keccak256` of the signed
+bytes. The funded refutation kills the timeout dispute and slashes the disputer.
 The oracles are the revert data, `getSum`, `isParticipantSlashedOnChain`, and whether the dispute is
 still committed.
 
@@ -120,6 +127,7 @@ report but are kept here.
 | [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationFromUnlinkedSnapshot`](../../../../../../test/V1/AStateMachineStipend.t.sol#L633) (line 633)        | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P34`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p34), [`REQ-DIS-10-SAHJBN.T1.P17`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p17) |
 | [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseStateMissesTheSnapshot`](../../../../../../test/V1/AStateMachineStipend.t.sol#L645) (line 645) | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P35`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p35), [`REQ-DIS-10-SAHJBN.T1.P18`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p18) |
 | [`test_applyDisputeFraudProofs_rejectsTimeoutRefutationBlockBuiltOnAnotherBlock`](../../../../../../test/V1/AStateMachineStipend.t.sol#L656) (line 656)    | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P36`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p36), [`REQ-DIS-10-SAHJBN.T1.P19`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn.t1.p19) |
-| [`test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost`](../../../../../../test/V1/AStateMachineStipend.t.sol#L670) (line 670)        | [`REQ-ENFSM-1-DKJCY2.T1.P20`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p20)                                                                                                                                                                                            |
-| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L696) (line 696)       | [`REQ-ENFSM-1-DKJCY2.T1.P21`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p21)                                                                                                                                                                                            |
-| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L710) (line 710)   | [`REQ-ENFSM-1-DKJCY2.T1.P22`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p22)                                                                                                                                                                                            |
+| [`test_applyDisputeFraudProofs_timeoutRefutationLinksToLatestBlockSignedBytes`](../../../../../../test/V1/AStateMachineStipend.t.sol#L671) (line 671)      | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P37`](../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p37)                                                                                                        |
+| [`test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost`](../../../../../../test/V1/AStateMachineStipend.t.sol#L721) (line 721)        | [`REQ-ENFSM-1-DKJCY2.T1.P20`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p20)                                                                                                                                                                                            |
+| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L747) (line 747)       | [`REQ-ENFSM-1-DKJCY2.T1.P21`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p21)                                                                                                                                                                                            |
+| [`testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata`](../../../../../../test/V1/AStateMachineStipend.t.sol#L761) (line 761)   | [`REQ-ENFSM-1-DKJCY2.T1.P22`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p22)                                                                                                                                                                                            |

@@ -664,6 +664,57 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         _assertRefutationRejected(dispute, participants);
     }
 
+    // The latest proved block is signed as its canonical encoding plus one trailing zero word.
+    // Solidity decodes those bytes to the same block, and the state proof links blocks by their
+    // signed bytes, so an honest author builds the next block on the hash of those bytes, not on
+    // the hash of the re-encoded block.
+    function test_applyDisputeFraudProofs_timeoutRefutationLinksToLatestBlockSignedBytes() public {
+        address[] memory participants = _deployGuarded();
+        StateSnapshot memory genesis = diamond.getStateSnapshot(CHANNEL_ID);
+
+        // Deep copy: a memory struct assignment would alias the genesis snapshot.
+        StateSnapshot memory latestSnapshot = abi.decode(abi.encode(genesis), (StateSnapshot));
+        latestSnapshot.blockHeight = 1;
+        latestSnapshot.timestamp = block.timestamp;
+
+        Block memory latestBlock;
+        latestBlock.transaction.header.channelId = CHANNEL_ID;
+        latestBlock.transaction.header.forkId = genesis.forkId;
+        latestBlock.transaction.header.participant = participants[1];
+        latestBlock.transaction.header.transactionCnt = 0;
+        latestBlock.transaction.header.timestamp = block.timestamp;
+        latestBlock.previousBlockHash = keccak256(abi.encode(genesis));
+        latestBlock.stateSnapshotHash = keccak256(abi.encode(latestSnapshot));
+        bytes memory nonCanonical = bytes.concat(abi.encode(latestBlock), bytes32(0));
+        assertEq(
+            keccak256(abi.encode(abi.decode(nonCanonical, (Block)))),
+            keccak256(abi.encode(latestBlock)),
+            "the trailing word decodes to the same block"
+        );
+        assertTrue(keccak256(nonCanonical) != keccak256(abi.encode(latestBlock)), "the signed bytes differ");
+
+        StateProof memory stateProof;
+        stateProof.signedBlocks = new SignedBlock[](1);
+        stateProof.signedBlocks[0] =
+            SignedBlock({encodedBlock: nonCanonical, signature: _sign(DISPUTER_PK, nonCanonical)});
+
+        DisputeFraudProof[] memory proofs;
+        Dispute memory dispute;
+        (dispute, proofs) = _stageTimeoutCalldataPostedAfter(
+            diamond,
+            CHANNEL_ID,
+            TIMED_OUT_PK,
+            DISPUTER_PK,
+            stateProof,
+            PostedBlockBase(latestSnapshot, _encodedState(participants), keccak256(nonCanonical)),
+            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ())
+        );
+
+        (bool ok,) = _submitRefutation(abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs)), GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
     // What `killDispute` sends: its estimate plus getStateTransitionReplayGas. The measured cost of
     // a funded refutation stands in for the estimate: alone it cannot fund the replay, with the
     // replay gas added it kills the timeout dispute.

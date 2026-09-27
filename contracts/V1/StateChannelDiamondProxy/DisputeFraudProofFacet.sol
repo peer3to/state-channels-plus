@@ -578,7 +578,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (commitment != _commitment) return false;
 
         // get previousTimestamp
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        // The latest block's identity is the hash of its signed bytes, as in the state proof's
+        // chain linkage and in `Block.hash` on the client, not the hash of its re-encoded fields.
+        (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
+        Block memory latestBlock;
+        if (hasBlock) latestBlock = abi.decode(latestSignedBlock.encodedBlock, (Block));
         uint256 previousTimestamp;
         if (!hasBlock) {
             // genesis
@@ -630,7 +634,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                     return false;
                 }
                 if (
-                    keccak256(abi.encode(latestBlock))
+                    keccak256(latestSignedBlock.encodedBlock)
                         == keccak256(timeoutCalldataPostedProof.previousBlockcalldata.encodedBlock)
                 ) {
                     // only if the uploaded calldata matches the stateProof latest block, we grant extra time, otherwise the caller can forge a double sign or something else
@@ -656,7 +660,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         ) return false;
         if (
             _block.previousBlockHash
-                != (hasBlock ? keccak256(abi.encode(latestBlock)) : keccak256(abi.encode(latestStateSnapshot)))
+                != (hasBlock ? keccak256(latestSignedBlock.encodedBlock) : keccak256(abi.encode(latestStateSnapshot)))
         ) return false;
         // make sure we can do the STF - it's a valid block
         bool isSuccess;

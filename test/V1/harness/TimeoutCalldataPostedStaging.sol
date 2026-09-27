@@ -65,18 +65,36 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         PostedBlockBase memory base,
         bytes memory transitionData
     ) internal returns (Dispute memory dispute, DisputeFraudProof[] memory proofs) {
+        StateProof memory noBlocks;
+        return
+            _stageTimeoutCalldataPostedAfter(diamond, channelId, timedOutPk, disputerPk, noBlocks, base, transitionData);
+    }
+
+    /// `_stageTimeoutCalldataPostedOn` with a dispute whose state proof is `stateProof`
+    /// (signed blocks only). The blamed height, and the posted block's height, is the next one
+    /// after those blocks.
+    function _stageTimeoutCalldataPostedAfter(
+        StateChannelManagerInterface diamond,
+        bytes32 channelId,
+        uint256 timedOutPk,
+        uint256 disputerPk,
+        StateProof memory stateProof,
+        PostedBlockBase memory base,
+        bytes memory transitionData
+    ) internal returns (Dispute memory dispute, DisputeFraudProof[] memory proofs) {
         Block memory postedBlock;
         postedBlock.transaction.header.channelId = channelId;
         postedBlock.transaction.header.forkId = base.latestStateSnapshot.forkId;
         postedBlock.transaction.header.participant = vm.addr(timedOutPk);
-        postedBlock.transaction.header.transactionCnt = 0;
+        postedBlock.transaction.header.transactionCnt = stateProof.signedBlocks.length;
         postedBlock.transaction.header.timestamp = block.timestamp;
         postedBlock.transaction.body.data = transitionData;
         postedBlock.previousBlockHash = base.previousBlockHash;
         postedBlock.stateSnapshotHash = _fundedReplaySnapshotHash(diamond, channelId, base, postedBlock.transaction);
 
-        dispute =
-            _uploadTimeoutDispute(diamond, channelId, base.latestStateSnapshot.forkId, vm.addr(timedOutPk), disputerPk);
+        dispute = _uploadTimeoutDispute(
+            diamond, channelId, base.latestStateSnapshot.forkId, stateProof, vm.addr(timedOutPk), disputerPk
+        );
 
         bytes memory encodedBlock = abi.encode(postedBlock);
         SignedBlock memory signedBlock =
@@ -113,12 +131,14 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         return false;
     }
 
-    /// A genesis-fork dispute blaming `timedOut` for height 0, signed and uploaded by the
-    /// disputer. Nothing is posted for that height yet, so the upload's race check passes.
+    /// A dispute on `forkId` with `stateProof`, blaming `timedOut` for the height after the
+    /// proof's signed blocks, signed and uploaded by the disputer. Nothing is posted for that
+    /// height yet, so the upload's race check passes.
     function _uploadTimeoutDispute(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
         bytes32 forkId,
+        StateProof memory stateProof,
         address timedOut,
         uint256 disputerPk
     ) private returns (Dispute memory dispute) {
@@ -129,7 +149,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         dispute.input.latestInboundMessageBlockHash = inboundHead.latestInboundMessageBlockHash;
         dispute.input.lastInboundMessageBlockHeight = inboundHead.latestInboundMessageBlockHeight;
         dispute.input.timeout.participant = timedOut;
-        dispute.input.timeout.blockHeight = 0;
+        dispute.input.stateProof = stateProof;
+        dispute.input.timeout.blockHeight = stateProof.signedBlocks.length;
         dispute.input.timeout.minTimeStamp = block.timestamp;
 
         DisputeConfirmation memory confirmation;

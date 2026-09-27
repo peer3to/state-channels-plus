@@ -72,6 +72,8 @@ export type StubKey =
     | "expiredCalldataPost"
     | "broadcast"
     | "calldataPosting"
+    | "undecodableUnfinalizedBlock"
+    | "invalidBlockStructurePredicate"
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"

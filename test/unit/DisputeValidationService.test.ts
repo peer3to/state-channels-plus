@@ -83,6 +83,27 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.storedProof).to.equal(undefined);
             expect(run.disputeFraudProofCount).to.equal(0);
         });
+
+        it("unfinalized block bytes that do not decode AND an invalid state-proof structure -> the replay rejects: false + one DisputeInvalidBlockStructure, no throw", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // the replayed confirmation does not decode, and the structure
+            // predicate judges it invalid: only the replay loop meets these
+            // bytes, since the dispute itself decodes
+            const stub = h.control(h.getPeer(1)).stub;
+            await stub.stubUndecodableUnfinalizedBlock(true).request();
+            try {
+                const run = await h.dispute.auditDispute(1, dispute);
+                expect(run).to.include({ outcome: "returned", isValid: false });
+                expect(run.storedProof?.disputeFraudProofType).to.equal(
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
+                );
+                expect(run.disputeFraudProofCount).to.equal(1);
+            } finally {
+                await stub.restoreUndecodableUnfinalizedBlock().request();
+            }
+        });
     });
 
     describe("header + structure", function () {

@@ -48,6 +48,7 @@ import type {
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import { ethers } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -184,6 +185,83 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         eventHandler.onBlockCalldataPosted =
             original as typeof eventHandler.onBlockCalldataPosted;
         this.service.stubOriginals.delete("calldataPosting");
+        return true;
+    }
+
+    /**
+     * The local diamond serves the unfinalized part of every state proof with
+     * its first confirmation's block bytes replaced by bytes that do not
+     * decode (appended when that part is empty), so the replay callers
+     * (dispute audit, spectate sync) hand them to onBlockConfirmationStruct.
+     * With `structureInvalid`, the structure predicate the dispute strategy
+     * asks also judges that block invalid.
+     */
+    public stubUndecodableUnfinalizedBlock(structureInvalid: boolean): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("undecodableUnfinalizedBlock")) {
+            this.service.stubOriginals.set(
+                "undecodableUnfinalizedBlock",
+                localDiamond.getUnfinalizedBlockConfirmationsFromStateProof
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "undecodableUnfinalizedBlock"
+        ) as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
+        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof = (async (
+            ...args: Parameters<typeof original>
+        ) => {
+            const confirmations = (await original(...args)).map((bc) => ({
+                signedBlock: {
+                    encodedBlock: String(bc.signedBlock.encodedBlock),
+                    signature: String(bc.signedBlock.signature)
+                },
+                signatures: Array.from(bc.signatures, String)
+            }));
+            const undecodable = ethers.id("undecodable block");
+            if (confirmations.length === 0)
+                confirmations.push({
+                    signedBlock: { encodedBlock: undecodable, signature: "0x" },
+                    signatures: []
+                });
+            else confirmations[0].signedBlock.encodedBlock = undecodable;
+            return confirmations;
+        }) as unknown as typeof original;
+
+        if (
+            structureInvalid &&
+            !this.service.stubOriginals.has("invalidBlockStructurePredicate")
+        ) {
+            this.service.stubOriginals.set(
+                "invalidBlockStructurePredicate",
+                localDiamond.isInvalidBlockStructureInStateProof
+            );
+            localDiamond.isInvalidBlockStructureInStateProof = Object.assign(
+                async () => true,
+                { staticCall: async () => true }
+            ) as unknown as typeof localDiamond.isInvalidBlockStructureInStateProof;
+        }
+        return true;
+    }
+
+    public restoreUndecodableUnfinalizedBlock(): boolean {
+        const original = this.service.stubOriginals.get(
+            "undecodableUnfinalizedBlock"
+        );
+        if (original === undefined) return false;
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof =
+            original as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
+        this.service.stubOriginals.delete("undecodableUnfinalizedBlock");
+        const predicate = this.service.stubOriginals.get(
+            "invalidBlockStructurePredicate"
+        );
+        if (predicate !== undefined) {
+            localDiamond.isInvalidBlockStructureInStateProof =
+                predicate as typeof localDiamond.isInvalidBlockStructureInStateProof;
+            this.service.stubOriginals.delete("invalidBlockStructurePredicate");
+        }
         return true;
     }
 
