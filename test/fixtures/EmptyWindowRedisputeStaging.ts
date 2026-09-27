@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: empty-window redispute staging for mapped reduction and dispute cases
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { TargetedChannelJoinFixture } from "./TargetedChannelJoinFixture";
 import { sleep } from "@test/harness";

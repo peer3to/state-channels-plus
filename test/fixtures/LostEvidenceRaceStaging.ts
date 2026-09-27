@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: lost-evidence-race staging for mapped dispute and event-handler cases
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
