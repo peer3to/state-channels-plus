@@ -54,19 +54,35 @@ export async function releaseAfterEvidencePeriod(
  * `after-settlement`: both leave together and the second one's upload stays
  * parked until the settlement has re-armed the leave on the new fork, so the
  * refusal belongs to a fork the leave already left and must not decide it.
+ * `read-after-settlement`: as `before-settlement`, but the leave's read of
+ * whether a window covers the fork stays parked until the settlement has
+ * re-armed the leave on the new fork. The answer, about the fork left behind,
+ * must not decide the re-armed leave. The new fork's watchdog is long enough
+ * that the answer lands before the retry starts.
  */
 export async function assertLeaveAwaitsCoveringWindowThenRetries(
-    refusalLands: "before-settlement" | "after-settlement"
+    refusalLands:
+        | "before-settlement"
+        | "after-settlement"
+        | "read-after-settlement"
 ) {
     const h = TestSession.getHarness();
+    const readAfterSettlement = refusalLands === "read-after-settlement";
     await h.lifecycle.start(4, 0, {
         timeConfig: { evidenceTime: 4 },
-        configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
+        configOverrides: {
+            LEAVE_CHANNEL_WATCHDOG_MS: readAfterSettlement ? 3000 : 50
+        }
     });
     const first = h.getPeer(0);
     const leaver = h.getPeer(1);
     const forkId = h.activeForkId!;
-    const beforeSettlement = refusalLands === "before-settlement";
+    const beforeSettlement =
+        refusalLands === "before-settlement" || readAfterSettlement;
+    const coveringRead = readAfterSettlement
+        ? await h.rpcStub.holdLeaveCoveringRead(leaver.index)
+        : undefined;
+    let readReleased = !coveringRead;
     if (beforeSettlement) {
         for (const peer of h.peers)
             await h.control(peer).stub.stubHoldReductionTasks().request();
@@ -91,10 +107,20 @@ export async function assertLeaveAwaitsCoveringWindowThenRetries(
                 () => null,
                 (error) => String(error)
             );
-            await h.event.waitUntilLeavePhase(
-                leaver.index,
-                "awaiting-settlement"
-            );
+            if (coveringRead) {
+                await waitFor(async () => (await coveringRead.entered()) === 1);
+                expect(
+                    await h
+                        .control(leaver)
+                        .query.getLeaveChannelState()
+                        .request()
+                ).to.include({ phase: "disputing", forkId });
+            } else {
+                await h.event.waitUntilLeavePhase(
+                    leaver.index,
+                    "awaiting-settlement"
+                );
+            }
             expect(selfRemovalForks(await recorder.submissions())).to.include(
                 String(forkId)
             );
@@ -103,6 +129,32 @@ export async function assertLeaveAwaitsCoveringWindowThenRetries(
                     .control(peer)
                     .stub.restoreReductionTasks(true)
                     .request();
+            if (coveringRead) {
+                await waitFor(
+                    async () =>
+                        String(
+                            (
+                                await h
+                                    .control(leaver)
+                                    .query.getLeaveChannelState()
+                                    .request()
+                            )?.forkId
+                        ) !== String(forkId)
+                );
+                await coveringRead.release();
+                readReleased = true;
+                // The answer is about the fork left behind: the re-armed leave
+                // keeps its own course instead of waiting on that window.
+                await waitFor(
+                    async () => (await coveringRead.answered()) === 1
+                );
+                const rearmed = await h
+                    .control(leaver)
+                    .query.getLeaveChannelState()
+                    .request();
+                expect(String(rearmed?.forkId)).to.not.equal(String(forkId));
+                expect(rearmed?.phase).to.not.equal("awaiting-settlement");
+            }
         } else {
             outcome = leaver.p2pInstance.leaveChannel().then(
                 () => null,
@@ -150,6 +202,7 @@ export async function assertLeaveAwaitsCoveringWindowThenRetries(
         expect(participants).to.not.include(leaver.address);
         expect(participants).to.not.include(first.address);
     } finally {
+        if (!readReleased) await coveringRead?.release();
         if (!released) await recorder.release();
     }
 }

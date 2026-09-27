@@ -112,6 +112,7 @@ export type StubKey =
     | "reductionCompute"
     | "reductionDisputes"
     | "reductionAdmission"
+    | "leaveCoveringRead"
     | "reductionObservedAttempt"
     | "reductionSubmitGasLimit"
     | "reductionSubmitMulticall"
@@ -175,6 +176,10 @@ export type ReductionAttemptHoldPoint =
 export type ReductionAttemptResume = "original" | "undefined" | "throw";
 export const REDUCTION_ATTEMPT_STUB_FAILURE =
     "Stubbed reduction attempt failure";
+
+/** The error a failed leave covering-window read rejects with. */
+export const LEAVE_COVERING_READ_STUB_FAILURE =
+    "Stubbed covering-window read failure";
 
 /** One pausable host call: counts entries and releases them together. */
 export type StubGate = {
@@ -462,6 +467,10 @@ export class StubService extends ANetworkRpcService<
     completeWithGenesisOutcome?: DetachedCallOutcome;
     /** State-manager mutex held by the stub until released. */
     stateMutexGate?: StubGate;
+    /** The leave's covering-window read, held by the stub until released. */
+    leaveCoveringReadGate?: StubGate;
+    /** Held covering-window reads whose real answer has been returned. */
+    leaveCoveringReadsAnswered = 0;
     /** How many distinct inbound logs may be dropped (undefined = all). */
     eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
@@ -1758,7 +1767,59 @@ export class StubService extends ANetworkRpcService<
         this.restoreForkLeaveObservation = undefined;
     }
 
+    /**
+     * Take over the leave's next covering-window read: the first
+     * `isForkDisputed` call for the leave operation's fork while the leave is
+     * deciding a self-removal that did not land. `hold` parks that call and
+     * then makes the real read; `throw` rejects it. Other callers read through.
+     */
+    public installLeaveCoveringRead(mode: "hold" | "throw"): void {
+        this.restoreLeaveCoveringRead();
+        const sm = this.sm;
+        const contract = sm.stateChannelManagerContract;
+        const original = contract.isForkDisputed;
+        this.stubOriginals.set("leaveCoveringRead", original);
+        const gate = this.createGate();
+        this.leaveCoveringReadGate = gate;
+        this.leaveCoveringReadsAnswered = 0;
+        Reflect.set(contract, "isForkDisputed", async (...args: unknown[]) => {
+            const leave = sm.leaveChannelService.state;
+            const deciding =
+                leave &&
+                (leave.phase === "disputing" ||
+                    leave.phase === "exit-authored") &&
+                String(args[1]) === String(leave.forkId);
+            if (!deciding) return Reflect.apply(original, contract, args);
+            Reflect.set(contract, "isForkDisputed", original);
+            this.stubOriginals.delete("leaveCoveringRead");
+            gate.entered += 1;
+            if (mode === "throw") {
+                throw new Error(LEAVE_COVERING_READ_STUB_FAILURE);
+            }
+            await gate.gate;
+            const answer = await Reflect.apply(original, contract, args);
+            // The leave acts on the answer in the same turn it resumes, so a
+            // query after this count rises sees that decision.
+            this.leaveCoveringReadsAnswered += 1;
+            return answer;
+        });
+    }
+
+    public restoreLeaveCoveringRead(): void {
+        const original = this.stubOriginals.get("leaveCoveringRead");
+        if (original) {
+            Reflect.set(
+                this.sm.stateChannelManagerContract,
+                "isForkDisputed",
+                original
+            );
+            this.stubOriginals.delete("leaveCoveringRead");
+        }
+        this.leaveCoveringReadGate?.release();
+    }
+
     public releaseReductionHolds(): void {
+        this.restoreLeaveCoveringRead();
         this.restoreDisputeParticipationObservation();
         this.restoreAdmissionObservation();
         this.restoreForkLeave();

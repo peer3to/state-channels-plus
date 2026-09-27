@@ -4,6 +4,7 @@ import {
     releaseAfterEvidencePeriod,
     selfRemovalForks
 } from "@test/fixtures/CoveredSelfRemovalStaging";
+import { LEAVE_COVERING_READ_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -11,7 +12,11 @@ import { id, ZeroHash } from "ethers";
 
 export async function assertAuthoredLeaveFallback(
     slow: boolean,
-    failure: "missing-marker" | "evidence-expired" | "success"
+    failure:
+        | "missing-marker"
+        | "covering-read-fails"
+        | "evidence-expired"
+        | "success"
 ) {
     const h = TestSession.getHarness();
     // The evidence-expired refusal is the contract's own: peer 0's voluntary
@@ -51,6 +56,12 @@ export async function assertAuthoredLeaveFallback(
                     }
                 }
     );
+    // The self-removal fails at send, and the chain read that asks whether a
+    // window covers the fork rejects in turn.
+    const coveringRead =
+        failure === "covering-read-fails"
+            ? await h.rpcStub.failLeaveCoveringRead(leaver.index)
+            : undefined;
     let restored = false;
     let authored: Promise<unknown> | undefined;
     leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
@@ -178,15 +189,20 @@ export async function assertAuthoredLeaveFallback(
         } else {
             const result = await outcome;
             // No window covers the fork, so the refusal is not a lost race the
-            // leave can wait out.
+            // leave can wait out; a covering-window read that fails is the
+            // fallback failing, and the leave rejects with that error.
             expect(result.error).to.include(
-                "Terminal channel leave failed to start a dispute"
+                coveringRead
+                    ? LEAVE_COVERING_READ_STUB_FAILURE
+                    : "Terminal channel leave failed to start a dispute"
             );
+            if (coveringRead) expect(await coveringRead.entered()).to.equal(1);
             expect(
                 await h.control(leaver).query.didIDispute(forkId).request()
             ).to.equal(false);
         }
     } finally {
+        await coveringRead?.restore();
         if (!restored) {
             await recorder.restore();
             await h.control(withheld).stub.releaseNextSignature().request();

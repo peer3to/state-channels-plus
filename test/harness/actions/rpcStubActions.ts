@@ -146,6 +146,45 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Park the leave's next covering-window read (the chain `isForkDisputed`
+     * it makes when a self-removal did not land) until released; the read
+     * itself stays real.
+     */
+    async holdLeaveCoveringRead(peerIndex: number): Promise<{
+        entered: () => Promise<number>;
+        answered: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubLeaveCoveringRead("hold").request();
+        return {
+            entered: async () =>
+                await ctl().getLeaveCoveringReadCount().request(),
+            answered: async () =>
+                await ctl().getLeaveCoveringReadsAnswered().request(),
+            release: async () => {
+                await ctl().restoreLeaveCoveringRead().request();
+            }
+        };
+    }
+
+    /** Make the leave's next covering-window read reject. */
+    async failLeaveCoveringRead(peerIndex: number): Promise<{
+        entered: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubLeaveCoveringRead("throw").request();
+        return {
+            entered: async () =>
+                await ctl().getLeaveCoveringReadCount().request(),
+            restore: async () => {
+                await ctl().restoreLeaveCoveringRead().request();
+            }
+        };
+    }
+
     /** Hold the peer's state-manager mutex until released. */
     async holdStateMutex(peerIndex: number): Promise<{
         entered: () => Promise<number>;

@@ -14,6 +14,7 @@ import {
     assertAuthoredLeaveAwaitsCoveringWindow,
     assertLeaveAwaitsCoveringWindowThenRetries
 } from "@test/fixtures/CoveredSelfRemovalStaging";
+import { LEAVE_COVERING_READ_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
@@ -1041,6 +1042,9 @@ describe("discovery runtime port", function () {
     it("authored leave fast fallback on evidence-expired awaits settlement and resolves on the reduced fork", async function () {
         await assertAuthoredLeaveFallback(false, "evidence-expired");
     });
+    it("authored leave fast fallback rejects with the covering-window read's error when that read fails", async function () {
+        await assertAuthoredLeaveFallback(false, "covering-read-fails");
+    });
     it("authored leave slow fallback rejects on missing-marker", async function () {
         await assertAuthoredLeaveFallback(true, "missing-marker");
     });
@@ -1055,6 +1059,11 @@ describe("discovery runtime port", function () {
     });
     it("a self-removal refused after the leave re-armed on a newer fork leaves the newer attempt in charge", async function () {
         await assertLeaveAwaitsCoveringWindowThenRetries("after-settlement");
+    });
+    it("a covering-window answer that lands after the leave re-armed on a newer fork leaves the newer attempt in charge", async function () {
+        await assertLeaveAwaitsCoveringWindowThenRetries(
+            "read-after-settlement"
+        );
     });
     it("exit fallback failure ignores absent and awaiting-exit operations", async function () {
         await assertExitFallbackFailureGuards();
@@ -1310,6 +1319,39 @@ describe("discovery runtime port", function () {
         await TestSession.settleDetached({
             expectedErrorIncludes:
                 "Terminal channel leave failed to start a dispute"
+        });
+    });
+
+    it("leave watchdog rejects with the covering-window read's error when that read fails", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0, {
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
+        });
+        const leaver = h.peers[1];
+        const recorder = await h.rpcStub.recordDisputeSubmissions(
+            leaver.index,
+            { failWith: { message: "Dispute send failed", at: "send" } }
+        );
+        const coveringRead = await h.rpcStub.failLeaveCoveringRead(
+            leaver.index
+        );
+        try {
+            await expect(
+                leaver.p2pInstance.p2pSigner.leaveChannel()
+            ).to.be.rejectedWith(LEAVE_COVERING_READ_STUB_FAILURE);
+            expect({
+                uploads: (await recorder.submissions()).length,
+                coveringReads: await coveringRead.entered(),
+                disputed: await h
+                    .control(leaver)
+                    .query.didIDispute(h.activeForkId!)
+                    .request()
+            }).to.deep.equal({ uploads: 1, coveringReads: 1, disputed: false });
+        } finally {
+            await coveringRead.restore();
+        }
+        await TestSession.settleDetached({
+            expectedErrorIncludes: LEAVE_COVERING_READ_STUB_FAILURE
         });
     });
 

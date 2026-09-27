@@ -1595,6 +1595,25 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** Take over the leave's next covering-window read; see the service. */
+    public stubLeaveCoveringRead(mode: "hold" | "throw"): boolean {
+        this.service.installLeaveCoveringRead(mode);
+        return true;
+    }
+
+    public getLeaveCoveringReadCount(): number {
+        return this.service.leaveCoveringReadGate?.entered ?? 0;
+    }
+
+    public getLeaveCoveringReadsAnswered(): number {
+        return this.service.leaveCoveringReadsAnswered;
+    }
+
+    public restoreLeaveCoveringRead(): boolean {
+        this.service.restoreLeaveCoveringRead();
+        return true;
+    }
+
     public getStateMutexHeldCount(): number {
         return this.service.stateMutexGate?.entered ?? 0;
     }
