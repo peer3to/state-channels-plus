@@ -204,6 +204,14 @@ Mocha tests with a warning that lists them (also written to the GitHub job
 summary) instead of failing; CI's `browser` job runs the same gates inside the
 runner image either way.
 
+A worker whose lease or workspace setup fails before it is given a task is
+retried, but not indefinitely: after three consecutive failures with the same
+error the orchestrator retires that host for the rest of the run and logs the
+error. Being given a task resets the count, and a different error starts a new
+one. When every discovered host has been retired this way the run fails at once
+with `All distributed workers failed the same way 3 times: <error>` instead of
+redialing until the job times out.
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a

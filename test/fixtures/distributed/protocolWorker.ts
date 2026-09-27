@@ -55,7 +55,18 @@ export type ProtocolWorkerRecord = {
     offeredProtocol: number | null;
     runners: string[];
     labels: string[];
+    workspaceOffers: number;
 };
+
+/**
+ * How a host answers the workspace offer of one lease: a need naming a file the
+ * manifest does not offer, a need that is not a diff, or a normal lease that
+ * closes the connection after running one task.
+ */
+export type ProtocolWorkerLeaseStep =
+    | "outside-manifest"
+    | "invalid-diff"
+    | "one-task-then-close";
 
 /**
  * A worker host on the local DHT that declares `distributedProtocol` and
@@ -68,12 +79,20 @@ export async function startProtocolWorker(options: {
     distributedProtocol: number;
     keys: PoolKeys;
     dht: unknown;
+    // One step per lease in order; leases past the end behave normally.
+    leaseSteps?: ProtocolWorkerLeaseStep[];
+    // Hold the first result until another host has had this many workspace
+    // offers, so a run cannot finish before that host's setup failures land.
+    holdFirstResultUntil?: { worker: string; workspaceOffers: number };
+    // The records of every host in the run, for holdFirstResultUntil.
+    records?: () => ProtocolWorkerRecord[];
 }) {
     const record: ProtocolWorkerRecord = {
         name: options.name,
         offeredProtocol: null,
         runners: [],
-        labels: []
+        labels: [],
+        workspaceOffers: 0
     };
     const pool = await createPool({
         announceTopics: [options.keys.workerTopic],
@@ -104,6 +123,21 @@ export async function startProtocolWorker(options: {
             const offer = await waitForMessage(peer, "WORKSPACE_OFFER");
             record.offeredProtocol =
                 offer.header.manifest.distributedProtocol ?? null;
+            const step = options.leaseSteps?.[record.workspaceOffers];
+            record.workspaceOffers += 1;
+            if (step === "outside-manifest" || step === "invalid-diff") {
+                // The orchestrator rejects this need and closes the stream.
+                const need =
+                    step === "outside-manifest"
+                        ? { changed: ["not-offered.js"], deleted: [] }
+                        : { changed: "not-a-list", deleted: [] };
+                await peer.send(
+                    "WORKSPACE_NEED",
+                    {},
+                    Buffer.from(JSON.stringify(need))
+                );
+                return;
+            }
             await peer.send(
                 "WORKSPACE_NEED",
                 {},
@@ -124,6 +158,23 @@ export async function startProtocolWorker(options: {
                 const { assignment } = reply.header;
                 record.runners.push(assignment.task.runner);
                 record.labels.push(assignment.task.label);
+                const hold = options.holdFirstResultUntil;
+                if (hold && record.labels.length === 1) {
+                    const deadline = Date.now() + 30_000;
+                    const offers = () =>
+                        options
+                            .records?.()
+                            .find((entry) => entry.name === hold.worker)
+                            ?.workspaceOffers ?? 0;
+                    while (
+                        offers() < hold.workspaceOffers &&
+                        Date.now() < deadline
+                    ) {
+                        await new Promise((resolve) => setTimeout(resolve, 25));
+                    }
+                    // Let the orchestrator register the drop that follows the offer.
+                    await new Promise((resolve) => setTimeout(resolve, 300));
+                }
                 await peer.send("ATTEMPT_RESULT", {
                     requestId: id,
                     assignment,
@@ -134,6 +185,10 @@ export async function startProtocolWorker(options: {
                     },
                     logTransferred: false
                 });
+                if (step === "one-task-then-close") {
+                    peer.close("fixture host leaves after one task");
+                    return;
+                }
             }
             await waitForMessage(peer, "RUN_COMPLETE", 60_000);
             await peer.send("LEASE_CLEAN");
@@ -185,7 +240,12 @@ export const CHROMIUM_MOCHA_TASKS = [1, 2, 3].map((index) => ({
  * the run appended to a GitHub step summary.
  */
 export async function runAgainstProtocolWorkers(
-    workers: Array<{ name: string; distributedProtocol: number }>,
+    workers: Array<{
+        name: string;
+        distributedProtocol: number;
+        leaseSteps?: ProtocolWorkerLeaseStep[];
+        holdFirstResultUntil?: { worker: string; workspaceOffers: number };
+    }>,
     options: {
         discoveryTimeoutMs?: number;
         tasks?: Array<Record<string, unknown>>;
@@ -204,14 +264,18 @@ export async function runAgainstProtocolWorkers(
     const warnings: string[] = [];
     const originalWarn = console.warn;
     const originalSummary = process.env.GITHUB_STEP_SUMMARY;
-    const started = [];
+    const started: Array<{
+        record: ProtocolWorkerRecord;
+        close: () => Promise<void>;
+    }> = [];
     try {
         for (const worker of workers) {
             started.push(
                 await startProtocolWorker({
                     ...worker,
                     keys,
-                    dht: network.createNode()
+                    dht: network.createNode(),
+                    records: () => started.map((entry) => entry.record)
                 })
             );
         }

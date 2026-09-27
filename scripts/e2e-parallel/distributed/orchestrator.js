@@ -366,6 +366,78 @@ function recordWorkerFailure(workerStates, workerId, details = {}, limit = 2) {
     return state;
 }
 
+// A host that fails workspace setup the same way this often will not succeed on
+// a redial; it is retired for the run instead of re-leased indefinitely.
+const MAX_IDENTICAL_SETUP_FAILURES = 3;
+
+/** Counts and byte sizes vary between attempts of the same failure. */
+function normalizeFailureReason(reason) {
+    return String(reason || "unknown failure")
+        .replace(/\b[0-9a-f]{8,}\b/gi, "#")
+        .replace(/\d+/g, "#")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Record a failure before the worker was admitted a task. Consecutive failures
+ * with the same normalized reason count towards the cap; a different reason
+ * starts a new count. At the cap the host is quarantined for the run, which the
+ * reconnect check already enforces.
+ */
+function recordSetupFailure(
+    workerStates,
+    workerId,
+    details = {},
+    limit = MAX_IDENTICAL_SETUP_FAILURES
+) {
+    const state = recordWorkerRetirement(workerStates, workerId, {
+        label: details.label,
+        kind: "setup failure",
+        reason: details.reason
+    });
+    const reason = normalizeFailureReason(details.reason);
+    state.setupFailures =
+        state.setupFailureReason === reason
+            ? (state.setupFailures || 0) + 1
+            : 1;
+    state.setupFailureReason = reason;
+    state.setupFailureMessage = details.reason || reason;
+    if (state.setupFailures >= limit) {
+        state.quarantined = true;
+        state.setupCapped = true;
+    }
+    return state;
+}
+
+/** A worker admitted a task: its setup evidently works now. */
+function resetSetupFailures(workerStates, workerId) {
+    const state = workerStates.get(workerId);
+    if (!state) return;
+    state.setupFailures = 0;
+    state.setupFailureReason = null;
+    state.setupFailureMessage = null;
+}
+
+/**
+ * When every host this run discovered was retired by the setup cap, retrying
+ * cannot help: the message to fail the run with, or null.
+ */
+function allWorkersSetupCapped(
+    workerStates,
+    limit = MAX_IDENTICAL_SETUP_FAILURES
+) {
+    const states = [...workerStates.values()];
+    if (!states.length || !states.every((state) => state.setupCapped))
+        return null;
+    const reasons = new Set(states.map((state) => state.setupFailureReason));
+    return reasons.size === 1
+        ? `All distributed workers failed the same way ${limit} times: ${states[0].setupFailureMessage}`
+        : `All distributed workers were retired after ${limit} identical setup failures: ${states
+              .map((state) => `${state.label}: ${state.setupFailureMessage}`)
+              .join("; ")}`;
+}
+
 function recordWorkerRetirement(workerStates, workerId, details = {}) {
     const state = workerStates.get(workerId) || {
         label: details.label || workerId,
@@ -641,6 +713,8 @@ async function runDistributed(options) {
                     ready.header.capabilities.heartbeatTimeoutMs || 15000,
                 heartbeat: null,
                 connectionHash: connectionHash(stream),
+                // Set once a task is assigned: failures before that are setup failures.
+                admitted: false,
                 retired: false
             };
             recordWorkerRetirement(workerStates, workerId, {
@@ -829,6 +903,10 @@ async function runDistributed(options) {
                 });
                 settleRun();
                 return;
+            }
+            if (!worker.admitted) {
+                worker.admitted = true;
+                resetSetupFailures(workerStates, worker.id);
             }
             const wireAssignment = {
                 ...assignment,
@@ -1029,10 +1107,30 @@ async function runDistributed(options) {
 
     function dropWorker(worker, error) {
         worker.failure ||= error;
+        const setupState =
+            !worker.admitted && !worker.retired && !finishing
+                ? recordSetupFailure(workerStates, worker.id, {
+                      label: worker.label,
+                      reason: error.message
+                  })
+                : null;
+        if (setupState?.setupCapped) {
+            console.warn(
+                `Retiring worker ${workerName(worker)} for this run after ${setupState.setupFailures} identical setup failures: ${error.message}`
+            );
+        }
         retireWorker(worker, `worker protocol failed: ${error.message}`, {
-            kind: "protocol failure",
+            kind: setupState ? "setup failure" : "protocol failure",
             reason: error.message
         });
+        const allCapped =
+            setupState?.setupCapped && !workers.size
+                ? allWorkersSetupCapped(workerStates)
+                : null;
+        if (allCapped) {
+            clearRediscoveryTimeout();
+            completedReject(new Error(allCapped));
+        }
     }
 
     function reportQuarantine(worker, state) {
@@ -1157,7 +1255,12 @@ async function runDistributed(options) {
 }
 
 module.exports = {
+    MAX_IDENTICAL_SETUP_FAILURES,
     WORKER_COLORS,
+    allWorkersSetupCapped,
+    normalizeFailureReason,
+    recordSetupFailure,
+    resetSetupFailures,
     aggregateWorkerStats,
     assertCompatibleWorkerProtocol,
     coordinatorResultActions,
