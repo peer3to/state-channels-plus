@@ -523,7 +523,9 @@ describe("ContractExecutor", function () {
             expect.fail("Expected call to fail");
         } catch (error: any) {
             // basic error message
-            expect(error.message).to.include("EVM execution failed: revert");
+            expect(error.message).to.include(
+                "Local EVM execution failed: revert"
+            );
         }
     });
 
@@ -551,7 +553,7 @@ describe("ContractExecutor", function () {
                 errorMessage
             );
             expect(customError!.originalError.message).to.equal(
-                "EVM execution failed: Error"
+                "Local EVM execution failed: Error"
             );
         }
     });

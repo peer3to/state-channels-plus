@@ -73,12 +73,16 @@ export default class BlockQueueManager {
                 options.validationStrategy ||
                 this.stateManager.getActiveValidationStrategy(options);
 
-            const isAuthentic =
-                await this.stateManager.validationService.isBlockConfirmationAuthentic(
-                    blockConfirmation
-                );
+            // Decoded once: the authenticity check and everything after it
+            // share this block, its cached hash and its recovered signer.
+            const block = Block.tryFromBlockConfirmation(
+                blockConfirmation,
+                options.origin === BlockOrigin.NETWORK
+                    ? undefined
+                    : options.onChainTimestamp
+            );
 
-            if (!isAuthentic) {
+            if (!block?.isAuthentic) {
                 const validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
                 this.logger.warn(
@@ -96,13 +100,6 @@ export default class BlockQueueManager {
                     validationResult
                 );
             }
-
-            const block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                options.origin === BlockOrigin.NETWORK
-                    ? undefined
-                    : options.onChainTimestamp
-            );
 
             if (!this.isBlockForThisChannel(block)) {
                 this.logger.warn("ingestBlockConfirmation - wrong channel", {

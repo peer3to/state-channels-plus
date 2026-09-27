@@ -14,6 +14,7 @@ import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import { Codec, Mutex, Type } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers, id } from "ethers";
@@ -133,8 +134,17 @@ export type BlockValidationProbe = {
 };
 
 export type BlockIngestProbe = BlockValidationProbe & {
-    /** onBlockConfirmation's return value. */
-    keepConnection: boolean;
+    /** onBlockConfirmation's return value; null when it threw. */
+    keepConnection: boolean | null;
+    /** The error onBlockConfirmation threw; null when it returned. */
+    threw: string | null;
+};
+
+export type DisputeStructIngestProbe = {
+    /** onBlockConfirmationStruct's return value; null when it threw. */
+    accepted: boolean | null;
+    /** The error onBlockConfirmationStruct threw; null when it returned. */
+    threw: string | null;
 };
 
 /**
@@ -925,23 +935,60 @@ export class ValidationProbeService extends ANetworkRpcService<
                 options
             );
             try {
-                const keepConnection =
-                    await this.sm.blockIngestService.onBlockConfirmation(
-                        run.entry,
-                        { validationStrategy: run.instrumentedStrategy }
-                    );
+                let keepConnection: boolean | null = null;
+                let threw: string | null = null;
+                try {
+                    keepConnection =
+                        await this.sm.blockIngestService.onBlockConfirmation(
+                            run.entry,
+                            { validationStrategy: run.instrumentedStrategy }
+                        );
+                } catch (error) {
+                    threw = errorMessage(error);
+                }
                 const result =
                     run.recorded.lastHookResult ??
                     BlockValidationResult.SUCCESS;
                 return {
                     ...this.buildValidationProbe(run, result),
-                    keepConnection
+                    keepConnection,
+                    threw
                 };
             } finally {
                 run.restore();
             }
         } finally {
             this.blockValidationProbeMutex.unlock();
+        }
+    }
+
+    /**
+     * Replay one confirmation as the dispute audit does: the struct caller
+     * `onBlockConfirmationStruct` with a real DisputeValidationStrategy for
+     * `dispute` at unfinalized block index 0. The strategy's side effect (a
+     * stored dispute fraud proof) stays real.
+     */
+    public async runBlockConfirmationStructUnderDispute(
+        encodedBlockConfirmation: string,
+        encodedDispute: string
+    ): Promise<DisputeStructIngestProbe> {
+        const strategy = this.createDisputeValidationStrategy(
+            Codec.decode(encodedDispute, Type.Dispute)
+        );
+        try {
+            return {
+                accepted:
+                    await this.sm.blockIngestService.onBlockConfirmationStruct(
+                        Codec.decode(
+                            encodedBlockConfirmation,
+                            Type.BlockConfirmation
+                        ),
+                        { validationStrategy: strategy }
+                    ),
+                threw: null
+            };
+        } catch (error) {
+            return { accepted: null, threw: errorMessage(error) };
         }
     }
 

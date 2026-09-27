@@ -4,6 +4,7 @@ import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+
 import { normalizeRealConfirmations } from "@test/fixtures/ConfirmationNormalizationFixture";
 import { probeWrongLeaderInsertion } from "@test/fixtures/MathInsertionFixture";
 import {
@@ -94,6 +95,21 @@ describe("Unit: ValidationService", function () {
 
     it("normalization strips an unrecoverable confirmation and punishes only its supplier", async () => {
         const result = await normalizeRealConfirmations({ strategy: "live" });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
+        expect(
+            result.sources
+                .filter((source) => source.blacklisted)
+                .map((source) => source.source)
+        ).to.deep.equal([result.badSource]);
+    });
+
+    it("normalization strips a confirmation in an encoding the contracts reject and punishes only its supplier", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "live",
+            contractRejectedEncoding: true
+        });
         expect(result.result).to.equal("SUCCESS");
         expect(result.signatures).not.to.include(result.malformed);
         expect(result.signatures).to.include.members(result.good);

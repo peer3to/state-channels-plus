@@ -400,6 +400,7 @@ describe("parallel forge task discovery", function () {
     it("discovers one task per Foundry test contract in the repository test tree", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
+            "AStateMachineStipendTest",
             "DisputeFraudProofFacetPayloadsTest",
             "DisputeVerificationFacetTest",
             "DisputeWindowAdmissionTest",
@@ -416,7 +417,7 @@ describe("parallel forge task discovery", function () {
             "StateSnapshotFacetUpdateForkTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(15);
+        expect(tasks).to.have.lengthOf(16);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

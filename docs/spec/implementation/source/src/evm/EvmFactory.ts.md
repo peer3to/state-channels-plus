@@ -24,6 +24,7 @@ Constructs the local EVM instance (with custom precompiles) for the mirror deplo
 ## Key design decisions
 
 1. **Integrator precompiles are injected at construction** — deployment-time capability, not runtime mutation.
+2. **Every local EVM gets the ecrecover memo.** `createEvm` calls `installEcrecoverCache` on the new EVM before returning it ([#L72](../../../../../../src/evm/EvmFactory.ts#L72)), so repeated mirror checks of the same signatures skip the secp256k1 work. The memo sits below the contract code and never changes a result ([EcrecoverCache](../cache/EcrecoverCache.ts.md)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -78,3 +79,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [runtime-and-concurrency view](../../../views/architecture/sdk/runtime-and-concurrency.md).
+- [EcrecoverCache.ts](../cache/EcrecoverCache.ts.md) — the precompile memo installed here.

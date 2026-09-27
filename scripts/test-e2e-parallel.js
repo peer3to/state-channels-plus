@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 require("dotenv").config({ quiet: true });
 const os = require("os");
-const { spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
@@ -19,58 +18,11 @@ const {
     parseCliArgs,
     resolveDiscoverySelection
 } = require("./e2e-parallel/shared/argParser");
-const { compiledTreeState } = require("./e2e-parallel/shared/compiledTree");
+const {
+    compiledTestTreeAvailable,
+    refreshCompiledTestTree
+} = require("./e2e-parallel/shared/compiledTree");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
-
-const COMPILED_TEST_BUILD_SCRIPT = "test:parallel:build";
-
-function compiledTestTreeAvailable() {
-    try {
-        const manifest = JSON.parse(
-            fs.readFileSync(path.resolve("package.json"), "utf8")
-        );
-        return (
-            !!manifest.scripts?.[COMPILED_TEST_BUILD_SCRIPT] &&
-            fs.existsSync(path.resolve("tsconfig.json"))
-        );
-    } catch {
-        return false;
-    }
-}
-
-// Bring the compiled tree up to date with the sources. Changed contents are
-// emitted in place; an added, removed or renamed source, or a missing stamp,
-// means a clean build so no twin of a deleted file can linger. Returns an
-// error message on failure, undefined otherwise.
-function refreshCompiledTestTree() {
-    const state = compiledTreeState();
-    if (state === "current") return undefined;
-    const steps =
-        state === "rebuild"
-            ? [["yarn", ["-s", COMPILED_TEST_BUILD_SCRIPT]]]
-            : [
-                  ["yarn", ["-s", "tsc"]],
-                  ["yarn", ["-s", "tsc-alias", "-p", "tsconfig.json"]],
-                  [
-                      process.execPath,
-                      [path.join(__dirname, "copy-test-runtime-utils.js")]
-                  ]
-              ];
-    console.log(
-        state === "rebuild"
-            ? "Building the compiled test tree (dist): the source file set changed since the last build..."
-            : "Refreshing the compiled test tree (dist): sources changed since the last build..."
-    );
-    for (const [command, args] of steps) {
-        const result = spawnSync(command, args, {
-            stdio: "inherit",
-            env: process.env
-        });
-        if (result.status !== 0)
-            return `Building the compiled test tree failed (${command} ${args.join(" ")})`;
-    }
-    return undefined;
-}
 const {
     discoverForgeTasks
 } = require("./e2e-parallel/shared/forgeTaskDiscovery");

@@ -78,6 +78,8 @@ export function getOpenChannelProposalMismatch(
         channelId: BytesLike;
         participants: [Address, Address];
         balances: OpenChannelStruct["balances"];
+        /** Application opening data both peers derive locally; empty by default. */
+        data?: BytesLike;
     },
     deadline: { nowSeconds: number; maxSeconds: number }
 ): string | null {
@@ -117,8 +119,10 @@ export function getOpenChannelProposalMismatch(
     if (decoded.isAtomic !== true) {
         return "isAtomic must be true";
     }
-    if (ethers.hexlify(decoded.data) !== "0x") {
-        return "data must be empty";
+    if (
+        ethers.hexlify(decoded.data) !== ethers.hexlify(expected.data ?? "0x")
+    ) {
+        return "data mismatch";
     }
     const deadlineSeconds = Number(decoded.deadlineTimestamp);
     if (

@@ -1,4 +1,5 @@
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
+import { installEcrecoverCache } from "@/cache/EcrecoverCache";
 import type { Logger } from "@/utils";
 import { toEthereumJsEvmAddress } from "@/utils";
 import { EVM, EVMOpts } from "@ethereumjs/evm";
@@ -68,6 +69,7 @@ export async function createEvm(
         ...evmOptions,
         customPrecompiles
     });
+    installEcrecoverCache(evm);
 
     return evm;
 }

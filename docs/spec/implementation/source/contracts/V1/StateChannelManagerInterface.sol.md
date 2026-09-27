@@ -29,13 +29,13 @@ Its declarations are grouped by owner: `// implemented by StateChannelManagerPro
 ([#L16](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L16)) then one
 `// routed to <Facet>` block per facet — UtilityFacet
 ([#L42](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L42)), DisputeManagerFacet
-([#L146](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L146)),
-DisputeVerificationFacet ([#L155](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L155)),
-FraudProofFacet ([#L189](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L189)),
-DisputeFraudProofFacet ([#L198](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L198)),
-StateSnapshotFacet ([#L213](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L213)),
-JoinChannelFacet ([#L228](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L228)) and
-StateProofFacet ([#L242](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L242)).
+([#L156](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L156)),
+DisputeVerificationFacet ([#L165](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L165)),
+FraudProofFacet ([#L199](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L199)),
+DisputeFraudProofFacet ([#L208](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L208)),
+StateSnapshotFacet ([#L223](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L223)),
+JoinChannelFacet ([#L238](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L238)) and
+StateProofFacet ([#L252](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L252)).
 It inherits `StateChannelManagerEvents`, so a consumer bound to this type also decodes every event
 the diamond emits.
 
@@ -54,6 +54,14 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
    preserved, plus the one new read-only `facetAddressForSelector`
    ([#L40](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L40)), so no caller —
    on-chain or off-chain — had to change an encoding.
+   Two later changes altered the surface on purpose. `isBlockAuthentic` is gone: nothing
+   external calls block authenticity any more, because the client checks author signatures itself
+   under the signature carve-out of
+   [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) and the facets use the internal
+   `_isBlockAuthentic`. `getStateTransitionReplayGas`
+   ([#L90](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L90)) is new: the gas the
+   replay call chain needs so the replayed transition gets its full stipend
+   ([UtilityFacet](./StateChannelDiamondProxy/UtilityFacet.sol.md) decision 7).
 3. **Each declaration repeats the implementing function's state mutability, not the forwarder's.**
    The old proxy forwarder bodies were `nonpayable` even when the facet function reads nothing, and
    those mutabilities were carried over verbatim when the declarations moved here. They are now
@@ -64,7 +72,7 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
    `isGenesisSnapshotWithoutTimeCheck`/`isSnapshotNewer` moved from `view` to `pure`. This is not
    cosmetic: mutability is what decides whether ethers sends an `eth_call` or a transaction, so a
    `nonpayable` declaration of a read-only facet function costs the caller a transaction and returns
-   no value ([#L135](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L135)).
+   no value ([#L148](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L148)).
    Parameter and return names were also aligned with the facets in the same pass; they are ABI-neutral.
 4. **Declarations are grouped by their owning facet.** The comment blocks mirror the proxy's routing
    table, which is what makes an accidental divergence visible in review

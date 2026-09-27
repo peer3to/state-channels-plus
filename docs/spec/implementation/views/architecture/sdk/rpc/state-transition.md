@@ -87,7 +87,7 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    The struct is passed **raw** — no Codec decode, no shape check at the RPC layer. Everything
    [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) demands is discharged inside intake
    ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §4): authenticity via
-   the canonical Solidity predicate (`LocalDiamond.isBlockAuthentic`), dedup → stored-merge,
+   `Block.isAuthentic` (TypeScript recovery through the signer cache), dedup → stored-merge,
    channel gate, disputed-fork gate, non-current-fork recovery scheduling, queueing with the
    fixed `firstSeenAt + agreementTime` lifetime and per-entry structural caps. Intake wraps all
    of this in a try/catch: any exception becomes a `false` verdict
@@ -133,8 +133,10 @@ open connection, sending arbitrary frames at arbitrary rate ([./README.md](./REA
 be any JSON shape. Every malformation path converges on a `false` verdict → disconnect +
 blacklist:
 
-- ABI/shape garbage throws inside `Block.fromBlockConfirmation` or the `isBlockAuthentic` call;
-  intake's catch converts it to `false`.
+- ABI/shape garbage fails `Block.tryFromBlockConfirmation`, and intake reads the missing block as
+  inauthentic (`block?.isAuthentic`); anything that still throws is converted to `false` by intake's catch.
+  `Codec` is the only decoder, and its acceptance of non-canonical encodings is not yet at parity
+  with the contracts' decoder ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 - Structurally valid but inauthentic (author signature does not recover to the declared
   participant) → `authenticateBlockFailed` → `DISCONNECT`
   ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §4 step 1).
@@ -155,7 +157,7 @@ engineer decision on the error partition. Same family as [`DEF-5-E8TP9N`](../../
 **Unhandled — the canonical [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5) surface.** This is the highest-volume method on the node and
 there is no rate limiting anywhere in the RPC layer ([./README.md](./README.md) §9). Per-frame
 attacker-imposed cost: JSON parse (bounded by the 16 MiB frame cap), guard lookup, one ECDSA
-recovery inside `isBlockAuthentic` (memoized per `(blockHash, signature)` with a bounded cache —
+recovery inside `Block.isAuthentic` (memoized per `(blockHash, signature)` with a bounded cache —
 distinct junk always misses), and queue-entry creation plus two scheduled tasks (timeout +
 execution attempt).
 

@@ -7,6 +7,24 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LoggerUtils", function () {
+    it("marks block confirmation bytes that do not decode instead of throwing", function () {
+        const blockConfirmation = factory.blockConfirmation({
+            signedBlock: {
+                encodedBlock: factory.hash(),
+                signature: factory.signature()
+            }
+        });
+
+        const metadata =
+            LoggerUtils.getBlockConfirmationStructMetadata(blockConfirmation);
+
+        expect(metadata).to.include({
+            undecodableBlock: true,
+            originalSignature: String(blockConfirmation.signedBlock.signature)
+        });
+        expect(metadata).to.not.have.property("blockHeight");
+    });
+
     it("formats known and unknown numeric enum members without changing strings", function () {
         expect(LoggerUtils.enumToString(Status, Status.SYNCED)).to.equal(
             "SYNCED"

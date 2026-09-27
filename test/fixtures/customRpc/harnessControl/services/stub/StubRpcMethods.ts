@@ -1,4 +1,10 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
+import type {
+    EvidenceComparisonFault,
+    HeldEvidenceComparisonRelease,
+    RecordedEvidenceAudit,
+    RecordedEvidenceComparison
+} from "./node/EvidenceComparisonRecorder";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
@@ -7,7 +13,10 @@ import type {
     PausedReductionStatus,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
+    RecordedGasEstimate,
+    RecordedReplayGasRead,
     ReductionSimulationErrorName,
+    ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
@@ -39,6 +48,7 @@ import type {
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import { ethers } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -175,6 +185,83 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         eventHandler.onBlockCalldataPosted =
             original as typeof eventHandler.onBlockCalldataPosted;
         this.service.stubOriginals.delete("calldataPosting");
+        return true;
+    }
+
+    /**
+     * The local diamond serves the unfinalized part of every state proof with
+     * its first confirmation's block bytes replaced by bytes that do not
+     * decode (appended when that part is empty), so the replay callers
+     * (dispute audit, spectate sync) hand them to onBlockConfirmationStruct.
+     * With `structureInvalid`, the structure predicate the dispute strategy
+     * asks also judges that block invalid.
+     */
+    public stubUndecodableUnfinalizedBlock(structureInvalid: boolean): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("undecodableUnfinalizedBlock")) {
+            this.service.stubOriginals.set(
+                "undecodableUnfinalizedBlock",
+                localDiamond.getUnfinalizedBlockConfirmationsFromStateProof
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "undecodableUnfinalizedBlock"
+        ) as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
+        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof = (async (
+            ...args: Parameters<typeof original>
+        ) => {
+            const confirmations = (await original(...args)).map((bc) => ({
+                signedBlock: {
+                    encodedBlock: String(bc.signedBlock.encodedBlock),
+                    signature: String(bc.signedBlock.signature)
+                },
+                signatures: Array.from(bc.signatures, String)
+            }));
+            const undecodable = ethers.id("undecodable block");
+            if (confirmations.length === 0)
+                confirmations.push({
+                    signedBlock: { encodedBlock: undecodable, signature: "0x" },
+                    signatures: []
+                });
+            else confirmations[0].signedBlock.encodedBlock = undecodable;
+            return confirmations;
+        }) as unknown as typeof original;
+
+        if (
+            structureInvalid &&
+            !this.service.stubOriginals.has("invalidBlockStructurePredicate")
+        ) {
+            this.service.stubOriginals.set(
+                "invalidBlockStructurePredicate",
+                localDiamond.isInvalidBlockStructureInStateProof
+            );
+            localDiamond.isInvalidBlockStructureInStateProof = Object.assign(
+                async () => true,
+                { staticCall: async () => true }
+            ) as unknown as typeof localDiamond.isInvalidBlockStructureInStateProof;
+        }
+        return true;
+    }
+
+    public restoreUndecodableUnfinalizedBlock(): boolean {
+        const original = this.service.stubOriginals.get(
+            "undecodableUnfinalizedBlock"
+        );
+        if (original === undefined) return false;
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof =
+            original as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
+        this.service.stubOriginals.delete("undecodableUnfinalizedBlock");
+        const predicate = this.service.stubOriginals.get(
+            "invalidBlockStructurePredicate"
+        );
+        if (predicate !== undefined) {
+            localDiamond.isInvalidBlockStructureInStateProof =
+                predicate as typeof localDiamond.isInvalidBlockStructureInStateProof;
+            this.service.stubOriginals.delete("invalidBlockStructurePredicate");
+        }
         return true;
     }
 
@@ -2008,6 +2095,62 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreDisputeFraudProofApplies();
     }
 
+    /**
+     * Answer this peer's chain-signer estimates for `methods` scaled by
+     * `numerator / denominator`, recording each real estimate.
+     */
+    public stubScaleReplayGasEstimates(
+        methods: ReplayGasEstimateMethod[],
+        numerator: number,
+        denominator: number
+    ): boolean {
+        this.service.installReplayGasEstimateScale(
+            methods,
+            numerator,
+            denominator
+        );
+        return true;
+    }
+
+    public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {
+        return this.service.recordedGasEstimates.map((estimate) => ({
+            ...estimate
+        }));
+    }
+
+    public restoreScaleReplayGasEstimates(): boolean {
+        return this.service.restoreReplayGasEstimateScale();
+    }
+
+    /**
+     * Record the manager's replay-requirement reads (forwarded); the first
+     * `failFirst` reads reject instead. `hold` parks each read until
+     * `releaseReplayGasReads`.
+     */
+    public stubRecordReplayGasReads(failFirst: number, hold: boolean): boolean {
+        this.service.installReplayGasReadRecorder(failFirst, hold);
+        return true;
+    }
+
+    /** Reads parked at the replay-gas read hold so far. */
+    public getHeldReplayGasReadCount(): number {
+        return this.service.replayGasReadHold?.held ?? 0;
+    }
+
+    public releaseReplayGasReads(): boolean {
+        return this.service.releaseReplayGasReads();
+    }
+
+    public getRecordedReplayGasReads(): RecordedReplayGasRead[] {
+        return this.service.recordedReplayGasReads.map((read) => ({
+            ...read
+        }));
+    }
+
+    public restoreReplayGasReads(): boolean {
+        return this.service.restoreReplayGasReads();
+    }
+
     /** Keep this peer out of a kill race (counts the kills it skipped). */
     public stubSuppressDisputeKill(): boolean {
         const disputeManager = this.service.sm.disputeManager;
@@ -2859,6 +3002,48 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreLobbyRoleDuration(): boolean {
         return this.service.restoreLobbyRoleDuration();
+    }
+
+    /**
+     * Record every `shouldAddOwnEvidence` audit and the evidence comparison
+     * `constructDispute` call inside it, and forward both. `fault` applies
+     * only to the next comparison.
+     */
+    public stubRecordEvidenceComparisons(
+        fault?: EvidenceComparisonFault
+    ): boolean {
+        this.service.evidenceComparisons.install(this.service.sm, fault);
+        return true;
+    }
+
+    public getRecordedEvidenceComparisons(): {
+        comparisons: RecordedEvidenceComparison[];
+        audits: RecordedEvidenceAudit[];
+        isHolding: boolean;
+    } {
+        const recorder = this.service.evidenceComparisons;
+        return {
+            comparisons: recorder.comparisons.map((comparison) => ({
+                ...comparison
+            })),
+            audits: recorder.audits.map((audit) => ({ ...audit })),
+            isHolding: recorder.isHolding
+        };
+    }
+
+    public releaseHeldEvidenceComparison(
+        release: HeldEvidenceComparisonRelease
+    ): boolean {
+        return this.service.evidenceComparisons.releaseHeldComparison(release);
+    }
+
+    /** Ask `shouldAddOwnEvidence` again with the last audited dispute. */
+    public repeatLastEvidenceAudit(): Promise<RecordedEvidenceAudit> {
+        return this.service.evidenceComparisons.repeatLastAudit();
+    }
+
+    public restoreEvidenceComparisons(): boolean {
+        return this.service.evidenceComparisons.restore();
     }
 }
 

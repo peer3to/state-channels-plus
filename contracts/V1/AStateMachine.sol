@@ -3,15 +3,39 @@ pragma solidity ^0.8.8;
 import "./types/DataTypes.sol";
 import "./types/MessageTypeHashes.sol";
 
+/// The caller cannot grant the transition its full `gasLimit` stipend. Raised before the
+/// transition runs, so an under-funded replay never produces a verdict.
+error ErrorInsufficientGasForStateTransition(uint256 required, uint256 granted);
+
 abstract contract AStateMachine {
     Transaction _tx; // This should be used instead of msg.sender at least for now
     address _stateChannelManager;
     bool _nonreentrant;
     uint256 gasLimit;
+    // This transition's messages. The previous transition's messages are deleted before the gas
+    // check, so every transition writes into empty slots and its cost does not depend on what an
+    // earlier call left behind; the deletion is paid by the caller outside the budget.
     Message[] private _outboundMessages;
+
+    // Margin for the fixed opcodes between the gas reading and the stipend CALL (the call input is
+    // already in memory, so nothing there grows with the transaction). It only makes the
+    // granted-gas estimate conservative: a refusal that could have been a verdict costs the sender
+    // a retry, never a wrong verdict.
+    uint256 internal constant STATE_TRANSITION_CALL_RESERVE = 20_000;
+    // Upper bound on what stateTransition spends before it reads the gas it can grant for a
+    // typical call (storing the transaction header, copying the call input). Deleting the previous
+    // transition's outbound messages and copying a larger input cost more; that work grows with
+    // history and input and is not covered here: a sender's estimate pays for it.
+    uint256 internal constant STATE_TRANSITION_SETUP_GAS = 200_000;
 
     constructor(uint256 _gasLimit) {
         gasLimit = _gasLimit;
+    }
+
+    /// Gas a caller must forward into the stateTransition frame for it to grant the transition
+    /// its full `gasLimit` budget.
+    function getStateTransitionGasRequirement() public view returns (uint256) {
+        return (gasLimit + STATE_TRANSITION_CALL_RESERVE) * 64 / 63 + 1 + STATE_TRANSITION_SETUP_GAS;
     }
     // ***** DEBUG *****
     // event SetStateA(bytes encodedState);
@@ -143,10 +167,34 @@ abstract contract AStateMachine {
     {
         _clearOutboundMessages();
         _tx.header = transaction.header;
-        (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);
+        // EIP-150 lets a CALL forward at most 63/64 of the remaining gas and never fails for
+        // asking more, so an under-funded caller would silently hand the transition less than
+        // `gasLimit`. A transition can catch an inner out-of-gas and still succeed or fail
+        // with its own error, so no outcome of an under-funded run is a verdict. Refuse to run
+        // unless the call can grant the full budget; the caller (a fraud-proof sender) must
+        // fund it upfront (see getStateTransitionGasRequirement).
+        // Copy the call input and read the budget first: that work grows with the input and must
+        // be paid before the gas check, not between the check and the CALL.
+        bytes memory data = transaction.body.data;
+        uint256 budget = gasLimit;
+        uint256 available = gasleft();
+        uint256 granted =
+            available > STATE_TRANSITION_CALL_RESERVE ? available - available / 64 - STATE_TRANSITION_CALL_RESERVE : 0;
+        if (granted < budget) revert ErrorInsufficientGasForStateTransition(budget, granted);
+        bool success;
+        uint256 resultSize;
+        assembly ("memory-safe") {
+            success := call(budget, address(), 0, add(data, 32), mload(data), 0, 0)
+            resultSize := returndatasize()
+        }
+        bytes memory result = new bytes(resultSize);
+        assembly ("memory-safe") {
+            returndatacopy(add(result, 32), 0, resultSize)
+        }
         // emit TxExecutedA(success, getState());
         if (!success) {
             if (result.length == 0) {
+                // Out of gas within the full budget, or a bare revert.
                 revert("AStateMachine - Call failed - result length 0");
             }
             assembly ("memory-safe") {
@@ -154,11 +202,7 @@ abstract contract AStateMachine {
                 revert(add(32, result), returndata_size)
             }
         }
-        Message[] memory recordedMessages = new Message[](_outboundMessages.length);
-        for (uint256 i = 0; i < _outboundMessages.length; i++) {
-            recordedMessages[i] = _outboundMessages[i];
-        }
-        return (success, recordedMessages);
+        return (success, getOutboundMessages());
     }
 
     modifier _nonReentrant() {

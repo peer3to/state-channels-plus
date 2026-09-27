@@ -578,7 +578,11 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (commitment != _commitment) return false;
 
         // get previousTimestamp
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
+        // The latest block's identity is the hash of its signed bytes, as in the state proof's
+        // chain linkage and in `Block.hash` on the client, not the hash of its re-encoded fields.
+        (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
+        Block memory latestBlock;
+        if (hasBlock) latestBlock = abi.decode(latestSignedBlock.encodedBlock, (Block));
         uint256 previousTimestamp;
         if (!hasBlock) {
             // genesis
@@ -630,7 +634,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                     return false;
                 }
                 if (
-                    keccak256(abi.encode(latestBlock))
+                    keccak256(latestSignedBlock.encodedBlock)
                         == keccak256(timeoutCalldataPostedProof.previousBlockcalldata.encodedBlock)
                 ) {
                     // only if the uploaded calldata matches the stateProof latest block, we grant extra time, otherwise the caller can forge a double sign or something else
@@ -645,6 +649,19 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
             return false;
         }
+        // The replay must start from the dispute's latest state: the snapshot is the latest
+        // block's (or the fork's genesis), the machine state is that snapshot's, and the posted
+        // block follows that latest block. Without these links the blamed author could post a
+        // block built on a made-up state and refute an honest timeout.
+        if (!_isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot)) return false;
+        if (
+            latestStateSnapshot.snapshotData.stateMachineStateHash
+                != keccak256(timeoutCalldataPostedProof.latestStateStateMachineState)
+        ) return false;
+        if (
+            _block.previousBlockHash
+                != (hasBlock ? keccak256(latestSignedBlock.encodedBlock) : keccak256(abi.encode(latestStateSnapshot)))
+        ) return false;
         // make sure we can do the STF - it's a valid block
         bool isSuccess;
         bytes memory encodedModifiedState;

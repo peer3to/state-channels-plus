@@ -562,16 +562,25 @@ export class LoggerUtils {
     static getBlockConfirmationStructMetadata(
         blockConfirmation: BlockConfirmationStruct
     ) {
-        const blockStruct = Codec.decode(
-            blockConfirmation.signedBlock.encodedBlock,
-            Type.Block
-        );
+        // Callers log refused confirmations, whose bytes may not decode: the
+        // block fields are then left out instead of the log throwing.
+        let blockMetadata: Record<string, unknown>;
+        try {
+            blockMetadata = this.getBlockStructMetadata(
+                Codec.decode(
+                    blockConfirmation.signedBlock.encodedBlock,
+                    Type.Block
+                )
+            );
+        } catch {
+            blockMetadata = { undecodableBlock: true };
+        }
 
         return {
             blockConfirmationHash: String(
                 hash(Codec.encode(blockConfirmation, Type.BlockConfirmation))
             ),
-            ...this.getBlockStructMetadata(blockStruct),
+            ...blockMetadata,
             originalSignature: String(blockConfirmation.signedBlock.signature),
             confirmationSignatures: blockConfirmation.signatures.map(
                 (signature) => String(signature)
