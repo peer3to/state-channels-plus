@@ -41,6 +41,17 @@ _tx.header = transaction.header;
 (bool success, bytes memory result) = address(this).call{gas: gasLimit}(transaction.body.data);
 ```
 
+The EVM hands the callee whatever is left when less than `gasLimit` remains, and never fails for
+it. A transition can also catch an inner out-of-gas failure and still complete or fail with its own
+error, so no outcome of a run granted less than `gasLimit` is a verdict. The wrapper therefore
+refuses to run the transition at all unless it can grant the full `gasLimit`; a refused replay is no
+verdict on the transition. A transition that runs out of gas within the full budget is an invalid
+transition. The previous transition's outbound messages are cleared before the funding check, at
+the caller's cost outside the budget, so what an earlier call left behind never raises the gas a
+transition spends inside its limit. A caller that replays a transition as a fraud proof funds the full budget upfront,
+including the share each enclosing call keeps back
+([execution-and-consumer.md](../enforcement/execution-and-consumer.md)).
+
 The same contract runs in two places:
 
 1. **Off-chain**, inside each participant's off-chain participant instance, behind the
@@ -101,14 +112,14 @@ prohibited.
 
 ### 2.1 Allowed context (the complete API)
 
-| Value                                                                    | Source                                                              | Meaning                                                                         |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `_tx.header.participant`                                                 | injected by `stateTransition`                                       | The logical author of this transition. The **only** valid author identity.      |
-| `_tx.header.timestamp`                                                   | injected; protocol-validated (see [../protocol/time.md](./time.md)) | The protocol time of this transition. The **only** valid time source.           |
-| `_tx.header.channelId`, `_tx.header.forkId`, `_tx.header.transactionCnt` | injected                                                            | Channel, fork, and block-height coordinates of the transition.                  |
-| Function arguments                                                       | `transaction.body.data` (the dispatched calldata)                   | The transition's input data, supplied by the protocol and replayed identically. |
-| Contract storage                                                         | restored via `_setState` before replay                              | The channel state itself.                                                       |
-| `gasLimit`                                                               | deployment configuration argument                                   | The fixed gas budget every execution uses.                                      |
+| Value                                                                    | Source                                                              | Meaning                                                                                                   |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `_tx.header.participant`                                                 | injected by `stateTransition`                                       | The logical author of this transition. The **only** valid author identity.                                |
+| `_tx.header.timestamp`                                                   | injected; protocol-validated (see [../protocol/time.md](./time.md)) | The protocol time of this transition. The **only** valid time source.                                     |
+| `_tx.header.channelId`, `_tx.header.forkId`, `_tx.header.transactionCnt` | injected                                                            | Channel, fork, and block-height coordinates of the transition.                                            |
+| Function arguments                                                       | `transaction.body.data` (the dispatched calldata)                   | The transition's input data, supplied by the protocol and replayed identically.                           |
+| Contract storage                                                         | restored via `_setState` before replay                              | The channel state itself.                                                                                 |
+| `gasLimit`                                                               | deployment configuration argument                                   | The fixed gas budget every execution uses; a transition runs only when the budget can be granted in full. |
 
 ### 2.2 Prohibited ambient context
 

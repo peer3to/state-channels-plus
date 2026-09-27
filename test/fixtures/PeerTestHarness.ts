@@ -46,6 +46,7 @@ import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingA
 import { EventActions } from "@test/harness/actions/EventActions";
 import { JoinActions } from "@test/harness/actions/JoinActions";
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
+import { MirrorActions } from "@test/harness/actions/MirrorActions";
 import { NetworkController } from "@test/harness/actions/NetworkController";
 import { RPCActions } from "@test/harness/actions/RPCActions";
 import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
@@ -139,6 +140,7 @@ export class PeerTestHarness<
     public tamper!: DisputeTamperingActions<TCustomRpc>;
     public rpc!: RPCActions<TCustomRpc>;
     public rpcStub!: RpcStubActions<TCustomRpc>;
+    public mirror!: MirrorActions<TCustomRpc>;
     public contextApi!: ContextActions<TCustomRpc>;
     public scenario!: ScenarioActions<TCustomRpc>;
     public readonly debug: HarnessDebug<TCustomRpc>;
@@ -248,6 +250,7 @@ export class PeerTestHarness<
         this.tamper = new DisputeTamperingActions(this, this.logger);
         this.rpc = new RPCActions(this, this.logger);
         this.rpcStub = new RpcStubActions(this, this.logger);
+        this.mirror = new MirrorActions(this);
         this.contextApi = new ContextActions(this, this.logger);
         this.scenario = new ScenarioActions(this, this.logger);
         this.debug = new HarnessDebug(this);

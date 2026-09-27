@@ -36,8 +36,9 @@ import { waitFor } from "@test/utils/waitFor";
 import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
 import { ethers, NonceManager } from "ethers";
-
 import { ContractFactory } from "ethers";
+import type { Artifact } from "hardhat/types";
+
 import path from "node:path";
 
 // a port hop plus one POST per realm -> above the fixture's 2s default
@@ -59,13 +60,16 @@ export async function prepareRuntimeSetup(options: {
     readyOptions?: { delayMs?: number; reject?: boolean };
     /** crash-log uploads on for every realm, jitter pinned */
     crashLogUploadEndpoint?: string;
+    /** The contract the manager is deployed over, instead of the Math machine. */
+    managerStateMachine?: { artifact: Artifact; args: unknown[] };
 }) {
     const {
         runSdkInThread,
         vmDedicatedThread,
         generateSigner,
         readyOptions,
-        crashLogUploadEndpoint
+        crashLogUploadEndpoint,
+        managerStateMachine
     } = options;
     if (!hardhatNodeUrl) throw new Error("Hardhat node URL is not initialized");
     const provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
@@ -83,9 +87,13 @@ export async function prepareRuntimeSetup(options: {
     const runtimeSigner = runtimeWallet.connect(provider);
 
     const scmDeployment = await deployFullStack(deployerSigner, {
-        stateMachineArtifact: MathStateMachineArtifact as any,
+        stateMachineArtifact:
+            managerStateMachine?.artifact ?? (MathStateMachineArtifact as any),
         consumerFacetArtifact: MathConsumerFacetArtifact as any,
-        stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
+        stateMachineArgs: managerStateMachine?.args ?? [
+            5_000_000,
+            DEFAULT_MAX_CHANNEL_PARTICIPANTS
+        ],
         consumerFacetArgs: [],
         timeConfig: {
             p2pTime: 1,

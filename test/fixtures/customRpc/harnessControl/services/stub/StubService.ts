@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
+import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
@@ -12,9 +13,9 @@ import type {
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
-import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
+import type { Address, BlockHeight, ForkId } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -34,7 +35,8 @@ import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/type
 import {
     type ContractTransactionResponse,
     hexlify,
-    resolveAddress
+    resolveAddress,
+    type TransactionRequest
 } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
@@ -101,6 +103,8 @@ export type StubKey =
     | "constructDisputeEntry"
     | "disputeSubmissions"
     | "disputeFraudProofApplies"
+    | "replayGasEstimates"
+    | "replayGasReads"
     | "disputeKill"
     | "timeoutCheck"
     | "scheduledTasks"
@@ -276,6 +280,8 @@ export type HeldOnChainSlashesQueryState = {
 export type RecordedFraudProofApply = {
     /** Participants named by the applied dispute fraud proofs. */
     participants: string[];
+    /** `gasLimit` override sent with the transaction, or null. */
+    gasLimit: string | null;
     /** Failure message from the send or from `wait()`, or null when it landed. */
     error: string | null;
     /** Custom-error name decoded from that failure, when there was one. */
@@ -283,6 +289,30 @@ export type RecordedFraudProofApply = {
     /** Set once `killDispute` awaited the returned transaction. */
     waited: boolean;
 };
+
+/** Manager methods whose sends carry a fraud-proof replay. */
+export type ReplayGasEstimateMethod = "multicall" | "applyDisputeFraudProofs";
+
+/** One chain-signer estimate taken by the replay-gas estimate probe. */
+export type RecordedGasEstimate = {
+    /** Manager method the estimated transaction calls. */
+    method: ReplayGasEstimateMethod;
+    /** The signer's real estimate (its headroom included), decimal. */
+    estimate: string;
+    /** What the probe answered the caller, decimal. */
+    answer: string;
+};
+
+/** One `getStateTransitionReplayGas` read seen by the read probe. */
+export type RecordedReplayGasRead = {
+    outcome: "pending" | "resolved" | "rejected";
+    /** The manager's answer, decimal, once resolved. */
+    replayGas: string | null;
+};
+
+/** Message of the read failure the replay-gas read probe injects. */
+export const REPLAY_GAS_READ_STUB_FAILURE =
+    "stubbed getStateTransitionReplayGas failure";
 
 export type PausedConstructDisputeStatus = {
     /** Calls parked at the held boundary so far. */
@@ -502,6 +532,12 @@ export class StubService extends ANetworkRpcService<
     fraudProofApplyHold?: DisputeSubmissionHold;
     /** Failure the apply probe injects, when installed. */
     fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
+    /** Estimates seen by the replay-gas estimate probe (newest last). */
+    readonly recordedGasEstimates: RecordedGasEstimate[] = [];
+    /** Reads seen by the replay-gas read probe (newest last). */
+    readonly recordedReplayGasReads: RecordedReplayGasRead[] = [];
+    /** Gate the replay-gas read probe parks reads on, when installed. */
+    replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
@@ -524,6 +560,8 @@ export class StubService extends ANetworkRpcService<
     private postMatchTargetRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+    /** Record-only probe on the post-audit evidence comparison. */
+    readonly evidenceComparisons = new EvidenceComparisonRecorder();
 
     public recordLeaveWatchdog(): void {
         this.leaveWatchdogRestore?.();
@@ -2468,6 +2506,20 @@ export class StubService extends ANetworkRpcService<
                         return receipt;
                     } catch (error) {
                         recordRevert(error);
+                        // a mined revert carries no revert data: replay the
+                        // same call on the state it was mined on
+                        const blockNumber = (
+                            error as { receipt?: { blockNumber?: number } }
+                        ).receipt?.blockNumber;
+                        if (entry.revert === null && blockNumber)
+                            await tx.provider
+                                .call({
+                                    from: tx.from,
+                                    to: tx.to,
+                                    data: tx.data,
+                                    blockTag: blockNumber - 1
+                                })
+                                .catch(recordRevert);
                         throw error;
                     }
                 }) as typeof tx.wait;
@@ -2677,7 +2729,7 @@ export class StubService extends ANetworkRpcService<
         if (!this.stubOriginals.has("disputeFraudProofApplies")) {
             this.stubOriginals.set(
                 "disputeFraudProofApplies",
-                contract.applyDisputeFraudProofs.bind(contract)
+                contract.applyDisputeFraudProofs
             );
         }
         const original = this.stubOriginals.get(
@@ -2693,62 +2745,70 @@ export class StubService extends ANetworkRpcService<
             : undefined;
         this.fraudProofApplyFailure = failure;
 
-        contract.applyDisputeFraudProofs = (async (
-            proofs: DisputeFraudProofStruct[]
-        ) => {
-            const entry: RecordedFraudProofApply = {
-                participants: proofs.map((proof) => String(proof.participant)),
-                error: null,
-                customError: null,
-                waited: false
-            };
-            this.recordedFraudProofApplies.push(entry);
-            const hold = this.fraudProofApplyHold;
-            if (hold) {
-                hold.held += 1;
-                await hold.gate;
-            }
-            const fail = (error: unknown) => {
-                entry.error =
-                    error instanceof Error ? error.message : String(error);
-                entry.customError = tryDecodeCustomError(error)?.name ?? null;
-            };
-            // an injected failure replaces the send entirely - forwarding it
-            // would leave a landed transaction behind a "failed" apply
-            if (failure) {
-                const reject = () => {
-                    const error = this.submissionFailure(failure);
-                    fail(error);
-                    throw error;
+        contract.applyDisputeFraudProofs = this.asRecordingContractMethod(
+            original,
+            async (proofs: DisputeFraudProofStruct[], overrides?: unknown) => {
+                const entry: RecordedFraudProofApply = {
+                    participants: proofs.map((proof) =>
+                        String(proof.participant)
+                    ),
+                    gasLimit: this.overrideGasLimit(overrides),
+                    error: null,
+                    customError: null,
+                    waited: false
                 };
-                if (failure.at === "send") reject();
-                return {
-                    // a tx that reverts also reverts the preflight `call` that
-                    // tryHandleEvmError retries through
-                    provider: { call: async () => reject() },
-                    wait: async () => reject()
+                this.recordedFraudProofApplies.push(entry);
+                const hold = this.fraudProofApplyHold;
+                if (hold) {
+                    hold.held += 1;
+                    await hold.gate;
+                }
+                const fail = (error: unknown) => {
+                    entry.error =
+                        error instanceof Error ? error.message : String(error);
+                    entry.customError =
+                        tryDecodeCustomError(error)?.name ?? null;
                 };
-            }
-            let tx;
-            try {
-                tx = await original(proofs);
-            } catch (error) {
-                fail(error);
-                throw error;
-            }
-            const originalWait = tx.wait.bind(tx);
-            tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                // an injected failure replaces the send entirely - forwarding it
+                // would leave a landed transaction behind a "failed" apply
+                if (failure) {
+                    const reject = () => {
+                        const error = this.submissionFailure(failure);
+                        fail(error);
+                        throw error;
+                    };
+                    if (failure.at === "send") reject();
+                    return {
+                        // a tx that reverts also reverts the preflight `call` that
+                        // tryHandleEvmError retries through
+                        provider: { call: async () => reject() },
+                        wait: async () => reject()
+                    };
+                }
+                let tx;
                 try {
-                    const receipt = await originalWait(...args);
-                    entry.waited = true;
-                    return receipt;
+                    tx = await Reflect.apply(original, contract, [
+                        proofs,
+                        ...(overrides ? [overrides] : [])
+                    ]);
                 } catch (error) {
                     fail(error);
                     throw error;
                 }
-            }) as typeof tx.wait;
-            return tx;
-        }) as typeof contract.applyDisputeFraudProofs;
+                const originalWait = tx.wait.bind(tx);
+                tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                    try {
+                        const receipt = await originalWait(...args);
+                        entry.waited = true;
+                        return receipt;
+                    } catch (error) {
+                        fail(error);
+                        throw error;
+                    }
+                }) as typeof tx.wait;
+                return tx;
+            }
+        );
     }
 
     public restoreDisputeFraudProofApplies(): boolean {
@@ -2761,6 +2821,152 @@ export class StubService extends ANetworkRpcService<
         contract.applyDisputeFraudProofs =
             original as typeof contract.applyDisputeFraudProofs;
         this.stubOriginals.delete("disputeFraudProofApplies");
+        return true;
+    }
+
+    /**
+     * Probe on this peer's chain-signer estimates for transactions calling
+     * one of `methods` on the manager: each estimate is taken by the real
+     * signer (its headroom included), recorded, and answered scaled by
+     * `numerator / denominator`. Scaling stands in for an estimator that
+     * reports a different figure for the same transaction (a spent-gas
+     * estimator answers below the replay requirement, a searching one at or
+     * above it); the transaction itself is unchanged and still sent for real
+     * by the caller. Other estimates pass through unrecorded.
+     */
+    public installReplayGasEstimateScale(
+        methods: ReplayGasEstimateMethod[],
+        numerator: number,
+        denominator: number
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.estimateGas)
+            throw new Error("the manager contract's runner cannot estimate");
+        this.restoreReplayGasEstimateScale();
+        this.stubOriginals.set(
+            "replayGasEstimates",
+            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
+        );
+        const estimateGas = runner.estimateGas.bind(runner);
+        const selectors = new Map(
+            methods.map((method) => [
+                contract.interface.getFunction(method)!.selector,
+                method
+            ])
+        );
+        this.recordedGasEstimates.length = 0;
+        Reflect.set(
+            runner,
+            "estimateGas",
+            async (tx: TransactionRequest): Promise<bigint> => {
+                const estimate = await estimateGas(tx);
+                const method = selectors.get(String(tx.data).slice(0, 10));
+                if (method === undefined) return estimate;
+                const answer =
+                    (estimate * BigInt(numerator)) / BigInt(denominator);
+                this.recordedGasEstimates.push({
+                    method,
+                    estimate: String(estimate),
+                    answer: String(answer)
+                });
+                return answer;
+            }
+        );
+    }
+
+    public restoreReplayGasEstimateScale(): boolean {
+        if (!this.stubOriginals.has("replayGasEstimates")) return false;
+        const original = this.stubOriginals.get(
+            "replayGasEstimates"
+        ) as PropertyDescriptor | null;
+        const runner = this.sm.stateChannelManagerContract.runner!;
+        if (original) Object.defineProperty(runner, "estimateGas", original);
+        else Reflect.deleteProperty(runner, "estimateGas");
+        this.stubOriginals.delete("replayGasEstimates");
+        return true;
+    }
+
+    /**
+     * Record-only probe on the manager's `getStateTransitionReplayGas` read:
+     * every read is recorded with how it settled and forwarded to the real
+     * contract, except the first `failFirst` reads, which reject with
+     * REPLAY_GAS_READ_STUB_FAILURE instead of reaching the chain. `hold`
+     * parks each read (recorded as pending) until released, before it is
+     * forwarded.
+     */
+    public installReplayGasReadRecorder(
+        failFirst: number,
+        hold: boolean
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("replayGasReads"))
+            this.stubOriginals.set(
+                "replayGasReads",
+                contract.getStateTransitionReplayGas
+            );
+        const original = this.stubOriginals.get(
+            "replayGasReads"
+        ) as StateChannelManagerInterface["getStateTransitionReplayGas"];
+        this.recordedReplayGasReads.length = 0;
+        this.replayGasReadHold?.release();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.replayGasReadHold = hold ? { gate, release, held: 0 } : undefined;
+        let failuresRemaining = failFirst;
+        contract.getStateTransitionReplayGas = this.asRecordingContractMethod(
+            original,
+            async (...args: never[]): Promise<bigint> => {
+                const entry: RecordedReplayGasRead = {
+                    outcome: "pending",
+                    replayGas: null
+                };
+                this.recordedReplayGasReads.push(entry);
+                const held = this.replayGasReadHold;
+                if (held) {
+                    held.held += 1;
+                    await held.gate;
+                }
+                if (failuresRemaining > 0) {
+                    failuresRemaining -= 1;
+                    entry.outcome = "rejected";
+                    throw new Error(REPLAY_GAS_READ_STUB_FAILURE);
+                }
+                try {
+                    const replayGas: bigint = await Reflect.apply(
+                        original,
+                        contract,
+                        args
+                    );
+                    entry.outcome = "resolved";
+                    entry.replayGas = String(replayGas);
+                    return replayGas;
+                } catch (error) {
+                    entry.outcome = "rejected";
+                    throw error;
+                }
+            }
+        );
+    }
+
+    /** Let every parked replay-gas read (and any later one) through. */
+    public releaseReplayGasReads(): boolean {
+        const hold = this.replayGasReadHold;
+        if (!hold) return false;
+        this.replayGasReadHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreReplayGasReads(): boolean {
+        this.releaseReplayGasReads();
+        const original = this.stubOriginals.get("replayGasReads");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.getStateTransitionReplayGas =
+            original as StateChannelManagerInterface["getStateTransitionReplayGas"];
+        this.stubOriginals.delete("replayGasReads");
         return true;
     }
 

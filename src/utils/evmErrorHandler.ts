@@ -77,6 +77,19 @@ export function tryDecodeCustomError(error: any): CustomEvmError | null {
     }
 }
 
+/**
+ * How `ContractExecutor` reports an EVM revert of a local contract call. The
+ * local signer and the executor's RPC boundary keep the text in the messages
+ * they wrap it in, so it identifies a revert wherever the error surfaces.
+ */
+export const LOCAL_EVM_EXECUTION_FAILED = "Local EVM execution failed";
+
+/** Whether `error` is a local EVM revert rather than an infrastructure failure. */
+export function isLocalEvmExecutionFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes(LOCAL_EVM_EXECUTION_FAILED);
+}
+
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }

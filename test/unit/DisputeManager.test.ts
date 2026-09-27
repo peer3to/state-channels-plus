@@ -12,6 +12,14 @@ import {
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import {
+    disputeAndKillSharingHeldRead,
+    disputeOnHost,
+    disputeThenKillRecordingReads,
+    disputeWithScaledEstimate,
+    killStoredDisputeOnHost,
+    killWithScaledEstimate
+} from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -853,6 +861,9 @@ describe("Unit: DisputeManager", function () {
             const forkId = h.activeForkId!;
 
             const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const replayReads = await h.rpcStub.recordReplayGasReads(
+                peer.index
+            );
             const disputed = await h.execOnHost(
                 peer,
                 async (sm, args) => {
@@ -870,6 +881,8 @@ describe("Unit: DisputeManager", function () {
             expect(submission.encodedAuditingData).to.equal(null);
             // No limit is passed: the chain signer adds headroom to its estimate.
             expect(submission.gasLimit).to.equal(null);
+            // Without a fraud proof nothing is replayed: no requirement read.
+            expect(await replayReads.reads()).to.deep.equal([]);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -892,6 +905,9 @@ describe("Unit: DisputeManager", function () {
             const forkId = h.activeForkId!;
 
             const probe = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const replayReads = await h.rpcStub.recordReplayGasReads(
+                peer.index
+            );
             const disputed = await h.execOnHost(
                 peer,
                 async (sm, args) => {
@@ -908,6 +924,8 @@ describe("Unit: DisputeManager", function () {
             expect(submission.method).to.equal("uploadDisputeWithCalldata");
             // No limit is passed: the chain signer adds headroom to its estimate.
             expect(submission.gasLimit).to.equal(null);
+            // Without a fraud proof nothing is replayed: no requirement read.
+            expect(await replayReads.reads()).to.deep.equal([]);
             expect(submission.waited).to.equal(true);
             const dispute = Codec.decode(
                 submission.encodedDispute,
@@ -948,8 +966,12 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
-            // No limit is passed: the chain signer adds headroom to its estimate.
-            expect(submission.gasLimit).to.equal(null);
+            // A fraud-proof replay is funded upfront: estimate plus the
+            // manager's replay requirement.
+            expect(
+                BigInt(submission.gasLimit!) >
+                    (await h.channelManager.getStateTransitionReplayGas())
+            ).to.equal(true);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDispute"
@@ -994,8 +1016,12 @@ describe("Unit: DisputeManager", function () {
 
             const [submission] = await probe.submissions();
             expect(submission.method).to.equal("multicall");
-            // No limit is passed: the chain signer adds headroom to its estimate.
-            expect(submission.gasLimit).to.equal(null);
+            // A fraud-proof replay is funded upfront: estimate plus the
+            // manager's replay requirement.
+            expect(
+                BigInt(submission.gasLimit!) >
+                    (await h.channelManager.getStateTransitionReplayGas())
+            ).to.equal(true);
             expect(submission.innerMethods).to.deep.equal([
                 "applyFraudProofs",
                 "uploadDisputeWithCalldata"
@@ -2169,6 +2195,178 @@ describe("Unit: DisputeManager", function () {
             const after = await h.query.onChainSlashedParticipants();
             expect(after.length).to.equal(before.length + 1);
             expect(after).to.include(spammer.address);
+        });
+    });
+
+    // DisputeManager.replayGasLimit through both fraud-proof send paths: the
+    // chain signer's estimate plus the manager's replay requirement. The
+    // estimate is the real one, answered scaled down to stand in for an
+    // estimator that reports only the gas a run spends.
+    describe("fraud-proof replay gas limit", function () {
+        it("a dispute sends the multicall at its estimate plus the replay requirement", async function () {
+            const { submissions, estimates, replayGas } =
+                await disputeWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 10
+                });
+            expect(estimates.map((e) => e.method)).to.deep.equal(["multicall"]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicall"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+        });
+
+        it("a kill whose estimate covers only part of the work still lands at its estimate plus the replay requirement", async function () {
+            const { applies, estimates, replayGas, slashed, spammer } =
+                await killWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 10
+                });
+            expect(estimates.map((e) => e.method)).to.deep.equal([
+                "applyDisputeFraudProofs"
+            ]);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("a kill with the real estimate lands at the estimate plus the replay requirement", async function () {
+            const { applies, estimates, replayGas, slashed, spammer } =
+                await killWithScaledEstimate(TestSession.getHarness(), {
+                    numerator: 1,
+                    denominator: 1
+                });
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            expect(slashed).to.include(spammer);
+        });
+
+        it("the dispute and kill sends share one replay requirement read", async function () {
+            const { reads, submissions, applies, replayGas } =
+                await disputeThenKillRecordingReads(TestSession.getHarness());
+            expect(reads).to.deep.equal([
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicall"
+            ]);
+            expect(submissions[0].gasLimit).to.not.equal(null);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.not.equal(null);
+            expect(applies[0].error).to.equal(null);
+        });
+
+        it("concurrent dispute and kill sends wait on one held replay requirement read and both land at estimate plus requirement", async function () {
+            const {
+                whileHeld,
+                reads,
+                submissions,
+                applies,
+                estimates,
+                replayGas
+            } = await disputeAndKillSharingHeldRead(TestSession.getHarness());
+            // both sends asked for their limit; one read, still pending, and
+            // nothing sent
+            expect(whileHeld.reads).to.deep.equal([
+                { outcome: "pending", replayGas: null }
+            ]);
+            expect(whileHeld.submissions).to.deep.equal([]);
+            expect(whileHeld.applies).to.deep.equal([]);
+
+            expect(reads).to.deep.equal([
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const estimateOf = (method: string) => {
+                const matching = estimates.filter((e) => e.method === method);
+                expect(matching.length, method).to.equal(1);
+                return BigInt(matching[0].answer);
+            };
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicall"
+            ]);
+            expect(submissions[0].gasLimit).to.equal(
+                String(estimateOf("multicall") + replayGas)
+            );
+            expect(applies.length).to.equal(1);
+            expect(applies[0].gasLimit).to.equal(
+                String(estimateOf("applyDisputeFraudProofs") + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+        });
+
+        it("a rejected replay requirement read sends no dispute and the next dispute reads again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            await h.byzantine.storeInvalidTransitionFraudProof(peer.index);
+            const reads = await h.rpcStub.recordReplayGasReads(peer.index, {
+                failFirst: 1
+            });
+            const recorded = await h.rpcStub.recordDisputeSubmissions(
+                peer.index
+            );
+
+            await disputeOnHost(h, peer.index);
+            expect(await recorded.submissions()).to.deep.equal([]);
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null }
+            ]);
+
+            await disputeOnHost(h, peer.index);
+            const replayGas =
+                await h.channelManager.getStateTransitionReplayGas();
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null },
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const submissions = await recorded.submissions();
+            expect(submissions.map((s) => s.method)).to.deep.equal([
+                "multicall"
+            ]);
+            expect(submissions[0].gasLimit).to.not.equal(null);
+        });
+
+        it("a rejected replay requirement read sends no kill and the next kill reads again", async function () {
+            const h = TestSession.getHarness();
+            const { killer, spammer } =
+                await h.scenario.stageUnkilledSpamDispute();
+            const reads = await h.rpcStub.recordReplayGasReads(killer.index, {
+                failFirst: 1
+            });
+            const applies = await h.rpcStub.recordDisputeFraudProofApplies(
+                killer.index
+            );
+
+            await killStoredDisputeOnHost(h, killer.index);
+            expect(await applies.applies()).to.deep.equal([]);
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null }
+            ]);
+
+            await killStoredDisputeOnHost(h, killer.index);
+            const replayGas =
+                await h.channelManager.getStateTransitionReplayGas();
+            expect(await reads.reads()).to.deep.equal([
+                { outcome: "rejected", replayGas: null },
+                { outcome: "resolved", replayGas: String(replayGas) }
+            ]);
+            const [apply] = await applies.applies();
+            expect(apply.gasLimit).to.not.equal(null);
+            expect(apply.error).to.equal(null);
+            expect(await h.query.onChainSlashedParticipants()).to.include(
+                spammer.address
+            );
         });
     });
 

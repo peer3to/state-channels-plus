@@ -26,7 +26,7 @@ classification.
 
 The conditional-window refusal has its own channel/fork error, `RaceConditionDisputeWindowNotOpen`, so the client does not classify it as evidence expiry or participation failure.
 
-Every `RaceCondition*` error is declared in one block. The membership-freeze refusal is named for what it refuses. `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId, killPeriodEnd, currentTimestamp)` ([#L138](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L138)) is the one refusal of both snapshot adoption paths. It names the refused fork and carries the kill-period comparison: `currentTimestamp >= killPeriodEnd` marks a permanent same-fork refusal, `currentTimestamp < killPeriodEnd` a refusal that waits for the kill period. `RaceConditionDisputeInboundNotLatest(latestInboundMessageBlockHash, disputeInboundMessageBlockHash)` ([#L143](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L143)) carries the chain's inbound head and the dispute's anchor, so the client recovers to that head. `RaceConditionJoinChannelForkDisputed` ([#L126](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L126)) refuses both a join and a top-up on a disputed fork.
+Every `RaceCondition*` error is declared in one block. The membership-freeze refusal is named for what it refuses. `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId, killPeriodEnd, currentTimestamp)` ([#L141](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L141)) is the one refusal of both snapshot adoption paths. It names the refused fork and carries the kill-period comparison: `currentTimestamp >= killPeriodEnd` marks a permanent same-fork refusal, `currentTimestamp < killPeriodEnd` a refusal that waits for the kill period. `RaceConditionDisputeInboundNotLatest(latestInboundMessageBlockHash, disputeInboundMessageBlockHash)` ([#L146](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L146)) carries the chain's inbound head and the dispute's anchor, so the client recovers to that head. `RaceConditionJoinChannelForkDisputed` ([#L129](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L129)) refuses both a join and a top-up on a disputed fork.
 
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
 2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
@@ -57,6 +57,13 @@ Every `RaceCondition*` error is declared in one block. The membership-freeze ref
    identifies the constructor entry that collided, so deployment failures are auditable.
 5. **Codeless route rejection is exact:** `ErrorRouteTargetHasNoCode(bytes4,address)` identifies
    both the selector being installed and the empty target address.
+6. **Under-funding is its own failure, not a verdict:** `ErrorStateTransitionFrameOutOfGas()`
+   ([Errors.sol#L10](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L10)) names a state-machine frame that ran out of gas during replay
+   (empty returndata from the machine call). The machine's own
+   `ErrorInsufficientGasForStateTransition(required, granted)`, declared in
+   [AStateMachine](../AStateMachine.sol.md), is raised before the transition runs, when the
+   stipend call could not grant the full budget; no transition code has executed. The manager
+   re-raises it unchanged, so a client sees "attach more gas" rather than a fraud outcome ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
 
 ## Inputs, outputs, state, and side effects
 

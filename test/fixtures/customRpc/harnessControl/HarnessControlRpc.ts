@@ -5,6 +5,7 @@ import { ByzantineService } from "./services/byzantine/ByzantineService";
 import { DisputeService } from "./services/dispute/DisputeService";
 import { HandshakeService } from "./services/handshake/HandshakeService";
 import { LifecycleService } from "./services/lifecycle/LifecycleService";
+import { MirrorService } from "./services/mirror/MirrorService";
 import { NetworkService } from "./services/network/NetworkService";
 import { QueryService } from "./services/query/QueryService";
 import { RuntimeRpcControlService } from "./services/runtimeRpc/RuntimeRpcControlService";
@@ -54,6 +55,7 @@ export class HarnessControlRpc extends MainRpcService {
     lifecycle: LifecycleService;
     validation: ValidationProbeService;
     runtimeRpc: RuntimeRpcControlService;
+    mirror: MirrorService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -71,6 +73,7 @@ export class HarnessControlRpc extends MainRpcService {
         this.lifecycle = new LifecycleService(p2pManager);
         this.validation = new ValidationProbeService(p2pManager);
         this.runtimeRpc = new RuntimeRpcControlService(p2pManager);
+        this.mirror = new MirrorService(p2pManager);
     }
 
     /**

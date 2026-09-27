@@ -1,0 +1,45 @@
+# test/unit/EventHandlerEvidence.test.ts — Test Report
+
+> **Test file:** [EventHandlerEvidence.test.ts](../../../../../../test/unit/EventHandlerEvidence.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [DisputeManager.ts.md](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md)
+
+## Overview
+
+Each case runs real audits of real committed disputes on a four-peer math channel with one
+invalid state transition. After a valid audit, `EventHandler` asks
+`DisputeManager.shouldAddOwnEvidence`, which owns the once-per-fork evidence comparison. The
+auditing peer's own dispute initiation is suppressed, so it only audits. A record-only probe
+(`recordEvidenceComparisons`, backed by the node-only `EvidenceComparisonRecorder` under
+`test/fixtures/customRpc/harnessControl/services/stub/node/`) wraps `shouldAddOwnEvidence` (the
+audits, with their answers) and the `constructDispute` calls made inside it (the comparisons, with
+their outcome: `pending`, `resolved`, or `rejected` and the error name). Every call is forwarded.
+The probe can apply one fault to the next comparison: `comparisonError` rejects it,
+`unrecoverableInboundRun` makes the real `constructDispute` find its inbound run unrecoverable, so
+it throws `PartialAuditingDataError`, and `hold` parks it until the test releases it to run for
+real (`forward`) or to reject (`fail`). `repeatLastAudit` asks `shouldAddOwnEvidence` again with the
+last audit's fork and dispute. The oracles are the recorded comparisons and audits per peer, the
+auditor's `onDisputeCommitted` count (audits that completed), the auditor's recorded uploads, the
+committed dispute a peer observes, and the expected detached errors.
+
+The race case lets two disputers upload concurrently: each disputer audits the other's dispute and
+records no comparison, and the auditor records one comparison for two audits. The sequential cases
+upload the second dispute only after the first comparison settled. The held race parks the
+auditor's first comparison until both audits asked for it, so the second audit overlaps the first
+for certain. The upload-retry case makes the auditor's own dispute add a self-removal (the auditor
+asked to leave), holds the first comparison until the auditor's upload is armed to fail once at
+send, then lets a second dispute land. The kill-replacement case holds the comparison against one
+dispute while another participant kills the spam dispute of the same fork, lets a replacement
+comparison settle, and only then fails the dropped one. The reduced-result case keeps the answer
+until the window's `DisputeReducedResultCommitted`, then asks again.
+
+## Tests and covered test IDs
+
+| Test declaration                                                                                                                                                                                                                                                | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`Unit: EventHandler evidence comparison > disputers never compare; a non-disputer compares once across two audits of the fork`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L21) (line 21)                                                        | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P1`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p1), [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P2`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p2), [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P7`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p7) |
+| [`Unit: EventHandler evidence comparison > a failed comparison is not kept: the next audit compares again`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L40) (line 40)                                                                             | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P3`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p3)                                                                                                                                                                                                                                                                                            |
+| [`Unit: EventHandler evidence comparison > a comparison ended by partial own auditing data is not kept: the next audit compares again`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L65) (line 65)                                                 | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P5`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p5), [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9)                                                                                                                                                             |
+| [`Unit: EventHandler evidence comparison > concurrent audits share one in-flight comparison: while the first is held the second audit starts no construction, and both get its answer`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L83) (line 83) | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P8`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p8)                                                                                                                                                                                                                                                                                            |
+| [`Unit: EventHandler evidence comparison > a positive comparison whose upload fails is kept: the next audit retries the upload without comparing again`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L118) (line 118)                              | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P4`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p4)                                                                                                                                                                                                                                                                                            |
+| [`Unit: EventHandler evidence comparison > a comparison dropped by a kill cannot erase its replacement when it settles later`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L150) (line 150)                                                        | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P9`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p9)                                                                                                                                                                                                                                                                                            |
+| [`Unit: EventHandler evidence comparison > a committed reduced result drops the fork's kept comparison: asked again, the fork compares again`](../../../../../../test/unit/EventHandlerEvidence.test.ts#L193) (line 193)                                        | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P7`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm.p7)                                                                                                                                                                                                                                                                                            |

@@ -91,7 +91,7 @@ export async function assertExecutorRevertRecovery(
             expect(failure).to.be.instanceOf(Error);
             const error = failure as Error & { data?: string };
             expect(error.name).to.equal("Error");
-            expect(error.message).to.equal("EVM execution failed: Error");
+            expect(error.message).to.equal("Local EVM execution failed: Error");
             expect(error.data).to.equal(
                 `0x08c379a0${ethers.AbiCoder.defaultAbiCoder().encode(["string"], [message]).slice(2)}`
             );

@@ -432,3 +432,98 @@ The engineer removed membership generations, pending-read invalidation and autom
 Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
 
 Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.
+
+## Gas-dependent verdicts — 2026-09-08
+
+A fraud-proof replay's verdict must not depend on how much gas the submitter attached. Until
+2026-09-08 it did: the stipend call in `stateTransition` received whatever the EVM had left when the
+transaction was under-funded, the transition ran out of gas, and the facets treated the failed call as
+an invalid transition. An honest block could be proven "fraudulent" by an under-funded proof, and the
+mirror, running with ethereumjs' default call gas, could make the same mistake locally. The closing
+change and its evidence are recorded in [implementation.md](./implementation.md#dispute-gas-estimation-and-the-transition-stipend--2026-09-08)
+and [`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb).
+
+**Upfront funding — 2026-09-26 (engineer decision).** The 2026-09-08 rule judged a completed
+transition on its result whatever gas it was granted, and left one assumption pending acceptance: a
+transition's outcome must not depend on available gas through any path other than running out of
+it. That assumption does not hold in general — a transition can catch an inner out-of-gas and still
+succeed or fail with its own error — so the engineer rejected it and chose upfront funding instead
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). The machine now refuses before the transition runs unless it can grant the full
+`gasLimit`, so no outcome of an under-funded run exists to be judged; the manager publishes the gas
+the replay call chain needs (`getStateTransitionReplayGas`). The machine copies the call input and
+reads the budget before its gas check and then calls with only fixed opcodes in between, so a large
+input cannot shrink the stipend after the check passed. It deletes the previous transition's
+outbound messages before the input copy and the check (engineer decision, review 6 FO3): the caller
+pays for the deletion outside the budget, a sender's estimate covers it, and every transition writes
+its messages into empty slots, so leftover messages cannot raise a transition's cost inside its
+budget. History can still lower that cost (under EIP-2200 a slot that held data at the start of
+the transaction is cheaper to write again), which can only let a transition finish, never make an
+honest one fail. The count-reset version this replaced made the same transition cost about 2.3 ×
+more after long old payloads (932,855 against 399,861 gas). The node sends every
+fraud-proof replay with `gasLimit` = its estimate with the signer's 50% headroom plus the
+requirement (engineer decision 2026-09-27). An estimator that reports only the gas spent (the peer3
+hardhat fork used by the poker consumer) counts the gas the transition used, never the unused
+budget that must be free when the replay starts, and the work before the replay (proof checks,
+setting the machine's state) can exceed any fixed margin: on a poker dispute it was about 3.9M with a
+5.64M requirement, so about 9.5M was needed, while the larger of the estimate and the requirement ×
+1.3 gives 8.89M. The sum covers both parts. A searching estimator (geth, anvil, and the SDK's test
+node, hardhat 2.22 with EDR, where this was measured) already returns at least the requirement,
+because the refusal makes every lower gas fail, so there the sum declares more than needed. That
+excess never changes a verdict, but it is not free: it reserves block space and must fit the block
+gas limit (below). The integrator `try/catch` assumption is no longer needed.
+
+Accepted residual (cost and block fit, not correctness): every replay transaction declares more
+than the requirement, and with a searching estimator the estimate already contains the requirement,
+the signer's 50% headroom applies to it, and the requirement is added again, so the declared limit
+is at least 2.5 × the requirement. With poker's budgets it still fits a 30M block.
+Nothing caps the declared limit at the block gas limit; a replay whose declared limit exceeds it is
+refused by the node at submission, so that fraud stays unproven on-chain until the budget is lowered.
+Blocks are packed by declared limit, so each replay transaction also reserves that much block space. A submitter
+still cannot make an honest transition fail for lack of gas; the worst case of the residual is a
+fraud proof that cannot be sent, never a wrong verdict. The engineer confirmed this rule (review 5,
+FO1); the estimator models, the block-fit dependence on the consumer's budget, the missing cap and
+the missing send test against a searching 30M-block node are open together as
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
+
+## Local EVM call gas — 2026-09-26
+
+Local-first evaluation ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) runs dispute predicates on the auditor's own contract
+executor before the chain is asked, and a Byzantine disputer controls the proof those predicates
+verify. The earlier 1e9-gas mirror budget let such a proof spin the executor thread about 60 times
+longer than the chain would run it. The engineer replaced it: each local EVM call is funded with the
+larger of the ethereumjs default call gas (0xffffff, about 16.7M), the manager's dispute-execution
+budget, and the manager's replay requirement, all read once at host start. The replay requirement
+is a funding baseline for the transition's stipend, not a bound on the work around it: a chain
+replay is also funded, through the sender's estimate, for proof checks, restoring the machine's
+state and deleting the previous transition's outbound messages, and the local call gets no such
+addition. A local replay whose surrounding work does not fit the granted gas fails locally; the
+local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
+not a wrong verdict. The floor can exceed a dispute transaction's budget, so a local call can do
+more work than one dispute transaction may. Accepted residual: the 16.7M floor. When the manager's budgets are smaller, a
+Byzantine dispute can make an auditor spend up to 16.7M gas of local work per evaluated predicate
+before the chain is asked. This is bounded, independent of the attacker, and the ethereumjs default
+that applied before the local-first change.
+
+## Client-side authenticity parity — 2026-09-26, decoding scope revised 2026-09-27
+
+Block author authenticity is decided in TypeScript under the signature carve-out of
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) ([`FIND-AUTH-1-C1ZHBJ`](open-findings.md#find-auth-1-c1zhbj), resolved by engineer decision). The trust boundary is the
+signed envelope a Byzantine author controls. Before the parity fix the TypeScript recovery accepted
+compact and re-normalized signature encodings the contracts reject, which let an author place a block
+in local history that no on-chain proof could carry. Now every protocol signature recovery (author,
+confirmation, join, open, dispute) first applies the contracts' exact acceptance rule.
+Residual: correctness now depends on the parity itself; it is covered differentially against the
+contract (the signer-recovery and ECDSA acceptance cases in the verification layer) and must be
+re-checked whenever the OpenZeppelin ECDSA dependency changes.
+
+Block decoding is not at parity (engineer decision 2026-09-27: not in this change). The client
+decodes with `Codec` and the contracts with Solidity `abi.decode`; neither applies a canonical-encoding
+rule, and the contracts accept, for example, a trailing zero word, while `postBlockCalldata` stores
+any bytes. A Byzantine participant can therefore post, sign or relay an encoding that the chain
+accepts and peers decode differently or refuse. The sharpest known use: an author posts such bytes
+as calldata for its own slot and refutes an honest timeout dispute with `TimeoutCalldataPosted`,
+which can slash the honest forcer, although honest peers never accepted the block. This exposure is
+open, recorded as [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v); the planned resolution is identical encoding and decoding
+in the contracts and TypeScript, so both accept and reject the same inputs. The
+ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
+functions and change no answer.

@@ -35,14 +35,12 @@ merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
 ## Key design decisions
 
 1. **Event-replication entry points** (`on*` handlers) are how the client advances the mirror — replication, never local hypothesis ([`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)).
-2. **`isBlockAuthentic` is declared here so the debug override still wins.** In production that
-   selector routes to [UtilityFacet](./UtilityFacet.sol.md); a declared function dispatches before
-   the fallback, so declaring a thin `public` entry point
-   ([#L445](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L445))
-   keeps local deployments on this contract's `_isBlockAuthentic` override
-   ([#L449](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L449)),
-   whose body and comment are unchanged. Without the declaration the mirror would answer with the
-   routed production implementation and lose its debug logging.
+2. **No block-authentication or decoding entry point of its own.** The public `isBlockAuthentic`
+   entry point is gone; the client checks author signatures itself under the signature carve-out of
+   [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) and decodes blocks with `Codec`. The
+   `_isBlockAuthentic` debug override ([#L444](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444)) stays: mirrored fraud-proof and
+   state-proof checks reach it (it decodes through [UtilityFacet](./UtilityFacet.sol.md)
+   `tryDecodeBlock`, like the production path) and log why a block failed.
 3. **Channel-open event order preserves genesis deposits.** `InboundMessagesProcessed` is mirrored
    before `ChannelOpened`, so `onChannelOpened` retains the finalized snapshot deposit total instead
    of resetting the local balance mirror to zero.
@@ -96,7 +94,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                     | Gap / divergence                                                                                                                                                                                                           |
 | ----------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`INV-MIRROR-1-VAF778`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | Covered               | **Here:** same logic by inheritance; local-only additions are sync plumbing.                                                 | [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30): `onChannelOpened` builds the genesis inbound block in memory and never persists it — mirror divergence from the production open path (open finding). |
+| [`INV-MIRROR-1-VAF778`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | Covered               | **Here:** same logic by inheritance; local-only additions are sync plumbing and the debug override of `_isBlockAuthentic`.   | [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30): `onChannelOpened` builds the genesis inbound block in memory and never persists it — mirror divergence from the production open path (open finding). |
 | [`REQ-MIRROR-1-XCY9CB`](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | Partial               | **Here:** `onChannelOpened` preserves the finalized genesis deposit total used by local replay and balance-invariant checks. | Other mirrored predicates and their state inputs are owned by their respective facets and event handlers.                                                                                                                  |
 | [`REQ-MIRROR-2-E9F3TM`](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial               | **Here:** the event handlers.                                                                                                | [`DEF-3-1XWQ30`](../../../../../audit/open-findings.md#def-3-1xwq30) persistence gap.                                                                                                                                      |
 
@@ -113,4 +111,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 - [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), [StateChannelCommon](./StateChannelCommon.sol.md).
 - [localDiamond.ts](../../../src/utils/localDiamond.ts.md) — the client binding that merges this contract's ABI with the routed one.
-- [UtilityFacet](./UtilityFacet.sol.md) — hosts the production `isBlockAuthentic` this contract deliberately shadows.
+- [UtilityFacet](./UtilityFacet.sol.md) — the block decoder `_isBlockAuthentic` calls.

@@ -1,7 +1,8 @@
 import * as factory from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import type { Address, ForkId, Hash } from "@/types/types";
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { signEncodedBlock } from "@test/fixtures/BlockEncodingFixture";
 import {
     MathPeerTestHarness,
     MathTestSession as TestSession
@@ -363,10 +364,72 @@ describe("Unit: BlockIngestService", function () {
             expect(after!.onChainTimestamp).to.equal(onChainTimestamp);
         });
 
-        // no test here: the stray-signature merge and its blacklisting is
-        // E2E-BlockQueueManager's "queued entry that becomes stored merges at
-        // queue timeout: strays stripped, supplier blacklisted".
-        it.skip("stray signatures on a stored block → stripped and supplier cut", function () {});
+        it("stray signatures on a stored block → stripped and supplier cut", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            await h.assert.sync.peersInSyncWait();
+
+            const observer = h.getPeer(0);
+            const supplier = h.getPeer(1);
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            const confirmation = Codec.decode(
+                stored!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            );
+            // a real signature over the block by a key outside the channel
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                waitForProcessed: false
+            });
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            const after = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            expect(after!.hash).to.equal(stored!.hash);
+            // the valid confirmations stay, the stray one is stripped
+            expect(after!.confirmationSignatures).to.include.members(
+                stored!.confirmationSignatures
+            );
+            expect(after!.confirmationSignatures).to.not.include(
+                straySignature
+            );
+            // only the supplier of the stray signature is cut
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(2).address)
+                    .request()
+            ).to.equal(false);
+        });
     });
 
     describe("onBlockConfirmationStruct", function () {

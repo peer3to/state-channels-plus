@@ -96,6 +96,7 @@ export {
     stateChannelManagerAbi
 } from "@/utils/stateChannelManager";
 export {
+    assertArtifactRuntimeSize,
     ContractSizeLimitError,
     EIP170_RUNTIME_LIMIT_BYTES,
     EIP3860_INITCODE_LIMIT_BYTES,

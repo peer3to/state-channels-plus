@@ -7,6 +7,8 @@ import {
 import Block from "@/models/Block";
 import { Timestamp, Signature } from "@/types/types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+
+import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -360,6 +362,53 @@ describe("Block Model", () => {
         });
     });
 
+    describe("Authenticity", () => {
+        it("should be authentic when the author signature recovers to the header participant", async () => {
+            const authored = blockFactory({
+                header: { participant: signer.address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const realSignedBlock = Block.fromSignedBlock(signedBlock);
+
+            expect(realSignedBlock.isAuthentic).to.be.true;
+        });
+
+        it("should be inauthentic when another key signed for the declared author", async () => {
+            const authored = blockFactory({
+                header: { participant: signers[1].address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const forged = Block.fromSignedBlock(signedBlock);
+
+            expect(forged.signerAddress).to.equal(signer.address);
+            expect(forged.isAuthentic).to.be.false;
+        });
+
+        it("should be inauthentic for a malformed signature without throwing", () => {
+            const malformed = Block.fromSignedBlock({
+                encodedBlock: block.signedBlock.encodedBlock,
+                signature: "0x1234"
+            });
+
+            expect(malformed.isAuthentic).to.be.false;
+        });
+
+        it("should be inauthentic when confirmation signatures are valid but the author signature is not", async () => {
+            const authored = blockFactory({
+                header: { participant: signers[1].address }
+            });
+            const signedBlock = await authored.signBlock(signer);
+            const forged = Block.fromSignedBlock(signedBlock);
+            forged.expandSignatures([
+                await signers[1].signMessage(ethers.getBytes(forged.hash))
+            ]);
+
+            expect(forged.confirmationSignerAddresses.has(signers[1].address))
+                .to.be.true;
+            expect(forged.isAuthentic).to.be.false;
+        });
+    });
+
     describe("Block confirmation struct", () => {
         it("should return correct block confirmation struct", async () => {
             const signer2 = signers[1];
@@ -598,5 +647,71 @@ describe("Block Model canonical signature bytes", () => {
         });
         expect(block.originalSignature).to.equal(signature);
         expect(() => block.signatureToAddress(signature)).to.throw();
+    });
+});
+
+describe("Block Model confirmation-free copies", () => {
+    it("authorSignedCopy shares the struct, bytes and hash and drops only the confirmations", () => {
+        const f = new QueueAdmissionFixture();
+        const original = f.copy([f.signature(1), f.signature(2)], 1234);
+        const hash = original.hash;
+
+        const copy = original.authorSignedCopy();
+
+        // shared, not decoded again
+        expect(copy.blockStruct === original.blockStruct).to.equal(true);
+        expect(copy.encode()).to.equal(original.encode());
+        expect(copy.hash).to.equal(hash);
+        expect(copy.originalSignature).to.equal(original.originalSignature);
+        expect(copy.onChainTimestamp).to.equal(1234);
+        expect(copy.author).to.equal(f.wallets[0].address);
+        expect(copy.isAuthentic).to.equal(true);
+        expect([...copy.confirmationSignatures]).to.deep.equal([]);
+        expect([...original.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[1].address,
+            f.wallets[2].address
+        ]);
+    });
+
+    it("authorSignedCopy gives the copy its own confirmation set", () => {
+        const f = new QueueAdmissionFixture();
+        const original = f.copy([f.signature(1)]);
+        const copy = original.authorSignedCopy();
+
+        copy.expandSignatures([f.signature(3)]);
+        original.removeConfirmationSignatures(new Set([f.signature(1)]));
+
+        expect([...copy.confirmationSignerAddresses]).to.deep.equal([
+            f.wallets[3].address
+        ]);
+        expect([...original.confirmationSignatures]).to.deep.equal([]);
+    });
+
+    it("isAuthentic is false for every author-signature encoding the contracts reject", () => {
+        const f = new QueueAdmissionFixture();
+        const signature = String(f.block.originalSignature);
+        const verdicts: Record<string, boolean> = {};
+        for (const [name, encoding] of Object.entries(
+            contractRejectedEncodings(signature)
+        )) {
+            verdicts[name] = Block.fromSignedBlock({
+                encodedBlock: f.block.encode(),
+                signature: encoding
+            }).isAuthentic;
+        }
+
+        expect(f.block.isAuthentic).to.equal(true);
+        expect(verdicts).to.deep.equal({
+            "compact 64-byte": false,
+            "v of 0/1": false,
+            "EIP-155 v": false,
+            "high s": false,
+            "zero r": false,
+            "zero s": false,
+            "r at the group order": false,
+            "66 bytes": false,
+            "63 bytes": false,
+            empty: false
+        });
     });
 });

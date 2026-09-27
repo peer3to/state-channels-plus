@@ -1,4 +1,10 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
+import type {
+    EvidenceComparisonFault,
+    HeldEvidenceComparisonRelease,
+    RecordedEvidenceAudit,
+    RecordedEvidenceComparison
+} from "./node/EvidenceComparisonRecorder";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
@@ -7,7 +13,10 @@ import type {
     PausedReductionStatus,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
+    RecordedGasEstimate,
+    RecordedReplayGasRead,
     ReductionSimulationErrorName,
+    ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
@@ -2008,6 +2017,62 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreDisputeFraudProofApplies();
     }
 
+    /**
+     * Answer this peer's chain-signer estimates for `methods` scaled by
+     * `numerator / denominator`, recording each real estimate.
+     */
+    public stubScaleReplayGasEstimates(
+        methods: ReplayGasEstimateMethod[],
+        numerator: number,
+        denominator: number
+    ): boolean {
+        this.service.installReplayGasEstimateScale(
+            methods,
+            numerator,
+            denominator
+        );
+        return true;
+    }
+
+    public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {
+        return this.service.recordedGasEstimates.map((estimate) => ({
+            ...estimate
+        }));
+    }
+
+    public restoreScaleReplayGasEstimates(): boolean {
+        return this.service.restoreReplayGasEstimateScale();
+    }
+
+    /**
+     * Record the manager's replay-requirement reads (forwarded); the first
+     * `failFirst` reads reject instead. `hold` parks each read until
+     * `releaseReplayGasReads`.
+     */
+    public stubRecordReplayGasReads(failFirst: number, hold: boolean): boolean {
+        this.service.installReplayGasReadRecorder(failFirst, hold);
+        return true;
+    }
+
+    /** Reads parked at the replay-gas read hold so far. */
+    public getHeldReplayGasReadCount(): number {
+        return this.service.replayGasReadHold?.held ?? 0;
+    }
+
+    public releaseReplayGasReads(): boolean {
+        return this.service.releaseReplayGasReads();
+    }
+
+    public getRecordedReplayGasReads(): RecordedReplayGasRead[] {
+        return this.service.recordedReplayGasReads.map((read) => ({
+            ...read
+        }));
+    }
+
+    public restoreReplayGasReads(): boolean {
+        return this.service.restoreReplayGasReads();
+    }
+
     /** Keep this peer out of a kill race (counts the kills it skipped). */
     public stubSuppressDisputeKill(): boolean {
         const disputeManager = this.service.sm.disputeManager;
@@ -2859,6 +2924,48 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreLobbyRoleDuration(): boolean {
         return this.service.restoreLobbyRoleDuration();
+    }
+
+    /**
+     * Record every `shouldAddOwnEvidence` audit and the evidence comparison
+     * `constructDispute` call inside it, and forward both. `fault` applies
+     * only to the next comparison.
+     */
+    public stubRecordEvidenceComparisons(
+        fault?: EvidenceComparisonFault
+    ): boolean {
+        this.service.evidenceComparisons.install(this.service.sm, fault);
+        return true;
+    }
+
+    public getRecordedEvidenceComparisons(): {
+        comparisons: RecordedEvidenceComparison[];
+        audits: RecordedEvidenceAudit[];
+        isHolding: boolean;
+    } {
+        const recorder = this.service.evidenceComparisons;
+        return {
+            comparisons: recorder.comparisons.map((comparison) => ({
+                ...comparison
+            })),
+            audits: recorder.audits.map((audit) => ({ ...audit })),
+            isHolding: recorder.isHolding
+        };
+    }
+
+    public releaseHeldEvidenceComparison(
+        release: HeldEvidenceComparisonRelease
+    ): boolean {
+        return this.service.evidenceComparisons.releaseHeldComparison(release);
+    }
+
+    /** Ask `shouldAddOwnEvidence` again with the last audited dispute. */
+    public repeatLastEvidenceAudit(): Promise<RecordedEvidenceAudit> {
+        return this.service.evidenceComparisons.repeatLastAudit();
+    }
+
+    public restoreEvidenceComparisons(): boolean {
+        return this.service.evidenceComparisons.restore();
     }
 }
 

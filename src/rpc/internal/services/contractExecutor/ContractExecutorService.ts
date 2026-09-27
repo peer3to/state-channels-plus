@@ -19,6 +19,9 @@ export type ContractExecutorInitialization = {
     // time; the worker keeps the same perception as ambient block time.
     // Absent for a host without a Clock (time zero, as before).
     clockAdjustmentSeconds?: number;
+    // Decimal gas granted to every local EVM call (see localEvmCallGasLimit); the
+    // EVM default when absent.
+    callGasLimit?: string;
 };
 
 export class ContractExecutorService extends AInternalRpcService<ContractExecutorRpcMethods> {
@@ -63,7 +66,13 @@ export class ContractExecutorService extends AInternalRpcService<ContractExecuto
                 : Clock.isInitialized()
                   ? () => Clock.getTimeInSeconds()
                   : undefined;
-        this.executor = new ContractExecutor(evm, logger, { clock });
+        this.executor = new ContractExecutor(evm, logger, {
+            clock,
+            callGasLimit:
+                request.callGasLimit === undefined
+                    ? undefined
+                    : BigInt(request.callGasLimit)
+        });
     }
 
     public dispose() {

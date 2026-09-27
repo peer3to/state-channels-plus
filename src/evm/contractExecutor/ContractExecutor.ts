@@ -4,7 +4,12 @@ import AContractExecutor, {
 } from "./AContractExecutor";
 import type { Address, Bytes } from "@/types/types";
 import type { Logger } from "@/utils";
-import { Mutex, toEthereumJsEvmAddress, tryDecodeCustomError } from "@/utils";
+import {
+    LOCAL_EVM_EXECUTION_FAILED,
+    Mutex,
+    toEthereumJsEvmAddress,
+    tryDecodeCustomError
+} from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { EVM } from "@ethereumjs/evm";
 import { Address as EthjsAddress } from "@ethereumjs/util";
@@ -16,6 +21,30 @@ import { ethers } from "ethers";
 // @ethereumjs/evm 10.x still re-scans per call (analysis is only skipped for
 // jump-free code), so upgrading does not fix it — the code-keyed cache in
 // @platform/evmJumpdestCache (installed by createEvm) does.
+
+// The EVM's default call gas (0xffffff, about 16.7M). A local EVM call gets at
+// least this much; see localEvmCallGasLimit for the full rule.
+export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
+
+/**
+ * Gas granted to every local EVM call: the EVM default, raised to the manager's
+ * dispute-execution budget and to the manager's replay requirement (the gas a
+ * replay needs for the transition's full stipend). The local EVM then never refuses a
+ * replay the chain would run, and never spends more on one call than a
+ * dispute transaction can.
+ */
+export function localEvmCallGasLimit(
+    disputeExecutionGasLimit: bigint,
+    stateTransitionReplayGas: bigint
+): bigint {
+    let gasLimit = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+    if (disputeExecutionGasLimit > gasLimit)
+        gasLimit = disputeExecutionGasLimit;
+    if (stateTransitionReplayGas > gasLimit)
+        gasLimit = stateTransitionReplayGas;
+    return gasLimit;
+}
+
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
@@ -29,9 +58,18 @@ export default class ContractExecutor extends AContractExecutor {
      */
     private readonly clock?: () => number;
 
-    constructor(evm: EVM, logger?: Logger, options?: { clock?: () => number }) {
+    // Gas granted to every call (see localEvmCallGasLimit).
+    private readonly callGasLimit: bigint;
+
+    constructor(
+        evm: EVM,
+        logger?: Logger,
+        options?: { clock?: () => number; callGasLimit?: bigint }
+    ) {
         super();
         this.clock = options?.clock;
+        this.callGasLimit =
+            options?.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
         this.evm = evm;
         this.logger = logger?.child({
             component: "ContractExecutor"
@@ -121,6 +159,7 @@ export default class ContractExecutor extends AContractExecutor {
     ): Promise<ContractExecutionResult> {
         const result = await evm.runCall({
             data: ethers.getBytes(data),
+            gasLimit: this.callGasLimit,
             ...(this.clock ? { block: this.ambientBlock() } : {}),
             ...options
         });
@@ -131,7 +170,7 @@ export default class ContractExecutor extends AContractExecutor {
                 ? ethers.hexlify(result.execResult.returnValue)
                 : null;
             const custom = tryDecodeCustomError({ data: errorData });
-            const errorMessage = `EVM execution failed: ${custom?.name || exceptionError.error || exceptionError}`;
+            const errorMessage = `${LOCAL_EVM_EXECUTION_FAILED}: ${custom?.name || exceptionError.error || exceptionError}`;
 
             // Create error with structured data for the proxy to handle
             const error = new Error(errorMessage);

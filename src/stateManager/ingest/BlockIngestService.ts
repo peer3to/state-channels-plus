@@ -39,11 +39,28 @@ export default class BlockIngestService {
             validationStrategy?: AValidationStrategy;
         }
     ): Promise<boolean> {
+        // Same decoding as network intake: bytes that do not decode are
+        // refused through the strategy, like an inauthentic block.
+        const block = Block.tryFromBlockConfirmation(blockConfirmation);
+        if (!block) {
+            const strategy =
+                options?.validationStrategy ||
+                this.stateManager.getActiveValidationStrategy();
+            return this.rejectBlock(
+                strategy,
+                await strategy.authenticateBlockFailed(blockConfirmation),
+                "onBlockConfirmationStruct - block does not decode",
+                {
+                    block: LoggerUtils.getBlockConfirmationStructMetadata(
+                        blockConfirmation
+                    )
+                }
+            );
+        }
         return this.onBlockConfirmation(
-            this.stateManager.storage.queues.createEntry(
-                Block.fromBlockConfirmation(blockConfirmation),
-                { origin: BlockOrigin.PROOF }
-            ),
+            this.stateManager.storage.queues.createEntry(block, {
+                origin: BlockOrigin.PROOF
+            }),
             options
         );
     }
@@ -110,12 +127,7 @@ export default class BlockIngestService {
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
 
-            const isAuthentic =
-                await sm.validationService.isBlockConfirmationAuthentic(
-                    block.blockConfirmationStruct
-                );
-
-            if (!isAuthentic) {
+            if (!block.isAuthentic) {
                 validationResult = await strategy.authenticateBlockFailed(
                     block.blockConfirmationStruct
                 );
