@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.8;
 
-import {DiamondHarness} from "./harness/DiamondHarness.sol";
+import {TimeoutCalldataPostedStaging} from "./harness/TimeoutCalldataPostedStaging.sol";
 import {GasHungryMathStateMachine} from "./harness/GasHungryMathStateMachine.sol";
 import {StateChannelManagerInterface} from "../../contracts/V1/StateChannelManagerInterface.sol";
 import {MathStateMachine, MathState} from "../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
@@ -18,7 +18,7 @@ import {BlockInvalidStateTransitionProof} from "../../contracts/V1/types/FraudPr
 // that ran out of gas) into a failed call instead of an "invalid transition" verdict, and
 // getStateTransitionReplayGas is what a sender adds to its estimate to be funded.
 // test naming: test_<targetFunction>_<property>
-contract AStateMachineStipendTest is DiamondHarness {
+contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     StateChannelManagerInterface internal diamond;
 
     bytes32 internal constant CHANNEL_ID = keccak256("channel");
@@ -499,6 +499,223 @@ contract AStateMachineStipendTest is DiamondHarness {
         (FraudProof[] memory proofs, FraudProofVerificationContext memory context) = _burnProof(participants);
 
         (bool ok,) = address(diamond).call{gas: gas}(abi.encodeCall(diamond.applyFraudProofs, (proofs, context)));
+        assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), ok);
+    }
+
+    // ---- the dispute fraud proof that replays: a timeout refuted by posted calldata ----------
+    //
+    // Participant 0 (key 1) is blamed for height 0 by participant 1 (key 2), then posts the
+    // block in time. Refuting the timeout replays the posted block; an honest block kills the
+    // dispute (the disputer is slashed), a block whose transition fails is no refutation (the
+    // submitter is slashed). An under-funded replay must decide neither.
+
+    uint256 internal constant TIMED_OUT_PK = 1;
+    uint256 internal constant DISPUTER_PK = 2;
+
+    function _stageTimeoutRefutation(address[] memory participants, bytes memory transitionData)
+        internal
+        returns (Dispute memory dispute, bytes memory call)
+    {
+        DisputeFraudProof[] memory proofs;
+        (dispute, proofs) = _stageTimeoutCalldataPosted(
+            diamond, CHANNEL_ID, TIMED_OUT_PK, DISPUTER_PK, _encodedState(participants), transitionData
+        );
+        call = abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs));
+    }
+
+    /// The posted block's author submits the refutation.
+    function _submitRefutation(bytes memory call, uint256 gas) internal returns (bool ok, bytes memory result) {
+        vm.prank(vm.addr(TIMED_OUT_PK));
+        (ok, result) = address(diamond).call{gas: gas}(call);
+    }
+
+    function _isReplayRefusal(bytes memory result) internal pure returns (bool) {
+        if (result.length < 4) return false;
+        bytes4 selector = bytes4(result);
+        return selector == ErrorInsufficientGasForStateTransition.selector
+            || selector == ErrorStateTransitionFrameOutOfGas.selector;
+    }
+
+    function _assertNoVerdict(Dispute memory dispute, address[] memory participants) internal view {
+        assertTrue(_isDisputeCommitted(diamond, dispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), "submitter kept standing");
+    }
+
+    function _assertTimeoutKilled(Dispute memory dispute, address[] memory participants) internal view {
+        assertFalse(_isDisputeCommitted(diamond, dispute), "the timeout dispute is killed");
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "the disputer is slashed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), "submitter kept standing");
+    }
+
+    function test_applyDisputeFraudProofs_refusesUnderfundedTimeoutCalldataReplay() public {
+        address[] memory participants = _deployGuarded();
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok, bytes memory result) = _submitRefutation(call, GUARDED_UNDERFUNDED_GAS);
+        assertFalse(ok, "an under-funded replay is no verdict");
+        assertTrue(_isReplayRefusal(result), "refused as an under-funded replay");
+        _assertNoVerdict(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_fundedTimeoutCalldataReplayKillsTimeoutDispute() public {
+        address[] memory participants = _deployGuarded();
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_fundedOverBudgetPostedBlockKeepsTimeoutDispute() public {
+        address[] memory participants = _deploy(true);
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.burn, ()));
+
+        (bool ok,) = _submitRefutation(call, FUNDED_GAS);
+        assertTrue(ok);
+        assertTrue(_isDisputeCommitted(diamond, dispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
+        assertTrue(
+            diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]),
+            "a failed refutation slashes its submitter"
+        );
+    }
+
+    // ---- the replay must start from the dispute's latest state ------------------------------
+    //
+    // The blamed author signs and posts the block, so it can build that block on a made-up
+    // pre-state that it names in the proof. Each test below posts a block that is honest for
+    // its own base; only the links to the dispute's latest state reject it.
+
+    /// A genesis state in which the blamed author holds a balance it never had.
+    function _forgedState(address[] memory participants) internal pure returns (bytes memory) {
+        MathState memory state;
+        state.participants = participants;
+        state.balances = new uint256[](participants.length);
+        state.balances[0] = 1_000_000;
+        state.currentTurnIndex = 0;
+        return abi.encode(state);
+    }
+
+    function _forgedSnapshot(bytes memory forgedState) internal view returns (StateSnapshot memory snapshot) {
+        snapshot = diamond.getStateSnapshot(CHANNEL_ID);
+        snapshot.snapshotData.stateMachineStateHash = keccak256(forgedState);
+    }
+
+    function _stageRefutationOn(PostedBlockBase memory base)
+        internal
+        returns (Dispute memory dispute, bytes memory call)
+    {
+        DisputeFraudProof[] memory proofs;
+        (dispute, proofs) = _stageTimeoutCalldataPostedOn(
+            diamond,
+            CHANNEL_ID,
+            TIMED_OUT_PK,
+            DISPUTER_PK,
+            base,
+            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ())
+        );
+        call = abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs));
+    }
+
+    function _assertRefutationRejected(Dispute memory dispute, address[] memory participants) internal view {
+        assertTrue(_isDisputeCommitted(diamond, dispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
+        assertTrue(
+            diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]),
+            "a failed refutation slashes its submitter"
+        );
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationFromUnlinkedSnapshot() public {
+        address[] memory participants = _deployGuarded();
+        bytes memory forgedState = _forgedState(participants);
+        StateSnapshot memory forgedSnapshot = _forgedSnapshot(forgedState);
+        (Dispute memory dispute, bytes memory call) =
+            _stageRefutationOn(PostedBlockBase(forgedSnapshot, forgedState, keccak256(abi.encode(forgedSnapshot))));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationWhoseStateMissesTheSnapshot() public {
+        address[] memory participants = _deployGuarded();
+        StateSnapshot memory genesis = diamond.getStateSnapshot(CHANNEL_ID);
+        (Dispute memory dispute, bytes memory call) =
+            _stageRefutationOn(PostedBlockBase(genesis, _forgedState(participants), keccak256(abi.encode(genesis))));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    function test_applyDisputeFraudProofs_rejectsTimeoutRefutationBlockBuiltOnAnotherBlock() public {
+        address[] memory participants = _deployGuarded();
+        StateSnapshot memory genesis = diamond.getStateSnapshot(CHANNEL_ID);
+        (Dispute memory dispute, bytes memory call) =
+            _stageRefutationOn(PostedBlockBase(genesis, _encodedState(participants), keccak256("another block")));
+
+        (bool ok,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    // What `killDispute` sends: its estimate plus getStateTransitionReplayGas. The measured cost of
+    // a funded refutation stands in for the estimate: alone it cannot fund the replay, with the
+    // replay gas added it kills the timeout dispute.
+    function test_getStateTransitionReplayGas_fundsTimeoutCalldataReplayOnTopOfItsCost() public {
+        address[] memory participants = _deployGuarded();
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        uint256 snapshot = vm.snapshotState();
+        uint256 before = gasleft();
+        (bool funded,) = _submitRefutation(call, GUARDED_FUNDED_GAS);
+        uint256 cost = before - gasleft();
+        assertTrue(funded);
+        vm.revertToState(snapshot);
+
+        (bool costOnly, bytes memory refusal) = _submitRefutation(call, cost);
+        assertFalse(costOnly, "the cost alone leaves the replay under its stipend");
+        assertTrue(_isReplayRefusal(refusal));
+        _assertNoVerdict(dispute, participants);
+
+        (bool withReplayGas,) = _submitRefutation(call, cost + diamond.getStateTransitionReplayGas());
+        assertTrue(withReplayGas);
+        _assertTimeoutKilled(dispute, participants);
+    }
+
+    // Whatever gas the submitter attaches, an honest posted block is never judged a failed
+    // refutation: the call either kills the timeout dispute on a funded replay or fails with no
+    // verdict at all. A transition that catches an inner out-of-gas is the case where gas could
+    // otherwise decide.
+    function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata(uint256 gas) public {
+        gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
+        address[] memory participants = _deployGuarded();
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+
+        (bool ok,) = _submitRefutation(call, gas);
+        if (ok) _assertTimeoutKilled(dispute, participants);
+        else _assertNoVerdict(dispute, participants);
+    }
+
+    // Whatever gas the submitter attaches, a posted block whose transition exceeds any budget never
+    // kills the timeout dispute: every call that gives a verdict rejects the refutation (the
+    // submitter is slashed), and every other call fails.
+    function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata(uint256 gas) public {
+        gas = bound(gas, 100_000, FUNDED_GAS);
+        address[] memory participants = _deploy(true);
+        (Dispute memory dispute, bytes memory call) =
+            _stageTimeoutRefutation(participants, abi.encodeCall(GasHungryMathStateMachine.burn, ()));
+
+        (bool ok,) = _submitRefutation(call, gas);
+        assertTrue(_isDisputeCommitted(diamond, dispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
         assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), ok);
     }
 }

@@ -645,6 +645,19 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (ok && timeoutCalldataPostedProof.onChainTimestamp > maxValidTimestamp) {
             return false;
         }
+        // The replay must start from the dispute's latest state: the snapshot is the latest
+        // block's (or the fork's genesis), the machine state is that snapshot's, and the posted
+        // block follows that latest block. Without these links the blamed author could post a
+        // block built on a made-up state and refute an honest timeout.
+        if (!_isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot)) return false;
+        if (
+            latestStateSnapshot.snapshotData.stateMachineStateHash
+                != keccak256(timeoutCalldataPostedProof.latestStateStateMachineState)
+        ) return false;
+        if (
+            _block.previousBlockHash
+                != (hasBlock ? keccak256(abi.encode(latestBlock)) : keccak256(abi.encode(latestStateSnapshot)))
+        ) return false;
         // make sure we can do the STF - it's a valid block
         bool isSuccess;
         bytes memory encodedModifiedState;

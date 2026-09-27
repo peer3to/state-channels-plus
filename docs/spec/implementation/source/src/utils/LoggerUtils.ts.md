@@ -34,6 +34,13 @@ block validation is peer-authored and must not be able to steer an ABI parse; a 
 surface does not declare is reported as its own hex. See
 [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L215).
 
+Block-confirmation struct metadata never throws on the bytes it logs. Its callers log refused
+confirmations (dispute replay abort, ingest decode refusal, queue intake), whose encoded block may
+not decode; `getBlockConfirmationStructMetadata` then leaves the block fields out and sets
+`undecodableBlock: true`, keeping the confirmation hash and signatures, instead of raising a decode
+error from inside the log call and replacing the caller's verdict with a throw. See
+[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L562).
+
 Dispute metadata includes the signed `requireExistingDisputeWindow` value. Logs distinguish a conditional state contribution from an independently justified dispute without changing either classification.
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._

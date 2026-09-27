@@ -6,7 +6,10 @@ import type {
     RecordedReplayGasRead
 } from "./customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { Codec, Type, hash, sleep } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { expect } from "chai";
 
 /** Estimate scale as a fraction of the chain signer's real estimate. */
 export type EstimateScale = { numerator: number; denominator: number };
@@ -103,6 +106,122 @@ export async function killWithScaledEstimate(
         replayGas: await h.channelManager.getStateTransitionReplayGas(),
         slashed: await h.query.onChainSlashedParticipants(),
         spammer: spammer.address
+    };
+}
+
+/** Whether `dispute` is still committed in its fork's on-chain window. */
+async function isDisputeCommittedOnChain(
+    h: MathPeerTestHarness,
+    dispute: DisputeStruct
+): Promise<boolean> {
+    const commitments = await h.channelManager.getWindowCommitments(
+        h.channelId,
+        dispute.input.forkId
+    );
+    return commitments.includes(hash(Codec.encode(dispute, Type.Dispute)));
+}
+
+/**
+ * A committed forced timeout dispute by peer 3 blaming the author of height 2,
+ * who posted that block's calldata on-chain because peer 3 could not confirm
+ * it. The killer (peer 0) refutes it with a TimeoutCalldataPosted dispute
+ * fraud proof, whose check replays the posted block's transition on-chain.
+ * Every peer's automatic kill is suppressed until the killer stored its proof;
+ * the killer's `killDispute` then sends the real `applyDisputeFraudProofs`,
+ * with the chain signer's estimate for it answered scaled by `scale`.
+ */
+export async function killTimeoutCalldataRefutationWithScaledEstimate(
+    h: MathPeerTestHarness,
+    scale: EstimateScale
+): Promise<{
+    storedProofTypes: number[];
+    applies: RecordedFraudProofApply[];
+    estimates: RecordedGasEstimate[];
+    replayGas: bigint;
+    slashed: string[];
+    disputer: string;
+    committedAfterKill: boolean;
+}> {
+    const killerIndex = 0;
+    const disputerIndex = 3;
+    await h.lifecycle.timeoutSetup(4, 0, {
+        timeConfig: { evidenceTime: 12 }
+    });
+    // height 1 exists, so the posted block gets no first-block grace
+    await h.transition.advanceState({ count: 2 });
+    const calldataAuthor = await h.query.getNextPeerToWrite();
+    // peer 3 cannot confirm height 2, so its author posts it as calldata
+    await h
+        .control(h.getPeer(disputerIndex))
+        .stub.stubRejectIngestedConfirmations()
+        .request();
+    await Promise.all(
+        [0, 1, 2, 3].map((peerIndex) =>
+            h.rpcStub.suppressTimeoutCheck(peerIndex)
+        )
+    );
+    await h.network.blacklistAndDisconnectPeer(disputerIndex);
+    await h.transition.advanceState({
+        count: 1,
+        waitForPeers: [0, 1, 2],
+        waitForFinalization: false
+    });
+    await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2, 3], 1, {
+        mode: "atLeast"
+    });
+    await h.tamper.plantFreshTimeoutForParticipant(
+        disputerIndex,
+        calldataAuthor.address
+    );
+    await sleep(h.event.evidencePeriodWaitMs());
+    h.contextApi.captureOriginalFork();
+    h.event.resetEventSpies();
+
+    const kills = await Promise.all(
+        h.peers.map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
+    );
+    // forced: the calldata is already on-chain, so an unforced timeout
+    // upload would be refused by its race check
+    const { dispute } = await h.tamper.postTamperedDispute(
+        disputerIndex,
+        (tampered) => {
+            tampered.input.timeout.isForced = true;
+        }
+    );
+    expect(Number(dispute.input.timeout.blockHeight)).to.equal(2);
+    expect(dispute.input.timeout.participant).to.equal(calldataAuthor.address);
+    // the skipped kill is the moment the killer stored its fraud proof
+    await kills[killerIndex].waitUntilSkipped();
+    await kills[killerIndex].restore();
+    expect(
+        await isDisputeCommittedOnChain(h, dispute),
+        "the timeout dispute is committed before the kill"
+    ).to.equal(true);
+
+    const storedProofTypes = await h.execOnHost(
+        h.getPeer(killerIndex),
+        async (sm) =>
+            sm.storage.disputeFraudProofs
+                .getDisputeFraudProofs()
+                .map((proof) => Number(proof.proofType)),
+        {},
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
+    const recorded =
+        await h.rpcStub.recordDisputeFraudProofApplies(killerIndex);
+    const estimates = await h.rpcStub.scaleReplayGasEstimates(killerIndex, {
+        methods: ["applyDisputeFraudProofs"],
+        ...scale
+    });
+    await killStoredDisputeOnHost(h, killerIndex);
+    return {
+        storedProofTypes,
+        applies: await recorded.applies(),
+        estimates: await estimates.estimates(),
+        replayGas: await h.channelManager.getStateTransitionReplayGas(),
+        slashed: await h.query.onChainSlashedParticipants(),
+        disputer: h.getPeer(disputerIndex).address,
+        committedAfterKill: await isDisputeCommittedOnChain(h, dispute)
     };
 }
 

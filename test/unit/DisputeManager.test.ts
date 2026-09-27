@@ -1,3 +1,7 @@
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
@@ -18,6 +22,7 @@ import {
     disputeThenKillRecordingReads,
     disputeWithScaledEstimate,
     killStoredDisputeOnHost,
+    killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate
 } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -2249,6 +2254,41 @@ describe("Unit: DisputeManager", function () {
             expect(applies[0].error).to.equal(null);
             expect(applies[0].waited).to.equal(true);
             expect(slashed).to.include(spammer);
+        });
+
+        it("a kill that refutes a timeout with posted calldata replays the block and lands at its estimate plus the replay requirement", async function () {
+            const {
+                storedProofTypes,
+                applies,
+                estimates,
+                replayGas,
+                slashed,
+                disputer,
+                committedAfterKill
+            } = await killTimeoutCalldataRefutationWithScaledEstimate(
+                TestSession.getHarness(),
+                { numerator: 1, denominator: 1 }
+            );
+            // the kill sends the refutation that replays a transition
+            expect(storedProofTypes[0]).to.equal(
+                toSolidityDisputeFraudProofType(
+                    DisputeFraudProofType.TimeoutCalldataPosted
+                )
+            );
+            expect(estimates.map((e) => e.method)).to.deep.equal([
+                "applyDisputeFraudProofs"
+            ]);
+            expect(applies.length).to.equal(1);
+            expect(applies[0].participants).to.deep.equal([disputer]);
+            expect(applies[0].gasLimit).to.equal(
+                String(BigInt(estimates[0].answer) + replayGas)
+            );
+            expect(applies[0].error).to.equal(null);
+            expect(applies[0].customError).to.equal(null);
+            expect(applies[0].waited).to.equal(true);
+            // the replay was funded: the timeout dispute is killed on-chain
+            expect(slashed).to.include(disputer);
+            expect(committedAfterKill).to.equal(false);
         });
 
         it("the dispute and kill sends share one replay requirement read", async function () {

@@ -623,13 +623,21 @@ Residual: see [security-assessment.md](security-assessment.md#gas-dependent-verd
 
 **Local EVM call gas.** [ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 `localEvmCallGasLimit` funds each local EVM call with the larger of `DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT`
-(0xffffff), the manager's `getGasLimit` and its replay requirement, read once at host start
+(0xffffff), the manager's `getGasLimit` and twice its replay requirement (the requirement covers
+only the budget and fixed setup; deleting previous outbound messages and copying the input come on
+top), read once at host start
 ([P2pRuntimeHostRoot.ts](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) and
 passed through [createContractExecutor.ts](../implementation/source/src/evm/contractExecutor/createContractExecutor.ts.md)
 and [ContractExecutorService.ts](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md);
 inline and dedicated-thread runtimes are tested with a budget above the default. Deviation from the
 recorded decision text (`max(16.7M, getGasLimit)`): the replay term is required, because without it
-every local replay would be refused by the upfront rule above. The accepted residual (the 16.7M
+every local replay would be refused by the upfront rule above. A local `stateTransition` that the
+machine refuses, whose call frame runs out of gas outside the transition, or whose executor fails is
+a local failure: [EvmDiamondStateMachine.ts](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
+rethrows it (`isInvalidStateTransitionError` in
+[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md)) and
+[BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)
+restores the state with no fraud proof and no dispute. The accepted residual (the 16.7M
 floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 and in [security-assessment.md](security-assessment.md#local-evm-call-gas--2026-09-26).
 

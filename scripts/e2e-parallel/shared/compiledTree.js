@@ -146,7 +146,11 @@ function setHash(root, files) {
  * The compiled tree's file set hash, the read-only dependency set hash, and
  * the newest mtime of all inputs.
  */
-function scanSources(root = process.cwd()) {
+function scanSources(projectRoot = process.cwd()) {
+    // Paths are hashed relative to the root, and the dependency paths are
+    // real paths; the real root keeps the hashes the same however the root
+    // is spelled (a build script's working directory is the real path).
+    const root = fs.realpathSync(projectRoot);
     const { emitted, read, assets } = compiledTreeInputs(root);
     const fileSet = setHash(root, [...emitted, ...assets]);
     const readSet = setHash(root, read);
@@ -182,37 +186,92 @@ function readStamp(root = process.cwd()) {
 }
 
 /**
- * Records the tree as built from the current inputs. `builtAtMs` is when the
- * build started reading them, so a source saved during the build still
- * counts as newer than the tree.
+ * The inputs as they are now, and `scannedAtMs`: a time taken before the
+ * scan. A stamp written from a snapshot taken before a build is sound: a
+ * source saved after the snapshot has a newer modification time, and a file
+ * added, removed or renamed after it changes a set hash, so the next state
+ * check sees it either way.
  */
-function writeStamp(root = process.cwd(), builtAtMs = Date.now()) {
-    const { fileCount, fileSetHash, readSetHash } = scanSources(root);
+function snapshotSources(root = process.cwd()) {
+    const scannedAtMs = Date.now();
+    return { scannedAtMs, ...scanSources(root) };
+}
+
+function stampOf({ scannedAtMs, fileCount, fileSetHash, readSetHash }) {
+    return { builtAtMs: scannedAtMs, fileCount, fileSetHash, readSetHash };
+}
+
+/**
+ * Records the tree as built from `snapshot`, which must be taken before the
+ * build started reading the inputs (the default, a snapshot taken now, fits
+ * only a tree that is already built).
+ */
+function writeStamp(root = process.cwd(), snapshot = snapshotSources(root)) {
     fs.mkdirSync(path.join(root, "dist"), { recursive: true });
     fs.writeFileSync(
         path.join(root, STAMP_PATH),
-        JSON.stringify({ builtAtMs, fileCount, fileSetHash, readSetHash })
+        JSON.stringify(stampOf(snapshot))
     );
 }
 
 /**
- * "current" when nothing changed since the stamp, "refresh" when only
- * contents or the read-only dependency set changed (a stamp without that set
- * counts as changed), "rebuild" when the file set changed, no stamp exists,
- * or the tsconfig cannot be read (the build then reports why).
+ * The state a snapshot has against the stamp: "current" when nothing changed
+ * since the stamp, "refresh" when only contents or the read-only dependency
+ * set changed (a stamp without that set counts as changed), "rebuild" when
+ * the file set changed or no stamp exists.
+ */
+function stateOf(stamp, snapshot) {
+    if (!stamp) return "rebuild";
+    if (snapshot.fileSetHash !== stamp.fileSetHash) return "rebuild";
+    if (snapshot.readSetHash !== stamp.readSetHash) return "refresh";
+    return snapshot.newestMtimeMs > stamp.builtAtMs ? "refresh" : "current";
+}
+
+/**
+ * The tree's state (see stateOf); "rebuild" also when the tsconfig cannot be
+ * read (the build then reports why).
  */
 function compiledTreeState(root = process.cwd()) {
     const stamp = readStamp(root);
     if (!stamp) return "rebuild";
-    let sources;
     try {
-        sources = scanSources(root);
+        return stateOf(stamp, snapshotSources(root));
     } catch {
         return "rebuild";
     }
-    if (sources.fileSetHash !== stamp.fileSetHash) return "rebuild";
-    if (sources.readSetHash !== stamp.readSetHash) return "refresh";
-    return sources.newestMtimeMs > stamp.builtAtMs ? "refresh" : "current";
+}
+
+// A build script run on its own stamps the tree it builds: `begin` (run
+// before the compiler) records a snapshot here, `finish` (the last step,
+// reached only when every step succeeded) turns it into the stamp. When the
+// runner drives the build it sets RUNNER_STAMPS_BUILD, both steps do nothing,
+// and the runner stamps from the snapshot its state check already took.
+const PENDING_STAMP_PATH = path.join("dist", ".test-build-pending");
+const RUNNER_STAMPS_BUILD = "TEST_BUILD_STAMPED_BY_RUNNER";
+
+function beginBuildStamp(root = process.cwd()) {
+    if (process.env[RUNNER_STAMPS_BUILD]) return;
+    const snapshot = snapshotSources(root);
+    fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+    fs.writeFileSync(
+        path.join(root, PENDING_STAMP_PATH),
+        JSON.stringify(stampOf(snapshot))
+    );
+}
+
+/**
+ * Moves the pending snapshot into the stamp. Without one (a build that did
+ * not run `begin`), the old stamp is removed rather than trusted: the next
+ * run then rebuilds.
+ */
+function finishBuildStamp(root = process.cwd()) {
+    if (process.env[RUNNER_STAMPS_BUILD]) return;
+    const pending = path.join(root, PENDING_STAMP_PATH);
+    if (fs.existsSync(pending)) {
+        fs.renameSync(pending, path.join(root, STAMP_PATH));
+    } else {
+        fs.rmSync(path.join(root, STAMP_PATH), { force: true });
+    }
 }
 
 const COMPILED_TEST_BUILD_SCRIPT = "test:parallel:build";
@@ -244,10 +303,18 @@ function compiledTestTreeAvailable(root = process.cwd()) {
 // Bring the compiled tree up to date with the sources. Changed contents are
 // emitted in place when the project has a refresh script; an added, removed
 // or renamed source, or a missing stamp, means a clean build so no twin of a
-// deleted file can linger. The tree is stamped after either succeeds.
+// deleted file can linger. The tree is stamped after either succeeds, from
+// the one scan the state check took.
 // Returns an error message on failure, undefined otherwise.
 function refreshCompiledTestTree(root = process.cwd()) {
-    const state = compiledTreeState(root);
+    let snapshot;
+    let state;
+    try {
+        snapshot = snapshotSources(root);
+        state = stateOf(readStamp(root), snapshot);
+    } catch {
+        state = "rebuild";
+    }
     if (state === "current") return undefined;
     const refresh =
         state === "refresh" &&
@@ -267,20 +334,43 @@ function refreshCompiledTestTree(root = process.cwd()) {
     const result = spawnSync("yarn", ["-s", script], {
         cwd: root,
         stdio: "inherit",
-        env: process.env
+        env: { ...process.env, [RUNNER_STAMPS_BUILD]: "1" }
     });
     if (result.status !== 0)
         return `Building the compiled test tree failed (yarn -s ${script})`;
-    writeStamp(root, startedAtMs);
+    // The snapshot was taken before the build, so it stands for the tree the
+    // build produced (see snapshotSources). Without one the tsconfig could
+    // not be read before the build; scan now, dated when the build started.
+    writeStamp(
+        root,
+        snapshot ?? { ...snapshotSources(root), scannedAtMs: startedAtMs }
+    );
     return undefined;
 }
 
+if (require.main === module) {
+    // `node compiledTree.js begin|finish`: the stamp steps of a build script.
+    const step = { begin: beginBuildStamp, finish: finishBuildStamp }[
+        process.argv[2]
+    ];
+    if (!step) {
+        // eslint-disable-next-line no-console
+        console.error("Usage: node compiledTree.js begin|finish");
+        process.exit(2);
+    }
+    step(process.cwd());
+}
+
 module.exports = {
+    beginBuildStamp,
+    finishBuildStamp,
     compiledTestTreeAvailable,
     compiledTreeInputs,
     compiledTreeState,
     refreshCompiledTestTree,
     scanSources,
+    snapshotSources,
     writeStamp,
+    PENDING_STAMP_PATH,
     STAMP_PATH
 };

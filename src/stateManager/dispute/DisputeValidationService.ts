@@ -316,9 +316,9 @@ export default class DisputeValidationService {
                     "RUNNING StateProof blocks - aborting pipeline -> killing dispute",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        block: LoggerUtils.getBlockMetadata(
-                            Block.fromBlockConfirmation(bc),
-                            this.storage
+                        // The raw struct: these bytes may not decode.
+                        block: LoggerUtils.getBlockConfirmationStructMetadata(
+                            bc
                         )
                     }
                 );

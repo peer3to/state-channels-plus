@@ -1,10 +1,32 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import type { AContractExecutor } from "@/evm";
+import { EvmStateMachine, type AContractExecutor } from "@/evm";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { MathStateMachine__factory } from "@typechain-types";
+import type { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers } from "hardhat";
 
 const machineInterface = MathStateMachine__factory.createInterface();
+
+// A transition budget whose full stipend needs more call gas than the EVM
+// default, so the local call gas is raised to twice the replay requirement.
+export const BUDGET_ABOVE_DEFAULT = 17_000_000n;
+
+// For the default 500k budget and the default call gas: copying the input
+// runs the call's own frame out of gas before the stipend check.
+export const INPUT_ABOVE_DEFAULT_CALL_GAS = 4_096 * 1024;
+
+/**
+ * Calldata of `add(1)` followed by `inputBytes` nonzero bytes. The ABI decoder
+ * ignores the trailing bytes, so the transition is `add(1)`; only the cost of
+ * copying the input grows.
+ */
+export function addOneCalldata(inputBytes = 0): string {
+    return (
+        machineInterface.encodeFunctionData("add", [1n]) +
+        "01".repeat(inputBytes)
+    );
+}
 
 /**
  * A Math machine deployed into `executor` with a transition budget of
@@ -53,9 +75,17 @@ export async function deployMathMachine(
             data: machineInterface.encodeFunctionData("add", [1n])
         }
     };
+    const stateTransition = (transaction: TransactionStruct) =>
+        executor.executeCall(
+            machineInterface.encodeFunctionData("stateTransition", [
+                transaction
+            ]),
+            address
+        );
     return {
         address,
         addOneTransaction,
+        stateTransition,
         gasRequirement: () =>
             read(
                 machineInterface.encodeFunctionData(
@@ -63,14 +93,32 @@ export async function deployMathMachine(
                 )
             ),
         sum: () => read(machineInterface.encodeFunctionData("getSum")),
-        addOne: () =>
-            executor.executeCall(
-                machineInterface.encodeFunctionData("stateTransition", [
-                    addOneTransaction
-                ]),
-                address
-            )
+        addOne: () => stateTransition(addOneTransaction)
     };
+}
+
+/**
+ * The runtime's state machine over `executor` for the machine at
+ * `machineAddress`, built by the production factory: a second Math machine
+ * serves the local diamond.
+ */
+export async function createDiamondStateMachine(
+    executor: AContractExecutor,
+    machineAddress: string,
+    gasLimit: bigint
+): Promise<EvmStateMachine> {
+    const diamondMachine = await deployMathMachine(executor, gasLimit);
+    const { evmDiamondStateMachine } =
+        await EvmStateMachine.createStandaloneFromLocalStateMachineWithExecutor(
+            executor,
+            machineAddress,
+            diamondMachine.address,
+            machineInterface,
+            ethers.Wallet.createRandom(ethers.provider),
+            resolveTestTimeConfig(),
+            3_000_000
+        );
+    return evmDiamondStateMachine;
 }
 
 /**

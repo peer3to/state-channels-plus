@@ -1,4 +1,5 @@
 import {
+    BUDGET_ABOVE_DEFAULT,
     deployMathMachine,
     startWithTransitionBudget
 } from "../fixtures/LocalEvmCallGas.fixture";
@@ -13,12 +14,9 @@ import { assertStartupReplayGasReadFailure } from "@test/fixtures/node/RuntimeCh
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
-// A budget whose full stipend needs more call gas than the EVM default.
-const BUDGET_ABOVE_DEFAULT = 17_000_000n;
-
 describe("ContractExecutor call gas", function () {
     it("defaults to the EVM's call gas", function () {
-        expect(localEvmCallGasLimit(3_000_000n, 3_500_000n)).to.equal(
+        expect(localEvmCallGasLimit(3_000_000n, 3_000_000n)).to.equal(
             DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT
         );
     });
@@ -29,9 +27,9 @@ describe("ContractExecutor call gas", function () {
         );
     });
 
-    it("raises the call gas to the replay gas", function () {
+    it("raises the call gas to twice the replay gas", function () {
         expect(localEvmCallGasLimit(16_000_000n, 17_540_000n)).to.equal(
-            17_540_000n
+            35_080_000n
         );
     });
 

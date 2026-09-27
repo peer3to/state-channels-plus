@@ -27,11 +27,18 @@ import { ethers } from "ethers";
 export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
 
 /**
- * Gas granted to every local EVM call: the EVM default, raised to the manager's
- * dispute-execution budget and to the manager's replay requirement (the gas a
- * replay needs for the transition's full stipend). The local EVM then never refuses a
- * replay the chain would run, and never spends more on one call than a
- * dispute transaction can.
+ * Gas granted to every local EVM call: the EVM default, raised to the
+ * manager's dispute-execution budget and to twice the manager's replay
+ * requirement. The requirement funds the transition's budget and the fixed
+ * setup only; deleting the previous transition's outbound messages and
+ * copying the input come on top, and cost at most about one more budget (they
+ * undo or move what one budgeted run wrote). With twice the requirement a
+ * local transition is not refused where a funded chain replay runs it, as far
+ * as the chain's block gas limit lets such a replay be sent (a block whose
+ * input alone exceeds that limit cannot be replayed on-chain either). The
+ * requirement is a funding baseline, not a bound on the surrounding work of a
+ * dispute call (proof checks, state restoration); a local out-of-gas there
+ * falls back to the chain.
  */
 export function localEvmCallGasLimit(
     disputeExecutionGasLimit: bigint,
@@ -40,8 +47,8 @@ export function localEvmCallGasLimit(
     let gasLimit = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
     if (disputeExecutionGasLimit > gasLimit)
         gasLimit = disputeExecutionGasLimit;
-    if (stateTransitionReplayGas > gasLimit)
-        gasLimit = stateTransitionReplayGas;
+    if (2n * stateTransitionReplayGas > gasLimit)
+        gasLimit = 2n * stateTransitionReplayGas;
     return gasLimit;
 }
 

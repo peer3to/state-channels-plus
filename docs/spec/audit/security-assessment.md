@@ -306,7 +306,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still verifies neither the posted block's author signature nor its linkage, so a crafted writer can kill a justified forced timeout and slash the honest forcer ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still does not verify the posted block's author signature, so a crafted writer can kill a justified forced timeout and slash the honest forcer (its linkage to the dispute's latest state is now required; see the timeout refutation section below) ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -492,13 +492,24 @@ executor before the chain is asked, and a Byzantine disputer controls the proof 
 verify. The earlier 1e9-gas mirror budget let such a proof spin the executor thread about 60 times
 longer than the chain would run it. The engineer replaced it: each local EVM call is funded with the
 larger of the ethereumjs default call gas (0xffffff, about 16.7M), the manager's dispute-execution
-budget, and the manager's replay requirement, all read once at host start. The replay requirement
-is a funding baseline for the transition's stipend, not a bound on the work around it: a chain
-replay is also funded, through the sender's estimate, for proof checks, restoring the machine's
-state and deleting the previous transition's outbound messages, and the local call gets no such
-addition. A local replay whose surrounding work does not fit the granted gas fails locally; the
-local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
-not a wrong verdict. The floor can exceed a dispute transaction's budget, so a local call can do
+budget, and twice the manager's replay requirement, all read once at host start (revised
+2026-09-27). The replay requirement funds the transition's stipend and the machine's fixed setup
+only; deleting the previous transition's outbound messages and copying the input come on top and
+cost at most about one more budget, so twice the requirement keeps a local transition from being
+refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
+dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
+estimate, and the local call gets no such addition. A local predicate whose work does not fit the
+granted gas fails locally; the local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
+not a wrong verdict. A local state transition has no chain answer to fall back to. Until
+2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
+local call was under-funded, whose call frame ran out of gas outside the transition, or whose
+executor failed would build a fraud proof against an honest author, and could start a dispute on
+it. Now only a failure inside the EVM within the full budget is an invalid transition
+(`isInvalidStateTransitionError`); every other failure is thrown, the block ingest restores its
+state, and no fraud proof or dispute follows
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). Residual: a node whose local environment
+keeps failing cannot judge that block and falls behind until it is fixed; the other peers judge it,
+so this is a liveness cost for that node, never a wrong slash. The floor can exceed a dispute transaction's budget, so a local call can do
 more work than one dispute transaction may. Accepted residual: the 16.7M floor. When the manager's budgets are smaller, a
 Byzantine dispute can make an auditor spend up to 16.7M gas of local work per evaluated predicate
 before the chain is asked. This is bounded, independent of the attacker, and the ethereumjs default
@@ -527,3 +538,25 @@ open, recorded as [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v
 in the contracts and TypeScript, so both accept and reject the same inputs. The
 ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
 functions and change no answer.
+
+## Timeout refutation linkage — 2026-09-27
+
+A `TimeoutCalldataPosted` dispute fraud proof is submitted by the participant the timeout names, and
+it replays a block that participant signed and posted. Until 2026-09-27 the replay started from
+whatever latest state snapshot and machine state the proof supplied, and the posted block did not
+have to follow the dispute's latest proved block. The blamed author could therefore build a block on
+a made-up pre-state (for example a balance it never had), post it in time, replay it successfully,
+and kill an honest timeout dispute; the kill slashes the honest disputer. The facet now requires,
+before the replay, that the snapshot is the one the latest proved block commits to (or the fork's
+genesis), that the machine state hashes to that snapshot's state hash, and that the posted block's
+`previousBlockHash` is the latest proved block (or the genesis snapshot)
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 6,
+[`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
+refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
+preflight runs the same predicate, so an honest node never submits an unlinked refutation.
+Residual: the posted block's author signature is still not verified
+([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of the
+posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
+The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
+refutation reverts with no verdict, and one funded with its cost plus the manager's replay
+requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).

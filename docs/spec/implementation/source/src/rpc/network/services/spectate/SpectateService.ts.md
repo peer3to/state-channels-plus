@@ -32,9 +32,9 @@ Reduction admission to the chain simulation reads finality from the chain contra
 
 Decision (Luka, 2026-09-07): retain this independent per-sync verification and calldata assembly for now. Each request must simulate a complete snapshot update against chain state, even if another request has already proven the same reduction locally. Sharing that proof is a separate optimization: it must not make local completion stand in for chain finality. The extra reads and local reduction calls are accepted pending a design for safe reuse; see [the performance question](../../../../../../open-questions.md#oq-impl-sync-1-hjc60d).
 
-Every pinned request accepts the requested fork or a verified successor whose reduction lineage contains it. On the same fork, the height is a minimum; a verified successor omits the old-fork height requirement. A known successor without an installed genesis uses the computed reduction snapshot and encoded state, an empty state proof, and the outbound block persisted through the existing outbound-chain owner. The genesis timestamp comes from the reduction manager’s cached kill-period observation. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L596).
+Every pinned request accepts the requested fork or a verified successor whose reduction lineage contains it. On the same fork, the height is a minimum; a verified successor omits the old-fork height requirement. A known successor without an installed genesis uses the computed reduction snapshot and encoded state, an empty state proof, and the outbound block persisted through the existing outbound-chain owner. The genesis timestamp comes from the reduction manager’s cached kill-period observation. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L598).
 
-Verified proof suffixes use SpectatingValidationStrategy through the existing ingest option. In-flight sync keys use ChecksumAddress. Pinned sync accepts the requested fork or a successor whose verified reduction lineage contains it; only a same-fork result must meet the pinned height. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L491).
+Verified proof suffixes use SpectatingValidationStrategy through the existing ingest option. In-flight sync keys use ChecksumAddress. Pinned sync accepts the requested fork or a successor whose verified reduction lineage contains it; only a same-fork result must meet the pinned height. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L493).
 
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L17).
 
@@ -52,7 +52,7 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    `RaceConditionBlockHeightTooOld`, the requester rereads the chain and accepts only when the
    latest on-chain snapshot hash equals the payload's final milestone. Any pending reduction calls
    must still simulate successfully by themselves. A `RaceConditionSnapshotUpdateDisputedFork` revert, raised by either adoption call, proves every reduction and every check of the refused adoption call before its write passed, because the multicall stops at the first failure and each refusal is its call's last check before `_updateStateSnapshot`. The outbound ranges that write would verify are checked locally (steps 2.7 and 2.10). When the refused call is the fork update, the same-fork call behind it is covered by the local milestone and outbound checks (steps 2.9 and 2.10). The proof is accepted with no reread, and the responder is not cut
-   ([#L960](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L960)).
+   ([#L962](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L962)).
 8. **In-flight collisions answer `false` without cutting the peer; probes wait instead.** `sync` keeps
    one attempt per peer and answers a second caller `false` at once. `syncAfterInFlight` waits for the
    in-flight attempt and then runs its own, for a caller whose `false` must mean "peer cut" (the block
@@ -60,6 +60,11 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
 9. **Every rejection names its reason.** `rejectSync` logs the failed verification step before cutting
    the responder, so a refused sync is diagnosable from the requester's log alone.
 10. **The replayed suffix is history.** Each verified block confirmation enters ingest with SpectatingValidationStrategy, which accepts its historical subjective timing. Objective validation is unchanged and any replay failure still rejects the responder.
+11. **Diagnostic logs never decode what the pipeline has not judged.** The debug line listing the
+    unfinalized confirmations maps each with `Block.tryFromBlockConfirmation`
+    ([#L485](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L485)) and logs an undefined height and author for bytes that do not decode; the
+    ingest pipeline then refuses those bytes. A throwing decode in the log would abort the sync
+    before the pipeline could judge the confirmation and name the reason.
 
 ## Inputs, outputs, state, and side effects
 

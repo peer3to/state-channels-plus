@@ -145,6 +145,14 @@ export type HarnessOptions = {
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;
     customPrecompiles?: EvmCustomPrecompileManifest[];
+    /**
+     * Gas granted to every local EVM call of the listed peers (peer index ->
+     * gas), in place of the limit the runtime derives from the manager.
+     * Stages a peer whose local EVM cannot fund a transition the others run.
+     * A listed peer runs its host inline, where the executor factory is
+     * reachable.
+     */
+    executorCallGasLimitByPeer?: Record<number, number>;
 };
 
 export type TestPeer<

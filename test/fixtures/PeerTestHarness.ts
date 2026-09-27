@@ -18,6 +18,8 @@ import { startDiscoveryRegistry, startHardhatNode } from "../utils/nodeInfra";
 import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { BusEventMaps } from "@/events/EventBus";
 import { EvmStateMachine } from "@/evm";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import P2pEventHooks from "@/P2pEventHooks";
 import type { CustomRpcManifest } from "@/rpc/network/registry";
 import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
@@ -294,7 +296,8 @@ export class PeerTestHarness<
             peerSetupConcurrency: options?.peerSetupConcurrency,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
-            customRpcManifest: options?.customRpcManifest
+            customRpcManifest: options?.customRpcManifest,
+            executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -772,23 +775,54 @@ export class PeerTestHarness<
             );
         }
 
+        const executorCallGasLimit =
+            this.options.executorCallGasLimitByPeer?.[index];
+        // The executor factory is reachable only in an inline host, so a peer
+        // with its own call gas always runs inline.
+        const inline = !useWorker || executorCallGasLimit !== undefined;
+        const setupOptions = {
+            peerId: index,
+            peerLogger: peerLogger,
+            customPrecompiles: this.options.customPrecompiles!,
+            customRpcManifest: this.resolveHarnessRpcManifest(),
+            signerSecret,
+            config:
+                executorCallGasLimit === undefined
+                    ? this.harnessConfig
+                    : { ...this.harnessConfig, RUN_SDK_IN_THREAD: false },
+            handlerExecutionContext: inline
+                ? new PeerIdentityExecutionContext(address)
+                : undefined
+        };
         const p2pInstance = await RootCreationControl.observe(() =>
-            EvmStateMachine.p2pSetup<TStateMachine, TCustomRpc>(
-                this.channelManager,
-                contractInstanceMock,
-                this.sharedStateMachineDeployer,
-                {
-                    peerId: index,
-                    peerLogger: peerLogger,
-                    customPrecompiles: this.options.customPrecompiles!,
-                    customRpcManifest: this.resolveHarnessRpcManifest(),
-                    signerSecret,
-                    config: this.harnessConfig,
-                    handlerExecutionContext: useWorker
-                        ? undefined
-                        : new PeerIdentityExecutionContext(address)
-                }
-            )
+            executorCallGasLimit === undefined
+                ? EvmStateMachine.p2pSetup<TStateMachine, TCustomRpc>(
+                      this.channelManager,
+                      contractInstanceMock,
+                      this.sharedStateMachineDeployer,
+                      setupOptions
+                  )
+                : // p2pSetup's own construction, with the production executor
+                  // factory given this peer's call gas
+                  setupP2pRuntime<TStateMachine, TCustomRpc>(
+                      this.channelManager,
+                      contractInstanceMock,
+                      this.sharedStateMachineDeployer,
+                      setupOptions,
+                      {
+                          hostContext: {
+                              createContractExecutor: (factoryOptions, owner) =>
+                                  createContractExecutor(
+                                      {
+                                          ...factoryOptions,
+                                          callGasLimit:
+                                              BigInt(executorCallGasLimit)
+                                      },
+                                      owner
+                                  )
+                          }
+                      }
+                  )
         );
 
         const peer: TestPeer<TCustomRpc, TStateMachine> = {

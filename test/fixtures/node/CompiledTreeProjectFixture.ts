@@ -100,3 +100,16 @@ export const FAILING_SCRIPT = `node -e "process.exit(3)"`;
 export function tscScript(): string {
     return `node "${require.resolve("typescript/bin/tsc")}" -p tsconfig.json`;
 }
+
+/** A package.json script step that runs one stamp step (begin or finish). */
+export function stampStepScript(step: "begin" | "finish"): string {
+    const cli = require.resolve(
+        "../../../scripts/e2e-parallel/shared/compiledTree.js"
+    );
+    return `node "${cli}" ${step}`;
+}
+
+/** A package.json script step that rewrites `file`, as an edit made mid-build. */
+export function editScript(file: string, content: string): string {
+    return `node -e "require('fs').writeFileSync('${file}', '${content}')"`;
+}

@@ -145,13 +145,20 @@ the local execution environment that is not a revert MUST propagate as an error 
 converted into either answer. A pure predicate — one that reads only its inputs, never replicated
 state — cannot lag; under [`REQ-MIRROR-1-XCY9CB`](local-mirror.md#req-mirror-1-xcy9cb) its local answer is the chain's answer and needs no
 confirmation. Each local evaluation MUST be granted bounded gas: at least the larger of the
-dispute execution budget and the upfront funding a fraud-proof replay requires for the
+dispute execution budget and twice the upfront funding a fraud-proof replay requires for the
 transition's full limit, and no more than the larger of those two and a fixed minimum floor. The
-replay requirement is a funding baseline for the transition, not a bound on the work around it
-(proof checks, restoring the machine's state, deleting the previous transition's outbound
-messages), which an on-chain submission funds through its own estimate; a local evaluation can
-therefore run out of gas where the chain would not. Running out of gas locally MUST be handled as a
-revert of the mirrored logic — fall back to the chain — and MUST NOT become an answer.
+replay requirement funds only the transition's limit and the machine's fixed setup; deleting the
+previous transition's outbound messages and copying the transition input come on top of it, and
+cost at most about one more requirement, because they undo or move what one funded run wrote.
+With twice the requirement a local transition is not refused where a funded chain replay runs it,
+as far as the chain's block gas limit lets such a replay be sent. The requirement is a funding
+baseline, not a bound on the rest of a dispute call (proof checks, restoring the machine's state),
+which an on-chain submission funds through its own estimate; a local evaluation can therefore run
+out of gas where the chain would not. For a predicate with a chain answer, running out of gas
+locally MUST be handled as a revert of the mirrored logic — fall back to the chain — and MUST NOT
+become an answer. A local state transition has no chain answer to fall back to: its refusal, its
+out-of-gas outside the transition, and an executor failure are local failures that MUST NOT become
+a verdict ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](execution-and-consumer.md#req-enfsm-1-dkjcy2)).
 
 ## Assumptions and constraints
 
@@ -188,11 +195,17 @@ chain, and reductions and reduced-result challenges are computed by the chain di
 executor failure as a verdict would turn infrastructure faults into protocol decisions, so only a
 revert of the mirrored logic falls back. Local evaluation is bounded by a per-call gas budget
 ([`REQ-MIRROR-4-H9C4YS`](local-mirror.md#req-mirror-4-h9c4ys)): the larger of a fixed minimum floor, the dispute execution budget and
-the replay requirement. The replay requirement covers the transition's full limit only; the work
-around a replay (proof checks, state restoration, deleting previous outbound messages) is funded on
-chain by the submitter's estimate and locally only by whatever the grant leaves. A local replay can
-therefore run out of gas where the chain would run it; that failure is a revert and falls back to
-the chain, so the consequence is an extra chain read, never a different answer. The floor can
+twice the replay requirement. The replay requirement covers the transition's full limit and fixed
+setup only; the second requirement covers deleting previous outbound messages and copying the
+input, so a local transition is not refused where a funded chain replay runs it. The rest of a
+dispute call (proof checks, state restoration) is funded on chain by the submitter's estimate and
+locally only by whatever the grant leaves. A local predicate evaluation can therefore run out of
+gas where the chain would run it; that failure is a revert and falls back to the chain, so the
+consequence is an extra chain read, never a different answer. A local state transition that is
+refused or runs out of gas outside the transition is a local failure, never an invalid transition:
+if it were judged, a node with a misconfigured or failing local environment would build a fraud
+proof against an honest author. The node instead raises the error and restores its state; it
+cannot judge that block until its environment is fixed, while the other peers judge it. The floor can
 exceed a dispute transaction's budget, so a local call can do more work than one dispute
 transaction may. The accepted residual is that floor: when the chain's budgets are smaller than it,
 a Byzantine dispute can make an auditor spend up to the floor in local work per evaluated predicate

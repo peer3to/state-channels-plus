@@ -1,21 +1,47 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
     CompiledTreeProject,
+    editScript,
     FAILING_SCRIPT,
     markerScript,
+    stampStepScript,
     tscScript
 } from "../fixtures/node/CompiledTreeProjectFixture";
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 
 type TreeState = "current" | "refresh" | "rebuild";
 
-const { compiledTreeState, refreshCompiledTestTree, writeStamp, STAMP_PATH } =
-    require("../../scripts/e2e-parallel/shared/compiledTree.js") as {
-        compiledTreeState: (root: string) => TreeState;
-        refreshCompiledTestTree: (root: string) => string | undefined;
-        writeStamp: (root: string) => void;
-        STAMP_PATH: string;
-    };
+const {
+    compiledTreeState,
+    refreshCompiledTestTree,
+    writeStamp,
+    PENDING_STAMP_PATH,
+    STAMP_PATH
+} = require("../../scripts/e2e-parallel/shared/compiledTree.js") as {
+    compiledTreeState: (root: string) => TreeState;
+    refreshCompiledTestTree: (root: string) => string | undefined;
+    writeStamp: (root: string) => void;
+    PENDING_STAMP_PATH: string;
+    STAMP_PATH: string;
+};
+
+/** Runs a project script directly, the way a developer runs it. */
+function runScript(project: CompiledTreeProject, script: string): number {
+    const env = { ...process.env };
+    delete env.TEST_BUILD_STAMPED_BY_RUNNER;
+    return (
+        spawnSync("yarn", ["-s", script], { cwd: project.root, env }).status ??
+        -1
+    );
+}
+
+/** A build script that edits `src/index.ts` while it runs. */
+const EDITING_BUILD = [
+    stampStepScript("begin"),
+    editScript("src/index.ts", "export const edited = 1;"),
+    stampStepScript("finish")
+].join(" && ");
 
 const WASM = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]);
 const WASM_CHANGED = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x02, 0x00, 0x00]);
@@ -414,6 +440,69 @@ describe("parallel runner compiled test tree", function () {
             );
             expect(project.read(STAMP_PATH)).to.equal(stamp);
             expect(compiledTreeState(project.root)).to.equal("refresh");
+        } finally {
+            project.dispose();
+        }
+    });
+
+    it("stamps a build script run directly, so the tree is current afterwards", function () {
+        const project = CompiledTreeProject.create({
+            scripts: {
+                "test:parallel:build": [
+                    stampStepScript("begin"),
+                    stampStepScript("finish")
+                ].join(" && ")
+            },
+            files: { "src/index.ts": "export {};" }
+        });
+        try {
+            expect(runScript(project, "test:parallel:build")).to.equal(0);
+            expect(project.exists(PENDING_STAMP_PATH)).to.equal(false);
+            expect(compiledTreeState(project.root)).to.equal("current");
+        } finally {
+            project.dispose();
+        }
+    });
+
+    it("reports refresh after a build script run directly when a source changed between its start and its stamp", function () {
+        const project = CompiledTreeProject.create({
+            scripts: { "test:parallel:build": EDITING_BUILD },
+            files: { "src/index.ts": "export {};" }
+        });
+        try {
+            expect(runScript(project, "test:parallel:build")).to.equal(0);
+            expect(project.exists(STAMP_PATH)).to.equal(true);
+            expect(compiledTreeState(project.root)).to.equal("refresh");
+        } finally {
+            project.dispose();
+        }
+    });
+
+    it("reports refresh after a runner-driven build when a source changed during it, and the build's own stamp steps stay idle", function () {
+        const project = CompiledTreeProject.create({
+            scripts: { "test:parallel:build": EDITING_BUILD },
+            files: { "src/index.ts": "export {};" }
+        });
+        try {
+            expect(refreshCompiledTestTree(project.root)).to.equal(undefined);
+            expect(project.exists(PENDING_STAMP_PATH)).to.equal(false);
+            expect(project.exists(STAMP_PATH)).to.equal(true);
+            expect(compiledTreeState(project.root)).to.equal("refresh");
+        } finally {
+            project.dispose();
+        }
+    });
+
+    it("removes the stamp when a build script finishes without having begun", function () {
+        const project = CompiledTreeProject.create({
+            scripts: { "test:parallel:refresh": stampStepScript("finish") },
+            files: { "src/index.ts": "export {};" }
+        });
+        try {
+            writeStamp(project.root);
+            expect(runScript(project, "test:parallel:refresh")).to.equal(0);
+            expect(project.exists(STAMP_PATH)).to.equal(false);
+            expect(compiledTreeState(project.root)).to.equal("rebuild");
         } finally {
             project.dispose();
         }
