@@ -196,10 +196,13 @@ reaches it only after **the worker host updates that checkout, restarts
 `yarn test:parallel:server`, and rebuilds its runner image**. The browser tier
 arrived with distributed protocol 14. The orchestrator still leases protocol 13
 hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
-host at a time. When no connected worker supports the browser runner, the run
-skips the browser tasks with a warning that lists them (also written to the
-GitHub job summary) instead of failing; CI's `browser` job runs the same gates
-inside the runner image either way.
+host at a time. A Mocha test file that launches Chromium carries
+`// @distributed-requires: browser` in its leading comments, and its tests go
+only to hosts that run the browser tier as well. When no connected worker
+supports the browser runner, the run skips the browser tasks and those marked
+Mocha tests with a warning that lists them (also written to the GitHub job
+summary) instead of failing; CI's `browser` job runs the same gates inside the
+runner image either way.
 
 ### Distributed parallel tests
 
@@ -464,7 +467,8 @@ any test fails. A fully successful run skips collection unless
 The orchestrator leases worker hosts on any distributed protocol from the
 minimum it still supports up to its own (`MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL`
 and `DISTRIBUTED_PROTOCOL_VERSION` in `protocol.js`), and schedules on each host
-only the task runners its protocol knows. A host outside that range is rejected
+only the tasks whose runner, and every runner their test file requires, its
+protocol knows. A host outside that range is rejected
 before test execution with an update or rebase instruction. A worker host and
 its isolated guest must still match exactly, since both run the host's own
 checkout.

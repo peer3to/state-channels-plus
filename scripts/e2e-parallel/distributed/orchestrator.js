@@ -12,8 +12,9 @@ const {
     DISTRIBUTED_PROTOCOL_VERSION,
     MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer,
-    minimumProtocolForRunner,
+    minimumProtocolForTask,
     runnersForDistributedProtocol,
+    workerCanRunTask,
     waitForMessage
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
@@ -139,17 +140,22 @@ function assertCompatibleWorkerProtocol(capabilities) {
  * worker host needs to run it.
  */
 function formatSkippedTasksNotice(tasks) {
-    const byRunner = new Map();
+    const groups = new Map();
     for (const task of tasks) {
         const runner = normalizeTaskRunner(task.runner);
-        if (!byRunner.has(runner)) byRunner.set(runner, []);
-        byRunner.get(runner).push(task);
+        const needs = task.requires ?? [];
+        const key = [runner, ...needs].join("+");
+        if (!groups.has(key)) groups.set(key, { runner, needs, tasks: [] });
+        groups.get(key).tasks.push(task);
     }
     const lines = [];
-    for (const [runner, skipped] of byRunner) {
-        const required = minimumProtocolForRunner(runner);
+    for (const { runner, needs, tasks: skipped } of groups.values()) {
+        const required = minimumProtocolForTask(skipped[0]);
+        const missing = needs.length ? needs.join(", ") : runner;
         lines.push(
-            `Skipping ${skipped.length} ${runner} task(s): no connected worker supports the ${runner} runner` +
+            `Skipping ${skipped.length} ${runner} task(s)` +
+                (needs.length ? ` that need ${missing}` : "") +
+                `: no connected worker supports the ${missing} runner` +
                 (required
                     ? `; a worker host on distributed protocol ${required} or newer runs them.`
                     : ".")
@@ -690,7 +696,7 @@ async function runDistributed(options) {
                 `Connected to worker ${workerName(worker)} (protocol ${worker.distributedProtocol}: ${[...runners].join(", ")}); requesting lease`
             );
             coordinator.registerWorker(workerId, {
-                canRun: (task) => runners.has(normalizeTaskRunner(task.runner))
+                canRun: (task) => workerCanRunTask(runners, task)
             });
             peer.on("message", (message) => {
                 worker.heartbeat.received();

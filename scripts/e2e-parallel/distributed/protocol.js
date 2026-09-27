@@ -1,5 +1,5 @@
 const { EventEmitter } = require("events");
-const { TASK_RUNNERS } = require("../shared/taskRunners");
+const { TASK_RUNNERS, normalizeTaskRunner } = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
@@ -378,14 +378,25 @@ function runnersForDistributedProtocol(version) {
     return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
 }
 
-/** The oldest accepted worker protocol that can run `runner`, or null. */
-function minimumProtocolForRunner(runner) {
+/** Every runner a task needs: its own, plus what its test file declares. */
+function runnersNeededByTask(task) {
+    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
+}
+
+/** Whether a worker whose protocol lists `runners` can execute `task`. */
+function workerCanRunTask(runners, task) {
+    return runnersNeededByTask(task).every((runner) => runners.has(runner));
+}
+
+/** The oldest accepted worker protocol that can run `task`, or null. */
+function minimumProtocolForTask(task) {
     for (
         let version = MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL;
         version <= DISTRIBUTED_PROTOCOL_VERSION;
         version++
     ) {
-        if (runnersForDistributedProtocol(version)?.has(runner)) return version;
+        const runners = runnersForDistributedProtocol(version);
+        if (runners && workerCanRunTask(runners, task)) return version;
     }
     return null;
 }
@@ -421,7 +432,9 @@ module.exports = {
     PROTOCOL_VERSION,
     MESSAGE_KINDS,
     ProtocolPeer,
-    minimumProtocolForRunner,
+    minimumProtocolForTask,
+    runnersNeededByTask,
+    workerCanRunTask,
     runnersForDistributedProtocol,
     waitForMessage
 };

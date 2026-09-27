@@ -177,6 +177,30 @@ function isMochaTestFile(filePath) {
     return path.extname(filePath) === ".ts";
 }
 
+// `// @distributed-requires: browser` in a test file's leading comment lines:
+// its tests need what that runner's environment provides (Chromium), so the
+// distributed orchestrator hands them only to a worker whose protocol runs it.
+const REQUIRES_MARKER_RE = /^\s*\/\/\s*@distributed-requires:\s*(\S.*)$/;
+
+/** The runners a test file's marker names; empty without one. Throws on an unknown name. */
+function readRequiredRunners(filePath) {
+    const known = new Set(Object.values(TASK_RUNNERS));
+    for (const line of fs.readFileSync(filePath, "utf8").split("\n")) {
+        if (!/^\s*\/\//.test(line)) break;
+        const match = line.match(REQUIRES_MARKER_RE);
+        if (!match) continue;
+        const required = match[1].split(/[\s,]+/).filter(Boolean);
+        const unknown = required.filter((runner) => !known.has(runner));
+        if (unknown.length) {
+            throw new Error(
+                `${filePath}: @distributed-requires names unknown runner(s) ${unknown.join(", ")}`
+            );
+        }
+        return required;
+    }
+    return [];
+}
+
 function discoverTasks(
     testDir,
     grep,
@@ -199,6 +223,8 @@ function discoverTasks(
         // tests) has nothing to run and may not even be part of the build
         if (!requiresFileFallback && tests.length === 0) continue;
         const runFile = runnableTestPath(f, compiled);
+        const required = readRequiredRunners(f);
+        const requires = required.length ? { requires: required } : {};
         if (requiresFileFallback) {
             for (const fullTitle of enumerateMochaTests(f, compiled)) {
                 const taskGrep = `^${escapeRegex(fullTitle)}$`;
@@ -210,7 +236,8 @@ function discoverTasks(
                     ),
                     fullTitle,
                     runner: TASK_RUNNERS.HARDHAT,
-                    isE2E
+                    isE2E,
+                    ...requires
                 });
             }
             continue;
@@ -226,7 +253,8 @@ function discoverTasks(
                 logName,
                 fullTitle,
                 runner: TASK_RUNNERS.HARDHAT,
-                isE2E
+                isE2E,
+                ...requires
             });
         }
     }
@@ -273,5 +301,6 @@ module.exports = {
     sanitizeFileName,
     duplicateNames,
     filterByGrep,
+    readRequiredRunners,
     discoverTasks
 };

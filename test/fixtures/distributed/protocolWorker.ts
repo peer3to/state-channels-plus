@@ -168,14 +168,28 @@ export const MIXED_TIER_TASKS = [
 ];
 
 /**
- * Run the real orchestrator over MIXED_TIER_TASKS against worker hosts that
+ * Hardhat tasks from a file marked `// @distributed-requires: browser`, as
+ * discovery emits them: Mocha tests that launch Chromium.
+ */
+export const CHROMIUM_MOCHA_TASKS = [1, 2, 3].map((index) => ({
+    label: `chromium mocha ${index}`,
+    logName: `chromium-mocha-${index}`,
+    args: [],
+    requires: ["browser"]
+}));
+
+/**
+ * Run the real orchestrator over `tasks` (MIXED_TIER_TASKS by default) against worker hosts that
  * declare the given protocols, on a local DHT. Returns what each worker was
  * offered and ran, the run result or failure, the console warnings, and what
  * the run appended to a GitHub step summary.
  */
 export async function runAgainstProtocolWorkers(
     workers: Array<{ name: string; distributedProtocol: number }>,
-    options: { discoveryTimeoutMs?: number } = {}
+    options: {
+        discoveryTimeoutMs?: number;
+        tasks?: Array<Record<string, unknown>>;
+    } = {}
 ) {
     const { createLocalDhtNetwork } = require("./testTransport");
     const fs = require("fs");
@@ -209,7 +223,9 @@ export async function runAgainstProtocolWorkers(
         let failure: Error | null = null;
         try {
             result = await runDistributed({
-                tasks: MIXED_TIER_TASKS.map((task) => ({ ...task })),
+                tasks: (options.tasks ?? MIXED_TIER_TASKS).map((task) => ({
+                    ...task
+                })),
                 projectRoot: root,
                 archivePath: path.join(root, "source.tgz"),
                 manifest: {
