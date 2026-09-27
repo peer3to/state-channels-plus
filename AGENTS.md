@@ -179,6 +179,10 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 - When adding a deviation, implement it on **all** strategies — a deliberate
   `throw` ("should not be relevant/called") is a valid implementation when the
   deviation is impossible for that pipeline.
+- **Exception: double signatures.** Two different signatures by one signer over
+  one message are a signature-level offense for every message type, so they are
+  detected in `SignerRecoveryCache` and punished by `P2PManager`, not through
+  `AValidationStrategy`.
 - **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
   block + ad-hoc sender parameter.** Entries merge signatures and
   `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own

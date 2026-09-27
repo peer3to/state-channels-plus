@@ -13,6 +13,7 @@ import ProfileManager from "@/ProfileManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import type StateManager from "@/stateManager";
+import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import type { BlacklistReason } from "@/storage/BlacklistStorage";
 import {
     NetworkTransport,
@@ -170,21 +171,43 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     /**
      * Blacklists the signer of a detected double signature. The signer is the
      * offender, never the peer that relayed it; this node never blacklists
-     * itself.
+     * itself. Only channel members and eligible identities are blacklisted, so
+     * throwaway keys cannot grow the blacklist. Runs inside signer recovery,
+     * so it never throws.
      */
     private onDoubleSignature(report: DoubleSignatureReport): void {
-        if (this.isDisposed) return;
-        if (addressesEqual(report.signer, this.stateManager.signerAddress)) {
-            return;
+        try {
+            if (this.isDisposed) return;
+            if (
+                addressesEqual(report.signer, this.stateManager.signerAddress)
+            ) {
+                return;
+            }
+            if (
+                this.stateManager.membershipService.getCachedSourceEligibility(
+                    report.signer
+                ) === SourceEligibility.ABSENT
+            ) {
+                this.logger.debug(
+                    "Double signature by a non-member; ignoring",
+                    LoggerUtils.getDoubleSignatureMetadata(report)
+                );
+                return;
+            }
+            this.logger.warn(
+                "Double signature detected; blacklisting the signer",
+                LoggerUtils.getDoubleSignatureMetadata(report)
+            );
+            this.disconnectAndBlacklistPeerByEvmAddress(
+                report.signer,
+                "double signature"
+            );
+        } catch (error) {
+            this.logger.error("Failed to handle a double signature", {
+                ...LoggerUtils.getDoubleSignatureMetadata(report),
+                error: errorMessage(error)
+            });
         }
-        this.logger.warn(
-            "Double signature detected; blacklisting the signer",
-            LoggerUtils.getDoubleSignatureMetadata(report)
-        );
-        this.disconnectAndBlacklistPeerByEvmAddress(
-            report.signer,
-            "double signature"
-        );
     }
 
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {

@@ -1,4 +1,4 @@
-import { Codec, Type } from "@/utils";
+import { latestBlockCopy } from "@test/fixtures/DoubleSignatureFixture";
 import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
 import { reencodeSignature } from "@test/fixtures/SignatureEncodingFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -8,8 +8,9 @@ import { ethers } from "ethers";
 
 // Honest signers are deterministic, so a second distinct signature by one key
 // over one block hash is a double signature. The receiving node blacklists the
-// signer — never the peer that relayed it — and a re-encoding of an honest
-// signature is the same signature.
+// signer — never the peer that relayed it, never itself, and never an address
+// that is not a channel member — and a re-encoding of an honest signature is
+// the same signature.
 
 describe("E2E: Double signature", function () {
     it("a participant gossiping a second valid signature for a stored block is blacklisted by the receiver", async () => {
@@ -17,18 +18,11 @@ describe("E2E: Double signature", function () {
         await h.lifecycle.start(3, 1);
         const observer = h.getPeer(0);
         const signer = h.getPeer(1);
-        const block = await h
-            .control(observer)
-            .query.getLatestBlockBundle(h.activeForkId!)
-            .request();
-        expect(block, "observer stored no block").to.not.equal(null);
         const wallet = h.signerFor(slotAccountIndex(signer.index));
-        const honest = wallet.signMessageSync(ethers.getBytes(block!.hash));
-        const second = signBlockVariant(wallet, block!.hash, 0);
-        const confirmation = Codec.decode(
-            block!.encodedBlockConfirmation,
-            Type.BlockConfirmation
-        );
+        const copy = await latestBlockCopy(observer, (hash) => [
+            wallet.signMessageSync(ethers.getBytes(hash)),
+            signBlockVariant(wallet, hash, 0)
+        ]);
         const expectedStatus = await h
             .control(observer)
             .query.getStatus()
@@ -37,15 +31,7 @@ describe("E2E: Double signature", function () {
         await h
             .control(signer)
             .byzantine.sendBlockConfirmation(
-                String(
-                    Codec.encode(
-                        {
-                            signedBlock: confirmation.signedBlock,
-                            signatures: [honest, second]
-                        },
-                        Type.BlockConfirmation
-                    )
-                ),
+                copy.encodedBlockConfirmation,
                 observer.address
             )
             .request();
@@ -64,43 +50,28 @@ describe("E2E: Double signature", function () {
         const honestSigner = h.getPeer(1);
         const relayer = h.getPeer(2);
         const doubleSigner = h.getPeer(3);
-        const block = await h
-            .control(observer)
-            .query.getLatestBlockBundle(h.activeForkId!)
-            .request();
-        expect(block, "observer stored no block").to.not.equal(null);
-        const hashBytes = ethers.getBytes(block!.hash);
         const honestWallet = h.signerFor(slotAccountIndex(honestSigner.index));
         const doubleWallet = h.signerFor(slotAccountIndex(doubleSigner.index));
-        const honest = honestWallet.signMessageSync(hashBytes);
-        const confirmation = Codec.decode(
-            block!.encodedBlockConfirmation,
-            Type.BlockConfirmation
-        );
+        // The re-encodings come first, so the observer has recovered them by
+        // the time the double signature later in the same copy is reported.
+        const copy = await latestBlockCopy(observer, (hash) => {
+            const honest = honestWallet.signMessageSync(ethers.getBytes(hash));
+            return [
+                reencodeSignature(honest, "yParity"),
+                reencodeSignature(honest, "compact"),
+                doubleWallet.signMessageSync(ethers.getBytes(hash)),
+                signBlockVariant(doubleWallet, hash, 0)
+            ];
+        });
         const expectedStatus = await h
             .control(observer)
             .query.getStatus()
             .request();
 
-        // The re-encodings come first, so the observer has recovered them by
-        // the time the double signature later in the same copy is reported.
         await h
             .control(relayer)
             .byzantine.sendBlockConfirmation(
-                String(
-                    Codec.encode(
-                        {
-                            signedBlock: confirmation.signedBlock,
-                            signatures: [
-                                reencodeSignature(honest, "yParity"),
-                                reencodeSignature(honest, "compact"),
-                                doubleWallet.signMessageSync(hashBytes),
-                                signBlockVariant(doubleWallet, block!.hash, 0)
-                            ]
-                        },
-                        Type.BlockConfirmation
-                    )
-                ),
+                copy.encodedBlockConfirmation,
                 observer.address
             )
             .request();
@@ -126,31 +97,22 @@ describe("E2E: Double signature", function () {
         await h.lifecycle.start(3, 1);
         const node = h.getPeer(0);
         const other = h.getPeer(1);
-        const block = await h
-            .control(node)
-            .query.getLatestBlockBundle(h.activeForkId!)
-            .request();
-        expect(block, "node stored no block").to.not.equal(null);
-        const hashBytes = ethers.getBytes(block!.hash);
         const ownWallet = h.signerFor(slotAccountIndex(node.index));
         const otherWallet = h.signerFor(slotAccountIndex(other.index));
-        const confirmation = Codec.decode(
-            block!.encodedBlockConfirmation,
-            Type.BlockConfirmation
-        );
+        const copy = await latestBlockCopy(node, (hash) => [
+            ownWallet.signMessageSync(ethers.getBytes(hash)),
+            signBlockVariant(ownWallet, hash, 0),
+            otherWallet.signMessageSync(ethers.getBytes(hash)),
+            signBlockVariant(otherWallet, hash, 0)
+        ]);
 
         // The merge resolves after every signature in the copy was recovered;
         // the other signer's double signature proves detection ran.
         await h.transition.runStoredBlockMerge({
             peerIndex: node.index,
             confirmation: {
-                signedBlock: confirmation.signedBlock,
-                signatures: [
-                    ownWallet.signMessageSync(hashBytes),
-                    signBlockVariant(ownWallet, block!.hash, 0),
-                    otherWallet.signMessageSync(hashBytes),
-                    signBlockVariant(otherWallet, block!.hash, 0)
-                ]
+                signedBlock: copy.signedBlock,
+                signatures: copy.signatures
             }
         });
 
@@ -160,6 +122,44 @@ describe("E2E: Double signature", function () {
         );
         expect(await query.isBlacklisted(node.address).request()).to.equal(
             false
+        );
+    });
+
+    it("a double signature by a key outside the channel blacklists nobody while a member's still blacklists the member", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const node = h.getPeer(0);
+        const member = h.getPeer(1);
+        const memberWallet = h.signerFor(slotAccountIndex(member.index));
+        const throwaway = ethers.Wallet.createRandom();
+        const encodedMessage = ethers.hexlify(ethers.randomBytes(64));
+        const digest = ethers.keccak256(encodedMessage);
+        const digestBytes = ethers.getBytes(digest);
+
+        // Recovery returns after every signature was recovered; the member's
+        // double signature proves detection ran for this call.
+        const recovered = await h
+            .control(node)
+            .byzantine.recoverSignatures(encodedMessage, [
+                throwaway.signMessageSync(digestBytes),
+                signBlockVariant(throwaway, digest, 0),
+                memberWallet.signMessageSync(digestBytes),
+                signBlockVariant(memberWallet, digest, 0)
+            ])
+            .request();
+
+        expect(recovered).to.deep.equal([
+            throwaway.address,
+            throwaway.address,
+            member.address,
+            member.address
+        ]);
+        const query = h.control(node).query;
+        expect(await query.isBlacklisted(throwaway.address).request()).to.equal(
+            false
+        );
+        expect(await query.isBlacklisted(member.address).request()).to.equal(
+            true
         );
     });
 

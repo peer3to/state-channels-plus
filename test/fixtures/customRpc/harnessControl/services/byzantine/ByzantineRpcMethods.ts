@@ -12,6 +12,7 @@ import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { SignatureUtils } from "@/utils/SignatureUtils";
 import type {
     BlockStruct,
     SignedBlockStruct,
@@ -45,6 +46,20 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
         return { hash: String(block.hash), height: Number(block.height) };
+    }
+
+    /**
+     * Recover each signature over the encoded message through the SDK's signer
+     * recovery, exactly as a receiving endpoint does, and return the recovered
+     * addresses in order.
+     */
+    public recoverSignatures(
+        encodedMessage: string,
+        signatures: string[]
+    ): string[] {
+        return signatures.map((signature) =>
+            String(SignatureUtils.getSignerAddress(encodedMessage, signature))
+        );
     }
 
     /**

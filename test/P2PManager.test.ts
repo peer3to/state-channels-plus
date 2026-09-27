@@ -267,6 +267,16 @@ describe("P2PManager", function () {
         });
     });
 
+    it("disposal removes exactly its double-signature listener", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDoubleSignatureListenerDisposal()
+            .request();
+
+        expect(result.removedListeners).to.equal(1);
+        expect(result.recoveredAfterDispose).to.equal(true);
+    });
+
     it("rejects and releases every pending request during disposal", async function () {
         const result = await fixture!
             .control()

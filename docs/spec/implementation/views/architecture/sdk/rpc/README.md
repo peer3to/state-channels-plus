@@ -189,7 +189,7 @@ Integrators extend the boundary by subclassing `MainRpcService` and shipping the
 resolves the manifest with
 [`resolveCustomRpcConstructor`](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L5) (dynamic module
 load; throws unless the export is a constructor) and passes the constructor into
-[`P2PManager`](../../../../../../../src/P2PManager.ts#L36), which instantiates it in place of the base root and
+[`P2PManager`](../../../../../../../src/P2PManager.ts#L37), which instantiates it in place of the base root and
 derives `remoteRpc` from it. Typing flows through the `TCustomRpc extends MainRpcService`
 parameter, so custom services get the same typed sending surface as built-ins
 (`RemoteRpcProxyType<TCustomRpc>`), including through `hostRpc` (§3). `customRpcOptions` without a

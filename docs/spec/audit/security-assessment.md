@@ -439,12 +439,18 @@ Membership events now push into the fast sets without membership reads. A miss p
 local exclusion offense for every protocol-object kind. The check sits in the one off-chain
 recovery path and compares canonical 65-byte forms, so a relayer that only re-encodes an honest
 signature (v 0/1, v >= 35, 64-byte compact) cannot frame its signer. The consequence falls on the
-recovered signer, never on the relaying peer, and a node never excludes itself. Alternate valid
+recovered signer, never on the relaying peer, and a node never excludes itself. Only signers the
+node's membership cache knows as channel members or eligible identities are excluded; a report about
+any other address is logged and dropped, so a peer cannot grow the unbounded blacklist with fresh
+keys (for example two join requests signed by one throwaway key with two nonces). Alternate valid
 signatures in [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) still consume only their supplier's allowance; their signer is
 now also excluded.
 
 Residual risk: detection memory is per node, per thread and bounded, so a conflict spread across
-nodes, threads or beyond the bound goes unnoticed. Exclusion is local and is not slashing evidence.
+nodes, threads or beyond the bound goes unnoticed. The bound is cheap to exhaust: every fresh (message, signer)
+pair still takes a memo slot, including pairs from throwaway keys such as signed join requests, so
+about `SIGNER_RECOVERY_CACHE_MAX` such requests flush a real signer's first signature before it sends
+the conflicting one. A listener failure is logged and cannot fail the recovery that found it. Exclusion is local and is not slashing evidence.
 A participant running a random-nonce signer excludes itself from its honest peers whenever it
 re-signs; deterministic signing is a stated participant assumption. In inline mode several runtimes
 share one memo and all of them act on each report. Canonical-form enforcement on-chain is out of this

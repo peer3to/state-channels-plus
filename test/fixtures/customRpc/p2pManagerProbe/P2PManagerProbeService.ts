@@ -1,6 +1,8 @@
 // @spec-test-coverage-ignore: worker-side support service for mapped P2PManager component cases
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
+import { signBlockVariant } from "../../QueueAdmissionFixture";
+import { __doubleSignatureListenerCount, recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
@@ -1329,6 +1331,29 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             secondClosed: second.isClosed,
             holepunchDisposed,
             samePromise
+        };
+    }
+
+    /**
+     * Disposes the manager and reports how many double-signature listeners
+     * the dispose removed from this thread, then recovers a real double
+     * signature in the same thread to show recovery still succeeds.
+     */
+    public async probeDoubleSignatureListenerDisposal() {
+        const before = __doubleSignatureListenerCount();
+        await this.p2pManager.dispose();
+        const after = __doubleSignatureListenerCount();
+        const wallet = ethers.Wallet.createRandom();
+        const message = ethers.randomBytes(32);
+        const recovered = [
+            wallet.signMessageSync(message),
+            signBlockVariant(wallet, ethers.hexlify(message), 0)
+        ].map((signature) => recoverSigner(message, signature));
+        return {
+            removedListeners: before - after,
+            recoveredAfterDispose: recovered.every(
+                (address) => address === wallet.address
+            )
         };
     }
 

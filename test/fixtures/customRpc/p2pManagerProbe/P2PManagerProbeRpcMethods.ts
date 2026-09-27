@@ -147,6 +147,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeDisposalFailure();
     }
 
+    public probeDoubleSignatureListenerDisposal() {
+        return this.service.probeDoubleSignatureListenerDisposal();
+    }
+
     public probeDisposal(): Promise<DisposalProbe> {
         return this.service.probeDisposal();
     }

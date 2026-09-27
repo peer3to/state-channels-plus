@@ -1,5 +1,5 @@
+import * as factory from "../factory";
 import {
-    DoubleSignatureReport,
     onDoubleSignature,
     recoverSigner,
     __canonicalSignatureCacheSize,
@@ -8,8 +8,15 @@ import {
 } from "@/cache";
 import { Signature } from "@/types/types";
 import { config } from "@/utils/config";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import { codecValues } from "@test/fixtures/CodecFixtures";
 import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
-import { reencodeSignature } from "@test/fixtures/SignatureEncodingFixture";
+import {
+    doubleSignedMessage,
+    recordDoubleSignatureReports,
+    reencodeSignature,
+    signedMessage
+} from "@test/fixtures/SignatureEncodingFixture";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, beforeEach } from "mocha";
@@ -17,15 +24,8 @@ import { describe, it, beforeEach } from "mocha";
 describe("SignerRecoveryCache", () => {
     beforeEach(() => __resetSignerRecoveryCache());
 
-    async function signed() {
-        const wallet = ethers.Wallet.createRandom();
-        const message = ethers.randomBytes(32);
-        const signature = (await wallet.signMessage(message)) as Signature;
-        return { wallet, message, signature };
-    }
-
     it("recovers the correct signer (matches verifyMessage)", async () => {
-        const { wallet, message, signature } = await signed();
+        const { wallet, message, signature } = await signedMessage();
         expect(recoverSigner(message, signature)).to.equal(wallet.address);
         expect(recoverSigner(message, signature)).to.equal(
             ethers.verifyMessage(message, signature)
@@ -33,13 +33,13 @@ describe("SignerRecoveryCache", () => {
     });
 
     it("memoizes by (message, signature) — repeats add no entries", async () => {
-        const { message, signature } = await signed();
+        const { message, signature } = await signedMessage();
         await recoverSigner(message, signature);
         await recoverSigner(message, signature);
         await recoverSigner(message, signature);
         expect(__signerRecoveryCacheSize()).to.equal(1);
 
-        const other = await signed();
+        const other = await signedMessage();
         await recoverSigner(other.message, other.signature);
         expect(__signerRecoveryCacheSize()).to.equal(2);
     });
@@ -60,7 +60,7 @@ describe("SignerRecoveryCache", () => {
         config.SIGNER_RECOVERY_CACHE_MAX = 3;
         try {
             const entries = [];
-            for (let i = 0; i < 5; i++) entries.push(await signed());
+            for (let i = 0; i < 5; i++) entries.push(await signedMessage());
             for (const e of entries)
                 await recoverSigner(e.message, e.signature);
             expect(__signerRecoveryCacheSize()).to.equal(3);
@@ -75,28 +75,9 @@ describe("SignerRecoveryCache", () => {
     });
 
     describe("double-signature detection", () => {
-        // Records every report the cache publishes until `stop` is called.
-        function listen() {
-            const reports: DoubleSignatureReport[] = [];
-            const stop = onDoubleSignature((report) => reports.push(report));
-            return { reports, stop };
-        }
-
-        // An honest (RFC 6979) signature plus a valid second signature by the
-        // same key on the same message, made with a different nonce.
-        async function doubleSigned() {
-            const { wallet, message, signature } = await signed();
-            const second = signBlockVariant(
-                wallet,
-                ethers.hexlify(message),
-                0
-            ) as Signature;
-            return { wallet, message, signature, second };
-        }
-
         it("recovering the same signature twice reports nothing", async () => {
-            const { message, signature } = await signed();
-            const { reports, stop } = listen();
+            const { message, signature } = await signedMessage();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 recoverSigner(message, signature);
@@ -108,9 +89,9 @@ describe("SignerRecoveryCache", () => {
 
         it("a second nonce signature by one signer on one message reports that signer", async () => {
             const { wallet, message, signature, second } =
-                await doubleSigned();
+                await doubleSignedMessage();
             expect(second).to.not.equal(signature);
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 expect(recoverSigner(message, second)).to.equal(
@@ -130,10 +111,10 @@ describe("SignerRecoveryCache", () => {
         });
 
         it("a v 0/1 re-encoding of a recovered signature reports nothing", async () => {
-            const { wallet, message, signature } = await signed();
+            const { wallet, message, signature } = await signedMessage();
             const reencoded = reencodeSignature(signature, "yParity");
             expect(reencoded).to.not.equal(signature);
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 expect(recoverSigner(message, reencoded)).to.equal(
@@ -146,10 +127,10 @@ describe("SignerRecoveryCache", () => {
         });
 
         it("a v 35/36 re-encoding of a recovered signature reports nothing", async () => {
-            const { wallet, message, signature } = await signed();
+            const { wallet, message, signature } = await signedMessage();
             const reencoded = reencodeSignature(signature, "eip155");
             expect(reencoded).to.not.equal(signature);
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 expect(recoverSigner(message, reencoded)).to.equal(
@@ -162,10 +143,10 @@ describe("SignerRecoveryCache", () => {
         });
 
         it("a 64-byte compact re-encoding of a recovered signature reports nothing", async () => {
-            const { wallet, message, signature } = await signed();
+            const { wallet, message, signature } = await signedMessage();
             const reencoded = reencodeSignature(signature, "compact");
             expect(ethers.dataLength(reencoded)).to.equal(64);
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 expect(recoverSigner(message, reencoded)).to.equal(
@@ -178,8 +159,8 @@ describe("SignerRecoveryCache", () => {
         });
 
         it("the 65-byte signature after its compact re-encoding reports nothing", async () => {
-            const { message, signature } = await signed();
-            const { reports, stop } = listen();
+            const { message, signature } = await signedMessage();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, reencodeSignature(signature, "compact"));
                 recoverSigner(message, signature);
@@ -193,7 +174,7 @@ describe("SignerRecoveryCache", () => {
             const wallet = ethers.Wallet.createRandom();
             const m1 = ethers.randomBytes(32);
             const m2 = ethers.randomBytes(32);
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(m1, (await wallet.signMessage(m1)) as Signature);
                 recoverSigner(m2, (await wallet.signMessage(m2)) as Signature);
@@ -207,7 +188,7 @@ describe("SignerRecoveryCache", () => {
             const message = ethers.randomBytes(32);
             const a = ethers.Wallet.createRandom();
             const b = ethers.Wallet.createRandom();
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(
                     message,
@@ -228,7 +209,7 @@ describe("SignerRecoveryCache", () => {
             config.SIGNER_RECOVERY_CACHE_MAX = 3;
             try {
                 for (let i = 0; i < 5; i++) {
-                    const e = await signed();
+                    const e = await signedMessage();
                     recoverSigner(e.message, e.signature);
                 }
                 expect(__canonicalSignatureCacheSize()).to.equal(3);
@@ -240,10 +221,10 @@ describe("SignerRecoveryCache", () => {
         it("a conflict with an evicted signer entry goes unreported while a retained one is reported", async () => {
             const prev = config.SIGNER_RECOVERY_CACHE_MAX;
             config.SIGNER_RECOVERY_CACHE_MAX = 3;
-            const { reports, stop } = listen();
+            const { reports, stop } = recordDoubleSignatureReports();
             try {
                 const entries = [];
-                for (let i = 0; i < 4; i++) entries.push(await doubleSigned());
+                for (let i = 0; i < 4; i++) entries.push(await doubleSignedMessage());
                 for (const e of entries) recoverSigner(e.message, e.signature);
                 // entry 0 is the oldest and was evicted by entry 3
                 recoverSigner(entries[0].message, entries[0].second);
@@ -260,9 +241,9 @@ describe("SignerRecoveryCache", () => {
 
         it("every registered listener hears a report", async () => {
             const { wallet, message, signature, second } =
-                await doubleSigned();
-            const first = listen();
-            const other = listen();
+                await doubleSignedMessage();
+            const first = recordDoubleSignatureReports();
+            const other = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
                 recoverSigner(message, second);
@@ -280,9 +261,9 @@ describe("SignerRecoveryCache", () => {
 
         it("a removed listener hears no later report", async () => {
             const { wallet, message, signature, second } =
-                await doubleSigned();
-            const removed = listen();
-            const kept = listen();
+                await doubleSignedMessage();
+            const removed = recordDoubleSignatureReports();
+            const kept = recordDoubleSignatureReports();
             try {
                 removed.stop();
                 recoverSigner(message, signature);
@@ -294,6 +275,127 @@ describe("SignerRecoveryCache", () => {
             } finally {
                 kept.stop();
             }
+        });
+
+        it("a throwing listener neither fails recovery nor starves another listener", async () => {
+            const { wallet, message, signature, second } =
+                await doubleSignedMessage();
+            const stopThrowing = onDoubleSignature(() => {
+                throw new Error("listener failure");
+            });
+            const kept = recordDoubleSignatureReports();
+            try {
+                recoverSigner(message, signature);
+                expect(recoverSigner(message, second)).to.equal(
+                    wallet.address
+                );
+                expect(kept.reports.map((r) => r.signer)).to.deep.equal([
+                    wallet.address
+                ]);
+            } finally {
+                stopThrowing();
+                kept.stop();
+            }
+        });
+
+        it("a join signature re-signed with another nonce reports its signer", async () => {
+            const wallet = ethers.Wallet.createRandom();
+            const join = factory.joinChannel();
+            const { encoded, signature } =
+                await SignatureUtils.signJoinChannel(join, wallet);
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
+            const { reports, stop } = recordDoubleSignatureReports();
+            try {
+                SignatureUtils.getSignerAddressJoinChannel(join, signature);
+                SignatureUtils.getSignerAddressJoinChannel(join, second);
+                expect(reports.map((r) => r.signer)).to.deep.equal([
+                    wallet.address
+                ]);
+            } finally {
+                stop();
+            }
+        });
+
+        it("a transaction signature re-signed with another nonce reports its signer", async () => {
+            const wallet = ethers.Wallet.createRandom();
+            const transaction = factory.transaction();
+            const { encoded, signature } =
+                await SignatureUtils.signTransaction(transaction, wallet);
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
+            const { reports, stop } = recordDoubleSignatureReports();
+            try {
+                SignatureUtils.getSignerAddressTransaction(
+                    transaction,
+                    signature
+                );
+                SignatureUtils.getSignerAddressTransaction(transaction, second);
+                expect(reports.map((r) => r.signer)).to.deep.equal([
+                    wallet.address
+                ]);
+            } finally {
+                stop();
+            }
+        });
+
+        it("a dispute signature re-signed with another nonce reports its signer", async () => {
+            const wallet = ethers.Wallet.createRandom();
+            const dispute = factory.dispute();
+            const { encoded, signature } = await SignatureUtils.signDispute(
+                dispute,
+                wallet
+            );
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
+            const { reports, stop } = recordDoubleSignatureReports();
+            try {
+                SignatureUtils.getSignerAddressDispute(dispute, signature);
+                SignatureUtils.getSignerAddressDispute(dispute, second);
+                expect(reports.map((r) => r.signer)).to.deep.equal([
+                    wallet.address
+                ]);
+            } finally {
+                stop();
+            }
+        });
+
+        it("an open-channel signature re-signed with another nonce reports its signer", async () => {
+            const wallet = ethers.Wallet.createRandom();
+            const { encoded, signature } =
+                await SignatureUtils.signOpenChannel(
+                    codecValues.openChannel(),
+                    wallet
+                );
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
+            const { reports, stop } = recordDoubleSignatureReports();
+            try {
+                SignatureUtils.getSignerAddress(encoded, signature);
+                SignatureUtils.getSignerAddress(encoded, second);
+                expect(reports.map((r) => r.signer)).to.deep.equal([
+                    wallet.address
+                ]);
+            } finally {
+                stop();
+            }
+        });
+
+        it("the SDK signing path signs one message to identical bytes twice", async () => {
+            // The runtime host signs with an ethers Wallet built from its secret.
+            const wallet = new ethers.Wallet(
+                ethers.Wallet.createRandom().privateKey
+            );
+            const block = factory.block();
+            const first = await SignatureUtils.signBlock(block, wallet);
+            const again = await SignatureUtils.signBlock(block, wallet);
+            expect(again.signature).to.equal(first.signature);
+            const join = factory.joinChannel();
+            const joinFirst = await SignatureUtils.signJoinChannel(
+                join,
+                wallet
+            );
+            const joinAgain = await SignatureUtils.signJoinChannel(
+                join,
+                wallet
+            );
+            expect(joinAgain.signature).to.equal(joinFirst.signature);
         });
     });
 });

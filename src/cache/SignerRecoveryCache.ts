@@ -1,4 +1,4 @@
-import { Address, Signature } from "@/types/types";
+import { Address, Hash, Signature } from "@/types/types";
 import { config } from "@/utils/config";
 import { verifyMessage, hexlify, Signature as EthersSignature } from "ethers";
 
@@ -6,11 +6,11 @@ import { verifyMessage, hexlify, Signature as EthersSignature } from "ethers";
 export type DoubleSignatureReport = {
     signer: Address;
     /** Hex of the signed message digest. */
-    message: string;
-    /** Canonical 65-byte hex of the signature seen first. */
-    firstSignature: string;
-    /** Canonical 65-byte hex of the conflicting signature. */
-    secondSignature: string;
+    message: Hash;
+    /** Canonical 65-byte form of the signature seen first. */
+    firstSignature: Signature;
+    /** Canonical 65-byte form of the conflicting signature. */
+    secondSignature: Signature;
 };
 
 export type DoubleSignatureListener = (report: DoubleSignatureReport) => void;
@@ -38,8 +38,7 @@ const cache = new Map<RecoveryKey, Address>();
  * one signature per message. Same bound and FIFO eviction as `cache`; an
  * evicted entry only means a later conflict against it goes unnoticed.
  */
-// Values are canonical 65-byte signature hex.
-const canonicalSignatures = new Map<SignerMessageKey, string>();
+const canonicalSignatures = new Map<SignerMessageKey, Signature>();
 
 /**
  * Everyone in this thread that acts on a detected double signature. The cache
@@ -86,7 +85,14 @@ function checkDoubleSignature(
         firstSignature: known,
         secondSignature: canonical
     };
-    for (const listener of [...doubleSignatureListeners]) listener(report);
+    for (const listener of [...doubleSignatureListeners]) {
+        try {
+            listener(report);
+        } catch {
+            // Each listener owns its error handling and logging; a throwing
+            // listener must not fail this recovery or starve the others.
+        }
+    }
 }
 
 export function recoverSigner(
@@ -122,4 +128,7 @@ export function __signerRecoveryCacheSize(): number {
 }
 export function __canonicalSignatureCacheSize(): number {
     return canonicalSignatures.size;
+}
+export function __doubleSignatureListenerCount(): number {
+    return doubleSignatureListeners.size;
 }

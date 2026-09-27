@@ -512,8 +512,8 @@ export class LoggerUtils {
         return {
             signer: report.signer,
             message: this.formatHash(report.message),
-            firstSignature: this.formatHash(report.firstSignature),
-            secondSignature: this.formatHash(report.secondSignature)
+            firstSignature: this.formatHash(String(report.firstSignature)),
+            secondSignature: this.formatHash(String(report.secondSignature))
         };
     }
 
