@@ -14,6 +14,9 @@ const {
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
 const {
+    runnerImageBuildArgs
+} = require("../../scripts/e2e-parallel/distributed/buildRunnerImage.js");
+const {
     BoundedArtifactAssembler
 } = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
 const {
@@ -678,6 +681,80 @@ describe("distributed isolated environment", function () {
             `has no ${RUNNER_IMAGE_REVISION_LABEL} label`
         );
         expect(detected.reason).to.include("yarn test:parallel:image");
+    });
+
+    it("builds the runner image with only flags that cannot change its contents, after the revision label", function () {
+        const args = runnerImageBuildArgs(repoRoot(), "/scratch/id", [
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull"
+        ]);
+        expect(args).to.deep.equal([
+            "build",
+            "--file",
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            "--label",
+            `${RUNNER_IMAGE_REVISION_LABEL}=${runnerImageRevision(repoRoot())}`,
+            "--iidfile",
+            "/scratch/id",
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull",
+            repoRoot()
+        ]);
+    });
+
+    it("refuses build arguments that could build another image under the checkout's revision", function () {
+        const refused = (extra: string[]) => {
+            try {
+                runnerImageBuildArgs(repoRoot(), "/scratch/id", extra);
+                return "accepted";
+            } catch (error) {
+                return (error as Error).message.split(":")[0];
+            }
+        };
+        expect({
+            buildArg: refused(["--build-arg", "PLAYWRIGHT_VERSION=1.59.0"]),
+            inlineBuildArg: refused(["--build-arg=NODE_IMAGE=node:22"]),
+            label: refused([
+                "--label",
+                `${RUNNER_IMAGE_REVISION_LABEL}=${"0".repeat(64)}`
+            ]),
+            file: refused(["--file", "other.Dockerfile"]),
+            missingTag: refused(["--tag"])
+        }).to.deep.equal({
+            buildArg: "Refusing docker build argument --build-arg",
+            inlineBuildArg:
+                "Refusing docker build argument --build-arg=NODE_IMAGE=node",
+            label: "Refusing docker build argument --label",
+            file: "Refusing docker build argument --file",
+            missingTag: "--tag requires a value"
+        });
+    });
+
+    it("stops yarn test:parallel:image before docker when given a --build-arg", function () {
+        const result = spawnSync(
+            process.execPath,
+            [
+                path.join(
+                    repoRoot(),
+                    "scripts/e2e-parallel/distributed/buildRunnerImage.js"
+                ),
+                "--build-arg",
+                "PLAYWRIGHT_VERSION=1.59.0"
+            ],
+            { encoding: "utf8" }
+        );
+        expect({
+            status: result.status,
+            refused: result.stderr.includes(
+                `Refusing docker build argument --build-arg: the image label covers only ${RUNNER_IMAGE_DOCKERFILE}`
+            )
+        }).to.deep.equal({ status: 2, refused: true });
     });
 
     it("classifies cgroup memory and process exhaustion without exposing host state", async function () {
