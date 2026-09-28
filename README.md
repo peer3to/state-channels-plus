@@ -198,19 +198,24 @@ arrived with distributed protocol 14. The orchestrator still leases protocol 13
 hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
 host at a time. A Mocha test file that launches Chromium carries
 `// @distributed-requires: browser` in its leading comments, and its tests go
-only to hosts that run the browser tier as well. When no connected worker
-supports the browser runner, the run skips the browser tasks and those marked
+only to hosts that run the browser tier as well. When they are all that is left
+and no connected worker has supported the browser runner for the discovery
+window (`--discovery-timeout`), the run skips the browser tasks and those marked
 Mocha tests with a warning that lists them (also written to the GitHub job
 summary) instead of failing; CI's `browser` job runs the same gates inside the
-runner image either way.
+runner image either way. A task whose attempt was lost with the only host that
+could run it fails instead of being skipped.
 
-A worker whose lease or workspace setup fails before it is given a task is
+A worker that leaves before it is given a task, whether its lease or workspace
+setup fails, it refuses the requested resources, or its connection closes, is
 retried, but not indefinitely: after three consecutive failures with the same
 error the orchestrator retires that host for the rest of the run and logs the
 error. Being given a task resets the count, and a different error starts a new
 one. When every discovered host has been retired this way the run fails at once
 with `All distributed workers failed the same way 3 times: <error>` instead of
-redialing until the job times out.
+redialing until the job times out; when some were instead quarantined before
+running a task (for example after repeated workspace preparation errors), it
+fails with `All distributed workers were quarantined before running a task`.
 
 ### Distributed parallel tests
 

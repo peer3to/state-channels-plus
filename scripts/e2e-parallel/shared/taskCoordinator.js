@@ -83,6 +83,10 @@ class TaskCoordinator {
         // Tasks no registered worker can run, dropped once nothing else is left.
         this.skipped = [];
         this.skippedTaskIds = new Set();
+        // Tasks ever handed to a worker: losing one is a failure, not a skip.
+        this.attemptedTaskIds = new Set();
+        // When the queue last became all unservable with nothing assigned.
+        this.unservableSince = null;
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
         this.speculative = options.speculative === true;
@@ -123,6 +127,7 @@ class TaskCoordinator {
             workerId
         };
         this.replications.add(`${assignment.taskId}:${workerId}`);
+        this.attemptedTaskIds.add(assignment.taskId);
         this.assignments.set(assignment.attemptId, assignment);
         return assignment;
     }
@@ -262,26 +267,58 @@ class TaskCoordinator {
     }
 
     /**
-     * Drop the queued tasks no registered worker can run, once they are all
-     * that is left: nothing is assigned and every queued task is unservable.
-     * Returns the dropped tasks; they count as neither passed nor failed.
+     * Settle the queued tasks no registered worker can run, once they are all
+     * that is left (nothing is assigned, every queued task is unservable) and
+     * have stayed so for `graceMs`, so a capable worker still connecting gets
+     * its chance. A task no worker ever attempted is skipped and counts as
+     * neither passed nor failed; one whose attempt was lost with its worker
+     * fails as an infrastructure failure. `waitMs` is how long until the grace
+     * ends, or null when nothing is waiting on it.
      */
-    skipUnservable() {
+    settleUnservable(now = Date.now(), graceMs = 0) {
+        const none = { skipped: [], failed: [], waitMs: null };
         // With no worker registered there is nobody to judge servability by;
         // the run waits for rediscovery instead.
-        if (!this.queue.length || this.assignments.size || !this.workers.size)
-            return [];
         const workers = [...this.workers.values()];
         const servable = (task) =>
             workers.some((worker) => worker.canRun(task));
-        if (this.queue.some((entry) => servable(entry.task))) return [];
-        const skipped = this.queue;
-        this.queue = [];
-        for (const entry of skipped) {
-            this.skippedTaskIds.add(String(entry.seq));
-            this.skipped.push(entry.task);
+        if (
+            !this.queue.length ||
+            this.assignments.size ||
+            !workers.length ||
+            this.queue.some((entry) => servable(entry.task))
+        ) {
+            this.unservableSince = null;
+            return none;
         }
-        return skipped.map((entry) => entry.task);
+        this.unservableSince ??= now;
+        const waitMs = this.unservableSince + graceMs - now;
+        if (waitMs > 0) return { ...none, waitMs };
+        const settled = this.queue;
+        this.queue = [];
+        this.unservableSince = null;
+        const skipped = [];
+        const failed = [];
+        for (const entry of settled) {
+            const taskId = String(entry.seq);
+            if (!this.attemptedTaskIds.has(taskId)) {
+                this.skippedTaskIds.add(taskId);
+                this.skipped.push(entry.task);
+                skipped.push(entry.task);
+                continue;
+            }
+            entry.task.infrastructureFailure = true;
+            entry.task.infrastructureDiagnostics = [
+                ...(entry.task.infrastructureDiagnostics || []),
+                "Its attempt was lost with the worker, and no connected worker can run it"
+            ];
+            this.completedTaskIds.add(taskId);
+            this.failedTaskIds.add(taskId);
+            this.completed++;
+            this.failed.push(entry.task);
+            failed.push(entry.task);
+        }
+        return { skipped, failed, waitMs: null };
     }
 
     finish() {

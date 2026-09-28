@@ -58,6 +58,26 @@ describe("review finding reconciliation", function () {
             ["src/input.ts", 12, "thread1"]
         );
     });
+    it("takes the model's new location for an inline finding that was saved but never posted", function () {
+        // Saved before an interrupted batch: a location, but no thread yet.
+        const unposted = {
+            ...previous,
+            threadId: null,
+            path: "README.md",
+            line: 1
+        };
+        const [moved] = canonicalFindings(
+            [unposted],
+            [{ ...unposted, threadId: null, line: 3 }]
+        );
+        const [action] = findingActions([unposted], [moved], {
+            threads: []
+        });
+        assert.deepEqual(
+            [moved.path, moved.line, action.kind, action.finding.line],
+            ["README.md", 3, "new", 3]
+        );
+    });
     it("rejects a foreign or conflicting thread reference", function () {
         assert.throws(
             () =>

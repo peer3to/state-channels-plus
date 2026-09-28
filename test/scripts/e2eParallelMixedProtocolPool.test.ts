@@ -22,10 +22,17 @@ describe("distributed mixed-protocol pool", function () {
     it("a pool of protocol 13 and 14 hosts runs browser tasks only on the 14 host and the rest on both", async function () {
         const run = await runAgainstProtocolWorkers([
             { name: "host-13", distributedProtocol: 13 },
-            { name: "host-14", distributedProtocol: 14 }
+            {
+                name: "host-14",
+                distributedProtocol: 14,
+                // Keep the run open until the 13 host, leased under its own
+                // derived manifest, has run a task too.
+                holdFirstResultUntil: { worker: "host-13", labels: 1 }
+            }
         ]);
         expect(run.failure).to.equal(null);
         const host13 = workerNamed(run.workers, "host-13");
+        expect(host13.labels).to.not.be.empty;
         const host14 = workerNamed(run.workers, "host-14");
         expect(host13.runners).to.not.include("browser");
         expect(
@@ -55,6 +62,12 @@ describe("distributed mixed-protocol pool", function () {
         expect([host13.offeredProtocol, host14.offeredProtocol]).to.deep.equal([
             13, 14
         ]);
+        // The manifest derived for 13 still builds its delta, yet keeps the
+        // orchestrator's workspace root off the wire.
+        expect({
+            hasRoot: "localWorkspaceRoot" in host13.offeredManifest!,
+            leaksRoot: JSON.stringify(host13.offeredManifest).includes(run.root)
+        }).to.deep.equal({ hasRoot: false, leaksRoot: false });
     });
 
     it("a pool of only protocol 13 hosts runs hardhat and forge and skips browser tasks with a notice, without failing", async function () {
@@ -171,6 +184,84 @@ describe("distributed mixed-protocol pool", function () {
         expect(run.summary).to.include(
             "Skipping 3 hardhat task(s) that need browser"
         );
+    });
+
+    it("fails a marked Mocha task, rather than skipping it, when the only 14 host leaves mid-attempt", async function () {
+        const [marked] = CHROMIUM_MOCHA_TASKS;
+        const run = await runAgainstProtocolWorkers(
+            [
+                { name: "host-13", distributedProtocol: 13 },
+                {
+                    name: "host-14",
+                    distributedProtocol: 14,
+                    leaseSteps: ["leave-on-first-task"]
+                }
+            ],
+            // The marked task first, so it is the 14 host's first assignment.
+            { tasks: [marked, ...MIXED_TIER_TASKS.slice(0, 3)] }
+        );
+        expect(run.failure).to.equal(null);
+        expect({
+            host14: workerNamed(run.workers, "host-14").labels,
+            completed: run.result.completed,
+            skipped: run.result.skipped.length,
+            failed: run.result.failed.map(
+                (task: {
+                    label: string;
+                    infrastructureFailure: boolean;
+                    infrastructureDiagnostics: string[];
+                }) => ({
+                    label: task.label,
+                    infrastructureFailure: task.infrastructureFailure,
+                    diagnostics: task.infrastructureDiagnostics
+                })
+            )
+        }).to.deep.equal({
+            host14: [marked.label],
+            completed: 4,
+            skipped: 0,
+            failed: [
+                {
+                    label: marked.label,
+                    infrastructureFailure: true,
+                    diagnostics: [
+                        "Its attempt was lost with the worker, and no connected worker can run it"
+                    ]
+                }
+            ]
+        });
+    });
+
+    it("waits out the discovery window for a 14 host that connects after the 13 host has finished its tasks", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [
+                { name: "host-13", distributedProtocol: 13 },
+                {
+                    name: "host-14",
+                    distributedProtocol: 14,
+                    joinAfter: { worker: "host-13", labels: 3 }
+                }
+            ],
+            { tasks: [...MIXED_TIER_TASKS, ...CHROMIUM_MOCHA_TASKS] }
+        );
+        expect(run.failure).to.equal(null);
+        expect({
+            host13: sortedLabels(workerNamed(run.workers, "host-13").labels),
+            host14: sortedLabels(workerNamed(run.workers, "host-14").labels),
+            completed: run.result.completed,
+            skipped: run.result.skipped.length,
+            failed: run.result.failed.length
+        }).to.deep.equal({
+            host13: sortedLabels(["hardhat one", "hardhat two", "forge one"]),
+            host14: sortedLabels([
+                "browser gate one",
+                "browser gate two",
+                ...CHROMIUM_MOCHA_TASKS.map((task) => task.label)
+            ]),
+            completed: 8,
+            skipped: 0,
+            failed: 0
+        });
     });
 
     it("lets a worker run a task only when its protocol lists the task's runner and every runner the task requires", function () {

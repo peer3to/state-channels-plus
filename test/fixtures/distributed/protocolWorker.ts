@@ -53,20 +53,33 @@ type PoolKeys = {
 export type ProtocolWorkerRecord = {
     name: string;
     offeredProtocol: number | null;
+    // The manifest header of the last workspace offer, as it crossed the wire.
+    offeredManifest: Record<string, unknown> | null;
     runners: string[];
     labels: string[];
     workspaceOffers: number;
 };
 
+type HoldFirstResultUntil = {
+    worker: string;
+    workspaceOffers?: number;
+    labels?: number;
+};
+
 /**
  * How a host answers the workspace offer of one lease: a need naming a file the
- * manifest does not offer, a need that is not a diff, or a normal lease that
- * closes the connection after running one task.
+ * manifest does not offer, a need that is not a diff, a normal lease that
+ * closes the connection after running one task, a lease that leaves the pool
+ * for good on its first task without reporting a result, a host that refuses
+ * the lease's resources, or a host that closes the connection unannounced.
  */
 export type ProtocolWorkerLeaseStep =
     | "outside-manifest"
     | "invalid-diff"
-    | "one-task-then-close";
+    | "one-task-then-close"
+    | "leave-on-first-task"
+    | "reject-allocation"
+    | "close-after-offer";
 
 /**
  * A worker host on the local DHT that declares `distributedProtocol` and
@@ -82,25 +95,41 @@ export async function startProtocolWorker(options: {
     // One step per lease in order; leases past the end behave normally.
     leaseSteps?: ProtocolWorkerLeaseStep[];
     // Hold the first result until another host has had this many workspace
-    // offers, so a run cannot finish before that host's setup failures land.
-    holdFirstResultUntil?: { worker: string; workspaceOffers: number };
-    // The records of every host in the run, for holdFirstResultUntil.
+    // offers and been handed this many tasks, so a run cannot finish before
+    // that host's setup failures land, or before it has run a task.
+    holdFirstResultUntil?: HoldFirstResultUntil;
+    // Join the DHT only once another host has run this many tasks.
+    joinAfter?: { worker: string; labels: number };
+    // The records of every host in the run, for holdFirstResultUntil and joinAfter.
     records?: () => ProtocolWorkerRecord[];
 }) {
     const record: ProtocolWorkerRecord = {
         name: options.name,
         offeredProtocol: null,
+        offeredManifest: null,
         runners: [],
         labels: [],
         workspaceOffers: 0
     };
-    const pool = await createPool({
-        announceTopics: [options.keys.workerTopic],
-        lookupTopics: [options.keys.orchestratorTopic],
-        dht: options.dht,
-        refreshIntervalMs: 25
-    });
-    pool.onConnection(async (stream: unknown, info: { publicKey?: Buffer }) => {
+    let closed = false;
+    let pool: any = null;
+    const join = async () => {
+        pool = await createPool({
+            announceTopics: [options.keys.workerTopic],
+            lookupTopics: [options.keys.orchestratorTopic],
+            dht: options.dht,
+            refreshIntervalMs: 25
+        });
+        // The run ended while this host was still joining.
+        if (closed) return pool.close();
+        pool.onConnection(serve);
+    };
+    const close = async () => {
+        if (closed) return;
+        closed = true;
+        await pool?.close();
+    };
+    const serve = async (stream: unknown, info: { publicKey?: Buffer }) => {
         const peer = new ProtocolPeer(stream);
         peer.on("protocolError", () => {});
         try {
@@ -123,8 +152,23 @@ export async function startProtocolWorker(options: {
             const offer = await waitForMessage(peer, "WORKSPACE_OFFER");
             record.offeredProtocol =
                 offer.header.manifest.distributedProtocol ?? null;
+            record.offeredManifest = offer.header.manifest;
             const step = options.leaseSteps?.[record.workspaceOffers];
             record.workspaceOffers += 1;
+            if (step === "reject-allocation") {
+                // The orchestrator retires the host on this message.
+                await peer.send("RESOURCE_ALLOCATION_REJECTED", {
+                    resource: "memory",
+                    requested: 2,
+                    permitted: 1,
+                    message: "fixture host permits 1 GB"
+                });
+                return;
+            }
+            if (step === "close-after-offer") {
+                peer.close("fixture host drops the lease");
+                return;
+            }
             if (step === "outside-manifest" || step === "invalid-diff") {
                 // The orchestrator rejects this need and closes the stream.
                 const need =
@@ -158,18 +202,26 @@ export async function startProtocolWorker(options: {
                 const { assignment } = reply.header;
                 record.runners.push(assignment.task.runner);
                 record.labels.push(assignment.task.label);
+                if (step === "leave-on-first-task") {
+                    // Gone mid-attempt, and not coming back to redial.
+                    peer.close("fixture host leaves mid-attempt");
+                    await close();
+                    return;
+                }
                 const hold = options.holdFirstResultUntil;
                 if (hold && record.labels.length === 1) {
                     const deadline = Date.now() + 30_000;
-                    const offers = () =>
-                        options
+                    const reached = () => {
+                        const other = options
                             .records?.()
-                            .find((entry) => entry.name === hold.worker)
-                            ?.workspaceOffers ?? 0;
-                    while (
-                        offers() < hold.workspaceOffers &&
-                        Date.now() < deadline
-                    ) {
+                            .find((entry) => entry.name === hold.worker);
+                        return (
+                            (other?.workspaceOffers ?? 0) >=
+                                (hold.workspaceOffers ?? 0) &&
+                            (other?.labels.length ?? 0) >= (hold.labels ?? 0)
+                        );
+                    };
+                    while (!reached() && Date.now() < deadline) {
                         await new Promise((resolve) => setTimeout(resolve, 25));
                     }
                     // Let the orchestrator register the drop that follows the offer.
@@ -195,8 +247,29 @@ export async function startProtocolWorker(options: {
         } catch {
             // The orchestrator closing the stream ends this worker's part.
         }
-    });
-    return { record, close: () => pool.close() };
+    };
+    const joinAfter = options.joinAfter;
+    if (!joinAfter) {
+        await join();
+    } else {
+        void (async () => {
+            const deadline = Date.now() + 30_000;
+            const ran = () =>
+                options
+                    .records?.()
+                    .find((entry) => entry.name === joinAfter.worker)?.labels
+                    .length ?? 0;
+            while (
+                !closed &&
+                ran() < joinAfter.labels &&
+                Date.now() < deadline
+            ) {
+                await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            if (!closed) await join();
+        })();
+    }
+    return { record, close };
 }
 
 const {
@@ -244,7 +317,8 @@ export async function runAgainstProtocolWorkers(
         name: string;
         distributedProtocol: number;
         leaseSteps?: ProtocolWorkerLeaseStep[];
-        holdFirstResultUntil?: { worker: string; workspaceOffers: number };
+        holdFirstResultUntil?: HoldFirstResultUntil;
+        joinAfter?: { worker: string; labels: number };
     }>,
     options: {
         discoveryTimeoutMs?: number;
@@ -283,6 +357,24 @@ export async function runAgainstProtocolWorkers(
             warnings.push(data.map(String).join(" "));
         };
         process.env.GITHUB_STEP_SUMMARY = summaryPath;
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
+            workspaceId: "a".repeat(64),
+            sourceDigest: "b".repeat(64),
+            rootProjectPath: "project",
+            runnerEntry: "project/scripts/e2e-parallel/distributed/worker.js",
+            repositories: [],
+            files: [],
+            fileCount: 0,
+            expandedBytes: 0
+        };
+        // As buildRuntimeManifest attaches it: off the wire, so a spread drops it.
+        Object.defineProperty(manifest, "localWorkspaceRoot", {
+            value: root,
+            enumerable: false
+        });
         let result: any = null;
         let failure: Error | null = null;
         try {
@@ -292,21 +384,7 @@ export async function runAgainstProtocolWorkers(
                 })),
                 projectRoot: root,
                 archivePath: path.join(root, "source.tgz"),
-                manifest: {
-                    version: 3,
-                    packageManager: "pnpm",
-                    distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
-                    workspaceId: "a".repeat(64),
-                    sourceDigest: "b".repeat(64),
-                    rootProjectPath: "project",
-                    runnerEntry:
-                        "project/scripts/e2e-parallel/distributed/worker.js",
-                    repositories: [],
-                    files: [],
-                    fileCount: 0,
-                    expandedBytes: 0,
-                    localWorkspaceRoot: root
-                },
+                manifest,
                 logDir: root,
                 poolSecret,
                 discoveryTimeoutMs: options.discoveryTimeoutMs ?? 10_000,
@@ -318,6 +396,7 @@ export async function runAgainstProtocolWorkers(
             failure = error as Error;
         }
         return {
+            root: root as string,
             result,
             failure,
             warnings,

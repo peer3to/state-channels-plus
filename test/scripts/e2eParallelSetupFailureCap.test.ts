@@ -13,6 +13,7 @@ const {
     allWorkersSetupCapped,
     normalizeFailureReason,
     recordSetupFailure,
+    recordWorkerFailure,
     resetSetupFailures
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 
@@ -48,6 +49,67 @@ describe("distributed setup failure cap", function () {
             )
         }).to.deep.equal({
             failure: `All distributed workers failed the same way ${MAX_IDENTICAL_SETUP_FAILURES} times: ${OUTSIDE_MANIFEST}`,
+            workspaceOffers: MAX_IDENTICAL_SETUP_FAILURES,
+            retired: true
+        });
+    });
+
+    it("fails the run fast when its only worker refuses the lease's resources three times", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "refusing-host",
+                    distributedProtocol: 14,
+                    leaseSteps: Array(10).fill("reject-allocation")
+                }
+            ],
+            { tasks: SETUP_CAP_TASKS, discoveryTimeoutMs: 20_000 }
+        );
+        const failure = plain(run.failure?.message ?? "");
+        expect({
+            sameWay: failure.startsWith(
+                `All distributed workers failed the same way ${MAX_IDENTICAL_SETUP_FAILURES} times: `
+            ),
+            refused: failure.includes(
+                "refused memory: fixture host permits 1 GB"
+            ),
+            workspaceOffers: workerNamed(run.workers, "refusing-host")
+                .workspaceOffers,
+            retired: run.warnings.some((line) =>
+                plain(line).includes(retiredLine("refusing-host"))
+            )
+        }).to.deep.equal({
+            sameWay: true,
+            refused: true,
+            workspaceOffers: MAX_IDENTICAL_SETUP_FAILURES,
+            retired: true
+        });
+    });
+
+    it("fails the run fast when its only worker closes the connection after every workspace offer", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "closing-host",
+                    distributedProtocol: 14,
+                    leaseSteps: Array(10).fill("close-after-offer")
+                }
+            ],
+            { tasks: SETUP_CAP_TASKS, discoveryTimeoutMs: 20_000 }
+        );
+        // The transport words the close ("connection closed", or "connection
+        // reset by peer"), so only the cap's own part of the message is fixed.
+        expect({
+            failure: run.failure?.message.startsWith(
+                `All distributed workers failed the same way ${MAX_IDENTICAL_SETUP_FAILURES} times: connection `
+            ),
+            workspaceOffers: workerNamed(run.workers, "closing-host")
+                .workspaceOffers,
+            retired: run.warnings.some((line) =>
+                plain(line).includes(retiredLine("closing-host"))
+            )
+        }).to.deep.equal({
+            failure: true,
             workspaceOffers: MAX_IDENTICAL_SETUP_FAILURES,
             retired: true
         });
@@ -166,6 +228,39 @@ describe("distributed setup failure cap", function () {
             completed: run.result.completed,
             retired: run.warnings.some((line) => line.includes("Retiring"))
         }).to.deep.equal({ workspaceOffers: 6, completed: 3, retired: false });
+    });
+
+    it("fails the run fast when every worker was quarantined for preparation failures before running a task", function () {
+        const states = new Map();
+        // As the orchestrator records a PREPARATION_ERROR, then its retirement.
+        const prepare = (reason: string) => {
+            recordWorkerFailure(states, "host", {
+                label: "host",
+                kind: "workspace preparation failure",
+                reason
+            });
+            return recordSetupFailure(states, "host", {
+                label: "host",
+                reason
+            });
+        };
+        const first = prepare("disk full").setupQuarantined === true;
+        const afterFirst = allWorkersSetupCapped(states);
+        const second = prepare("disk full");
+        expect({
+            first,
+            afterFirst,
+            quarantined: second.setupQuarantined === true,
+            capped: second.setupCapped === true,
+            message: allWorkersSetupCapped(states)
+        }).to.deep.equal({
+            first: false,
+            afterFirst: null,
+            quarantined: true,
+            capped: false,
+            message:
+                "All distributed workers were quarantined before running a task: host: disk full"
+        });
     });
 
     it("counts only consecutive failures with the same normalized reason and resets on admission", async function () {
