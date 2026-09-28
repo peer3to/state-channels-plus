@@ -777,4 +777,113 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
         assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), ok);
     }
+
+    // ---- deterministic sweeps across the full-budget boundary ---------------------------------
+    //
+    // The fuzzes above sample the attached gas at random, but a regression in the upfront budget
+    // check would show only in a narrow band just below the replay requirement. Each sweep finds
+    // the lowest attached gas that adjudicates (a binary search that checks the verdict at every
+    // probe), then steps across that point in fixed increments, so the band is covered on every
+    // run. Every probe starts from the same snapshot.
+
+    uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
+    uint256 internal constant SWEEP_STEP = 1_000;
+
+    // The case under sweep, read by the verdict checks.
+    address[] internal sweepParticipants;
+    Dispute internal sweepDispute;
+
+    function _attach(bytes memory call, uint256 gas, bool asRefutation) internal returns (bool ok) {
+        if (asRefutation) (ok,) = _submitRefutation(call, gas);
+        else (ok,) = address(diamond).call{gas: gas}(call);
+    }
+
+    /// Attaches `gas` from a clean state and checks the verdict; returns whether the call ran.
+    function _probe(bytes memory call, uint256 gas, bool asRefutation, function(bool) internal view verdict)
+        internal
+        returns (bool ok)
+    {
+        uint256 snapshot = vm.snapshotState();
+        ok = _attach(call, gas, asRefutation);
+        verdict(ok);
+        vm.revertToState(snapshot);
+    }
+
+    function _sweepAcrossRequirement(
+        bytes memory call,
+        uint256 fundedGas,
+        bool asRefutation,
+        function(bool) internal view verdict
+    ) internal {
+        uint256 refused = 100_000;
+        uint256 adjudicated = fundedGas;
+        assertFalse(_probe(call, refused, asRefutation, verdict), "refused far below the requirement");
+        assertTrue(_probe(call, adjudicated, asRefutation, verdict), "adjudicated when fully funded");
+        while (adjudicated - refused > SWEEP_STEP) {
+            uint256 middle = (refused + adjudicated) / 2;
+            if (_probe(call, middle, asRefutation, verdict)) adjudicated = middle;
+            else refused = middle;
+        }
+        for (uint256 gas = adjudicated - SWEEP_HALF_WIDTH; gas <= adjudicated + SWEEP_HALF_WIDTH; gas += SWEEP_STEP) {
+            _probe(call, gas, asRefutation, verdict);
+        }
+    }
+
+    function _honestAuthorKept(bool) internal view {
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]));
+    }
+
+    function _overBudgetAuthorSlashedOnlyByAVerdict(bool ok) internal view {
+        assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]), ok);
+    }
+
+    function _honestRefutationKillsOrNoVerdict(bool ok) internal view {
+        if (ok) _assertTimeoutKilled(sweepDispute, sweepParticipants);
+        else _assertNoVerdict(sweepDispute, sweepParticipants);
+    }
+
+    function _overBudgetRefutationNeverKills(bool ok) internal view {
+        assertTrue(_isDisputeCommitted(diamond, sweepDispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[1]), "disputer kept standing");
+        assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]), ok);
+    }
+
+    // Across the boundary, a guarded honest block is never turned into fraud.
+    function test_applyFraudProofs_sweepAcrossRequirementKeepsGuardedHonestAuthor() public {
+        sweepParticipants = _deployGuarded();
+        (FraudProof[] memory proofs, FraudProofVerificationContext memory context) = _guardedProof(sweepParticipants);
+        _sweepAcrossRequirement(
+            abi.encodeCall(diamond.applyFraudProofs, (proofs, context)), GUARDED_FUNDED_GAS, false, _honestAuthorKept
+        );
+    }
+
+    // Across the boundary, an over-budget block is fraud whenever a verdict is given.
+    function test_applyFraudProofs_sweepAcrossRequirementNeverAcquitsOverBudget() public {
+        sweepParticipants = _deploy(true);
+        (FraudProof[] memory proofs, FraudProofVerificationContext memory context) = _burnProof(sweepParticipants);
+        _sweepAcrossRequirement(
+            abi.encodeCall(diamond.applyFraudProofs, (proofs, context)),
+            FUNDED_GAS,
+            false,
+            _overBudgetAuthorSlashedOnlyByAVerdict
+        );
+    }
+
+    // Across the boundary, an honest posted block either kills the timeout dispute or decides nothing.
+    function test_applyDisputeFraudProofs_sweepAcrossRequirementKeepsHonestPostedCalldata() public {
+        sweepParticipants = _deployGuarded();
+        bytes memory call;
+        (sweepDispute, call) =
+            _stageTimeoutRefutation(sweepParticipants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+        _sweepAcrossRequirement(call, GUARDED_FUNDED_GAS, true, _honestRefutationKillsOrNoVerdict);
+    }
+
+    // Across the boundary, an over-budget posted block never kills the timeout dispute.
+    function test_applyDisputeFraudProofs_sweepAcrossRequirementNeverAcceptsOverBudgetPostedCalldata() public {
+        sweepParticipants = _deploy(true);
+        bytes memory call;
+        (sweepDispute, call) =
+            _stageTimeoutRefutation(sweepParticipants, abi.encodeCall(GasHungryMathStateMachine.burn, ()));
+        _sweepAcrossRequirement(call, FUNDED_GAS, true, _overBudgetRefutationNeverKills);
+    }
 }
