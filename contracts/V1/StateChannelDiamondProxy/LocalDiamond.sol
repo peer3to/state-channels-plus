@@ -441,13 +441,6 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     // ========== Override for debugging - Browser compatible console logs ==========
 
-    /// @dev The production `isBlockAuthentic` is routed to `UtilityFacet`; declaring
-    ///     it here keeps local deployments on the debug variant below, since a
-    ///     declared function dispatches before the fallback.
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
-        return _isBlockAuthentic(_block);
-    }
-
     function _isBlockAuthentic(SignedBlock memory _block) internal view override returns (bool) {
         (bool decoded, Block memory decodedBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);

@@ -4,7 +4,7 @@
 
 > **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The binding integration contract for application state machines:
-> [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L6) (every hook, entry point, and
+> [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L10) (every hook, entry point, and
 > invariant) and the integrator's consumer contract
 > [`AConsumerFacet`](../../../../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol#L7).
 > **Siblings:** [architecture.md](./architecture.md) (how the manager reaches this contract),
@@ -40,6 +40,12 @@ manager during re-execution, and the abstract hooks the integrator implements.
   off-chain and on-chain deployments, or a transition could succeed in one and run out of gas in
   the other. The manager's own default for dispute execution is 3,000,000
   (see [manager-and-facets.md §3](./manager-and-facets.md#3-timing--execution-configuration)).
+- A transition runs only when its caller forwarded enough gas to grant the full `gasLimit`
+  (§3.1 step 4). [`getStateTransitionGasRequirement()`](../../../../../../contracts/V1/AStateMachine.sol#L37) returns that amount,
+  `(gasLimit + 20_000) * 64 / 63 + 1 + 200_000`; the manager's `getStateTransitionReplayGas()`
+  scales it over the frames above the machine for fraud-proof senders. A replay transaction must
+  carry that requirement plus its other work; a budget whose requirement does not fit a block
+  cannot be replayed on that chain (residual).
 - The `external` entry points are guarded by a simple `_nonReentrant` flag, not by caller
   authorization. Anyone can call `setState`/`stateTransition`/`joinChannel`/`slashParticipant`/
   `removeParticipant` on the deployed implementation. This is safe only because the instance's
@@ -91,7 +97,7 @@ built on this hook.
 **<a id="req-con-7-dxvw98"></a>`REQ-CON-7-DXVW98`.** Turn authorization is enforced by the protocol layer, not by the state machine:
 the SDK validation pipeline rejects a block whose author (`_tx.header.participant`) is not
 `getNextToWrite()` for the pre-state before executing it, generically for every state machine
-([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L26) leader check). The base
+([`ValidationService`](../../../../../../src/stateManager/ingest/ValidationService.ts#L28) leader check). The base
 contract does not enforce it either — `stateTransition` executes whatever calldata it is given.
 In-contract wrong-turn `require`s (as in the examples) are optional defense in depth, never a
 soundness requirement. _(Corrected 2026-08-10 on engineer review; previously stated as a
@@ -141,15 +147,32 @@ Exact semantics from source:
 
 ### 3.1 `stateTransition(Transaction calldata) external _nonReentrant returns (bool, Message[] memory)`
 
-1. `_clearOutboundMessages()` — deletes the accumulated outbound messages of the previous run.
+1. `_clearOutboundMessages()` — `delete _outboundMessages`
+   ([#L168](../../../../../../contracts/V1/AStateMachine.sol#L168), [#L127-L129](../../../../../../contracts/V1/AStateMachine.sol#L127-L129)): the previous run's messages are deleted
+   before the gas check, at the caller's cost outside the budget, so every transition writes its
+   messages into empty slots and what an earlier run left cannot raise its cost inside the budget
+   (engineer decision, review 6 FO3). The deletion grows with the previous messages; a sender's
+   estimate pays for it, and `STATE_TRANSITION_SETUP_GAS` does not cover it.
 2. `_tx.header = transaction.header` — injects the execution context (§4). Only the header is
    stored; `_tx.body` is never assigned.
-3. `address(this).call{gas: gasLimit}(transaction.body.data)` — executes the transaction body as a
-   self-call, so the target is one of the state machine's own public functions.
-4. On failure: bubbles the inner revert data verbatim; if the inner call returned no data, reverts
-   with `"AStateMachine - Call failed - result length 0"`.
-5. On success: returns `(true, copy of _outboundMessages)` — every message the transition recorded
-   via `_addOutboundMessage` / `_addExitChannel`.
+3. Copies the call input (`transaction.body.data`) into memory and reads the budget
+   ([#L178-L179](../../../../../../contracts/V1/AStateMachine.sol#L178-L179)). This work grows with the input, so it is paid before the gas check.
+4. Gas guard ([#L180-L183](../../../../../../contracts/V1/AStateMachine.sol#L180-L183)): reads `gasleft()`, computes what the stipend call
+   can grant (`available - available/64 - STATE_TRANSITION_CALL_RESERVE`), and reverts with
+   `ErrorInsufficientGasForStateTransition(gasLimit, granted)` when that is less than `gasLimit`.
+   The transition has not run, so the refusal is no verdict: a CALL never fails for asking more gas
+   than is left, and a transition can catch an inner out-of-gas and finish with a different result,
+   so any run on less than the full budget could be wrong. The manager re-raises the refusal
+   instead of adjudicating.
+5. `call(gasLimit, address(), 0, input, …)` in assembly on the prepared memory
+   ([#L186-L189](../../../../../../contracts/V1/AStateMachine.sol#L186-L189)) — executes the transaction body as a self-call, so the target is one
+   of the state machine's own public functions. Only fixed opcodes run between the check and the
+   CALL, so the transition receives the full `gasLimit`.
+6. On failure: bubbles the inner revert data verbatim; if the inner call returned no data (it ran
+   out of gas within the full budget, or did a bare `revert()`), reverts with
+   `"AStateMachine - Call failed - result length 0"` — an invalid-transition verdict.
+7. On success: returns `(true, getOutboundMessages())` — the whole `_outboundMessages` array,
+   every message this transition recorded via `_addOutboundMessage` / `_addExitChannel`.
 
 Consequences: a transition either succeeds fully or reverts fully (no partial outbound state
 observable to the caller); outbound messages produced by a failed transition are lost with the
@@ -198,7 +221,7 @@ the chain; their journey to L1 is specified in
 | `_tx.header.channelId`                     | The channel this transition belongs to.                                                                                                      |
 | `_tx.header.forkId`                        | The fork this transition belongs to.                                                                                                         |
 | `_tx.header.transactionCnt`                | The transition's height/sequence number.                                                                                                     |
-| `gasLimit` (constant after construction)   | Fixed execution bound, identical across environments.                                                                                        |
+| `gasLimit` (constant after construction)   | Fixed execution bound, identical across environments; the transition runs only when it can be granted in full.                               |
 
 This is the complete injected API: `stateTransition` sets `_tx.header` and nothing else
 (`_tx.body` is never populated — do not read it).

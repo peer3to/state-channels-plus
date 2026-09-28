@@ -22,6 +22,7 @@ import {
     type LocalDiamondContract
 } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
+import { isInvalidStateTransitionError } from "@/utils/evmErrorHandler";
 import {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
@@ -152,7 +153,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     outboundMessages as ethers.Result
                 ) as unknown as MessageStruct[]
             };
-        } catch {
+        } catch (error) {
+            // Only a failure inside the EVM is an invalid transition (and may
+            // become a fraud proof). A refusal to run under-funded, an
+            // out-of-gas of the call's own frame, or an executor/transport
+            // failure is a local failure: it is thrown, so the caller restores
+            // its state instead of judging the block.
+            if (!isInvalidStateTransitionError(error)) throw error;
             return {
                 success: false,
                 successCallback: () => {},

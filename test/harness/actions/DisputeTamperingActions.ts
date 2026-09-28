@@ -16,6 +16,7 @@ import {
     addressesEqual
 } from "@/utils";
 import type { DisputeFraudStruct } from "@/utils/Codec";
+import { blockStructWithTransactionHeader } from "@test/factory";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -172,6 +173,37 @@ export class DisputeTamperingActions<
         private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
+
+    /**
+     * Re-sign the last confirmation of the dispute's last milestone with its
+     * transaction header merged with `header`, by the block's own author: a
+     * state proof whose header no longer matches `dispute.input`.
+     */
+    async mismatchLastMilestoneHeader(
+        dispute: DisputeStruct,
+        header: { channelId?: Hash; forkId?: ForkId }
+    ): Promise<void> {
+        const confirmation = dispute.input.stateProof.milestones
+            .at(-1)
+            ?.blockConfirmations.at(-1);
+        if (!confirmation)
+            throw new Error("mismatchLastMilestoneHeader: no milestone");
+        const block = Codec.decode(
+            confirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+        const author = this.harness.peers.find(
+            (peer) => peer.address === block.transaction.header.participant
+        );
+        if (!author)
+            throw new Error("mismatchLastMilestoneHeader: author not a peer");
+        confirmation.signedBlock = (
+            await Block.fromBlockStruct(
+                blockStructWithTransactionHeader(block, header),
+                author.signer
+            )
+        ).signedBlock;
+    }
 
     async postTamperedDispute(
         authorPeerIndex: number,

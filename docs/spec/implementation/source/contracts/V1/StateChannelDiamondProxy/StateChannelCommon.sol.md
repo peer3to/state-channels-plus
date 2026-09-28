@@ -63,6 +63,13 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    ([#L207](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L207)).
    `JoinChannelFacet` previously reached `isForkDisputed` by an external self-call; it now calls the
    internal directly, which removes a call frame from the join path.
+   Block authenticity follows the same pattern with no external selector at all: `_isBlockAuthentic`
+   ([#L339](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L339))
+   decodes through `tryDecodeBlock` and recovers the author with `retrieveSignerAddress`, and only the
+   fraud-proof and state-proof facets call it. The former public `UtilityFacet.isBlockAuthentic`
+   wrapper and its route are removed; the client checks author signatures itself under the
+   signature carve-out of [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778), and
+   [LocalDiamond](./LocalDiamond.sol.md) keeps a debug-logging override of this internal.
 4. **Pending means unconsumed.** `_getPendingParticipants` walks the inbound chain from the channel's
    head down to the current snapshot's own inbound hash, so it names only the joins the snapshot has not
    applied. The earlier unbounded walk counted every JOIN ever recorded, including the original

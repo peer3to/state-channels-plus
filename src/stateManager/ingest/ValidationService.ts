@@ -24,10 +24,7 @@ import {
 import { Codec, hash, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import type {
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { ZeroHash } from "ethers";
 
@@ -53,14 +50,6 @@ export default class ValidationService {
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger
-        );
-    }
-
-    public async isBlockConfirmationAuthentic(
-        blockConfirmation: BlockConfirmationStruct
-    ): Promise<boolean> {
-        return this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
-            blockConfirmation.signedBlock
         );
     }
 

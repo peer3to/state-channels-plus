@@ -345,3 +345,313 @@ The engineer removed membership generations, pending-read invalidation and autom
 Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
 
 Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.
+
+## Dispute gas estimation and the transition stipend — 2026-09-08
+
+**Trigger.** In the poker consumer's farm runs, `applyDisputeFraudProofs` and other dispute sends
+missed their windows: the kill period is 5 s in those fixtures, and the transaction preparation
+(populate, sign, broadcast) held the nonce mutex for 13–15 s per send, ending in
+`RaceConditionDisputeKillPeriodExpired` raised by `eth_estimateGas` itself. `uploadDispute`, which
+passes an explicit gas limit, took 32 ms–1.1 s on the same node in the same minute. The cost is the
+node's gas estimation, not the chain, the ZK precompile (14 calls, all under 7 ms), or poker logic.
+
+**Mechanism, three parts.**
+
+1. _Requirement far above usage._ `stateTransition` forwarded a fixed stipend with
+   `call{gas: gasLimit}`. A dispute replay used about 3M gas but the transaction had to carry
+   about 10.7M so the stipend could be granted. Every estimator has to search that gap, and every
+   probe inside it is a full replay of the transition.
+2. _Hardhat's search._ Hardhat runs the transaction at the block limit, then at the gas it used; when
+   that fails it bisects to a 50k tolerance for up to 20 rounds with no informed first guess. Geth and
+   anvil probe `(used + refund) * 64/63` first. Any diamond call fails hardhat's exact-gas probe
+   because the proxy fallback's delegatecall retains 1/64 (EIP-150) and does no work afterwards.
+   Hardhat's pending-block context is re-mined per probe, so chain time advances during a long
+   estimate and the kill period can expire inside it.
+3. _Soundness gap (now closed)._ A CALL never fails for asking more gas than remains; it hands over
+   63/64 of what is left. An under-funded replay therefore silently gave the transition less than
+   the stipend, the transition ran out of gas, `executeStateTransition` returned `success = false`,
+   and both fraud-proof facets read that as an invalid transition. The gas a sender attached could
+   decide a verdict ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2), [`REQ-FP-7-4DD0D7`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)).
+
+**Changes made in this tree.** _Superseded 2026-09-26 for the stipend rule and the mirror gas:
+see [Signature-parity authentication, upfront replay funding, and local EVM call gas](#signature-parity-authentication-upfront-replay-funding-and-local-evm-call-gas--2026-09-27).
+The list below records the 2026-09-08 state._
+
+- [AStateMachine.sol](../implementation/source/contracts/V1/AStateMachine.sol.md): the wrapper records what the stipend call can grant (`available - available/64 - reserve`,
+  capped at `gasLimit`). A transition that completes is judged on its result whatever was granted,
+  since transitions may not read gas. An out-of-gas counts as exceeding the budget only when the full
+  `gasLimit` was granted; otherwise it reverts with `ErrorInsufficientGasForStateTransition(required,
+granted)`, a refusal rather than a verdict. An upfront `gasleft() >= stipend` guard was tried first
+  and rejected by measurement: it pins the requirement at the stipend, so estimators search the
+  expensive region and the geth-style first probe can never succeed.
+- [StateChannelManagerProxy.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md): `executeStateTransition` re-raises that refusal and turns an empty-returndata machine frame
+  into `ErrorStateTransitionFrameOutOfGas`, so the facets never adjudicate an under-funded replay.
+- [ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md): every local EVM call is funded with 1e9 gas. The ethereumjs default of 0xffffff (about 16.7M)
+  sat at the manager's dispute-execution budget, so a mirror replay could have been under-funded and
+  diverged from a funded on-chain one ([`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
+- Tests: `test/V1/AStateMachineStipend.t.sol` (8 tests) with a gas-hungry Math variant. Direct:
+  a cheap transition executes below the stipend; a never-finishing one is refused below the stipend
+  and reported as an invalid transition when funded. Through the manager: the honest block is judged
+  below the stipend and its author keeps standing; the over-budget block reverts with the refusal
+  below the stipend and slashes its author when funded; two fuzzes over attached gas from 100k to 9M
+  show the honest author is never slashed and the over-budget author is slashed exactly when the call
+  succeeded ([`UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF`](../implementation/source/contracts/V1/AStateMachine.sol.md#unit-test-astate-machine-2-z2xxmf), [`UNIT-TEST-MANAGER-PROXY-3-C3NY4X`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-3-c3ny4x), [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) P5–P8). Full Foundry suite: 120 passing.
+
+**Measurements** (Math fixture, 10M stipend, `applyFraudProofs` over an honest block, cost of one
+`eth_estimateGas` relative to one `staticCall`, median of seven):
+
+| Node                                                      | Contracts                | 30M block      | 100M block  | 1e9 block   | Estimate    |
+| --------------------------------------------------------- | ------------------------ | -------------- | ----------- | ----------- | ----------- |
+| hardhat 2.20 (peer3 fork, the runner's node)              | before                   | 11.5x          | 11.5x       | 11.6x       | 511k        |
+| hardhat 2.20, stock                                       | after                    | same as before |             |             | 511k        |
+| hardhat 2.20 with a `(used + refund) * 64/63` first probe | after                    | 2.6x           | 2.7x        | 2.7x        | 514k        |
+| hardhat 2.22 EDR (this repository's in-process network)   | before / after           | 4.7x / 4.8x    | 4.1x / 4.5x | 4.4x / 4.4x | 511k / 511k |
+| hardhat 2.22 EDR                                          | upfront guard (rejected) | 4.3x           | 4.1x        | 5.3x        | 11.0M       |
+
+Gas used by the transaction: 443k. The block gas limit does not change the estimate cost in any
+row. The refund term is required for the optimistic probe: the estimate sits about 15% above gas
+used because of storage refunds, so a plain 64/63 probe fails and falls back to bisection.
+
+**Assessment.** The contract change removes the soundness gap and makes the gas a transaction needs
+track the gas it uses, which is the precondition for any fast estimate. It does not by itself speed
+up estimation on the runner's hardhat, whose bisection dominates. A fixed high gas limit on dispute
+sends would avoid estimation but reserves block space by declared limit, not by use: three 10M
+declarations fill a 30M block that could hold fifteen 2M executions. The adopted resolution is recorded
+as [`FIND-GASEST-1-28J88D`](open-findings.md#find-gasest-1-28j88d): the runner's node gained Geth's
+first probe, `(spent + refund) * 64/63`, in the peer3 hardhat fork (release `precompile-v2`). It
+converges only because the post-hoc stipend rule made the gas a replay needs track the gas it
+uses, so the two changes belong together. Metering in the local mirror was rejected as unreliable
+(the mirror does not guarantee chain-equal state), and `eth_estimateGas` remains the send path,
+which production nodes already answer in two or three executions.
+
+## Block authenticity moved off the EVM — 2026-09-09
+
+**Trigger.** A CPU profile of the poker consumer's six-player timing test showed the six
+contract-executor threads busiest (about 69% of their time, ethereumjs interpreter 45%, secp256k1
+recovery 8%, GC 10%), while ZK verification was negligible. Each received block executes once
+([SnapshotAssemblyService.ts](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md),
+[BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md));
+stored-block re-confirmations merge signatures without execution. The redundant EVM work was the author
+signature recovery, run in the EVM twice per block (intake in
+[BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) and
+pre-execution in BlockIngestService), plus the consumer's own view calls per block.
+
+_Decided 2026-09-26: the TypeScript check stays under an explicit carve-out with exact contract
+parity; see [Signature-parity authentication, upfront replay funding, and local EVM call gas](#signature-parity-authentication-upfront-replay-funding-and-local-evm-call-gas--2026-09-27).
+This section records the 2026-09-09 state._
+
+**Change.** [Block.ts](../implementation/source/src/models/Block.ts.md) gains `isAuthentic`
+(original signature recovers to the header participant, malformed signature is `false`);
+intake reads it through the per-thread signer recovery cache. A later change removed the
+`ValidationService.isBlockConfirmationAuthentic` wrapper: [BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
+decodes each incoming confirmation once with `tryFromBlockConfirmation` and checks `isAuthentic` on that
+instance, which the rest of the ingest reuses, and [BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)
+checks it on the entry's decoded block. [QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md)
+builds the entry's base block with `Block.authorSignedCopy()` (renamed from `withoutConfirmationSignatures`, review 5 LO5) on its per-call copy
+instead of decoding it again. No contract change: `LocalDiamond.isBlockAuthentic`
+stays for the dispute path on-chain. Both call sites drop their `await`.
+
+**Assessment.** The TypeScript and Solidity checks share one scheme (EIP-191 over
+`keccak256(encodedBlock)`), and the predicate reads no state, so
+[`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)'s equivalence
+concern does not arise. The literal text of
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) is contradicted
+and recorded as [`FIND-AUTH-1-C1ZHBJ`](open-findings.md#find-auth-1-c1zhbj) for a specification decision.
+Regression: [`UNIT-TEST-BLOCK-MODEL-1-037DM6`](../implementation/source/src/models/Block.ts.md#unit-test-block-model-1-037dm6)
+P13 plus three neighbouring authenticity tests, and the forged-author E2E intake test.
+
+## Subscription logs from a reverted block — 2026-09-09
+
+**Trigger.** The poker consumer's parallel runs failed with peers whose genesis fork differed from
+the chain's stored genesis by one second. The cause is the test node: hardhat's pending-block
+simulation (`eth_estimateGas`, pending `eth_call`) mines every pending transaction into a temporary
+block, notifies `newHeads` and `logs` subscribers and polling filters, then reverts the block. On a
+shared node another client's estimate leaks logs of a block that never becomes canonical. The peer3
+hardhat fork now mutes notifications during a simulation.
+
+**Assessment for this repository.** The node's event path trusts the provider's log feed as
+canonical and has no `removed`-log handling or block-hash confirmation. That is correct for a
+well-behaved node and for the local runner after the fork fix, and it is the same assumption a real
+chain breaks on a reorg. Recorded as
+[`FIND-EVENTS-1-3JF8FM`](open-findings.md#find-events-1-3jf8fm) for a specification decision; no
+code change made here.
+
+## Estimate margin instead of a search — 2026-09-09
+
+**Trigger.** With the fork's optimistic probe in place, the poker consumer's farm still measured
+`eth_estimateGas` for the batched dispute `multicall` at 12 executions and 5 to 11 s per estimate,
+while single-call estimates (`uploadDisputeWithCalldata`, `open`, `postBlockCalldata`) took one to
+three executions. The multicall adds delegatecall frames in front of the fraud-proof path, each
+retaining 1/64 of the remaining gas, so the one-boundary probe `(spent + refund) * 64/63` is short
+and hardhat bisects from the block limit to a 50k tolerance. Hardhat serves one request at a time, so
+each such estimate stalled every other client's reads and the interval miner for the same seconds.
+Geth's estimator misses the probe for the same reason but converges in about nine executions on a
+native EVM, milliseconds rather than seconds, and serves requests concurrently; on a production node
+this is cost, not a stall.
+
+**Change (fork release `precompile-v4`).** `eth_estimateGas` runs the transaction once and returns
+the gas it needed before its refund (the refund counter capped as the EVM caps it, a quarter of the
+net figure after EIP-3529) plus 30%, capped at the block gas limit. The exact-gas run, the probe and
+the bisection are removed. The margin covers the retained gas of nested frames and refunds handed back
+after they were spent. Estimates are no longer minimal; the block-packing argument against declared
+limits applies to a fixed high limit, not to a proportional margin.
+
+**Residual.** Production nodes keep their own estimators; the durable fix for their nine executions is
+a shallower fraud-proof call path in the contracts, recorded for a separate review.
+
+## Local-first dispute audit — 2026-09-26, reduction chain-only since 2026-09-27
+
+**Change.** Dispute audit and dispute construction read the local diamond first and ask the chain
+only for the answer that would make the node act ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys);
+[`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) defers to it).
+[localDiamond.ts](../implementation/source/src/utils/localDiamond.ts.md) owns `preferLocal`;
+[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md) owns the revert marker it falls back on.
+Per decision: the audit accepts a clearing local answer and confirms a fraud-proof answer on-chain
+([DisputeValidationService.ts](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md));
+construction posts auditing data on a local "not final" and confirms a local "final"
+([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)). Reduction and reduced-result
+validation were local-first for one round and are chain-only again (engineer decision 2026-09-27,
+review item LO4): the local diamond has no sync guarantee, so a local first pass did not lower chain
+reads on average (a lagging mirror cost more reads than chain-only). [ReductionExecutor.ts](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
+is back to one pass with the chain-computed candidate, and
+[EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md) validates a committed reduced result with
+`ReductionManager.computeReduction`.
+
+**Assessment.** Every answer that stakes the node — a stored fraud proof, omitted auditing data — is
+still decided by the chain, and the pure header check runs locally only because it reads no
+replicated state. The accepted residual is a lagging mirror that clears a fraudulent dispute: this
+node then misses one challenge, and the other honest auditors still audit. State-proof verification
+first turned any error from the read into an invalid verdict, recorded as
+[`FIND-MIRROR-1-YECYEQ`](open-findings.md#find-mirror-1-yecyeq); it is resolved: only a chain revert
+(`CALL_EXCEPTION`) rejects the proof, and every other failure is rethrown as an audit error.
+
+**Evidence.** The `preferLocal` policy
+([`UNIT-TEST-PREFER-LOCAL-1-XC95T6`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6) P1–P10) has unit
+tests, including a real executor revert. A harness `mirror` control makes the mirror and the chain
+really disagree (held mirror updates, a lagging store, a chain read served before a named event) and
+fails one read by revert or by transport, record-only. With it,
+[`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-4-e7pe6x)
+is mapped one scenario per permutation, now including the header check in both directions with no
+chain read (P9, P29), chain-confirmation transport failures for the three boolean audit predicates
+(P30–P32), and a non-revert local failure of state-proof verification (P33); the DisputeManager
+finality permutations and most of [`REQ-MIRROR-4-H9C4YS.T1`](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1)
+are mapped; an E2E audits an honest dispute with a lagging mirror under ordinary protocol timing and
+shows no proof, kill or slash. The local "incorrect"/chain "correct" case of the latest-state check
+and the local "invalid"/chain "valid" case of state-proof verification (E7PE6X P3, P5) are staged
+with real state (review 6 TO7, TO8): a dispute constructed at genesis goes stale after a same-fork
+snapshot post, the auditor's mirror sees the post, and the chain view is served from the block
+before it, so the chain answers "correct"/"valid"; the chain answer wins and no
+`DisputeInvalidStateProof` is stored. The earlier argument that lag can only move these predicates
+toward "true" missed the case where the chain view is behind the mirror (a lagging RPC), which moves them the other way. Four
+skipped `DisputeValidationService` cases carry dispositions in the test file: three are unreachable,
+and the equality boundary of the too-early check needs owned chain time, which the shared session
+node does not allow; it stays outstanding. With reduction chain-only, the local-candidate permutations of
+[`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37)
+and the local reduced-result permutations of
+[`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w)
+are deleted, and so are the three local-candidate E2E cases and the reduced-result local-first unit
+suite. A reduced-result challenge E2E remains unreachable through honest staging: the on-chain
+`reduce` is hash-bound to the committed disputes, so a peer cannot commit a wrong reduced result
+without a contract-level tamper hook.
+
+## Signature-parity authentication, upfront replay funding, and local EVM call gas — 2026-09-27
+
+**Trigger.** Reviews 1–4 of the local-first change
+(`temp/plan-implementation-reviews/33-dispute-rebase-local-first/`) and the engineer's decisions on
+them: author signatures in TypeScript must match the contracts exactly (XO1, SR2); fraud-proof
+replay is funded upfront (SO1), the send declaring its estimate plus the requirement (FR1, confirmed
+by the engineer in review 5, FO1); the upfront check must come after all input-dependent work (SR1);
+the previous transition's outbound messages are deleted before the check and paid outside the
+budget (review 6, FO3, engineer decision; this replaced the count reset that answered FY1); the local
+EVM's 1e9 call gas is dropped (SY1) and named for the local EVM (LO2); the evidence memo is invalidated
+on a kill (FY1) and belongs to DisputeManager (LO1); block decoding stays in `Codec` and decoding
+parity with the contracts is deferred (LO3, decision of 2026-09-27).
+
+**Signature parity.** [SignerRecoveryCache.ts](../implementation/source/src/cache/SignerRecoveryCache.ts.md)
+refuses, before recovery, every signature encoding OpenZeppelin `ECDSA.tryRecover(bytes32, bytes)`
+rejects (not exactly 65 bytes, `v` not 27 or 28, `r` outside `(0, n)`, `s` outside `(0, n/2]`); ethers
+had accepted compact signatures and normalized `v`. Every protocol recovery — author and
+confirmation signatures in [Block.ts](../implementation/source/src/models/Block.ts.md), join, open and
+dispute signatures in [SignatureUtils.ts](../implementation/source/src/utils/SignatureUtils.ts.md) — goes
+through it, so author and confirmation signatures follow one rule. The dead
+`UtilityFacet.isBlockAuthentic` route and interface declaration are removed.
+[EcrecoverCache.ts](../implementation/source/src/cache/EcrecoverCache.ts.md) memoizes the local EVM's ecrecover
+precompile; it is a pure cache and changes no answer or gas figure (tested against a plain EVM at the
+precompile's acceptance and gas boundaries). [`FIND-AUTH-1-C1ZHBJ`](open-findings.md#find-auth-1-c1zhbj)
+is resolved by the signature carve-out in
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778).
+
+**Decoding.** `Codec` is the only block decoder. Network intake
+([BlockQueueManager.ts](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)) decodes once with
+`Block.tryFromBlockConfirmation` and then checks `isAuthentic`; the struct entry
+([BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)) refuses a
+confirmation that does not decode through `authenticateBlockFailed`;
+[QueueStorage.ts](../implementation/source/src/storage/QueueStorage.ts.md) reuses the target's decoded block when it
+merges signatures, so a network copy is decoded once.
+[ValidationService.ts](../implementation/source/src/stateManager/ingest/ValidationService.ts.md) has no decoding logic:
+the contract-decode path that existed for one review round (a local-diamond decode of
+non-canonical bytes, with its memos) is removed. The client and
+contract decoders are not held to one rule; that open exposure is
+[`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v), with identical encoding and decoding
+on both sides as the planned resolution.
+
+**Upfront replay funding.** [AStateMachine.sol](../implementation/source/contracts/V1/AStateMachine.sol.md)
+refuses with `ErrorInsufficientGasForStateTransition` before the transition runs unless it can grant
+the full `gasLimit`, and publishes `getStateTransitionGasRequirement`. It copies the call input and
+reads the budget before the gas check and calls in assembly, so only fixed opcodes run between the
+check and the call. It deletes the previous transition's outbound messages first, before the input
+copy and the gas check, so the caller pays for the deletion outside the transition budget and a
+transition always writes its messages into empty slots.
+[UtilityFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
+`getStateTransitionReplayGas` adds the share kept at each of the four enclosing calls.
+[DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) sends only the replay
+transactions (the fraud-proof multicall and `applyDisputeFraudProofs`) with the signer's estimate
+with its headroom plus the requirement, the requirement read once (engineer decision 2026-09-27).
+The machine refuses unless the full budget is free when the replay starts; an estimator that
+reports the gas spent (the peer3 hardhat fork used by poker) counts only the gas the transition
+used, and the work before the replay can exceed any fixed margin over the requirement (a poker
+dispute: about 3.9M before the replay, requirement 5.64M, about 9.5M needed, while the larger of
+the estimate and the requirement × 1.3 gives 8.89M). The sum covers both. A searching estimator
+(the SDK test node was measured to search) already includes the requirement, so the sum declares
+more than needed: at least about 2.5 × the requirement with the signer's headroom. That does not
+change a verdict, but it must still fit the block gas limit, which then depends on the consumer's
+budgets; nothing caps the declared limit. The whole gas and estimation topic is open as
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6). This
+replaces the 2026-09-08 post-hoc rule, whose pending assumption (a transition cannot catch an inner
+out-of-gas) did not hold.
+Residual: see [security-assessment.md](security-assessment.md#gas-dependent-verdicts--2026-09-08).
+
+**Local EVM call gas.** [ContractExecutor.ts](../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
+`localEvmCallGasLimit` funds each local EVM call with the larger of `DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT`
+(0xffffff), the manager's `getGasLimit` and twice its replay requirement (the requirement covers
+only the budget and fixed setup; deleting previous outbound messages and copying the input come on
+top), read once at host start
+([P2pRuntimeHostRoot.ts](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) and
+passed through [createContractExecutor.ts](../implementation/source/src/evm/contractExecutor/createContractExecutor.ts.md)
+and [ContractExecutorService.ts](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md);
+inline and dedicated-thread runtimes are tested with a budget above the default. Deviation from the
+recorded decision text (`max(16.7M, getGasLimit)`): the replay term is required, because without it
+every local replay would be refused by the upfront rule above. A local `stateTransition` that the
+machine refuses, whose call frame runs out of gas outside the transition, or whose executor fails is
+a local failure: [EvmDiamondStateMachine.ts](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
+rethrows it (`isInvalidStateTransitionError` in
+[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md)) and
+[BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)
+restores the state with no fraud proof and no dispute. The accepted residual (the 16.7M
+floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+and in [security-assessment.md](security-assessment.md#local-evm-call-gas--2026-09-26).
+
+**Evidence memo.** [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns it
+(`shouldAddOwnEvidence`, `forgetEvidenceComparison`); [EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+only calls them from `onDisputeCommitted`, `onDisputeKilled` and `onDisputeReducedResultCommitted`.
+`didIDispute` stays first; a kill drops the fork's stored comparison; a comparison ended by partial
+own auditing data is not stored; the reduced result prunes the entry; concurrent audits share one
+comparison; a positive answer survives a failed upload; a comparison dropped while in flight cannot
+erase its replacement. All of these are tested through real audits
+([`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm) P1–P9).
+Specified in dispute-processing stage 5
+([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+
+**Negotiation cleanup.** [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md)
+`clearAttempt` takes the attempt it ends and does nothing when that attempt is no longer current, so a
+late opening-hook failure cannot clear its replacement.

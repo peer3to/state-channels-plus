@@ -1,5 +1,4 @@
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { PartialAuditingDataError } from "@/disputeManager/DisputeManager";
 import { Block, StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import type StateManager from "@/stateManager";
@@ -34,11 +33,9 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
-    DisputeConfirmationStruct,
-    DisputeStruct
+    DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { TransactionResponse } from "ethers";
-import { isEqual } from "lodash";
 
 export type EventCoordinate = {
     blockNumber: number;
@@ -627,7 +624,10 @@ export class EventHandler {
         );
 
         const canConstructMoreEvidence =
-            await this.canConstructMoreEvidence(dispute);
+            await this.stateManager.disputeManager.shouldAddOwnEvidence(
+                forkId,
+                dispute
+            );
         if (canConstructMoreEvidence) {
             this.logger.info(
                 `More evidence can be constructed for dispute ${formattedHash}, disputing...`
@@ -661,64 +661,6 @@ export class EventHandler {
             diamondStateMachine: this.diamondStateMachine,
             logger: this.logger
         });
-    }
-
-    private async canConstructMoreEvidence(
-        dispute: DisputeStruct
-    ): Promise<boolean> {
-        // Create our own dispute
-        let ourDispute: DisputeStruct;
-        try {
-            ourDispute = (
-                await this.stateManager.disputeManager.constructDispute(
-                    this.stateManager.forkId
-                )
-            ).dispute;
-        } catch (error) {
-            if (!(error instanceof PartialAuditingDataError)) throw error;
-            // we cannot rebuild our own auditing data -> we have no more
-            // evidence to give. the caller falls through to scheduling the
-            // reduction instead of dying on the throw
-            this.logger.warn(
-                "No more evidence: own auditing data could not be rebuilt locally",
-                {
-                    forkId: this.stateManager.forkId,
-                    dispute: LoggerUtils.getDisputeMetadata(dispute)
-                }
-            );
-            return false;
-        }
-
-        this.logger.verbose("Constructed our own dispute for comparison", {
-            ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
-            theirDispute: LoggerUtils.getDisputeMetadata(dispute)
-        });
-
-        let hasMoreEvidence;
-        try {
-            // Compare reduced disputes to see if we have more evidence
-            const singleDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [dispute]
-                );
-            const combinedDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [ourDispute, dispute]
-                );
-            hasMoreEvidence = !isEqual(
-                singleDisputeReduction,
-                combinedDisputeReduction
-            );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error during dispute reduction comparison", {
-                errors: error,
-                custom
-            });
-            throw error;
-        }
-        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
-        return hasMoreEvidence;
     }
 
     async onChainSlashed(
@@ -761,6 +703,8 @@ export class EventHandler {
         reducer: Address,
         coordinate: EventCoordinate
     ): Promise<void> {
+        // The fork's dispute window is over; its evidence comparison with it.
+        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
@@ -880,6 +824,9 @@ export class EventHandler {
         disputeHash: Hash,
         blockTimestamp: Timestamp
     ): Promise<void> {
+        // The cached comparison may have been against the killed dispute; the
+        // next audit of this fork compares again.
+        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
         this.stateManager.membershipService.observeOnChainSlash(disputer);
         await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,

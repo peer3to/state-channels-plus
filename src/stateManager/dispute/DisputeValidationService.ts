@@ -7,19 +7,21 @@ import DisputeManager from "@/disputeManager";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import Storage from "@/storage";
 import { timeoutWaitTime } from "@/types";
-import { Address, Bytes, Hash, Signature } from "@/types/types";
+import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
+import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
     MessageBlockStruct,
+    SnapshotDataStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ethers } from "ethers";
+import { type BytesLike, ethers } from "ethers";
 
 export default class DisputeValidationService {
     private readonly disputeFraudProofService: DisputeFraudProofService;
@@ -87,8 +89,9 @@ export default class DisputeValidationService {
             return false;
         }
 
+        // Pure: the local diamond computes exactly what the chain would.
         const hasHeaderMismatch =
-            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
+            await this.diamondStateMachine.localDiamondContract.hasStateProofHeaderMismatch.staticCall(
                 dispute
             );
         if (hasHeaderMismatch) {
@@ -241,11 +244,7 @@ export default class DisputeValidationService {
     private async tryCreateLastMilestoneNotFinalProof(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        const isFinal =
-            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                dispute
-            );
-        if (isFinal) return false;
+        if (await this.isLastMilestoneFinalByEveryone(dispute)) return false;
         this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
             dispute
         );
@@ -257,14 +256,24 @@ export default class DisputeValidationService {
         disputeAuditingData: DisputeAuditingDataStruct
     ): Promise<boolean> {
         try {
-            // TODO - make it work with localdiamond
-            const result =
-                await this.stateChannelManagerContract.verifyStateProof.staticCall(
-                    dispute,
-                    disputeAuditingData
-                );
-            return result;
+            return await preferLocal(
+                () =>
+                    this.diamondStateMachine.localDiamondContract.verifyStateProof.staticCall(
+                        dispute,
+                        disputeAuditingData
+                    ),
+                () =>
+                    this.stateChannelManagerContract.verifyStateProof.staticCall(
+                        dispute,
+                        disputeAuditingData
+                    ),
+                (isValid) => isValid
+            );
         } catch (error) {
+            // Only the chain's revert rejects the proof. Any other failure
+            // (transport, disposed runtime) is no verdict and must not become
+            // a fraud proof against the disputer.
+            if (!ethers.isError(error, "CALL_EXCEPTION")) throw error;
             this.logger.debug("verifyStateProof reverted", {
                 dispute: LoggerUtils.getDisputeMetadata(dispute),
                 custom: tryDecodeCustomError(error)
@@ -307,9 +316,9 @@ export default class DisputeValidationService {
                     "RUNNING StateProof blocks - aborting pipeline -> killing dispute",
                     {
                         dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        block: LoggerUtils.getBlockMetadata(
-                            Block.fromBlockConfirmation(bc),
-                            this.storage
+                        // The raw struct: these bytes may not decode.
+                        block: LoggerUtils.getBlockConfirmationStructMetadata(
+                            bc
                         )
                     }
                 );
@@ -396,11 +405,10 @@ export default class DisputeValidationService {
                 return true;
             }
 
-            isCorrectLatestState =
-                await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
-                    dispute,
-                    genesisStateSnapshot.snapshotData
-                );
+            isCorrectLatestState = await this.isCorrectLatestState(
+                dispute,
+                genesisStateSnapshot.snapshotData
+            );
             if (isCorrectLatestState) {
                 this.logger.warn(
                     "Skipping dispute audit: pinned latest state snapshot is unavailable",
@@ -436,11 +444,10 @@ export default class DisputeValidationService {
         }
         // TODO move this check above and into its own fraud proof
         if (!dispute.postedAuditingData) {
-            isCorrectLatestState ??=
-                await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
-                    dispute,
-                    disputeAuditingData.genesisStateSnapshotData
-                );
+            isCorrectLatestState ??= await this.isCorrectLatestState(
+                dispute,
+                disputeAuditingData.genesisStateSnapshotData
+            );
 
             if (!isCorrectLatestState) {
                 this.logger.warn(
@@ -491,12 +498,11 @@ export default class DisputeValidationService {
         }
 
         // (STATEFUL - compiler trick) verify balance invariant
-        const balanceInvariantValid =
-            await this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
-                dispute.input.channelId,
-                disputeAuditingData.latestStateSnapshot.snapshotData,
-                latestStateMachineState
-            );
+        const balanceInvariantValid = await this.isBalanceInvariantValid(
+            dispute.input.channelId,
+            disputeAuditingData.latestStateSnapshot.snapshotData,
+            latestStateMachineState
+        );
         if (!balanceInvariantValid) {
             this.logger.debug(
                 `Balance invariant failed on local diamond while auditing dispute`,
@@ -679,11 +685,21 @@ export default class DisputeValidationService {
                 // The contract owns every predicate used by the apply handler.
                 // Preflight the exact proof so an auditor never submits an
                 // invalid proof and gets itself slashed.
-                const isValid =
-                    await this.stateChannelManagerContract.validateTimeoutCalldataPostedProof.staticCall(
-                        proof,
-                        dispute
-                    );
+                // A proof the local mirror rejects is not pursued; one it
+                // accepts is confirmed on-chain before it is stored.
+                const isValid = await preferLocal(
+                    () =>
+                        this.diamondStateMachine.localDiamondContract.validateTimeoutCalldataPostedProof.staticCall(
+                            proof,
+                            dispute
+                        ),
+                    () =>
+                        this.stateChannelManagerContract.validateTimeoutCalldataPostedProof.staticCall(
+                            proof,
+                            dispute
+                        ),
+                    (isValid) => !isValid
+                );
                 if (isValid) {
                     this.disputeFraudProofService.storeTimeoutCalldataPosted(
                         dispute,
@@ -836,6 +852,67 @@ export default class DisputeValidationService {
         }
 
         return dispute.input.forkId === latestSnapshot.snapshotDataHash;
+    }
+
+    // ── Local-first checks ────────────────────────────────────────────────
+    // Each check runs on the local diamond; only the answer that would make this
+    // node act against the disputer is confirmed on-chain (see preferLocal).
+
+    private isLastMilestoneFinalByEveryone(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        return preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.isLastMilestoneFinalByEveryone.staticCall(
+                    dispute
+                ),
+            () =>
+                this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                    dispute
+                ),
+            (isFinal) => isFinal
+        );
+    }
+
+    private isCorrectLatestState(
+        dispute: DisputeStruct,
+        genesisStateSnapshotData: SnapshotDataStruct
+    ): Promise<boolean> {
+        return preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.isCorrectLatestState.staticCall(
+                    dispute,
+                    genesisStateSnapshotData
+                ),
+            () =>
+                this.stateChannelManagerContract.isCorrectLatestState.staticCall(
+                    dispute,
+                    genesisStateSnapshotData
+                ),
+            (isCorrect) => isCorrect
+        );
+    }
+
+    private isBalanceInvariantValid(
+        channelId: ChannelId,
+        snapshotData: SnapshotDataStruct,
+        encodedStateMachineState: BytesLike
+    ): Promise<boolean> {
+        return preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                    channelId,
+                    snapshotData,
+                    encodedStateMachineState
+                ),
+            () =>
+                this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+                    channelId,
+                    snapshotData,
+                    encodedStateMachineState
+                ),
+            (isValid) => isValid
+        );
     }
 
     private async isDisputeInboundHashValid(

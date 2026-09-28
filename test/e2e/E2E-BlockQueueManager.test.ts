@@ -14,6 +14,7 @@ import {
     assertSlashAdmission,
     assertSlashPreservesHonestWork
 } from "@test/fixtures/QueueSlashFixture";
+import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
@@ -135,6 +136,86 @@ describe("E2E: BlockQueueManager", function () {
         expect(
             storedBlock!.confirmationSignatures.includes(forgedSignature)
         ).to.equal(false);
+    });
+
+    it("ingest refuses author signature encodings the contracts reject, then commits the canonically signed block", async function () {
+        const h = TestSession.getHarness();
+        // wide windows: nobody times out the held-back author mid-test
+        await h.lifecycle.start(3, 1, {
+            timeConfig: {
+                p2pTime: 2,
+                agreementTime: 8,
+                chainFallbackTime: 10,
+                evidenceTime: 20
+            }
+        });
+        await h.assert.sync.peersInSyncWait();
+        const forkId = h.activeForkId!;
+        const observer = h.getPeer(0);
+        const author = h.getPeer(1);
+        const relayer = h.getPeer(2);
+
+        // The author keeps its next block to itself.
+        await h.byzantine.stubBroadcast(author.index);
+        await h.transition.advanceState({ waitForSync: false });
+        await h.assert.sync.peerBlockHeightGreaterThan(
+            author.index,
+            observer.index
+        );
+        const bundle = await h
+            .control(author)
+            .query.getLatestBlockBundle(forkId)
+            .request();
+        const signedBlock = Codec.decode(
+            bundle!.encodedSignedBlock,
+            Type.SignedBlock
+        );
+        const confirmation = (signature: string) => ({
+            signedBlock: { encodedBlock: signedBlock.encodedBlock, signature },
+            signatures: []
+        });
+
+        for (const signature of Object.values(
+            contractRejectedEncodings(String(signedBlock.signature))
+        )) {
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: relayer.address
+                },
+                blockConfirmation: confirmation(signature),
+                keepConnection: false
+            });
+            expect(
+                await h
+                    .control(observer)
+                    .query.getBlockByHash(bundle!.hash)
+                    .request()
+            ).to.be.null;
+        }
+
+        // The same block with the author's canonical signature is committed
+        // and countersigned.
+        await h.transition.ingestBlockConfirmationWait({
+            peerIndex: observer.index,
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: author.address
+            },
+            blockConfirmation: confirmation(String(signedBlock.signature)),
+            keepConnection: true
+        });
+        const stored = await h
+            .control(observer)
+            .query.getBlockByHash(bundle!.hash)
+            .request();
+        expect(stored).to.not.be.null;
+        expect(
+            stored!.confirmationSignatures.map((signature) =>
+                ethers.verifyMessage(ethers.getBytes(bundle!.hash), signature)
+            )
+        ).to.include(observer.address);
     });
 
     it("ingest drops a wrong-channel block and cuts the transport when the sender is known", async function () {

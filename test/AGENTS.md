@@ -84,7 +84,16 @@ harness `FooActions` drives it, its host methods belong in a `foo` service —
 don't grow a catch-all.
 
 Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
-`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `runtimeRpc`.
+`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `lifecycle`,
+`validation`, `runtimeRpc`, `mirror`.
+
+`mirror` (`services/mirror/`, driven by `MirrorActions`) controls local mirror
+versus chain for the local-first reads (`preferLocal` callers): record-only
+observation of each side's reads and answers, a one-shot local or chain read
+fault (`revert` runs the real contract with cut ABI arguments; `transport`
+fails the call without a verdict), serving chain reads just before a named
+chain event, and holds on the local diamond's event application so the mirror
+lags the chain for real. It never replaces a read's answer.
 
 ### Serialization rules for endpoints
 

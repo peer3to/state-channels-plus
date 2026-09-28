@@ -8,6 +8,7 @@ import type {
     CleanCommittedDivergenceProbe,
     ConcurrentCalldataRecoveryProbe,
     DisputeStrategyResultMatrix,
+    DisputeStructIngestProbe,
     InboundRunRecoveryProbe,
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
@@ -178,6 +179,16 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         options?: BlockProbeOptions
     ): Promise<BlockIngestProbe> {
         return this.service.runBlockIngest(encodedBlockConfirmation, options);
+    }
+
+    public async runBlockConfirmationStructUnderDispute(
+        encodedBlockConfirmation: string,
+        encodedDispute: string
+    ): Promise<DisputeStructIngestProbe> {
+        return this.service.runBlockConfirmationStructUnderDispute(
+            encodedBlockConfirmation,
+            encodedDispute
+        );
     }
 
     public async runStoredBlockMerge(

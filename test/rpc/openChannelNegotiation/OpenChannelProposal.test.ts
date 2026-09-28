@@ -91,12 +91,12 @@ describe("getOpenChannelProposalMismatch", function () {
         ).to.match(/isAtomic/);
     });
 
-    it("rejects arbitrary opening data", function () {
+    it("rejects opening data that differs from the locally derived data", function () {
         const decoded = matchingProposal();
         decoded.data = "0xc0ffee";
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
-        ).to.match(/data must be empty/);
+        ).to.match(/data mismatch/);
     });
 
     it("rejects a deadline in the past", function () {
@@ -120,6 +120,18 @@ describe("getOpenChannelProposalMismatch", function () {
         decoded.participants = [A.toUpperCase().replace("0X", "0x"), B];
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
+        ).to.equal(null);
+    });
+
+    it("accepts the locally derived application opening data", function () {
+        const decoded = matchingProposal();
+        decoded.data = "0xc0ffee";
+        expect(
+            getOpenChannelProposalMismatch(
+                decoded,
+                { ...expected, data: "0xc0ffee" },
+                deadline
+            )
         ).to.equal(null);
     });
 });

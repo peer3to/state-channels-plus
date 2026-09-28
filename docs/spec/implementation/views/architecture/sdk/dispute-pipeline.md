@@ -88,7 +88,7 @@ which is mutexed and idempotent per fork (`didIDispute` flag):
 | On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
 | Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
 | Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `EventHandler.canConstructMoreEvidence`                                                                | merged evidence                                                                                                                                           |
+| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                 | merged evidence                                                                                                                                           |
 
 ### 3.2 Timeout detection detail
 
@@ -118,7 +118,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L324),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L322),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -130,7 +130,7 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L394)
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L573)
 assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
 
 1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
@@ -159,7 +159,10 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    The chain judges it against the dispute's historic threshold: its snapshot participants (no adoption onto
    the fork while a proof can land), joiners at or below the dispute's inbound anchor, minus the dispute's own
    `onChainSlashes` only, so the same verdict holds for every later read of the committed dispute.
-   A code TODO flags re-evaluating this under early finalization.
+   A code TODO flags re-evaluating this under early finalization. The probe runs on the
+   LocalDiamond first (`preferLocal`): a local "not final" posts the data without a chain read —
+   posting is never wrong, only costlier — while a local "final", whose omitted data is slashable
+   if the mirror lagged, is confirmed by `SCM` ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.
 
@@ -178,32 +181,35 @@ can retry.
 
 ## 5. Audit: validity and authorization checks
 
-[`DisputeValidationService.validateDispute`](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L47)
+[`DisputeValidationService.validateDispute`](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L50)
 returns `false` iff a [`DisputeFraudProof`](../../../../../../src/stateManager/utils/DisputeFraudProofService.ts#L1)
 was stored — the caller then kills the dispute. Checks run in order; every
 predicate that also exists in Solidity is evaluated by `staticCall` against the
 canonical implementation so the off-chain auditor can never disagree with the
-on-chain apply-handler ([`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq)):
+on-chain apply-handler ([`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq)). "Local-first" below means the call goes to the
+LocalDiamond through `preferLocal`: the answer that clears the dispute is accepted locally, and the
+answer that would produce a fraud proof (or a local revert) is re-asked of `SCM` before the proof is
+stored ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)):
 
 | #   | Check                                                                    | Canonical predicate                                                                                                                                                                                                                                            | Fraud proof on failure                          |
 | --- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | 1   | Inbound hash is a real on-chain inbound tip                              | `isDisputeInboundHashValid` (LocalDiamond, then chain re-check); unreachable for a committed dispute, which upload anchors at the inbound head — kept as defence in depth                                                                                      | `DisputeInboundHashNotInChain`                  |
 | 2   | State proof decodes                                                      | `StateProof.tryFrom` (undecodable + posted data → invalid state proof; undecodable + no posted data → **no fireable proof**, audit skipped as valid)                                                                                                           | `DisputeInvalidStateProof`                      |
-| 3   | Proof header matches input                                               | `SCM.hasStateProofHeaderMismatch`                                                                                                                                                                                                                              | `DisputeStateProofHeaderMismatch`               |
+| 3   | Proof header matches input                                               | `LocalDiamond.hasStateProofHeaderMismatch` only — pure, so the mirror computes exactly what the chain would                                                                                                                                                    | `DisputeStateProofHeaderMismatch`               |
 | 4   | Block structure in proof                                                 | `LocalDiamond.findFirstInvalidBlockStructureInStateProof`                                                                                                                                                                                                      | `DisputeInvalidBlockStructure(blockIndex)`      |
-| 5a  | Posted auditing data: proof verifies                                     | `SCM.verifyStateProof(dispute, auditingData)` (revert = false)                                                                                                                                                                                                 | `DisputeInvalidStateProof`                      |
-| 5b  | No posted data: last milestone final by everyone                         | `SCM.isLastMilestoneFinalByEveryone` (snapshot participants ∪ joiners at or below the anchor − `input.onChainSlashes`)                                                                                                                                         | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
+| 5a  | Posted auditing data: proof verifies                                     | `verifyStateProof(dispute, auditingData)`, local-first (chain revert = false)                                                                                                                                                                                  | `DisputeInvalidStateProof`                      |
+| 5b  | No posted data: last milestone final by everyone                         | `isLastMilestoneFinalByEveryone`, local-first (snapshot participants ∪ joiners at or below the anchor − `input.onChainSlashes`)                                                                                                                                | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
 | 5c  | No posted data: anchor available locally                                 | `isLastMilestoneStoredLocally` — if not, audit is skipped as valid (cannot judge without the baseline)                                                                                                                                                         | —                                               |
 | 6   | Replay                                                                   | §5.1                                                                                                                                                                                                                                                           | per-block proofs                                |
-| 7   | Latest state consistent with replayed proof (no posted data)             | `SCM.isCorrectLatestState`                                                                                                                                                                                                                                     | `DisputeInvalidStateProof`                      |
+| 7   | Latest state consistent with replayed proof (no posted data)             | `isCorrectLatestState`, local-first                                                                                                                                                                                                                            | `DisputeInvalidStateProof`                      |
 | 8   | Claimed slashes ⊆ on-chain slash set                                     | `LocalDiamond.getOnChainSlashedParticipants`, re-checked against the chain before proving                                                                                                                                                                      | `DisputeOnChainSlashesNotSubset`                |
-| 9   | Balance invariant on the latest snapshot                                 | `SCM.verifyBalanceInvariantCheckSnapshot` ([../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md))                                                                                                                | `DisputeInvalidBalanceInvariant`                |
+| 9   | Balance invariant on the latest snapshot                                 | `verifyBalanceInvariantCheckSnapshot`, local-first ([../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md))                                                                                                       | `DisputeInvalidBalanceInvariant`                |
 | 10  | Disputer used its latest state                                           | disputer's latest signed block (local storage) vs claimed height                                                                                                                                                                                               | `DisputeNotLatestState(block, signature)`       |
 | 11  | Timeout block: linked to proof tip                                       | `LocalDiamond.getLatestBlockFromStateProof` height + 1                                                                                                                                                                                                         | `TimeoutNotLinkedToLatestState`                 |
 | 12  | Timeout: target is next leader                                           | `peekNextToWrite(latestState)` on the dispute state machine                                                                                                                                                                                                    | `TimeoutParticipantNotNext`                     |
 | 13  | Timeout: not too early                                                   | window creation timestamp `<` previous relevant timestamp + wait time (strict `<`, mirroring `DisputeFraudProofFacet._handleTimeoutTooEarly`; equality accepts) — extra time is forfeited only if the target's posted signature on the previous block verifies | `TimeoutTooEarly`                               |
 | 14  | Timeout: target not already N/N-signed                                   | `block.didEveryoneSign(participantsUnion)`                                                                                                                                                                                                                     | `TimeoutThreshold`                              |
-| 15  | Timeout: target posted the block as calldata                             | build `TimeoutCalldataPosted` and **preflight** with `SCM.validateTimeoutCalldataPostedProof` — an auditor must never submit a proof that would slash itself                                                                                                   | `TimeoutCalldataPosted`                         |
+| 15  | Timeout: target posted the block as calldata                             | build `TimeoutCalldataPosted` and **preflight** with `validateTimeoutCalldataPostedProof` — an auditor must never submit a proof that would slash itself; a local "invalid" drops the proof, a local "valid" is confirmed by `SCM` before the proof is stored  | `TimeoutCalldataPosted`                         |
 | 16  | Dispute states a reason (timeout, slashes, self-removal, forced inbound) | `LocalDiamond.hasDisputeReason` ([../protocol/disputes.md](../../../../specification/disputes/disputes.md) §3)                                                                                                                                                 | `InvalidDisputeReason`                          |
 | 17  | Output correct                                                           | `isDataLinkedToDisputeInput` sanity (snapshot hash, state hash, proof tip, inbound chain), then `LocalDiamond.isDisputeOutputCorrect`                                                                                                                          | `DisputeInvalidOutputState`                     |
 
@@ -229,7 +235,7 @@ is an internal error (throws).
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L354):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L352):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, derive auditing data locally if not
@@ -243,7 +249,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L316)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L487)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,
@@ -256,13 +262,25 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   reacting to the `DisputeKilled` event; whether kill+re-dispute should be one
   atomic multicall is unresolved.
   Valid → persist the confirmation, notify (`notifyDisputeUpdate`), then
-  `canConstructMoreEvidence`: construct our own dispute and compare
+  `DisputeManager.shouldAddOwnEvidence` (its `canConstructMoreEvidence`): construct our own dispute and compare
   `reduce([theirs])` with `reduce([ours, theirs])` on the `LocalDiamond`; a
   difference means our evidence changes the outcome → upload our dispute
-  (evidence accumulation). Otherwise schedule reduction at `killPeriodEnd`.
+  (evidence accumulation). A node that already disputed the fork skips the
+  comparison (checked first); otherwise it runs once per disputed fork
+  (reduction merges evidence monotonically) and concurrent audits share it. A
+  rejected comparison is dropped and the next audit retries it. A comparison
+  that ends on partial own auditing data (`PartialAuditingDataError`) is no
+  answer: it is dropped and counts as "nothing to add" for this audit only. A
+  positive answer is kept so a failed upload is retried. A kill drops the
+  fork's comparison (the compared dispute may be the one killed), and a
+  committed reduced result prunes it (`EventHandler` calls
+  `DisputeManager.forgetEvidenceComparison` for both). The memo only gates joining another
+  peer's dispute; new own evidence (fraud, timeout, leave) is disputed through
+  its own paths (§3.1). Reduction is scheduled at `killPeriodEnd` in every
+  case.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L876)):
-record the killed disputer in the local slash mirror
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L821)):
+drop the fork's cached evidence comparison, record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
 is current, upload replacement evidence (first honest peer wins).
@@ -313,9 +331,12 @@ is still a participant.
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L756)):
-mirror into the LocalDiamond; if relevant and the challenge period expired →
-`tryReduce` (adopt). Otherwise recompute locally; a mismatching
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L699)):
+drop the fork's cached evidence comparison (`DisputeManager.forgetEvidenceComparison`), mirror
+into the LocalDiamond; if relevant and the challenge period expired →
+`tryReduce` (adopt). Otherwise recompute the reduction on `SCM`
+(`ReductionManager.computeReduction`, the chain's reducer; the LocalDiamond has no sync guarantee,
+so reduced-result validation does not read it first). A mismatching
 `reducedForkId` → `SCM.challengeDisputeReduction(disputes, latestSnapshot, state, inboundBlocks)`
 (detached; tolerant of `ErrorCantParticipateInDispute`) and the dishonest
 reducer is blacklisted. A locally unavailable dispute set means the reduction
@@ -439,7 +460,7 @@ _Non-normative._
 | Requirement / invariant                                    | Statement                                                                                                   | Implementation status | Implementation evidence                                                                                                                                                                                                                                  | Gap / divergence |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr) | Per-fork dispute idempotence with rollback on failed upload.                                                | Covered               | [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L1) (`dispute`)                                                                                                                                            | None.            |
-| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L31) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
+| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L26) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
 | [`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha) | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | Covered               | `validateDispute` + `hasStoredDisputeFraudProof` throw paths                                                                                                                                                                                             | None.            |
 | [`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd) | Deterministic, order-independent reduction; races classified as convergence.                                | Covered               | [src/stateManager/reduction](../../../../../../src/stateManager/reduction) (`classifyReductionRace`, `compute`)                                                                                                                                          | None.            |
 | [`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0) | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | Covered               | [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L52) (`completeWithGenesis`), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (final path) | None.            |

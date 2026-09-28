@@ -1,7 +1,7 @@
 # index.ts — Source Report
 
 > **Source:** [src/cache/index.ts](../../../../../../src/cache/index.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [protocol/finality.md](../../../views/protocol/finality.md)
+> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [protocol/finality.md](../../../views/protocol/finality.md)
 
 ## Contents
 
@@ -19,20 +19,23 @@
 
 ## Responsibility and observable boundary
 
-Barrel for the `@/cache` import path; re-exports [SignerRecoveryCache](./SignerRecoveryCache.ts.md).
+The `@/cache` module barrel: re-exports everything from
+[SignerRecoveryCache](./SignerRecoveryCache.ts.md) and [EcrecoverCache](./EcrecoverCache.ts.md)
+([#L1](../../../../../../src/cache/index.ts#L1), [#L2](../../../../../../src/cache/index.ts#L2)),
+including their test-only reset and size helpers.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+_None — the file is declarative/mechanical; behavior-shaping decisions live in the two modules it re-exports._
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                      |
-| ------------ | --------------------------------------------- |
-| Inputs       | None.                                         |
-| Outputs      | The re-exported SignerRecoveryCache surface. |
-| Owned state  | None.                                         |
-| Side effects | None.                                         |
+| Aspect       | Contents                                     |
+| ------------ | -------------------------------------------- |
+| Inputs       | None.                                        |
+| Outputs      | The two modules' exports under one path.     |
+| Owned state  | None (each module owns its own memo).        |
+| Side effects | None.                                        |
 
 ## Linked requirements
 
@@ -45,11 +48,12 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Pure re-export; no behavior of its own.
+- Re-exporting does not create a second memo: ES module evaluation gives one instance of each
+  module per thread, whether imported through this barrel or directly.
 
 ## Specification adherence
 
-- Exposes the one recovery entry to every caller.
+- No behavior of its own.
 
 ## Specification contradictions
 
@@ -77,4 +81,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [SignerRecoveryCache.ts](./SignerRecoveryCache.ts.md).
+- [SignerRecoveryCache.ts](./SignerRecoveryCache.ts.md), [EcrecoverCache.ts](./EcrecoverCache.ts.md).

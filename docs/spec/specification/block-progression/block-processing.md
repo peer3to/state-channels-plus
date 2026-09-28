@@ -40,8 +40,13 @@ the author validated by constructing), and proof replay from the dispute and syn
 
 For each arriving confirmation:
 
-1. **Authenticate** ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)) with the canonical predicate ([`INV-MIRROR-1-VAF778` (Single implementation)](../enforcement/local-mirror.md#inv-mirror-1-vaf778)):
-   the encoded block must decode and the author signature must recover to the declared author.
+1. **Authenticate** ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)) under the contracts' acceptance rule ([`INV-MIRROR-1-VAF778` (Single implementation)](../enforcement/local-mirror.md#inv-mirror-1-vaf778)):
+   the encoded block must decode, and the author signature must be an encoding the contracts
+   accept and recover to the declared author. The signature check may run in client code under the
+   signature carve-out of that invariant, which requires exact parity with the contracts. The
+   decode is done once per confirmation, and the decoded block continues through the pipeline. The
+   decode must accept and reject exactly the byte strings the contracts' decoder accepts and
+   rejects, so both sides agree on which encodings are one block.
    Failure ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)): peer-supplied → terminate the supplier; observed calldata → an objective fault by the
    poster (the required proof type is the open question [`OQ-22-99DDSZ` (Inauthentic on-chain calldata is not escalated)](../../implementation/open-questions.md#oq-22-99ddsz)).
 2. **Channel binding.** Reject a wrong-channel envelope before source refresh, proof work, or stored lookup.
@@ -352,6 +357,17 @@ invalid execution commitments, recovery bypass, and adversarial resource retenti
 never-eligible blocks or signatures must not delay the serialized execution path or displace the entries
 required for canonical progress, and same-coordinate equivocation must be settled by evidence rules rather
 than by whichever copy the queue happened to hold first.
+
+Authentication is the one intake check that runs in client code instead of the mirrored logic.
+Its asset is agreement between local history and on-chain proof checks: a client check that accepts
+a signature or envelope encoding the contracts reject lets a Byzantine author seed local history
+that no on-chain proof can carry, and a stricter one drops a block the chain accepts. For
+signatures, exact acceptance parity (the signature carve-out of [`INV-MIRROR-1-VAF778` (Single implementation)](../enforcement/local-mirror.md#inv-mirror-1-vaf778)) closes both
+directions, and it is tested differentially against the contracts. Envelope decoding needs the
+same parity: without one encoding rule that the contracts and the client apply identically, a
+Byzantine participant could post an encoding the chain accepts that peers decode differently or
+refuse — for example a non-canonical encoding posted as block calldata to refute an honest timeout
+dispute.
 
 Queue cleanup removes queued gossip. Standalone objective proof replay remains available for auditing and reduction.
 

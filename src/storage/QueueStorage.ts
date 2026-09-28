@@ -66,10 +66,9 @@ export class QueueStorage {
 
     createEntry(block: Block, options: QueueBlockOptions): QueuedBlockEntry {
         const entry: QueuedBlockEntry = {
-            block: Block.fromSignedBlock(
-                block.signedBlock,
-                block.onChainTimestamp
-            ),
+            // `block` is this call's own copy (the storage boundary clones
+            // arguments), so the entry reuses its decode and hash.
+            block: block.authorSignedCopy(),
             firstSeenAt: Clock.getTimeInSeconds(),
             origin: options.origin,
             sourcesToSignatures: new Map()
@@ -164,10 +163,9 @@ export class QueueStorage {
         }
         if (!acceptedSource) return false;
         signatures.delete(target.block.originalSignature);
-        const admitted = Block.fromSignedBlock(
-            target.block.signedBlock,
-            incoming.block.onChainTimestamp
-        );
+        // The target's decode is reused: same signed bytes, no confirmations.
+        const admitted = target.block.authorSignedCopy();
+        admitted.onChainTimestamp = incoming.block.onChainTimestamp;
         admitted.expandSignatures(signatures);
         target.block.mergeFrom(admitted);
         return true;

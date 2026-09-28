@@ -31,6 +31,10 @@ The standalone createContractExecutorFactory and ContractExecutorFactoryOptions 
 
 1. Public deployment failures and their error constructors are exported from the same package root,
    so consumers can use `instanceof ContractSizeLimitError` without a private path import.
+   The same export block ([#L98-L104](../../../../../src/index.ts#L98-L104)) also exports the
+   runtime-size check `assertArtifactRuntimeSize` from [contractSize](utils/contractSize.ts.md), so a
+   consumer's own build can refuse an oversized artifact with the SDK's EIP-170 rule instead of a
+   copy of it.
 
 ## Inputs, outputs, state, and side effects
 
