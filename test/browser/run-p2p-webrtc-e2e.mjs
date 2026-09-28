@@ -93,6 +93,13 @@ try {
     server = await createServer({
         configFile: false,
         root: projectRoot,
+        // Its own dependency pre-bundle: both gates run at once in one workspace
+        // on a worker, and a shared cache re-optimized by one answers the other's
+        // page with 504 Outdated Optimize Dep.
+        cacheDir: path.join(
+            projectRoot,
+            "node_modules/.vite/run-p2p-webrtc-e2e"
+        ),
         resolve: { alias: platformAliases },
         server: {
             host: "127.0.0.1",

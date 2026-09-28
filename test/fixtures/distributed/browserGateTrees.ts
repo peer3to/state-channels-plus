@@ -101,10 +101,33 @@ setInterval(() => {}, 1000);
     return { root, gate, marker, tag };
 }
 
-/** PIDs whose command line carries `tag`, via pgrep. */
+/**
+ * PIDs whose command line carries `tag`. Linux reads /proc, since the runner
+ * image has no procps (pgrep, ps); other platforms ask ps.
+ */
 export function processesMatching(tag: string) {
-    const result = spawnSync("pgrep", ["-f", tag], { encoding: "utf8" });
-    return result.stdout.split("\n").filter(Boolean);
+    if (process.platform === "linux") {
+        return fs.readdirSync("/proc").filter((pid) => {
+            if (!/^\d+$/.test(pid)) return false;
+            try {
+                return fs
+                    .readFileSync(`/proc/${pid}/cmdline`, "utf8")
+                    .replace(/\0/g, " ")
+                    .includes(tag);
+            } catch {
+                // The process exited between the listing and the read.
+                return false;
+            }
+        });
+    }
+    const result = spawnSync("ps", ["-axo", "pid=,command="], {
+        encoding: "utf8"
+    });
+    if (result.error) throw result.error;
+    return result.stdout
+        .split("\n")
+        .filter((line) => line.includes(tag))
+        .map((line) => line.trim().split(/\s+/)[0]);
 }
 
 /** Wait for a gate to report readiness. The marker can be read mid-write. */
