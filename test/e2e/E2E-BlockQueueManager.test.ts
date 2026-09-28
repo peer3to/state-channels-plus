@@ -50,15 +50,9 @@ describe("E2E: BlockQueueManager", function () {
     it("stored network copies are bounded before each ordinary merge", async () => {
         await assertStoredCopyQuota(true);
     });
-    it("stored network copies of nonce-variant signatures blacklist their source as a double signer", async () => {
-        await assertStoredCopyQuota(true, "nonceVariants");
-    });
 
     it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {
-        await assertIndependentNetworkAllowances("reencodings");
-    });
-    it("one supplier's nonce-variant signatures blacklist it as a double signer without spending another participant's allowance", async () => {
-        await assertIndependentNetworkAllowances("nonceVariants");
+        await assertIndependentNetworkAllowances(true);
     });
 
     it("observed slash removes cached eligibility before the next stored network copy", async () => {

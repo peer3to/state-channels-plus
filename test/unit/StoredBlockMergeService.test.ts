@@ -34,9 +34,6 @@ describe("Unit: StoredBlockMergeService", function () {
     it("each stored copy is bounded before ordinary signature validation", async () => {
         await assertStoredCopyQuota(false);
     });
-    it("a stored copy of nonce-variant signatures blacklists the source as a double signer", async () => {
-        await assertStoredCopyQuota(false, "nonceVariants");
-    });
     it("unrecoverable confirmations are removed while the stored block remains committed", async () => {
         await assertStoredMalformedNetworkCopy();
     });

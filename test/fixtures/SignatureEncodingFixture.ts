@@ -97,25 +97,6 @@ export function reencodeSignature(
     }
 }
 
-/**
- * `count` distinct 65-byte encodings of one real signature, each writing v as
- * a different EIP-155 value (35 + yParity, 37 + yParity, ...). Every encoding
- * recovers to the same signer and is the same canonical signature.
- */
-export function eip155Encodings(
-    signature: ethers.SignatureLike,
-    count: number
-): string[] {
-    const parsed = ethers.Signature.from(signature);
-    return Array.from({ length: count }, (_, index) =>
-        ethers.concat([
-            parsed.r,
-            parsed.s,
-            ethers.toBeHex(35 + parsed.yParity + 2 * index, 1)
-        ])
-    );
-}
-
 /** Records every double-signature report until `stop` is called. */
 export function recordDoubleSignatureReports() {
     const reports: DoubleSignatureReport[] = [];

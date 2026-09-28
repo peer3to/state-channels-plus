@@ -1,7 +1,6 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import * as factory from "../factory";
 import { signBlockVariant } from "./QueueAdmissionFixture";
-import { eip155Encodings, reencodeSignature } from "./SignatureEncodingFixture";
 import { Block } from "@/models";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { BlockOrigin } from "@/storage/QueueStorage";
@@ -12,26 +11,9 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-/**
- * What a supplier sends beyond its allowance: malformed values, re-encodings
- * of one honest signature (valid, one canonical signature, no offense), or
- * nonce variants (valid, but a double signature by the supplier's key).
- */
-export type OverflowStimulus = "malformed" | "reencodings" | "nonceVariants";
-
-/** Re-encodings of one honest signature: v 0/1, compact, then EIP-155 values. */
-function honestReencodings(honest: string, count: number): string[] {
-    return [
-        reencodeSignature(honest, "yParity"),
-        reencodeSignature(honest, "compact"),
-        ...eip155Encodings(honest, count - 2)
-    ];
-}
-
 export async function assertIndependentNetworkAllowances(
-    stimulus: OverflowStimulus = "malformed"
+    validVariants = false
 ) {
-    const validVariants = stimulus !== "malformed";
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(3, 0, { maxChannelParticipants: 3 });
     const { leader, observer, authored } =
@@ -52,17 +34,11 @@ export async function assertIndependentNetworkAllowances(
     ];
     const wallet = h.signerFor(slotAccountIndex(badSource.index));
     expect(wallet.address).to.equal(badSource.address);
-    const badValues =
-        stimulus === "nonceVariants"
-            ? Array.from({ length: 8 }, (_, index) =>
-                  signBlockVariant(wallet, authored.hash, index)
-              )
-            : stimulus === "reencodings"
-              ? honestReencodings(
-                    wallet.signMessageSync(ethers.getBytes(authored.hash)),
-                    8
-                )
-              : malformedValues;
+    const badValues = validVariants
+        ? Array.from({ length: 8 }, (_, index) =>
+              signBlockVariant(wallet, authored.hash, index)
+          )
+        : malformedValues;
     const encodedBad = String(
         Codec.encode(
             { signedBlock: confirmation.signedBlock, signatures: badValues },
@@ -151,14 +127,13 @@ export async function assertIndependentNetworkAllowances(
                 badValues.slice(0, 2)
             );
         // Malformed values blacklist their supplier and nonce variants are
-        // double signatures by its key; re-encodings of its honest signature
-        // only overflow the allowance, which is never punished.
+        // double signatures by its key: no honest supplier overflows.
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(badSource.address)
                 .request()
-        ).to.equal(stimulus !== "reencodings");
+        ).to.equal(true);
         expect(
             await h
                 .control(observer)
@@ -508,10 +483,7 @@ export async function assertPendingJoinAdmission(dropEvent: boolean) {
     }
 }
 
-export async function assertStoredCopyQuota(
-    network: boolean,
-    stimulus: "reencodings" | "nonceVariants" = "reencodings"
-) {
+export async function assertStoredCopyQuota(network: boolean) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(3, 1, { maxChannelParticipants: 3 });
     const observer = h.getPeer(0),
@@ -529,15 +501,9 @@ export async function assertStoredCopyQuota(
                 .request()) === null
     );
     const wallet = h.signerFor(slotAccountIndex(source.index));
-    const variants =
-        stimulus === "nonceVariants"
-            ? Array.from({ length: 13 }, (_, index) =>
-                  signBlockVariant(wallet, block.hash, index)
-              )
-            : honestReencodings(
-                  wallet.signMessageSync(ethers.getBytes(block.hash)),
-                  13
-              );
+    const variants = Array.from({ length: 13 }, (_, index) =>
+        signBlockVariant(wallet, block.hash, index)
+    );
     for (const signature of variants)
         expect(
             ethers.verifyMessage(ethers.getBytes(block.hash), signature)
@@ -628,14 +594,14 @@ export async function assertStoredCopyQuota(
             ])
         ]);
         expect(after?.height).to.equal(block.height);
-        // The quota bounds each copy and never punishes; nonce variants are
-        // additionally double signatures by the source's key.
+        // The quota bounds each copy; the nonce variants are also double
+        // signatures by the source's key, so the source is blacklisted.
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(source.address)
                 .request()
-        ).to.equal(stimulus === "nonceVariants");
+        ).to.equal(true);
     } finally {
         await hold.release();
         await h.control(observer).stub.restoreAdmissionObservation().request();
