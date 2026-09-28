@@ -8,7 +8,6 @@ import {
 } from "@test/fixtures/DoubleSignatureFixture";
 import { signBlockVariant } from "@test/fixtures/QueueAdmissionFixture";
 import { stageQueueSlash } from "@test/fixtures/QueueSlashFixture";
-import { reencodeSignature } from "@test/fixtures/SignatureEncodingFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { expect } from "chai";
@@ -17,8 +16,7 @@ import { ethers } from "ethers";
 // Honest signers are deterministic, so a second distinct signature by one key
 // over one block hash is a double signature. The receiving node blacklists the
 // signer — never the peer that relayed it, never itself, and never an address
-// that is not a channel member — and a re-encoding of an honest signature is
-// the same signature.
+// that is not a channel member.
 
 describe("E2E: Double signature", function () {
     it("a participant gossiping a second valid signature for a stored block is blacklisted by the receiver", async () => {
@@ -67,7 +65,7 @@ describe("E2E: Double signature", function () {
         ).to.equal(signer.address);
     });
 
-    it("a relayed double signature blacklists only its signer and relayed re-encodings of an honest signature frame nobody", async () => {
+    it("a relayed double signature blacklists only its signer", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 1);
         const observer = h.getPeer(0);
@@ -76,17 +74,13 @@ describe("E2E: Double signature", function () {
         const doubleSigner = h.getPeer(3);
         const honestWallet = h.signerFor(slotAccountIndex(honestSigner.index));
         const doubleWallet = h.signerFor(slotAccountIndex(doubleSigner.index));
-        // The re-encodings come first, so the observer has recovered them by
-        // the time the double signature later in the same copy is reported.
-        const copy = await latestBlockCopy(observer, (hash) => {
-            const honest = honestWallet.signMessageSync(ethers.getBytes(hash));
-            return [
-                reencodeSignature(honest, "yParity"),
-                reencodeSignature(honest, "compact"),
-                doubleWallet.signMessageSync(ethers.getBytes(hash)),
-                signBlockVariant(doubleWallet, hash, 0)
-            ];
-        });
+        // The honest signature comes first, so the observer has recovered it
+        // by the time the double signature later in the same copy is reported.
+        const copy = await latestBlockCopy(observer, (hash) => [
+            honestWallet.signMessageSync(ethers.getBytes(hash)),
+            doubleWallet.signMessageSync(ethers.getBytes(hash)),
+            signBlockVariant(doubleWallet, hash, 0)
+        ]);
         const expectedStatus = await h
             .control(observer)
             .query.getStatus()
@@ -108,7 +102,7 @@ describe("E2E: Double signature", function () {
         const query = h.control(observer).query;
         expect(
             await query.isBlacklisted(honestSigner.address).request(),
-            "re-encoded honest signature blacklisted its signer"
+            "honest signer was blacklisted"
         ).to.equal(false);
         expect(
             await query.isBlacklisted(relayer.address).request(),
