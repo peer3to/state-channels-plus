@@ -20,7 +20,9 @@ const FORWARDED_FLAGS = new Map([
     ["-t", true],
     ["--progress", true],
     ["--no-cache", false],
-    ["--pull", false]
+    ["--pull", false],
+    ["--quiet", false],
+    ["-q", false]
 ]);
 
 /** The docker build arguments for `extra`, or a thrown refusal. */

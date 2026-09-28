@@ -689,7 +689,8 @@ describe("distributed isolated environment", function () {
             "scp-runner:ci",
             "--progress=plain",
             "--no-cache",
-            "--pull"
+            "--pull",
+            "--quiet"
         ]);
         expect(args).to.deep.equal([
             "build",
@@ -704,6 +705,7 @@ describe("distributed isolated environment", function () {
             "--progress=plain",
             "--no-cache",
             "--pull",
+            "--quiet",
             repoRoot()
         ]);
     });
