@@ -334,6 +334,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, the honest author is never slashed: the call either
     // adjudicates on a sufficiently funded replay or fails without a verdict.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsHonestVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(false);
@@ -346,6 +347,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, a transition that catches an inner out-of-gas never
     // turns an honest block into fraud.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsGuardedVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -427,6 +429,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // With many leftover messages in the machine's storage, no attached gas turns an honest block
     // into fraud: the deletion either fits beside the full budget or the replay is refused.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_leftoverOutboundMessagesNeverFlipHonestVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -458,6 +461,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // A transition that runs is always granted its full budget, whatever the size of its input:
     // the input is copied before the gas check, so the copy cannot shrink the forwarded gas.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_stateTransition_grantsFullBudgetForAnyInputSize(uint256 gasOffset, uint256 inputLength) public {
         address[] memory participants = _deploy(true);
         stateMachine.setState(_encodedState(participants));
@@ -478,6 +482,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Neither the attached gas nor the size of the transition's input turns an honest block into
     // fraud: copying a large input must be paid before the gas check, not taken from the stipend.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_inputSizeNeverFlipsGuardedVerdict(uint256 gas, uint256 inputLength) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         inputLength = bound(inputLength, 0, 128 * 1024);
@@ -493,6 +498,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, an over-budget transition is never acquitted: every
     // call that produces a verdict produces the fraud verdict, and every other call fails.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsFraudVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(true);
@@ -744,6 +750,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // refutation: the call either kills the timeout dispute on a funded replay or fails with no
     // verdict at all. A transition that catches an inner out-of-gas is the case where gas could
     // otherwise decide.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -758,6 +765,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // Whatever gas the submitter attaches, a posted block whose transition exceeds any budget never
     // kills the timeout dispute: every call that gives a verdict rejects the refutation (the
     // submitter is slashed), and every other call fails.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(true);

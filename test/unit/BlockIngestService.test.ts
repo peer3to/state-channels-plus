@@ -702,6 +702,15 @@ describe("Unit: BlockIngestService", function () {
                 waitForFinalization: true
             });
             await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(secondTopUpHash)
+                        .request()) !== null
+            );
 
             const r = await h.execOnHost(
                 h.getPeer(lagging),
