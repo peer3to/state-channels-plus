@@ -164,6 +164,9 @@ class DockerBackend {
                 ...runOptions
             });
         this.image = options.image;
+        // The configured image's ID, resolved when a retained container is
+        // first compared with it.
+        this.imageId = undefined;
         this.trustedRoot =
             options.trustedRoot || path.resolve(__dirname, "../../..");
         this.platform = options.platform || process.platform;
@@ -396,6 +399,33 @@ class DockerBackend {
         await this.refreshTrustedRunner(handle);
         handle.resourceEvents = await this.readResourceEvents(handle);
         return this.openControl(handle);
+    }
+
+    /**
+     * Whether a retained container was created from the image this worker runs.
+     * The environment key does not cover the image, so a worker restarted on a
+     * rebuilt image would otherwise keep running tasks in the old one.
+     */
+    async runtimeUsesCurrentImage(handle) {
+        this.imageId ??= (
+            await this.run("docker", [
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                this.image
+            ])
+        ).stdout
+            .toString("utf8")
+            .trim();
+        const container = await this.run("docker", [
+            "container",
+            "inspect",
+            "--format",
+            "{{.Image}}",
+            handle.container
+        ]).catch(() => null);
+        return container?.stdout.toString("utf8").trim() === this.imageId;
     }
 
     async update(handle, profile) {
@@ -1410,7 +1440,15 @@ class IsolatedEnvironmentManager {
                 this.blockedEnvironments.set(metadata.environmentKey, error);
                 continue;
             }
-            if (metadata.dirty || !metadata.allocation) {
+            // A cache built from another runner image is discarded like a
+            // dirty one, so its next task runs in the configured image.
+            const staleImage =
+                metadata.allocation &&
+                this.backend.runtimeUsesCurrentImage &&
+                !(await this.backend
+                    .runtimeUsesCurrentImage(metadata.runtimeHandle)
+                    .catch(() => false));
+            if (metadata.dirty || !metadata.allocation || staleImage) {
                 await this.backend
                     .destroy(metadata.runtimeHandle)
                     .catch(() => {});

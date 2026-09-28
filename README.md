@@ -194,7 +194,8 @@ says so and names the variable.
 A worker runs tasks with the runner from its own checkout, so the browser tier
 reaches it only after **the worker host updates that checkout, restarts
 `yarn test:parallel:server`, and rebuilds its runner image**
-(`yarn test:parallel:image`; the server refuses a stale image). The browser tier
+(`yarn test:parallel:image`; the server refuses a stale image, and on restart
+discards cached environments whose containers were created from another image). The browser tier
 arrived with distributed protocol 14. The orchestrator still leases protocol 13
 hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
 host at a time. A Mocha test file that launches Chromium carries

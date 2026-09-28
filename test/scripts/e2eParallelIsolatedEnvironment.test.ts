@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dockerBackendWithContainerImages } from "../fixtures/distributed/dockerBackendWithContainerImages";
 import { dockerBackendWithImageLabels } from "../fixtures/distributed/dockerBackendWithImageLabels";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { repoRoot } from "@test/utils/repoRoot";
@@ -533,6 +534,101 @@ describe("distributed isolated environment", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("discards a retained cache created from another runner image and keeps the current one", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const currentAllocation = {
+                environmentKey: "5".repeat(64),
+                orchestratorPublicKey: "e".repeat(64),
+                profile
+            };
+            const otherImageAllocation = {
+                environmentKey: "6".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            };
+            firstManager.markClean(
+                await firstManager.allocate(currentAllocation)
+            );
+            const otherImage =
+                await firstManager.allocate(otherImageAllocation);
+            firstManager.markClean(otherImage);
+            const workspace = path.join(
+                root,
+                "environments",
+                otherImageAllocation.environmentKey
+            );
+            fs.mkdirSync(workspace, { recursive: true });
+            // The worker restarts on a rebuilt image that one cache predates.
+            backend.otherImageContainers.add(otherImage.handle.container);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+            const kept = await restarted.allocate(currentAllocation);
+            const replaced = await restarted.allocate(otherImageAllocation);
+
+            expect(kept.state).to.equal("stopped");
+            expect(replaced.state).to.not.equal("stopped");
+            expect(
+                backend.calls
+                    .filter((entry) => entry.operation === "destroy")
+                    .map(
+                        (entry) =>
+                            (entry.value as { container: string }).container
+                    )
+            ).to.deep.equal([otherImage.handle.container]);
+            expect(fs.existsSync(workspace)).to.equal(false);
+            expect(replaced.handle.container).to.not.equal(
+                otherImage.handle.container
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recognises a retained Docker container by the configured runner image's ID", async function () {
+        const image = `sha256:${"a".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(image, image, {
+            current: image,
+            rebuilt: `sha256:${"b".repeat(64)}`
+        });
+        expect({
+            current: await backend.runtimeUsesCurrentImage({
+                container: "current"
+            }),
+            rebuilt: await backend.runtimeUsesCurrentImage({
+                container: "rebuilt"
+            }),
+            missing: await backend.runtimeUsesCurrentImage({
+                container: "missing"
+            })
+        }).to.deep.equal({ current: true, rebuilt: false, missing: false });
+    });
+
+    it("compares a retained Docker container with the image ID a pinned repository digest resolves to", async function () {
+        const imageId = `sha256:${"c".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(
+            `registry.example/runner@sha256:${"d".repeat(64)}`,
+            imageId,
+            { current: imageId }
+        );
+        expect(
+            await backend.runtimeUsesCurrentImage({ container: "current" })
+        ).to.equal(true);
     });
 
     it("blocks reuse when orphan stop and detach cannot be confirmed", async function () {
