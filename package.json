@@ -123,6 +123,7 @@
     "test:parallel:distributed": "node scripts/test-e2e-parallel.js --distributed",
     "distributed:identity": "node scripts/e2e-parallel/distributed/distributedIdentity.js",
     "distributed:admin": "node scripts/e2e-parallel/distributed/distributedAdmin.js",
+    "test:parallel:image": "node scripts/e2e-parallel/distributed/buildRunnerImage.js",
     "test:parallel:server": "node scripts/e2e-parallel/distributed/server.js",
     "test:parallel:server:admin": "node scripts/e2e-parallel/distributed/workerAdmin.js",
     "test:parallel:docker:self-check": "node scripts/e2e-parallel/distributed/isolatedEnvironmentSelfCheck.js",

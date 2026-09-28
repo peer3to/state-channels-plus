@@ -155,7 +155,7 @@ jobs:
               with:
                   submodules: recursive
             - name: Build the distributed runner image
-              run: docker build --file scripts/e2e-parallel/distributed/runner-image.Dockerfile --tag scp-runner:ci .
+              run: node scripts/e2e-parallel/distributed/buildRunnerImage.js --tag scp-runner:ci
             # The gates run where the browser tier runs on a worker: inside the
             # runner image, read-only, without capabilities, with the
             # environment's 256MB /tmp that SCP_BROWSER_CONTAINED moves

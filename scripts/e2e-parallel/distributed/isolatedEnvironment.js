@@ -17,6 +17,7 @@ const {
     isolationCapability
 } = require("./egressPolicy");
 const { ResourceAllocationError } = require("./executionProfile");
+const { staleRunnerImageReason } = require("./runnerImage");
 
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
@@ -211,7 +212,19 @@ class DockerBackend {
             if (this.platform === "linux") {
                 await this.run("iptables", ["-S", "DOCKER-USER"]);
             }
-            await this.run("docker", ["image", "inspect", this.image]);
+            const labels = await this.run("docker", [
+                "image",
+                "inspect",
+                "--format",
+                "{{json .Config.Labels}}",
+                this.image
+            ]);
+            const stale = staleRunnerImageReason(
+                this.image,
+                JSON.parse(labels.stdout.toString("utf8").trim() || "null"),
+                this.trustedRoot
+            );
+            if (stale) return { available: false, reason: stale };
             if (
                 this.securityOptions.some((entry) => entry.includes("userns"))
             ) {

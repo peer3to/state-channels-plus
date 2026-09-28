@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dockerBackendWithImageLabels } from "../fixtures/distributed/dockerBackendWithImageLabels";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
@@ -27,6 +28,11 @@ const {
 const {
     DISTRIBUTED_PROTOCOL_VERSION
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    RUNNER_IMAGE_DOCKERFILE,
+    RUNNER_IMAGE_REVISION_LABEL,
+    runnerImageRevision
+} = require("../../scripts/e2e-parallel/distributed/runnerImage.js");
 
 const profile = {
     schedulerTickMs: 1000,
@@ -628,17 +634,50 @@ describe("distributed isolated environment", function () {
         expect(detected.reason).to.include("digest-pinned");
     });
 
-    it("accepts an immutable local Docker image ID", async function () {
-        const backend = new DockerBackend({
-            image: `sha256:${"f".repeat(64)}`,
-            platform: "darwin",
-            hostCidrs: [],
-            run: async () => ({
-                stdout: Buffer.from("[]"),
-                stderr: Buffer.alloc(0)
-            })
+    it("accepts an immutable local Docker image ID built from this checkout's runner Dockerfile", async function () {
+        const backend = dockerBackendWithImageLabels({
+            [RUNNER_IMAGE_REVISION_LABEL]: runnerImageRevision(repoRoot())
         });
         expect(await backend.detect()).to.deep.equal({ available: true });
+    });
+
+    it("refuses a runner image built from another revision of the runner Dockerfile", async function () {
+        // A checkout whose Dockerfile moved on since the image was built.
+        const trustedRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "runner-image-revision-")
+        );
+        const dockerfile = path.join(trustedRoot, RUNNER_IMAGE_DOCKERFILE);
+        fs.mkdirSync(path.dirname(dockerfile), { recursive: true });
+        fs.copyFileSync(
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            dockerfile
+        );
+        const built = runnerImageRevision(trustedRoot);
+        fs.appendFileSync(dockerfile, "\nENV ADDED_LATER=1\n");
+        try {
+            const detected = await dockerBackendWithImageLabels(
+                { [RUNNER_IMAGE_REVISION_LABEL]: built },
+                trustedRoot
+            ).detect();
+            expect(detected).to.deep.equal({
+                available: false,
+                reason:
+                    `Runner image sha256:${"f".repeat(64)} was built from runner-image.Dockerfile revision ${built.slice(0, 12)}, ` +
+                    `but this checkout expects ${runnerImageRevision(trustedRoot).slice(0, 12)}. ` +
+                    "Rebuild it with `yarn test:parallel:image` and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+            });
+        } finally {
+            fs.rmSync(trustedRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses a runner image that carries no runner Dockerfile revision", async function () {
+        const detected = await dockerBackendWithImageLabels(null).detect();
+        expect(detected.available).to.equal(false);
+        expect(detected.reason).to.include(
+            `has no ${RUNNER_IMAGE_REVISION_LABEL} label`
+        );
+        expect(detected.reason).to.include("yarn test:parallel:image");
     });
 
     it("classifies cgroup memory and process exhaustion without exposing host state", async function () {
