@@ -5,6 +5,7 @@ import type {
     LobbyRawMethod,
     NegotiationRawMethod
 } from "./ByzantineService";
+import { __doubleSignatureListenerCount } from "@/cache";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -12,6 +13,7 @@ import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { SignatureUtils } from "@/utils/SignatureUtils";
 import type {
     BlockStruct,
     SignedBlockStruct,
@@ -45,6 +47,32 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
         return { hash: String(block.hash), height: Number(block.height) };
+    }
+
+    /**
+     * Start disposing this peer's P2PManager without awaiting it, recover each
+     * signature over the encoded message through the SDK's signer recovery in
+     * the same synchronous step, read the blacklist, then finish disposal.
+     */
+    public async recoverDuringDisposal(
+        encodedMessage: string,
+        signatures: string[]
+    ) {
+        const p2pManager = this.p2pManager;
+        const listenersBefore = __doubleSignatureListenerCount();
+        const disposal = p2pManager.dispose();
+        const recovered = signatures.map((signature) =>
+            String(SignatureUtils.getSignerAddress(encodedMessage, signature))
+        );
+        const blacklisted = recovered.map((address) =>
+            p2pManager.isBlacklisted(address)
+        );
+        await disposal;
+        return {
+            recovered,
+            blacklisted,
+            removedListeners: listenersBefore - __doubleSignatureListenerCount()
+        };
     }
 
     /**

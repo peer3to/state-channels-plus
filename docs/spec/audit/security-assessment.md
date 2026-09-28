@@ -560,3 +560,34 @@ posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-find
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay
 requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+
+## One signature per signer per message — 2026-09-27
+
+[`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../specification/protocol-model/identity.md#req-id-5-gw1zey) makes a second, different signature value by one key over one message a
+local exclusion offense for every protocol-object kind. The check sits in the one off-chain
+recovery path, after the contracts' acceptance rule (see "Client-side authenticity parity" above):
+a re-encoding of an honest signature (v 0/1, v >= 35, 64-byte compact, high s) is refused before it
+reaches the check, and accepted signatures are compared in canonical 65-byte form, so a relayer
+cannot frame the signer. The double-signature consequence falls on the recovered signer, never on
+the relaying peer, and a node never excludes itself. Only a signer the
+node's membership view knows as eligible at detection time is excluded, the same rule block ingest
+applies; a report about an absent or slashed address is logged at debug level with its eligibility
+and dropped, so a peer cannot grow the unbounded blacklist with fresh keys (for example two join
+requests signed by one throwaway key with two nonces). No chain read is made for a report, so an
+attacker cannot trigger refreshes this way. Residual risk: a one-off double signature by a joiner
+this node has not yet seen goes unpunished; a signer that keeps producing new values is caught once
+the node knows it. The blacklisting warning keeps the full digest and both canonical signatures so
+each exclusion can be verified later, and a double signature under the node's own key is logged at
+error level. Alternate valid
+signatures in [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) still consume only their supplier's allowance; their signer is
+now also excluded.
+
+Residual risk: detection memory is per node, per thread and bounded, so a conflict spread across
+nodes, threads or beyond the bound goes unnoticed. The bound is cheap to exhaust: every fresh (message, signer)
+pair still takes a memo slot, including pairs from throwaway keys such as signed join requests, so
+about `SIGNER_RECOVERY_CACHE_MAX` such requests flush a real signer's first signature before it sends
+the conflicting one. A listener failure is logged and cannot fail the recovery that found it. Exclusion is local and is not slashing evidence.
+A participant running a random-nonce signer excludes itself from its honest peers whenever it
+re-signs; deterministic signing is a stated participant assumption. In inline mode several runtimes
+share one memo and all of them act on each report. Canonical-form enforcement on-chain is out of this
+change.

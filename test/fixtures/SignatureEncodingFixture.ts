@@ -1,4 +1,8 @@
-// @spec-test-coverage-ignore: shared fixture builds signature encodings; executable evidence belongs to its calling test declarations
+// @spec-test-coverage-ignore: shared fixture builds real signatures and their encodings; executable evidence belongs to its calling test declarations
+import { signBlockVariant } from "./QueueAdmissionFixture";
+import { signedMessage } from "./RecoveryCacheFixture";
+import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
+import { Signature } from "@/types/types";
 import { ethers } from "ethers";
 
 // secp256k1 group order.
@@ -56,4 +60,60 @@ export async function signedDigestEncodings(): Promise<{
         ...contractRejectedEncodings(signature)
     };
     return { wallet, encodedData, digest, cases };
+}
+
+/**
+ * Byte encodings that ethers recovers to the same signer as the 65-byte v
+ * 27/28 form; the contracts reject each of them.
+ */
+export type SignatureEncoding = "yParity" | "eip155" | "compact";
+
+/**
+ * Re-encode one real signature without changing its (r, s, recovery) value:
+ * `yParity` writes v as 0/1, `eip155` writes v as 35/36 and `compact` is the
+ * 64-byte EIP-2098 form. A relayer can produce each of these from an honest
+ * signature without the signer's key.
+ */
+export function reencodeSignature(
+    signature: ethers.SignatureLike,
+    encoding: SignatureEncoding
+): string {
+    const parsed = ethers.Signature.from(signature);
+    switch (encoding) {
+        case "yParity":
+            return ethers.concat([
+                parsed.r,
+                parsed.s,
+                ethers.toBeHex(parsed.yParity, 1)
+            ]);
+        case "eip155":
+            return ethers.concat([
+                parsed.r,
+                parsed.s,
+                ethers.toBeHex(35 + parsed.yParity, 1)
+            ]);
+        case "compact":
+            return parsed.compactSerialized;
+    }
+}
+
+/** Records every double-signature report until `stop` is called. */
+export function recordDoubleSignatureReports() {
+    const reports: DoubleSignatureReport[] = [];
+    const stop = onDoubleSignature((report) => reports.push(report));
+    return { reports, stop };
+}
+
+/**
+ * An honest signature plus a valid second signature by the same key over the
+ * same message, made with a different nonce.
+ */
+export async function doubleSignedMessage() {
+    const { wallet, message, signature } = await signedMessage();
+    const second = signBlockVariant(
+        wallet,
+        ethers.hexlify(message),
+        0
+    ) as Signature;
+    return { wallet, message, signature, second };
 }

@@ -64,6 +64,26 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         super(transport, service);
     }
 
+    public observeDoubleSignatureLogs(): boolean {
+        this.service.observeDoubleSignatureLogs();
+        return true;
+    }
+    public getDoubleSignatureLogs() {
+        return this.service.getDoubleSignatureLogs();
+    }
+    public restoreDoubleSignatureLogs(): boolean {
+        this.service.restoreDoubleSignatureLogs();
+        return true;
+    }
+    public stubBlacklistWriteFailure(): boolean {
+        this.service.stubBlacklistWriteFailure();
+        return true;
+    }
+    public restoreBlacklistWriteFailure(): boolean {
+        this.service.restoreBlacklistWriteFailure();
+        return true;
+    }
+
     public observeDisputeParticipation(): boolean {
         this.service.observeDisputeParticipation();
         return true;

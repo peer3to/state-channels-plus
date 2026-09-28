@@ -23,16 +23,16 @@ Structured-log formatting helpers (dispute/auditing metadata projections, hash f
 
 ## Key design decisions
 
-Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L457).
+Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L458).
 
-Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L110).
+Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L111).
 
 Contract-call metadata is the single owner of selector decoding: it slices the selector and names it
 from one lazily built selector-to-name map over the merged SDK contract surface, so no second map
 exists. The lookup is a `Map.get`, total for any string, because the calldata reaching it on every
 block validation is peer-authored and must not be able to steer an ABI parse; a selector the
 surface does not declare is reported as its own hex. See
-[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L215).
+[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L216).
 
 Block-confirmation struct metadata never throws on the bytes it logs. Its callers log refused
 confirmations (dispute replay abort, ingest decode refusal, queue intake), whose encoded block may

@@ -5,6 +5,7 @@ import { hash } from "./hash";
 import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
+import type { DoubleSignatureReport } from "@/cache";
 import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { Block, StateSnapshot, StateProof } from "@/models";
@@ -504,6 +505,24 @@ export class LoggerUtils {
             transports: profile
                 .getLiveTransports()
                 .map((transport) => this.getTransportMetadata(transport))
+        };
+    }
+
+    /**
+     * `fullEvidence` keeps the whole digest and both canonical signatures so
+     * an exclusion can be verified later; otherwise they are shortened.
+     */
+    static getDoubleSignatureMetadata(
+        report: DoubleSignatureReport,
+        fullEvidence = false
+    ) {
+        const format = (value: string) =>
+            fullEvidence ? value : this.formatHash(value);
+        return {
+            signer: report.signer,
+            message: format(String(report.message)),
+            firstSignature: format(String(report.firstSignature)),
+            secondSignature: format(String(report.secondSignature))
         };
     }
 

@@ -336,6 +336,13 @@ export type ChainLogQuerySpan = {
     toBlock: number | null;
 };
 
+/** One recorded double-signature handler log entry. */
+export type DoubleSignatureLogEntry = {
+    level: "debug" | "warn" | "error";
+    message: string;
+    metadata: Record<string, string>;
+};
+
 /**
  * Method stub/restore for Byzantine and fault-injection scenarios. Each stub is
  * a concrete method (not a free-form path) so an SDK rename breaks compilation
@@ -372,6 +379,13 @@ export class StubService extends ANetworkRpcService<
     }[] = [];
     private blockWorkRelease?: () => void;
     private blockWorkRestore?: () => void;
+    // Double-signature handler log entries recorded while forwarding them.
+    private doubleSignatureLogObservation?: {
+        entries: DoubleSignatureLogEntry[];
+        restore: () => void;
+    };
+    // Restores the real blacklist write after an injected failure.
+    private restoreBlacklistWrite?: () => void;
     private disputeParticipationObservation?: {
         attempts: number;
         warnings: number;
@@ -657,6 +671,65 @@ export class StubService extends ANetworkRpcService<
             return warn(...args);
         };
         this.disputeParticipationObservation = observation;
+    }
+
+    /** Record the P2PManager double-signature log entries, forwarding each. */
+    public observeDoubleSignatureLogs(): void {
+        this.restoreDoubleSignatureLogs();
+        const logger = this.sm.p2pManager.logger;
+        const levels = ["debug", "warn", "error"] as const;
+        const originals = levels.map((level) => logger[level]);
+        const entries: DoubleSignatureLogEntry[] = [];
+        levels.forEach((level, index) => {
+            const original = originals[index].bind(logger);
+            logger[level] = (message, ...rest) => {
+                if (
+                    typeof message === "string" &&
+                    message.includes("ouble signature")
+                ) {
+                    entries.push({
+                        level,
+                        message,
+                        metadata: { ...(rest[0] as Record<string, string>) }
+                    });
+                }
+                return original(message, ...rest);
+            };
+        });
+        this.doubleSignatureLogObservation = {
+            entries,
+            restore: () =>
+                levels.forEach((level, index) => {
+                    logger[level] = originals[index];
+                })
+        };
+    }
+
+    public getDoubleSignatureLogs(): DoubleSignatureLogEntry[] {
+        return this.doubleSignatureLogObservation?.entries ?? [];
+    }
+
+    public restoreDoubleSignatureLogs(): void {
+        this.doubleSignatureLogObservation?.restore();
+        this.doubleSignatureLogObservation = undefined;
+    }
+
+    /** Make every blacklist write fail until restored. */
+    public stubBlacklistWriteFailure(): void {
+        this.restoreBlacklistWriteFailure();
+        const profiles = this.sm.p2pManager.profileManager;
+        const blacklistPeer = profiles.blacklistPeer;
+        profiles.blacklistPeer = () => {
+            throw new Error("injected blacklist write failure");
+        };
+        this.restoreBlacklistWrite = () => {
+            profiles.blacklistPeer = blacklistPeer;
+        };
+    }
+
+    public restoreBlacklistWriteFailure(): void {
+        this.restoreBlacklistWrite?.();
+        this.restoreBlacklistWrite = undefined;
     }
 
     public getDisputeParticipationObservation() {
@@ -1799,6 +1872,8 @@ export class StubService extends ANetworkRpcService<
     }
 
     public releaseReductionHolds(): void {
+        this.restoreDoubleSignatureLogs();
+        this.restoreBlacklistWriteFailure();
         this.restoreDisputeParticipationObservation();
         this.restoreAdmissionObservation();
         this.restoreForkLeave();

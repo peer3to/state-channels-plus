@@ -1,7 +1,7 @@
 # index.ts — Source Report
 
 > **Source:** [src/cache/index.ts](../../../../../../src/cache/index.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
+> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [protocol/finality.md](../../../views/protocol/finality.md)
 
 ## Contents
 
