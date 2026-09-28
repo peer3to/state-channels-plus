@@ -17,6 +17,7 @@ const {
 const {
     unpackInfrastructureProcessLogChunk
 } = require("./infrastructureLogTransfer");
+const { buildWorkerForkEnvironment } = require("./remoteEnvironment");
 const {
     commitSourceManifest,
     inspectWorkspace,
@@ -234,17 +235,14 @@ function startWorker(config) {
     const entry = path.join(__dirname, "worker.js");
     worker = fork(entry, [], {
         cwd: offer.projectRoot,
-        env: {
-            PATH: process.env.PATH,
-            HOME: path.join(root, "home"),
-            NODE_PATH: [
+        env: buildWorkerForkEnvironment({
+            source: process.env,
+            home: path.join(root, "home"),
+            nodePaths: [
                 path.join(offer.runnerRoot, "node_modules"),
-                path.join(offer.projectRoot, "node_modules"),
-                process.env.NODE_PATH
+                path.join(offer.projectRoot, "node_modules")
             ]
-                .filter(Boolean)
-                .join(path.delimiter)
-        },
+        }),
         stdio: ["ignore", "pipe", "pipe", "ipc"],
         detached: false
     });

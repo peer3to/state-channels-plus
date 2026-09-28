@@ -17,6 +17,7 @@ const {
     isolationCapability
 } = require("./egressPolicy");
 const { ResourceAllocationError } = require("./executionProfile");
+const { staleRunnerImageReason } = require("./runnerImage");
 
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
@@ -163,6 +164,9 @@ class DockerBackend {
                 ...runOptions
             });
         this.image = options.image;
+        // The configured image's ID, resolved when a retained container is
+        // first compared with it.
+        this.imageId = undefined;
         this.trustedRoot =
             options.trustedRoot || path.resolve(__dirname, "../../..");
         this.platform = options.platform || process.platform;
@@ -211,7 +215,19 @@ class DockerBackend {
             if (this.platform === "linux") {
                 await this.run("iptables", ["-S", "DOCKER-USER"]);
             }
-            await this.run("docker", ["image", "inspect", this.image]);
+            const labels = await this.run("docker", [
+                "image",
+                "inspect",
+                "--format",
+                "{{json .Config.Labels}}",
+                this.image
+            ]);
+            const stale = staleRunnerImageReason(
+                this.image,
+                JSON.parse(labels.stdout.toString("utf8").trim() || "null"),
+                this.trustedRoot
+            );
+            if (stale) return { available: false, reason: stale };
             if (
                 this.securityOptions.some((entry) => entry.includes("userns"))
             ) {
@@ -383,6 +399,33 @@ class DockerBackend {
         await this.refreshTrustedRunner(handle);
         handle.resourceEvents = await this.readResourceEvents(handle);
         return this.openControl(handle);
+    }
+
+    /**
+     * Whether a retained container was created from the image this worker runs.
+     * The environment key does not cover the image, so a worker restarted on a
+     * rebuilt image would otherwise keep running tasks in the old one.
+     */
+    async runtimeUsesCurrentImage(handle) {
+        this.imageId ??= (
+            await this.run("docker", [
+                "image",
+                "inspect",
+                "--format",
+                "{{.Id}}",
+                this.image
+            ])
+        ).stdout
+            .toString("utf8")
+            .trim();
+        const container = await this.run("docker", [
+            "container",
+            "inspect",
+            "--format",
+            "{{.Image}}",
+            handle.container
+        ]).catch(() => null);
+        return container?.stdout.toString("utf8").trim() === this.imageId;
     }
 
     async update(handle, profile) {
@@ -928,6 +971,12 @@ class UnsafeHostBackend {
             {
                 env: {
                     ...process.env,
+                    // The fresh HOME hides the host's Playwright cache, so the
+                    // browser gates would find no Chromium; keep pointing at it
+                    // unless the operator chose a path.
+                    PLAYWRIGHT_BROWSERS_PATH:
+                        process.env.PLAYWRIGHT_BROWSERS_PATH ||
+                        hostPlaywrightBrowsersPath(),
                     HOME: home,
                     SCP_ISOLATED_ROOT: handle.root
                 },
@@ -952,6 +1001,22 @@ class UnsafeHostBackend {
     async listOrphans() {
         return [];
     }
+}
+
+/**
+ * Where Playwright keeps its browsers on this host when PLAYWRIGHT_BROWSERS_PATH
+ * is unset, resolved against the real HOME. Mirrors Playwright's own default
+ * cache directory.
+ */
+function hostPlaywrightBrowsersPath() {
+    const cacheDirectory =
+        process.platform === "darwin"
+            ? path.join(os.homedir(), "Library", "Caches")
+            : process.platform === "win32"
+              ? process.env.LOCALAPPDATA ||
+                path.join(os.homedir(), "AppData", "Local")
+              : process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
+    return path.join(cacheDirectory, "ms-playwright");
 }
 
 class IsolatedEnvironment extends EventEmitter {
@@ -1375,7 +1440,15 @@ class IsolatedEnvironmentManager {
                 this.blockedEnvironments.set(metadata.environmentKey, error);
                 continue;
             }
-            if (metadata.dirty || !metadata.allocation) {
+            // A cache built from another runner image is discarded like a
+            // dirty one, so its next task runs in the configured image.
+            const staleImage =
+                metadata.allocation &&
+                this.backend.runtimeUsesCurrentImage &&
+                !(await this.backend
+                    .runtimeUsesCurrentImage(metadata.runtimeHandle)
+                    .catch(() => false));
+            if (metadata.dirty || !metadata.allocation || staleImage) {
                 await this.backend
                     .destroy(metadata.runtimeHandle)
                     .catch(() => {});

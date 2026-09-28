@@ -67,8 +67,21 @@ function canonicalFindings(previous, proposed) {
         check(!byThread || !byId || byThread.id === byId.id, "INVALID_RESULT");
         const existing = byThread || byId;
         check(existing || finding.status === "new", "INVALID_RESULT");
+        // A finding keeps the destination it was published to: the model
+        // cannot move a general comment onto a line or an inline one off it.
+        // One saved but never posted (no thread, still a location) has no
+        // destination yet, so it takes the model's validated location.
+        const published =
+            existing && (existing.threadId || existing.path === null);
         return existing
-            ? { ...finding, id: existing.id, threadId: existing.threadId }
+            ? {
+                  ...finding,
+                  id: existing.id,
+                  threadId: existing.threadId,
+                  ...(published
+                      ? { path: existing.path, line: existing.line }
+                      : {})
+              }
             : finding;
     });
 }

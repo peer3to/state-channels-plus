@@ -10,7 +10,11 @@ const {
 } = require("./authentication");
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     ProtocolPeer,
+    minimumProtocolForTask,
+    runnersForDistributedProtocol,
+    workerCanRunTask,
     waitForMessage
 } = require("./protocol");
 const { DISCOVERY_REFRESH_MS, createPool } = require("./poolTransport");
@@ -21,6 +25,8 @@ const {
     shortConnectionHash
 } = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
+const { manifestForDistributedProtocol } = require("./runtimeBundle");
+const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
@@ -117,13 +123,71 @@ function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
 }
 
+/** The runners the worker host can execute; throws for an unleasable host. */
 function assertCompatibleWorkerProtocol(capabilities) {
-    if (capabilities?.distributedProtocol === DISTRIBUTED_PROTOCOL_VERSION) {
-        return;
-    }
-    throw new Error(
-        `Distributed worker protocol mismatch: orchestrator requires ${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    const runners = runnersForDistributedProtocol(
+        capabilities?.distributedProtocol
     );
+    if (runners) return runners;
+    throw new Error(
+        `Distributed worker protocol mismatch: orchestrator accepts ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL}-${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    );
+}
+
+/**
+ * The warning for tasks no connected worker could run. They are left out of
+ * the run rather than failing it; the lines name each task and the protocol a
+ * worker host needs to run it.
+ */
+function formatSkippedTasksNotice(tasks) {
+    const groups = new Map();
+    for (const task of tasks) {
+        const runner = normalizeTaskRunner(task.runner);
+        const needs = task.requires ?? [];
+        const key = [runner, ...needs].join("+");
+        if (!groups.has(key)) groups.set(key, { runner, needs, tasks: [] });
+        groups.get(key).tasks.push(task);
+    }
+    const lines = [];
+    for (const { runner, needs, tasks: skipped } of groups.values()) {
+        const required = minimumProtocolForTask(skipped[0]);
+        const missing = needs.length ? needs.join(", ") : runner;
+        lines.push(
+            `Skipping ${skipped.length} ${runner} task(s)` +
+                (needs.length ? ` that need ${missing}` : "") +
+                `: no connected worker supports the ${missing} runner` +
+                (required
+                    ? `; a worker host on distributed protocol ${required} or newer runs them.`
+                    : ".")
+        );
+        for (const task of skipped) lines.push(`  - ${task.label}`);
+    }
+    return lines;
+}
+
+/** Print the skip notice, and add it to the GitHub job summary when there is one. */
+function reportSkippedTasks(tasks, env = process.env) {
+    const lines = formatSkippedTasksNotice(tasks);
+    for (const line of lines) console.warn(`WARNING: ${line}`);
+    if (env.GITHUB_STEP_SUMMARY) {
+        fs.appendFileSync(
+            env.GITHUB_STEP_SUMMARY,
+            `> [!WARNING]\n${lines.map((line) => `> ${line}`).join("\n")}\n\n`
+        );
+    }
+    return lines;
+}
+
+/** Report the tasks that failed because their only capable worker was lost. */
+function reportLostTasks(tasks, logDir) {
+    for (const task of tasks) {
+        const reason = task.infrastructureDiagnostics.at(-1);
+        console.error(`FAIL ${task.label}: ${reason}`);
+        fs.appendFileSync(
+            logging.getErrorLogPath(logDir, task.logName),
+            `##PARALLEL_RUNNER## ${reason}\n`
+        );
+    }
 }
 
 function promoteAttemptLog(logDir, assignment, worker, code, attempt = {}) {
@@ -314,6 +378,86 @@ function recordWorkerFailure(workerStates, workerId, details = {}, limit = 2) {
     return state;
 }
 
+// A host that fails workspace setup the same way this often will not succeed on
+// a redial; it is retired for the run instead of re-leased indefinitely.
+const MAX_IDENTICAL_SETUP_FAILURES = 3;
+
+/** Counts and byte sizes vary between attempts of the same failure. */
+function normalizeFailureReason(reason) {
+    return String(reason || "unknown failure")
+        .replace(/\b[0-9a-f]{8,}\b/gi, "#")
+        .replace(/\d+/g, "#")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Record a failure before the worker was admitted a task. Consecutive failures
+ * with the same normalized reason count towards the cap; a different reason
+ * starts a new count. At the cap the host is quarantined for the run, which the
+ * reconnect check already enforces.
+ */
+function recordSetupFailure(
+    workerStates,
+    workerId,
+    details = {},
+    limit = MAX_IDENTICAL_SETUP_FAILURES
+) {
+    const state = recordWorkerRetirement(workerStates, workerId, {
+        label: details.label,
+        kind: "setup failure",
+        reason: details.reason
+    });
+    const reason = normalizeFailureReason(details.reason);
+    state.setupFailures =
+        state.setupFailureReason === reason
+            ? (state.setupFailures || 0) + 1
+            : 1;
+    state.setupFailureReason = reason;
+    state.setupFailureMessage = details.reason || reason;
+    if (state.setupFailures >= limit) {
+        state.quarantined = true;
+        state.setupCapped = true;
+    }
+    // Quarantined before running a task, by this cap or by another limit.
+    state.setupQuarantined ||= state.quarantined;
+    return state;
+}
+
+/** A worker admitted a task: its setup evidently works now. */
+function resetSetupFailures(workerStates, workerId) {
+    const state = workerStates.get(workerId);
+    if (!state) return;
+    state.setupFailures = 0;
+    state.setupFailureReason = null;
+    state.setupFailureMessage = null;
+}
+
+/**
+ * When every host this run discovered was quarantined before running a task,
+ * by the setup cap or another failure limit, retrying cannot help: the message
+ * to fail the run with, or null.
+ */
+function allWorkersSetupCapped(
+    workerStates,
+    limit = MAX_IDENTICAL_SETUP_FAILURES
+) {
+    const states = [...workerStates.values()];
+    if (!states.length || !states.every((state) => state.setupQuarantined))
+        return null;
+    if (!states.every((state) => state.setupCapped)) {
+        return `All distributed workers were quarantined before running a task: ${states
+            .map((state) => `${state.label}: ${state.latestReason}`)
+            .join("; ")}`;
+    }
+    const reasons = new Set(states.map((state) => state.setupFailureReason));
+    return reasons.size === 1
+        ? `All distributed workers failed the same way ${limit} times: ${states[0].setupFailureMessage}`
+        : `All distributed workers were retired after ${limit} identical setup failures: ${states
+              .map((state) => `${state.label}: ${state.setupFailureMessage}`)
+              .join("; ")}`;
+}
+
 function recordWorkerRetirement(workerStates, workerId, details = {}) {
     const state = workerStates.get(workerId) || {
         label: details.label || workerId,
@@ -481,13 +625,31 @@ async function runDistributed(options) {
                           assignment.workerId
                 });
             }
-            if (coordinator.finish().done) {
-                queueMicrotask(() => finishRun().catch(completedReject));
-            }
+            settleRun();
         }
     });
 
     let finishing = false;
+    let unservableTimer = null;
+
+    // Drops what no connected worker can run once nothing else is left and no
+    // capable worker connected within the discovery window, then finishes the
+    // run if that was the last work.
+    function settleRun() {
+        if (finishing) return;
+        clearTimeout(unservableTimer);
+        unservableTimer = null;
+        const { skipped, failed, waitMs } = coordinator.settleUnservable(
+            Date.now(),
+            options.discoveryTimeoutMs
+        );
+        if (skipped.length) reportSkippedTasks(skipped);
+        if (failed.length) reportLostTasks(failed, options.logDir);
+        if (waitMs !== null) unservableTimer = setTimeout(settleRun, waitMs);
+        if (coordinator.finish().done) {
+            queueMicrotask(() => finishRun().catch(completedReject));
+        }
+    }
 
     async function cancelRun() {
         if (finishing) return;
@@ -545,8 +707,11 @@ async function runDistributed(options) {
                 );
                 return;
             }
+            let runners;
             try {
-                assertCompatibleWorkerProtocol(ready.header.capabilities);
+                runners = assertCompatibleWorkerProtocol(
+                    ready.header.capabilities
+                );
             } catch (error) {
                 info.ban(true);
                 if (!warnedIncompatibleWorkers.has(workerId)) {
@@ -570,10 +735,15 @@ async function runDistributed(options) {
                 failure: null,
                 memoryGb: ready.header.capabilities.memoryGb,
                 capabilities: ready.header.capabilities,
+                distributedProtocol:
+                    ready.header.capabilities.distributedProtocol,
+                runners,
                 heartbeatTimeoutMs:
                     ready.header.capabilities.heartbeatTimeoutMs || 15000,
                 heartbeat: null,
                 connectionHash: connectionHash(stream),
+                // Set once a task is assigned: failures before that are setup failures.
+                admitted: false,
                 retired: false
             };
             recordWorkerRetirement(workerStates, workerId, {
@@ -618,7 +788,8 @@ async function runDistributed(options) {
                 workers.set(workerId, worker);
                 retireWorker(
                     existing,
-                    `protocol deduplication selected lower authenticated stream ${shortConnectionHash(worker.connectionHash)}`
+                    `protocol deduplication selected lower authenticated stream ${shortConnectionHash(worker.connectionHash)}`,
+                    { setupFailure: false }
                 );
             } else {
                 workers.set(workerId, worker);
@@ -626,9 +797,11 @@ async function runDistributed(options) {
             clearRediscoveryTimeout();
             workerLabelById.set(workerId, worker.label);
             console.log(
-                `Connected to worker ${workerName(worker)}; requesting lease`
+                `Connected to worker ${workerName(worker)} (protocol ${worker.distributedProtocol}: ${[...runners].join(", ")}); requesting lease`
             );
-            coordinator.registerWorker(workerId);
+            coordinator.registerWorker(workerId, {
+                canRun: (task) => workerCanRunTask(runners, task)
+            });
             peer.on("message", (message) => {
                 worker.heartbeat.received();
                 handleMessage(worker, message).catch((error) =>
@@ -689,7 +862,10 @@ async function runDistributed(options) {
             await sendBundle(
                 worker.peer,
                 options.archivePath,
-                options.manifest,
+                manifestForDistributedProtocol(
+                    options.manifest,
+                    worker.distributedProtocol
+                ),
                 undefined,
                 (need) => {
                     const archiveMb = (need.archiveBytes / 1024 / 1024).toFixed(
@@ -755,7 +931,12 @@ async function runDistributed(options) {
                 await worker.peer.send("NO_TASK_AVAILABLE", {
                     requestId: message.header.requestId
                 });
+                settleRun();
                 return;
+            }
+            if (!worker.admitted) {
+                worker.admitted = true;
+                resetSetupFailures(workerStates, worker.id);
             }
             const wireAssignment = {
                 ...assignment,
@@ -975,14 +1156,29 @@ async function runDistributed(options) {
     function retireWorker(worker, closeReason = null, retirement = {}) {
         if (worker.retired) return;
         worker.retired = true;
+        const reason =
+            retirement.reason ||
+            worker.failure?.message ||
+            closeReason ||
+            "connection closed";
+        // Every way a host leaves before it is given a task counts towards the
+        // setup cap, whether the orchestrator, the host or the transport ended it.
+        const setupState =
+            !worker.admitted && !finishing && retirement.setupFailure !== false
+                ? recordSetupFailure(workerStates, worker.id, {
+                      label: worker.label,
+                      reason
+                  })
+                : null;
+        if (setupState?.setupCapped) {
+            console.warn(
+                `Retiring worker ${workerName(worker)} for this run after ${setupState.setupFailures} identical setup failures: ${reason}`
+            );
+        }
         recordWorkerRetirement(workerStates, worker.id, {
             label: worker.label,
             kind: retirement.kind || "connection closed",
-            reason:
-                retirement.reason ||
-                worker.failure?.message ||
-                closeReason ||
-                "connection closed",
+            reason,
             disposition: retirement.disposition
         });
         worker.heartbeat?.stop();
@@ -993,6 +1189,17 @@ async function runDistributed(options) {
         const wasCurrent = workers.get(worker.id) === worker;
         if (wasCurrent) workers.delete(worker.id);
         if (closeReason) worker.peer.close(closeReason);
+        const allCapped =
+            setupState?.setupQuarantined && !finishing && !workers.size
+                ? allWorkersSetupCapped(workerStates)
+                : null;
+        if (allCapped) {
+            clearRediscoveryTimeout();
+            completedReject(new Error(allCapped));
+            return;
+        }
+        // The worker that could run the remaining tasks may be the one gone.
+        settleRun();
         if (
             !finishing &&
             wasCurrent &&
@@ -1063,6 +1270,7 @@ async function runDistributed(options) {
         );
     } finally {
         clearTimeout(discoveryTimeout);
+        clearTimeout(unservableTimer);
         clearInterval(discoveryProgress);
         options.signal?.removeEventListener("abort", cancel);
         for (const worker of workers.values()) worker.heartbeat.stop();
@@ -1073,6 +1281,7 @@ async function runDistributed(options) {
     return {
         failed: state.failed,
         completed: state.completed,
+        skipped: state.skipped,
         sumDurationMs: state.sumDurationMs,
         ...resourceStats,
         workers: workerLabels,
@@ -1081,13 +1290,19 @@ async function runDistributed(options) {
 }
 
 module.exports = {
+    MAX_IDENTICAL_SETUP_FAILURES,
     WORKER_COLORS,
+    allWorkersSetupCapped,
+    normalizeFailureReason,
+    recordSetupFailure,
+    resetSetupFailures,
     aggregateWorkerStats,
     assertCompatibleWorkerProtocol,
     coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
+    formatSkippedTasksNotice,
     formatWorkerDispositions,
     formatWorkerSummary,
     ingestAttemptLogMessage,
@@ -1096,6 +1311,8 @@ module.exports = {
     promoteStarvationAttemptLog,
     recordWorkerFailure,
     recordWorkerRetirement,
+    reportLostTasks,
+    reportSkippedTasks,
     runDistributed,
     validateWorkerStats,
     workerFaultStatus

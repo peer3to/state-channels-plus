@@ -44,6 +44,8 @@ export class TestIsolatedRuntimeBackend {
     respondToWorkspaceOffer = true;
     startDelayMs = 0;
     guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION;
+    // Containers the backend reports as created from another runner image.
+    readonly otherImageContainers = new Set<string>();
     private resolveFirstCreateStarted!: () => void;
     private resolveFirstStartStarted!: () => void;
     private resolveFirstWorkspaceOfferReceived!: () => void;
@@ -314,6 +316,10 @@ export class TestIsolatedRuntimeBackend {
 
     async update(handle: unknown, profile: unknown) {
         this.calls.push({ operation: "update", value: { handle, profile } });
+    }
+
+    async runtimeUsesCurrentImage(handle: { container: string }) {
+        return !this.otherImageContainers.has(handle.container);
     }
 
     async destroy(handle: unknown) {

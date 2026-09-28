@@ -218,11 +218,43 @@ export async function setupBrowserPeer(
     }
 }
 
+// One full-stack deployment per realm and node. Deploying dominates an SDK
+// setup (~12.7s of ~13s under the gate's interval mining), and no scenario
+// here depends on a fresh deployment: each only needs a manager to set a
+// runtime up against. Keyed by provider URL, so a realm that ever sees another
+// node deploys again.
+const sharedDeployments = new Map();
+
+function sharedDeployment(providerUrl) {
+    let deployment = sharedDeployments.get(providerUrl);
+    if (!deployment) {
+        deployment = deployStack(providerUrl, false).then((stack) => {
+            // Callers get their own provider; this one only served the deploy.
+            stack.provider.destroy();
+            return {
+                scmAddress: stack.scmAddress,
+                peerWallets: stack.peerWallets
+            };
+        });
+        // A failed deploy must not poison the realm for later scenarios.
+        deployment.catch(() => sharedDeployments.delete(providerUrl));
+        sharedDeployments.set(providerUrl, deployment);
+    }
+    return deployment;
+}
+
 export async function createBrowserSdkExecutor(options = {}) {
     const providerUrl = globalThis.__SDK_RUNTIME__?.providerUrl;
     if (!providerUrl)
         throw new Error("Browser SDK runtime provider was not configured");
-    const stack = await deployStack(providerUrl, false);
+    const deployment = await sharedDeployment(providerUrl);
+    // Each executor owns its provider and re-initialises the clock from it, so
+    // a scenario that shifts the clock cannot leak that shift into the next.
+    const stack = {
+        ...deployment,
+        provider: new ethers.JsonRpcProvider(providerUrl)
+    };
+    await Clock.init(stack.provider);
     let executor;
     let shiftedClock;
     try {

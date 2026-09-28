@@ -1,7 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dockerBackendWithContainerImages } from "../fixtures/distributed/dockerBackendWithContainerImages";
+import { dockerBackendWithImageLabels } from "../fixtures/distributed/dockerBackendWithImageLabels";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 import crypto from "crypto";
 import fs from "fs";
 import { setImmediate } from "node:timers";
@@ -12,6 +15,9 @@ const {
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
 const {
+    runnerImageBuildArgs
+} = require("../../scripts/e2e-parallel/distributed/buildRunnerImage.js");
+const {
     BoundedArtifactAssembler
 } = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
 const {
@@ -20,11 +26,17 @@ const {
     IsolatedEnvironmentManager,
     runProcess,
     runtimeNames,
-    trustedRunnerManifest
+    trustedRunnerManifest,
+    UnsafeHostBackend
 } = require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js");
 const {
     DISTRIBUTED_PROTOCOL_VERSION
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    RUNNER_IMAGE_DOCKERFILE,
+    RUNNER_IMAGE_REVISION_LABEL,
+    runnerImageRevision
+} = require("../../scripts/e2e-parallel/distributed/runnerImage.js");
 
 const profile = {
     schedulerTickMs: 1000,
@@ -524,6 +536,101 @@ describe("distributed isolated environment", function () {
         }
     });
 
+    it("discards a retained cache created from another runner image and keeps the current one", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-manager-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const firstManager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const currentAllocation = {
+                environmentKey: "5".repeat(64),
+                orchestratorPublicKey: "e".repeat(64),
+                profile
+            };
+            const otherImageAllocation = {
+                environmentKey: "6".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            };
+            firstManager.markClean(
+                await firstManager.allocate(currentAllocation)
+            );
+            const otherImage =
+                await firstManager.allocate(otherImageAllocation);
+            firstManager.markClean(otherImage);
+            const workspace = path.join(
+                root,
+                "environments",
+                otherImageAllocation.environmentKey
+            );
+            fs.mkdirSync(workspace, { recursive: true });
+            // The worker restarts on a rebuilt image that one cache predates.
+            backend.otherImageContainers.add(otherImage.handle.container);
+
+            const restarted = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            await restarted.recoverOrphans();
+            const kept = await restarted.allocate(currentAllocation);
+            const replaced = await restarted.allocate(otherImageAllocation);
+
+            expect(kept.state).to.equal("stopped");
+            expect(replaced.state).to.not.equal("stopped");
+            expect(
+                backend.calls
+                    .filter((entry) => entry.operation === "destroy")
+                    .map(
+                        (entry) =>
+                            (entry.value as { container: string }).container
+                    )
+            ).to.deep.equal([otherImage.handle.container]);
+            expect(fs.existsSync(workspace)).to.equal(false);
+            expect(replaced.handle.container).to.not.equal(
+                otherImage.handle.container
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("recognises a retained Docker container by the configured runner image's ID", async function () {
+        const image = `sha256:${"a".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(image, image, {
+            current: image,
+            rebuilt: `sha256:${"b".repeat(64)}`
+        });
+        expect({
+            current: await backend.runtimeUsesCurrentImage({
+                container: "current"
+            }),
+            rebuilt: await backend.runtimeUsesCurrentImage({
+                container: "rebuilt"
+            }),
+            missing: await backend.runtimeUsesCurrentImage({
+                container: "missing"
+            })
+        }).to.deep.equal({ current: true, rebuilt: false, missing: false });
+    });
+
+    it("compares a retained Docker container with the image ID a pinned repository digest resolves to", async function () {
+        const imageId = `sha256:${"c".repeat(64)}`;
+        const backend = dockerBackendWithContainerImages(
+            `registry.example/runner@sha256:${"d".repeat(64)}`,
+            imageId,
+            { current: imageId }
+        );
+        expect(
+            await backend.runtimeUsesCurrentImage({ container: "current" })
+        ).to.equal(true);
+    });
+
     it("blocks reuse when orphan stop and detach cannot be confirmed", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "isolated-manager-")
@@ -626,17 +733,126 @@ describe("distributed isolated environment", function () {
         expect(detected.reason).to.include("digest-pinned");
     });
 
-    it("accepts an immutable local Docker image ID", async function () {
-        const backend = new DockerBackend({
-            image: `sha256:${"f".repeat(64)}`,
-            platform: "darwin",
-            hostCidrs: [],
-            run: async () => ({
-                stdout: Buffer.from("[]"),
-                stderr: Buffer.alloc(0)
-            })
+    it("accepts an immutable local Docker image ID built from this checkout's runner Dockerfile", async function () {
+        const backend = dockerBackendWithImageLabels({
+            [RUNNER_IMAGE_REVISION_LABEL]: runnerImageRevision(repoRoot())
         });
         expect(await backend.detect()).to.deep.equal({ available: true });
+    });
+
+    it("refuses a runner image built from another revision of the runner Dockerfile", async function () {
+        // A checkout whose Dockerfile moved on since the image was built.
+        const trustedRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "runner-image-revision-")
+        );
+        const dockerfile = path.join(trustedRoot, RUNNER_IMAGE_DOCKERFILE);
+        fs.mkdirSync(path.dirname(dockerfile), { recursive: true });
+        fs.copyFileSync(
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            dockerfile
+        );
+        const built = runnerImageRevision(trustedRoot);
+        fs.appendFileSync(dockerfile, "\nENV ADDED_LATER=1\n");
+        try {
+            const detected = await dockerBackendWithImageLabels(
+                { [RUNNER_IMAGE_REVISION_LABEL]: built },
+                trustedRoot
+            ).detect();
+            expect(detected).to.deep.equal({
+                available: false,
+                reason:
+                    `Runner image sha256:${"f".repeat(64)} was built from runner-image.Dockerfile revision ${built.slice(0, 12)}, ` +
+                    `but this checkout expects ${runnerImageRevision(trustedRoot).slice(0, 12)}. ` +
+                    "Rebuild it with `yarn test:parallel:image` and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+            });
+        } finally {
+            fs.rmSync(trustedRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses a runner image that carries no runner Dockerfile revision", async function () {
+        const detected = await dockerBackendWithImageLabels(null).detect();
+        expect(detected.available).to.equal(false);
+        expect(detected.reason).to.include(
+            `has no ${RUNNER_IMAGE_REVISION_LABEL} label`
+        );
+        expect(detected.reason).to.include("yarn test:parallel:image");
+    });
+
+    it("builds the runner image with only flags that cannot change its contents, after the revision label", function () {
+        const args = runnerImageBuildArgs(repoRoot(), "/scratch/id", [
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull",
+            "--quiet"
+        ]);
+        expect(args).to.deep.equal([
+            "build",
+            "--file",
+            path.join(repoRoot(), RUNNER_IMAGE_DOCKERFILE),
+            "--label",
+            `${RUNNER_IMAGE_REVISION_LABEL}=${runnerImageRevision(repoRoot())}`,
+            "--iidfile",
+            "/scratch/id",
+            "--tag",
+            "scp-runner:ci",
+            "--progress=plain",
+            "--no-cache",
+            "--pull",
+            "--quiet",
+            repoRoot()
+        ]);
+    });
+
+    it("refuses build arguments that could build another image under the checkout's revision", function () {
+        const refused = (extra: string[]) => {
+            try {
+                runnerImageBuildArgs(repoRoot(), "/scratch/id", extra);
+                return "accepted";
+            } catch (error) {
+                return (error as Error).message.split(":")[0];
+            }
+        };
+        expect({
+            buildArg: refused(["--build-arg", "PLAYWRIGHT_VERSION=1.59.0"]),
+            inlineBuildArg: refused(["--build-arg=NODE_IMAGE=node:22"]),
+            label: refused([
+                "--label",
+                `${RUNNER_IMAGE_REVISION_LABEL}=${"0".repeat(64)}`
+            ]),
+            file: refused(["--file", "other.Dockerfile"]),
+            missingTag: refused(["--tag"])
+        }).to.deep.equal({
+            buildArg: "Refusing docker build argument --build-arg",
+            inlineBuildArg:
+                "Refusing docker build argument --build-arg=NODE_IMAGE=node",
+            label: "Refusing docker build argument --label",
+            file: "Refusing docker build argument --file",
+            missingTag: "--tag requires a value"
+        });
+    });
+
+    it("stops yarn test:parallel:image before docker when given a --build-arg", function () {
+        const result = spawnSync(
+            process.execPath,
+            [
+                path.join(
+                    repoRoot(),
+                    "scripts/e2e-parallel/distributed/buildRunnerImage.js"
+                ),
+                "--build-arg",
+                "PLAYWRIGHT_VERSION=1.59.0"
+            ],
+            { encoding: "utf8" }
+        );
+        expect({
+            status: result.status,
+            refused: result.stderr.includes(
+                `Refusing docker build argument --build-arg: the image label covers only ${RUNNER_IMAGE_DOCKERFILE}`
+            )
+        }).to.deep.equal({ status: 2, refused: true });
     });
 
     it("classifies cgroup memory and process exhaustion without exposing host state", async function () {
@@ -857,5 +1073,82 @@ describe("distributed isolated environment", function () {
         );
         assembler.accept("stdout", 0, Buffer.from("no"));
         expect(() => assembler.complete()).to.throw("verification failed");
+    });
+});
+
+describe("unsafe-host browsers path", function () {
+    // Start an unsafe-host environment and return the environment its guest
+    // receives; the guest itself is not needed to read that.
+    async function guestEnvironment(
+        hostEnv: NodeJS.ProcessEnv
+    ): Promise<NodeJS.ProcessEnv> {
+        const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), "scp-unsafe-"));
+        let guestEnv: NodeJS.ProcessEnv = {};
+        const backend = new UnsafeHostBackend({
+            workRoot,
+            processFactory: (
+                _command: string,
+                _args: string[],
+                options: { env: NodeJS.ProcessEnv }
+            ) => {
+                guestEnv = options.env;
+                return {};
+            }
+        });
+        const saved = process.env.PLAYWRIGHT_BROWSERS_PATH;
+        try {
+            if (hostEnv.PLAYWRIGHT_BROWSERS_PATH === undefined) {
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            } else {
+                process.env.PLAYWRIGHT_BROWSERS_PATH =
+                    hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+            }
+            const handle = await backend.create({
+                environmentKey: "a".repeat(64)
+            });
+            await backend.start(handle);
+        } finally {
+            if (saved === undefined)
+                delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+            else process.env.PLAYWRIGHT_BROWSERS_PATH = saved;
+            fs.rmSync(workRoot, { recursive: true, force: true });
+        }
+        return guestEnv;
+    }
+
+    function chromiumPathUnder(env: NodeJS.ProcessEnv): string {
+        const result = spawnSync(
+            process.execPath,
+            [
+                "-e",
+                'process.stdout.write(require("playwright").chromium.executablePath())'
+            ],
+            { cwd: repoRoot(), encoding: "utf8", env }
+        );
+        return result.stdout;
+    }
+
+    it("resolves the host's own Chromium from the guest's fresh HOME", async function () {
+        const hostEnv = { ...process.env };
+        delete hostEnv.PLAYWRIGHT_BROWSERS_PATH;
+        const guestEnv = await guestEnvironment(hostEnv);
+
+        expect({
+            homeReplaced: guestEnv.HOME !== process.env.HOME,
+            chromium: chromiumPathUnder(guestEnv)
+        }).to.deep.equal({
+            homeReplaced: true,
+            chromium: chromiumPathUnder(hostEnv)
+        });
+    });
+
+    it("keeps a browsers path the operator exported", async function () {
+        const guestEnv = await guestEnvironment({
+            PLAYWRIGHT_BROWSERS_PATH: "/operator/browsers"
+        });
+
+        expect(guestEnv.PLAYWRIGHT_BROWSERS_PATH).to.equal(
+            "/operator/browsers"
+        );
     });
 });

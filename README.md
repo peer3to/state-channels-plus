@@ -97,16 +97,18 @@ ordinary tasks, one task per test contract. A contract counts as a test contract
 when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
 and helper contracts sharing a file are left out.
 
-Without filename overrides, the runner discovers `test/**/*.ts` for Mocha and
-`test/**/*.sol` for Foundry. A repository may contain either tier or both. Each
-tier filters candidates by file type before parsing, including when a shared
-`--test-pattern` is supplied.
+Without filename overrides, the runner discovers `test/**/*.ts` for Mocha,
+`test/**/*.sol` for Foundry and `test/browser/run-*.mjs` for the browser gates.
+A repository may contain any of the tiers. Each tier filters candidates by file
+type before parsing, including when a shared `--test-pattern` is supplied.
 
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
-yarn test:parallel --no-forge       # only the Mocha tier
+yarn test:parallel --no-forge       # Mocha and browser tiers
+yarn test:parallel --browser-only   # only the browser gates
+yarn test:parallel --no-browser     # Mocha and forge tiers
 yarn test:parallel --forge-threads 2
-yarn test:parallel --test-pattern 'V1/**' # filter both tiers
+yarn test:parallel --test-pattern 'V1/**' # filter every tier
 ```
 
 Mocha tests are discovered from their TypeScript sources but run from the
@@ -130,9 +132,9 @@ Each forge task uses one thread by default. `forge test` otherwise sizes its
 thread pool from the logical core count, which inside a CPU-limited container is
 still the host's count, so unpinned tasks oversubscribe the host. The runner
 already parallelizes across tasks. Use `--forge-threads` to override the
-default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge tier
-with it. Use `--mocha-test-pattern` or `--forge-test-pattern` when only one
-tier needs a filename filter.
+default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
+browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
+`--browser-test-pattern` when only one tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local runs build the contracts once before scheduling;
@@ -154,6 +156,69 @@ there reaches every worker without any worker-side update.
 yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
 ```
 
+### Browser tests
+
+Each `test/browser/run-*.mjs` gate is one task. A gate boots a Vite server, its
+own Hardhat node and one headless Chromium, then drives every scenario on a
+single page, so splitting a gate per case would relaunch that stack per case.
+Like forge tasks, gates need neither a warm slot nor a funded account partition,
+and they reach the worker through a Hardhat task — `browser-test` in
+`tasks/browserTest.ts`, which runs the gate with Node and passes its exit code
+on.
+
+The gates load `src` through Vite, so the tier needs only a typecheck of
+`tsconfig.browser.json` (`yarn typecheck:browser`), not a build. Local runs
+and distributed runs both perform it once before scheduling, and only when the
+run holds a gate; distributed workers never run it in their prepare script.
+
+```shell
+yarn test:parallel --browser-only
+yarn hardhat browser-test --script test/browser/run-p2p-webrtc-e2e.mjs
+```
+
+A gate needs the Chromium that Playwright ships with the version `yarn.lock`
+resolves. Install it locally with `yarn playwright install chromium`; the
+distributed runner image installs it during the image build. Playwright
+launches Chromium without its own sandbox by default, so the container is the
+isolation boundary. The container's `/dev/shm` is the default 64MB, so the image
+declares `SCP_BROWSER_CONTAINED=1` and the gates keep Chromium's shared memory
+in `/tmp` there.
+
+An environment hands its worker a fresh `HOME`, and `pnpm install` never
+downloads browsers, so a gate finds Chromium only through
+`PLAYWRIGHT_BROWSERS_PATH`. The runner image sets it; a worker started with
+`--execution-backend unsafe-host` points it at the host's own Playwright cache
+unless the operator exported another path. A gate that cannot find the browser
+says so and names the variable.
+
+A worker runs tasks with the runner from its own checkout, so the browser tier
+reaches it only after **the worker host updates that checkout, restarts
+`yarn test:parallel:server`, and rebuilds its runner image**
+(`yarn test:parallel:image`; the server refuses a stale image, and on restart
+discards cached environments whose containers were created from another image). The browser tier
+arrived with distributed protocol 14. The orchestrator still leases protocol 13
+hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
+host at a time. A Mocha test file that launches Chromium carries
+`// @distributed-requires: browser` in its leading comments, and its tests go
+only to hosts that run the browser tier as well. When they are all that is left
+and no connected worker has supported the browser runner for the discovery
+window (`--discovery-timeout`), the run skips the browser tasks and those marked
+Mocha tests with a warning that lists them (also written to the GitHub job
+summary) instead of failing; CI's `browser` job runs the same gates inside the
+runner image either way. A task whose attempt was lost with the only host that
+could run it fails instead of being skipped.
+
+A worker that leaves before it is given a task, whether its lease or workspace
+setup fails, it refuses the requested resources, or its connection closes, is
+retried, but not indefinitely: after three consecutive failures with the same
+error the orchestrator retires that host for the rest of the run and logs the
+error. Being given a task resets the count, and a different error starts a new
+one. When every discovered host has been retired this way the run fails at once
+with `All distributed workers failed the same way 3 times: <error>` instead of
+redialing until the job times out; when some were instead quarantined before
+running a task (for example after repeated workspace preparation errors), it
+fails with `All distributed workers were quarantined before running a task`.
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a
@@ -169,15 +234,24 @@ SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
 
 Both runner entry points load `.env` automatically. On a manually provisioned
 worker, install dependencies and build the runner image from
-`scripts/e2e-parallel/distributed/runner-image.Dockerfile` with a digest-pinned
-`NODE_IMAGE`. Configure either its immutable local image ID or a published
-repository digest:
+`scripts/e2e-parallel/distributed/runner-image.Dockerfile` with
+`yarn test:parallel:image`, which labels the image with the Dockerfile's
+revision and prints its immutable local image ID. Configure that ID or a
+published repository digest of such an image:
 
 ```shell
 yarn
+yarn test:parallel:image
 export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'
 yarn test:parallel:server --name worker-one
 ```
+
+The server refuses to start when the configured image was built from another
+revision of the Dockerfile than its checkout carries, or without the label: the
+distributed protocol version covers the runner code, not the image, so a host
+that updated its checkout without rebuilding would otherwise accept tasks its
+image cannot run. Rebuild the image after every checkout update that changes
+the Dockerfile.
 
 The Docker volume driver must enforce the `size` option. The Linux service
 account also needs permission to create Docker bridge networks and install the
@@ -414,10 +488,14 @@ worker's streamed output. Infrastructure output is collected and retained when
 any test fails. A fully successful run skips collection unless
 `--keep-infra-logs` is set.
 
-The distributed protocol version must match across the orchestrator, worker
-host, and isolated guest. A mismatch is rejected before test execution with an
-update or rebase instruction. After a protocol change, update and restart every
-worker host before running branches that use the new protocol.
+The orchestrator leases worker hosts on any distributed protocol from the
+minimum it still supports up to its own (`MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL`
+and `DISTRIBUTED_PROTOCOL_VERSION` in `protocol.js`), and schedules on each host
+only the tasks whose runner, and every runner their test file requires, its
+protocol knows. A host outside that range is rejected
+before test execution with an update or rebase instruction. A worker host and
+its isolated guest must still match exactly, since both run the host's own
+checkout.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

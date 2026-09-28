@@ -468,4 +468,112 @@ describe("distributed task coordinator", function () {
         expect(duplicate.attemptId).not.to.equal(original.attemptId);
         expect(coordinator.requestTask("other")).to.equal(null);
     });
+    it("hands a worker only the tasks its runners allow and leaves the rest queued for another", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" },
+            task("mocha")
+        ]);
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        coordinator.registerWorker("new");
+        expect(coordinator.requestTask("old").task.label).to.equal("mocha");
+        expect(coordinator.requestTask("old")).to.equal(null);
+        expect(coordinator.requestTask("new").task.label).to.equal("gate");
+    });
+
+    it("skips unservable tasks only once nothing else is queued or running and a worker is registered", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" },
+            task("mocha")
+        ]);
+        const skippedLabels = (now: number) =>
+            coordinator
+                .settleUnservable(now)
+                .skipped.map((entry: { label: string }) => entry.label);
+        expect(skippedLabels(0)).to.deep.equal([]);
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        const running = coordinator.requestTask("old");
+        expect(skippedLabels(0)).to.deep.equal([]);
+        coordinator.completeAttempt("old", {
+            attemptId: running.attemptId,
+            code: 0
+        });
+        expect(skippedLabels(0)).to.deep.equal(["gate"]);
+        expect(coordinator.finish()).to.include({ done: true, completed: 1 });
+        expect(coordinator.finish().skipped).to.have.length(1);
+    });
+
+    it("skips unservable tasks only after the grace period, restarting it when a capable worker registers", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" }
+        ]);
+        const onlyMocha = {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        };
+        coordinator.registerWorker("old", onlyMocha);
+        const started = coordinator.settleUnservable(1_000, 500);
+        const before = coordinator.settleUnservable(1_499, 500);
+        // A capable worker registers, then leaves again before taking it.
+        coordinator.registerWorker("new");
+        const whileServable = coordinator.settleUnservable(1_600, 500);
+        coordinator.disconnectWorker("new");
+        const restarted = coordinator.settleUnservable(1_700, 500);
+        const expired = coordinator.settleUnservable(2_200, 500);
+        expect({
+            started: started.waitMs,
+            before: before.waitMs,
+            whileServable: whileServable.waitMs,
+            restarted: restarted.waitMs,
+            skipped: expired.skipped.map(
+                (entry: { label: string }) => entry.label
+            ),
+            failed: expired.failed.length,
+            waitAfter: expired.waitMs
+        }).to.deep.equal({
+            started: 500,
+            before: 1,
+            whileServable: null,
+            restarted: 500,
+            skipped: ["gate"],
+            failed: 0,
+            waitAfter: null
+        });
+    });
+
+    it("fails an unservable task whose attempt was lost with its worker instead of skipping it", function () {
+        const coordinator = new TaskCoordinator([
+            { ...task("gate"), runner: "browser" },
+            { ...task("other gate"), runner: "browser" }
+        ]);
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        coordinator.registerWorker("new");
+        coordinator.requestTask("new");
+        coordinator.disconnectWorker("new");
+        const settled = coordinator.settleUnservable(0);
+        expect({
+            skipped: settled.skipped.map(
+                (entry: { label: string }) => entry.label
+            ),
+            failed: settled.failed.map(
+                (entry: { label: string; infrastructureFailure: boolean }) => [
+                    entry.label,
+                    entry.infrastructureFailure
+                ]
+            )
+        }).to.deep.equal({
+            skipped: ["other gate"],
+            failed: [["gate", true]]
+        });
+        expect(coordinator.finish()).to.include({ done: true, completed: 1 });
+        expect(
+            coordinator
+                .finish()
+                .failed.map((entry: { label: string }) => entry.label)
+        ).to.deep.equal(["gate"]);
+    });
 });

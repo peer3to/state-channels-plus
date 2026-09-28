@@ -20,6 +20,64 @@ describe("review finding reconciliation", function () {
             previous.id
         );
     });
+    it("keeps the published destination when the model relocates an existing finding", function () {
+        const general = {
+            ...previous,
+            id: "R1OO2",
+            threadId: null,
+            path: null,
+            line: null
+        };
+        const inline = { ...previous, path: "src/input.ts", line: 12 };
+        const [relocatedGeneral, relocatedInline] = canonicalFindings(
+            [general, inline],
+            [
+                {
+                    ...general,
+                    status: "fixed",
+                    path: ".github/workflows/ci.yml",
+                    line: 167
+                },
+                { ...inline, path: "src/other.ts", line: 40 }
+            ]
+        );
+        assert.deepEqual(
+            [
+                relocatedGeneral.path,
+                relocatedGeneral.line,
+                relocatedGeneral.threadId
+            ],
+            [null, null, null]
+        );
+        assert.deepEqual(
+            [
+                relocatedInline.path,
+                relocatedInline.line,
+                relocatedInline.threadId
+            ],
+            ["src/input.ts", 12, "thread1"]
+        );
+    });
+    it("takes the model's new location for an inline finding that was saved but never posted", function () {
+        // Saved before an interrupted batch: a location, but no thread yet.
+        const unposted = {
+            ...previous,
+            threadId: null,
+            path: "README.md",
+            line: 1
+        };
+        const [moved] = canonicalFindings(
+            [unposted],
+            [{ ...unposted, threadId: null, line: 3 }]
+        );
+        const [action] = findingActions([unposted], [moved], {
+            threads: []
+        });
+        assert.deepEqual(
+            [moved.path, moved.line, action.kind, action.finding.line],
+            ["README.md", 3, "new", 3]
+        );
+    });
     it("rejects a foreign or conflicting thread reference", function () {
         assert.throws(
             () =>
