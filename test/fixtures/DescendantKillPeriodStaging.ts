@@ -76,7 +76,10 @@ export async function assertAncestorAdoptionRefusedDuringDescendantKillPeriod():
     const h = TestSession.getHarness();
     await h.scenario.preDisputeSetup({
         peerCount: PEER_COUNT,
-        timeConfig: { agreementTime: 3, evidenceTime: 4 }
+        // Everything from G's window opening to the attacker's refused adoption
+        // must land inside G's kill period (one evidenceTime). Under load that
+        // chain took over 4 s, so the period doubles that.
+        timeConfig: { agreementTime: 3, evidenceTime: 8 }
     });
     const forkE = h.activeForkId! as ForkId;
 

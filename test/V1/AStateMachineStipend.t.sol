@@ -20,6 +20,9 @@ import {BlockInvalidStateTransitionProof} from "../../contracts/V1/types/FraudPr
 // test naming: test_<targetFunction>_<property>
 contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     StateChannelManagerInterface internal diamond;
+    // The case under sweep, read by the verdict checks.
+    address[] internal sweepParticipants;
+    Dispute internal sweepDispute;
 
     bytes32 internal constant CHANNEL_ID = keccak256("channel");
     bytes32 internal constant FORK_ID = keccak256("fork");
@@ -30,6 +33,9 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     uint256 internal constant GUARDED_BUDGET = 16_000_000;
     uint256 internal constant GUARDED_FUNDED_GAS = GUARDED_BUDGET * 3;
     uint256 internal constant GUARDED_UNDERFUNDED_GAS = GUARDED_BUDGET * 2 / 3;
+    // The deterministic sweeps step this far either side of the requirement, in this increment.
+    uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
+    uint256 internal constant SWEEP_STEP = 1_000;
 
     function _deploy(bool gasHungry) internal returns (address[] memory participants) {
         diamond = gasHungry
@@ -785,13 +791,6 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // the lowest attached gas that adjudicates (a binary search that checks the verdict at every
     // probe), then steps across that point in fixed increments, so the band is covered on every
     // run. Every probe starts from the same snapshot.
-
-    uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
-    uint256 internal constant SWEEP_STEP = 1_000;
-
-    // The case under sweep, read by the verdict checks.
-    address[] internal sweepParticipants;
-    Dispute internal sweepDispute;
 
     function _attach(bytes memory call, uint256 gas, bool asRefutation) internal returns (bool ok) {
         if (asRefutation) (ok,) = _submitRefutation(call, gas);
