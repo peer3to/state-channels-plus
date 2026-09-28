@@ -64,9 +64,21 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed` is the canonical full test gate and runs all
-Mocha tests across the configured distributed workers; pass `--e2e-only` to
-limit discovery to `test/e2e`. Always use the distributed runner, also for
+`yarn test:parallel:distributed` is the canonical full test gate. It runs three
+tiers across the configured distributed workers: all Mocha tests, the forge
+tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
+limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
+
+Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
+run only on a protocol 14 worker host whose runner image was built with
+`yarn test:parallel:image`. When no such host connects within the discovery
+window, the run skips them with a warning that lists them instead of failing,
+so a green run is not complete until that warning has been checked. A Mocha
+test file that launches Chromium must carry that marker in its leading
+comments. See the README's
+[Browser tests](README.md#browser-tests) section.
+
+Always use the distributed runner, also for
 focused subsets and repeated loops (`--grep <regexp>` works there too); it is
 the only runner that reproduces farm load. Use the local `yarn test:parallel`
 only for a small focused selection of about ten tests or fewer; anything larger

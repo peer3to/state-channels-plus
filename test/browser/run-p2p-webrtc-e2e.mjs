@@ -1,3 +1,4 @@
+import { launchChromium } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
@@ -92,6 +93,13 @@ try {
     server = await createServer({
         configFile: false,
         root: projectRoot,
+        // Its own dependency pre-bundle: both gates run at once in one workspace
+        // on a worker, and a shared cache re-optimized by one answers the other's
+        // page with 504 Outdated Optimize Dep.
+        cacheDir: path.join(
+            projectRoot,
+            "node_modules/.vite/run-p2p-webrtc-e2e"
+        ),
         resolve: { alias: platformAliases },
         server: {
             host: "127.0.0.1",
@@ -113,7 +121,7 @@ try {
     const origin = `http://127.0.0.1:${address.port}`;
     const providerUrl = `${origin}/rpc`;
 
-    browser = await chromium.launch({ headless: true });
+    browser = await launchChromium(chromium);
     const page = await browser.newPage();
     page.setDefaultTimeout(120_000);
 

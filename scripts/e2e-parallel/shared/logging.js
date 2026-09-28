@@ -276,6 +276,7 @@ function cleanupNonErrorLogs(
 function runHeader({
     taskCount,
     forgeTaskCount = 0,
+    browserTaskCount = 0,
     grep,
     e2eOnly,
     slotCount,
@@ -286,9 +287,15 @@ function runHeader({
     concurrencyCap
 }) {
     const mochaTier = e2eOnly ? "E2E" : "Mocha";
-    const composition = forgeTaskCount
-        ? `${taskCount - forgeTaskCount} ${mochaTier} + ${forgeTaskCount} forge`
-        : mochaTier;
+    const tiers = [
+        [taskCount - forgeTaskCount - browserTaskCount, mochaTier],
+        [forgeTaskCount, "forge"],
+        [browserTaskCount, "browser"]
+    ].filter(([count]) => count > 0);
+    const composition =
+        tiers.length === 1
+            ? tiers[0][1]
+            : tiers.map(([count, tier]) => `${count} ${tier}`).join(" + ");
     console.log(
         `Running ${taskCount} task(s) [${composition}]${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
@@ -300,6 +307,7 @@ function runHeader({
 function dryRun({
     taskCount,
     forgeTaskCount = 0,
+    browserTaskCount = 0,
     forgeThreads,
     slotCount,
     threadModes,
@@ -313,6 +321,7 @@ function dryRun({
     console.log(
         `  forge tasks      : ${forgeTaskCount}${forgeTaskCount ? ` (${forgeThreads} thread(s) each)` : ""}`
     );
+    console.log(`  browser gates    : ${browserTaskCount}`);
     console.log(`  slots            : ${slotCount}`);
     console.log(`  vmThread         : ${threadModes.vmThread}`);
     console.log(`  sdkThread        : ${threadModes.sdkThread}`);

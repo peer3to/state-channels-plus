@@ -11,6 +11,7 @@ const { HARDHAT_CLI } = require("../shared/constants");
 const { holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const { reduceAttemptOutput } = require("../shared/taskCoordinator");
+const { normalizeTaskRunner } = require("../shared/taskRunners");
 const {
     provisionSlots,
     teardownInfra
@@ -227,7 +228,8 @@ async function start(config) {
         requestTask: async () => request("TASK_REQUEST"),
         runTask: async (assignment) => {
             const task = fromWireTask(assignment.task, config.projectRoot);
-            // Forge brings its own EVM: no warm slot, no funded partition.
+            // Forge brings its own EVM and a browser gate starts its own node:
+            // no warm slot, no funded partition.
             const execution = taskResources.acquire(task);
             const { needsChain, accountPartition, slot } = execution;
             const spoolPath = path.join(
@@ -245,7 +247,7 @@ async function start(config) {
                     ? `slot ${slot.id}/${slots.length}`
                     : needsChain
                       ? "in-process"
-                      : "forge",
+                      : normalizeTaskRunner(task.runner),
                 running: scheduler.running,
                 concurrencyCap: config.concurrencyCap,
                 acct: needsChain ? accountPartition : "-",
