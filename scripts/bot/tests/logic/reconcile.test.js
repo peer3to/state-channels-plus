@@ -20,6 +20,44 @@ describe("review finding reconciliation", function () {
             previous.id
         );
     });
+    it("keeps the published destination when the model relocates an existing finding", function () {
+        const general = {
+            ...previous,
+            id: "R1OO2",
+            threadId: null,
+            path: null,
+            line: null
+        };
+        const inline = { ...previous, path: "src/input.ts", line: 12 };
+        const [relocatedGeneral, relocatedInline] = canonicalFindings(
+            [general, inline],
+            [
+                {
+                    ...general,
+                    status: "fixed",
+                    path: ".github/workflows/ci.yml",
+                    line: 167
+                },
+                { ...inline, path: "src/other.ts", line: 40 }
+            ]
+        );
+        assert.deepEqual(
+            [
+                relocatedGeneral.path,
+                relocatedGeneral.line,
+                relocatedGeneral.threadId
+            ],
+            [null, null, null]
+        );
+        assert.deepEqual(
+            [
+                relocatedInline.path,
+                relocatedInline.line,
+                relocatedInline.threadId
+            ],
+            ["src/input.ts", 12, "thread1"]
+        );
+    });
     it("rejects a foreign or conflicting thread reference", function () {
         assert.throws(
             () =>
