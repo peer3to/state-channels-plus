@@ -620,12 +620,25 @@ describe("Unit: BlockIngestService", function () {
                 participant: h.getPeer(0).address,
                 observePeerIndices: [0, 1]
             });
+            const topUpHash = (await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash;
             // two writers -> at least one non-lagging author carries the top-up
             await h.transition.advanceState({
                 count: 2,
                 waitForFinalization: true
             });
             await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(topUpHash)
+                        .request()) !== null
+            );
 
             const r = await h.execOnHost(
                 h.getPeer(lagging),
@@ -702,6 +715,15 @@ describe("Unit: BlockIngestService", function () {
                 waitForFinalization: true
             });
             await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(secondTopUpHash)
+                        .request()) !== null
+            );
 
             const r = await h.execOnHost(
                 h.getPeer(lagging),

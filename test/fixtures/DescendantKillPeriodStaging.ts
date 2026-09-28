@@ -35,8 +35,10 @@ async function holdReduceSubmits(h: MathPeerTestHarness) {
         )
     );
     return {
+        // released together: everything after the release has to fit
+        // inside the reduced fork's kill period
         release: async () => {
-            for (const hold of holds) await hold.release();
+            await Promise.all(holds.map((hold) => hold.release()));
         }
     };
 }
@@ -83,21 +85,17 @@ export async function assertAncestorAdoptionRefusedDuringDescendantKillPeriod():
     await h.byzantine.submitInvalidStateTransitionBlock(1);
     await h.assert.dispute.initiatedAndCommitedWait({ expectedCount: 1 });
     const forkF = await reduceAloneOntoDisputedFork(h, forkE, [forkE]);
-    const forkG = await reduceAloneOntoDisputedFork(h, forkF, [forkE, forkF]);
-
-    // the chain never left E, F is past its kill period and G's is open
-    expect(await chainForkOf(h)).to.equal(forkE);
-    expect((await h.query.killPeriod(forkF, 0)).isExpired).to.equal(true);
-    const killG = await h.query.killPeriod(forkG, 0);
-    expect(killG.windowExists).to.equal(true);
-    expect(killG.isExpired).to.equal(false);
-
-    // G's disputer adopts the expired F directly to shrink the chain set
+    // F's genesis snapshot is fixed once F exists, so it is read before G's
+    // kill period starts: only the release, the reduce and the attack run
+    // inside that period
     const genesisF = await h
         .control(h.getPeer(0))
         .dispute.getGenesisSnapshotStruct(forkF)
         .request();
     expect(genesisF).to.not.equal(null);
+    const forkG = await reduceAloneOntoDisputedFork(h, forkF, [forkE, forkF]);
+
+    // G's disputer adopts the expired F directly to shrink the chain set
     const attacker = h.channelManager.connect(h.getPeer(3).signer);
     const refusal = await attacker
         .updateStateSnapshotFork(
@@ -109,7 +107,14 @@ export async function assertAncestorAdoptionRefusedDuringDescendantKillPeriod():
             () => null,
             (error: unknown) => tryDecodeCustomError(error)
         );
+    // the refusal naming G proves G was inside its kill period at the attack
     expect(refusal?.name).to.equal("RaceConditionSnapshotUpdateDisputedFork");
     expect(refusal?.errorDescription.args[1]).to.equal(forkG);
-    expect(await chainForkOf(h)).to.equal(forkE);
+
+    // the attack adopted nothing: the chain is not on F (it may already have
+    // moved to G legitimately once G's kill period ended), F is past its kill
+    // period and G's window exists
+    expect(await chainForkOf(h)).to.not.equal(forkF);
+    expect((await h.query.killPeriod(forkF, 0)).isExpired).to.equal(true);
+    expect((await h.query.killPeriod(forkG, 0)).windowExists).to.equal(true);
 }

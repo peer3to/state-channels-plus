@@ -20,6 +20,9 @@ import {BlockInvalidStateTransitionProof} from "../../contracts/V1/types/FraudPr
 // test naming: test_<targetFunction>_<property>
 contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     StateChannelManagerInterface internal diamond;
+    // The case under sweep, read by the verdict checks.
+    address[] internal sweepParticipants;
+    Dispute internal sweepDispute;
 
     bytes32 internal constant CHANNEL_ID = keccak256("channel");
     bytes32 internal constant FORK_ID = keccak256("fork");
@@ -30,6 +33,9 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     uint256 internal constant GUARDED_BUDGET = 16_000_000;
     uint256 internal constant GUARDED_FUNDED_GAS = GUARDED_BUDGET * 3;
     uint256 internal constant GUARDED_UNDERFUNDED_GAS = GUARDED_BUDGET * 2 / 3;
+    // The deterministic sweeps step this far either side of the requirement, in this increment.
+    uint256 internal constant SWEEP_HALF_WIDTH = 32_000;
+    uint256 internal constant SWEEP_STEP = 1_000;
 
     function _deploy(bool gasHungry) internal returns (address[] memory participants) {
         diamond = gasHungry
@@ -334,6 +340,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, the honest author is never slashed: the call either
     // adjudicates on a sufficiently funded replay or fails without a verdict.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsHonestVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(false);
@@ -346,6 +353,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, a transition that catches an inner out-of-gas never
     // turns an honest block into fraud.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsGuardedVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -427,6 +435,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // With many leftover messages in the machine's storage, no attached gas turns an honest block
     // into fraud: the deletion either fits beside the full budget or the replay is refused.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_leftoverOutboundMessagesNeverFlipHonestVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -458,6 +467,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // A transition that runs is always granted its full budget, whatever the size of its input:
     // the input is copied before the gas check, so the copy cannot shrink the forwarded gas.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_stateTransition_grantsFullBudgetForAnyInputSize(uint256 gasOffset, uint256 inputLength) public {
         address[] memory participants = _deploy(true);
         stateMachine.setState(_encodedState(participants));
@@ -478,6 +488,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Neither the attached gas nor the size of the transition's input turns an honest block into
     // fraud: copying a large input must be paid before the gas check, not taken from the stipend.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_inputSizeNeverFlipsGuardedVerdict(uint256 gas, uint256 inputLength) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         inputLength = bound(inputLength, 0, 128 * 1024);
@@ -493,6 +504,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
 
     // Whatever gas the submitter attaches, an over-budget transition is never acquitted: every
     // call that produces a verdict produces the fraud verdict, and every other call fails.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyFraudProofs_attachedGasNeverFlipsFraudVerdict(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(true);
@@ -744,6 +756,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // refutation: the call either kills the timeout dispute on a funded replay or fails with no
     // verdict at all. A transition that catches an inner out-of-gas is the case where gas could
     // otherwise decide.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsHonestPostedCalldata(uint256 gas) public {
         gas = bound(gas, 100_000, GUARDED_FUNDED_GAS);
         address[] memory participants = _deployGuarded();
@@ -758,6 +771,7 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
     // Whatever gas the submitter attaches, a posted block whose transition exceeds any budget never
     // kills the timeout dispute: every call that gives a verdict rejects the refutation (the
     // submitter is slashed), and every other call fails.
+    /// forge-config: default.fuzz.runs = 32
     function testFuzz_applyDisputeFraudProofs_attachedGasNeverFlipsOverBudgetPostedCalldata(uint256 gas) public {
         gas = bound(gas, 100_000, FUNDED_GAS);
         address[] memory participants = _deploy(true);
@@ -768,5 +782,107 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertTrue(_isDisputeCommitted(diamond, dispute), "the timeout dispute stays committed");
         assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]), "disputer kept standing");
         assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), ok);
+    }
+
+    // ---- deterministic sweeps across the full-budget boundary ---------------------------------
+    //
+    // The fuzzes above sample the attached gas at random, but a regression in the upfront budget
+    // check would show only in a narrow band just below the replay requirement. Each sweep finds
+    // the lowest attached gas that adjudicates (a binary search that checks the verdict at every
+    // probe), then steps across that point in fixed increments, so the band is covered on every
+    // run. Every probe starts from the same snapshot.
+
+    function _attach(bytes memory call, uint256 gas, bool asRefutation) internal returns (bool ok) {
+        if (asRefutation) (ok,) = _submitRefutation(call, gas);
+        else (ok,) = address(diamond).call{gas: gas}(call);
+    }
+
+    /// Attaches `gas` from a clean state and checks the verdict; returns whether the call ran.
+    function _probe(bytes memory call, uint256 gas, bool asRefutation, function(bool) internal view verdict)
+        internal
+        returns (bool ok)
+    {
+        uint256 snapshot = vm.snapshotState();
+        ok = _attach(call, gas, asRefutation);
+        verdict(ok);
+        vm.revertToState(snapshot);
+    }
+
+    function _sweepAcrossRequirement(
+        bytes memory call,
+        uint256 fundedGas,
+        bool asRefutation,
+        function(bool) internal view verdict
+    ) internal {
+        uint256 refused = 100_000;
+        uint256 adjudicated = fundedGas;
+        assertFalse(_probe(call, refused, asRefutation, verdict), "refused far below the requirement");
+        assertTrue(_probe(call, adjudicated, asRefutation, verdict), "adjudicated when fully funded");
+        while (adjudicated - refused > SWEEP_STEP) {
+            uint256 middle = (refused + adjudicated) / 2;
+            if (_probe(call, middle, asRefutation, verdict)) adjudicated = middle;
+            else refused = middle;
+        }
+        for (uint256 gas = adjudicated - SWEEP_HALF_WIDTH; gas <= adjudicated + SWEEP_HALF_WIDTH; gas += SWEEP_STEP) {
+            _probe(call, gas, asRefutation, verdict);
+        }
+    }
+
+    function _honestAuthorKept(bool) internal view {
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]));
+    }
+
+    function _overBudgetAuthorSlashedOnlyByAVerdict(bool ok) internal view {
+        assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]), ok);
+    }
+
+    function _honestRefutationKillsOrNoVerdict(bool ok) internal view {
+        if (ok) _assertTimeoutKilled(sweepDispute, sweepParticipants);
+        else _assertNoVerdict(sweepDispute, sweepParticipants);
+    }
+
+    function _overBudgetRefutationNeverKills(bool ok) internal view {
+        assertTrue(_isDisputeCommitted(diamond, sweepDispute), "the timeout dispute stays committed");
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[1]), "disputer kept standing");
+        assertEq(diamond.isParticipantSlashedOnChain(CHANNEL_ID, sweepParticipants[0]), ok);
+    }
+
+    // Across the boundary, a guarded honest block is never turned into fraud.
+    function test_applyFraudProofs_sweepAcrossRequirementKeepsGuardedHonestAuthor() public {
+        sweepParticipants = _deployGuarded();
+        (FraudProof[] memory proofs, FraudProofVerificationContext memory context) = _guardedProof(sweepParticipants);
+        _sweepAcrossRequirement(
+            abi.encodeCall(diamond.applyFraudProofs, (proofs, context)), GUARDED_FUNDED_GAS, false, _honestAuthorKept
+        );
+    }
+
+    // Across the boundary, an over-budget block is fraud whenever a verdict is given.
+    function test_applyFraudProofs_sweepAcrossRequirementNeverAcquitsOverBudget() public {
+        sweepParticipants = _deploy(true);
+        (FraudProof[] memory proofs, FraudProofVerificationContext memory context) = _burnProof(sweepParticipants);
+        _sweepAcrossRequirement(
+            abi.encodeCall(diamond.applyFraudProofs, (proofs, context)),
+            FUNDED_GAS,
+            false,
+            _overBudgetAuthorSlashedOnlyByAVerdict
+        );
+    }
+
+    // Across the boundary, an honest posted block either kills the timeout dispute or decides nothing.
+    function test_applyDisputeFraudProofs_sweepAcrossRequirementKeepsHonestPostedCalldata() public {
+        sweepParticipants = _deployGuarded();
+        bytes memory call;
+        (sweepDispute, call) =
+            _stageTimeoutRefutation(sweepParticipants, abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ()));
+        _sweepAcrossRequirement(call, GUARDED_FUNDED_GAS, true, _honestRefutationKillsOrNoVerdict);
+    }
+
+    // Across the boundary, an over-budget posted block never kills the timeout dispute.
+    function test_applyDisputeFraudProofs_sweepAcrossRequirementNeverAcceptsOverBudgetPostedCalldata() public {
+        sweepParticipants = _deploy(true);
+        bytes memory call;
+        (sweepDispute, call) =
+            _stageTimeoutRefutation(sweepParticipants, abi.encodeCall(GasHungryMathStateMachine.burn, ()));
+        _sweepAcrossRequirement(call, FUNDED_GAS, true, _overBudgetRefutationNeverKills);
     }
 }
