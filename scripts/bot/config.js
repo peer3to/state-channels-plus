@@ -27,7 +27,9 @@ const DEFAULTS = Object.freeze({
     contextPages: 0,
     contextBytes: 0,
     // Backoff only after GitHub throttles without advertising a retry time.
-    throttleFallbackMs: 5 * 60 * 1000
+    throttleFallbackMs: 5 * 60 * 1000,
+    // Wait before the one retry of a turn that lost Claude's login-refresh race.
+    authRefreshRetryMs: 60 * 1000
 });
 function validReviewSetting(value) {
     return (
