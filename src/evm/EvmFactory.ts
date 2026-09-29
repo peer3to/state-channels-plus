@@ -1,5 +1,6 @@
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import { installEcrecoverCache } from "@/cache/EcrecoverCache";
+import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import type { Logger } from "@/utils";
 import { toEthereumJsEvmAddress } from "@/utils";
 import { EVM, EVMOpts } from "@ethereumjs/evm";
@@ -23,9 +24,19 @@ export type EvmCustomPrecompileManifest<TOptions = unknown> = {
     options?: TOptions;
 };
 
+/** Local factory context; references stay in the realm that builds the EVM. */
+export type EvmCustomPrecompileContext = {
+    logger: Logger;
+    /**
+     * The exact root that owns this EVM, for creating child roots. Absent for
+     * a bare EVM built outside an SDK executor root.
+     */
+    owner?: AInternalRpcRoot;
+};
+
 export type EvmCustomPrecompileFactory<TOptions = unknown> = (
     options: TOptions | undefined,
-    context: { logger: Logger }
+    context: EvmCustomPrecompileContext
 ) =>
     | ((input: PrecompileInput) => ExecResult | Promise<ExecResult>)
     | Promise<(input: PrecompileInput) => ExecResult | Promise<ExecResult>>;
@@ -44,7 +55,8 @@ export interface EvmFactoryOptions extends Omit<EVMOpts, "customPrecompiles"> {
 
 export async function createEvm(
     options: EvmFactoryOptions = {},
-    logger: Logger
+    logger: Logger,
+    owner?: AInternalRpcRoot
 ): Promise<EVM> {
     const consoleAddress = Address.fromString(CONSOLE_ADDRESS);
     const { customPrecompiles: inputCustomPrecompiles, ...evmOptions } =
@@ -52,7 +64,8 @@ export async function createEvm(
 
     const existingPrecompiles = await resolveCustomPrecompiles(
         inputCustomPrecompiles,
-        logger
+        logger,
+        owner
     );
     const customPrecompiles = [
         ...existingPrecompiles,
@@ -82,14 +95,15 @@ export function isEvmCustomPrecompileManifest(
 
 async function resolveCustomPrecompiles(
     customPrecompiles: EvmCustomPrecompile[] | undefined,
-    logger: Logger
+    logger: Logger,
+    owner: AInternalRpcRoot | undefined
 ): Promise<EvmNativeCustomPrecompile[]> {
     if (!customPrecompiles?.length) return [];
 
     return Promise.all(
         customPrecompiles.map((precompile) =>
             isEvmCustomPrecompileManifest(precompile)
-                ? resolveCustomPrecompileManifest(precompile, logger)
+                ? resolveCustomPrecompileManifest(precompile, logger, owner)
                 : precompile
         )
     );
@@ -97,7 +111,8 @@ async function resolveCustomPrecompiles(
 
 async function resolveCustomPrecompileManifest(
     manifest: EvmCustomPrecompileManifest,
-    logger: Logger
+    logger: Logger,
+    owner: AInternalRpcRoot | undefined
 ): Promise<EvmNativeCustomPrecompile> {
     const module = await importModuleFromManifest(manifest.module);
     const exported = manifest.exportName
@@ -111,7 +126,7 @@ async function resolveCustomPrecompileManifest(
     }
 
     const factory = exported as EvmCustomPrecompileFactory;
-    const precompile = await factory(manifest.options, { logger });
+    const precompile = await factory(manifest.options, { logger, owner });
     if (typeof precompile !== "function") {
         throw new Error(
             `Custom precompile factory from "${manifest.module}" must return a function`

@@ -706,12 +706,19 @@ describe("P2PManager", function () {
                     )
                 )
             ).to.deep.equal([target, target]);
+            // Neither peer blacklisted the other.
             expect(
-                await h
-                    .control(h.getPeer(0))
-                    .query.isBlacklisted(h.getPeer(1).address)
-                    .request()
-            ).to.equal(false);
+                await Promise.all([
+                    h
+                        .control(h.getPeer(0))
+                        .query.isBlacklisted(h.getPeer(1).address)
+                        .request(),
+                    h
+                        .control(h.getPeer(1))
+                        .query.isBlacklisted(h.getPeer(0).address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
         });
 
         it("explicit same-ID retry creates a fresh matcher and negotiation attempt", async function () {

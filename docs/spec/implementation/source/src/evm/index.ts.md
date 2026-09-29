@@ -21,6 +21,7 @@
 
 EVM module re-exports. The surface now also carries the `GasUsageRow` type, the shape of one
 aggregated (contract, function) row that `P2pInstance.getGasUsageTable` answers.
+It also carries the `EvmCustomPrecompileContext` type ([#L11](../../../../../../src/evm/index.ts#L11), [#L42](../../../../../../src/evm/index.ts#L42)), the local context a custom precompile factory receives, owned by [EvmFactory](EvmFactory.ts.md).
 
 ## Key design decisions
 

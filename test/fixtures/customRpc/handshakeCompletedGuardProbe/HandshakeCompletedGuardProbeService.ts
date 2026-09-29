@@ -211,6 +211,11 @@ export type AddresslessGuardProbe = {
     invocations: string[];
 };
 
+export type HandshakeWaitDisposalProbe = {
+    pendingCompleted: boolean;
+    laterCompleted: boolean;
+};
+
 export type CustomFailureGuardProbe = {
     failureCalls: number;
     disconnected: boolean;
@@ -668,6 +673,26 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             init.isNegotiating = originalIsNegotiating;
             init.waitForHandshakeCompleted = originalWait;
         }
+    }
+
+    /**
+     * Runs the custom RPC root's runtime-shutdown hook while a handshake wait
+     * on a never-authenticated transport is pending, then waits again. Both
+     * waits use a timeout far beyond the test timeout, so only disposal can
+     * settle them in time.
+     */
+    public async probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
+        const transport = new GuardTransport(this.p2pManager);
+        const init = this.p2pManager.localRpc.initHandshakeService;
+        const pending = init.waitForHandshakeCompleted(transport, 600_000);
+        await this.p2pManager.localRpc.dispose();
+        return {
+            pendingCompleted: await pending,
+            laterCompleted: await init.waitForHandshakeCompleted(
+                transport,
+                600_000
+            )
+        };
     }
 
     public async probeCustomFailure(): Promise<CustomFailureGuardProbe> {

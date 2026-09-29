@@ -76,16 +76,41 @@ export function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
         mode?: "inline";
     }
 ): Promise<TRoot>;
+/**
+ * A worker without an explicit parent: creation adds a hidden parent in the
+ * caller's realm for this worker alone, and disposing the returned handle
+ * also disposes that parent.
+ */
 export function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
     entry: RootConstructor<TRoot, TArgs, TLocal>,
     options: {
-        parent: AInternalRpcRoot;
-        mode: "inline" | "worker";
+        mode: "worker";
+        parent?: undefined;
         args: TArgs;
         workerUrl?: string | URL;
         logger?: Logger;
         handlerExecutionContext?: HostHandlerExecutionContext;
-        local?: TLocal;
+    }
+): Promise<RemoteRoot<TRoot>>;
+/**
+ * A child in either placement. `local` reaches only an inline child; it never
+ * crosses a worker port, so a placement known to be a worker takes none.
+ */
+export function createRoot<
+    TRoot extends AInternalRpcRoot,
+    TArgs,
+    TLocal,
+    TMode extends "inline" | "worker"
+>(
+    entry: RootConstructor<TRoot, TArgs, TLocal>,
+    options: {
+        parent: AInternalRpcRoot;
+        mode: TMode;
+        args: TArgs;
+        workerUrl?: string | URL;
+        logger?: Logger;
+        handlerExecutionContext?: HostHandlerExecutionContext;
+        local?: "inline" extends TMode ? TLocal : never;
     }
 ): Promise<RemoteRoot<TRoot>>;
 export async function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
@@ -104,7 +129,10 @@ export async function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
 ): Promise<TRoot | RemoteRoot<TRoot>> {
     if (!options.parent) {
         if (options.mode === "worker")
-            throw new Error("Worker roots require a parent");
+            return createParentlessWorker(entry, {
+                ...options,
+                mode: "worker"
+            });
         let root: AInternalRpcRoot | undefined;
         try {
             const context = rootStartContext(options.parentPort, "inline", {
@@ -134,6 +162,83 @@ export async function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
             }
         }
     }
+    return createChildRoot(entry, { ...options, parent: options.parent });
+}
+
+/** Caller-side parent of one parentless worker; it has no domain service. */
+class ParentlessWorkerParentRoot extends AInternalRpcRoot {
+    constructor(
+        _args: undefined,
+        _local: undefined,
+        context: RootStartContext
+    ) {
+        super(
+            // Nothing is above this root: log what its worker reports.
+            (error) =>
+                this.rootLogger.error("Parentless worker reported an error", {
+                    error
+                }),
+            30_000,
+            context
+        );
+    }
+
+    public async start(): Promise<void> {}
+
+    // Implements root cleanup through the shared recursive disposal contract.
+    public override dispose(): Promise<void> {
+        return this.disposeRoot(() => {});
+    }
+}
+
+async function createParentlessWorker<
+    TRoot extends AInternalRpcRoot,
+    TArgs,
+    TLocal
+>(
+    entry: RootConstructor<TRoot, TArgs, TLocal>,
+    options: {
+        args: TArgs;
+        workerUrl?: string | URL;
+        logger?: Logger;
+        handlerExecutionContext?: HostHandlerExecutionContext;
+        mode: "worker";
+    }
+): Promise<RemoteRoot<TRoot>> {
+    // One hidden parent per creation; it is never shared or reused.
+    const parent = await createRoot(ParentlessWorkerParentRoot, {
+        args: undefined,
+        logger: options.logger,
+        handlerExecutionContext: options.handlerExecutionContext
+    });
+    try {
+        return await createChildRoot(
+            entry,
+            { ...options, parent },
+            // The worker's connection is already closed and unregistered, so
+            // the parent's own cascade cannot await this cleanup.
+            () => parent.dispose()
+        );
+    } catch (error) {
+        await parent.dispose();
+        throw error;
+    }
+}
+
+async function createChildRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
+    entry: RootConstructor<TRoot, TArgs, TLocal>,
+    options: {
+        args: TArgs;
+        workerUrl?: string | URL;
+        logger?: Logger;
+        handlerExecutionContext?: HostHandlerExecutionContext;
+        local?: TLocal;
+        parent: AInternalRpcRoot;
+        mode?: "inline" | "worker" | "attached";
+        port?: RuntimePort;
+    },
+    afterCleanup?: () => Promise<void>
+): Promise<RemoteRoot<TRoot>> {
     const parent = options.parent;
     if (parent.isDisposing)
         throw new Error("Cannot create a child of a disposing root");
@@ -195,7 +300,8 @@ export async function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
                     // Final closure has settled, so both inline endpoints can close.
                     () => localRoot?.closeConnections(),
                     () => childRemoteRoot.closeWithReason(childDisposedError()),
-                    () => worker?.shutdown()
+                    () => worker?.shutdown(),
+                    () => afterCleanup?.()
                 );
             })())
     );

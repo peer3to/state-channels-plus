@@ -358,6 +358,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             storage,
             logger,
             () => this.dispose(),
+            // Local-only: consumer custom RPCs parent their child roots here.
+            { owner: this },
             customRpcResolved?.customRpc,
             customRpcResolved?.customRpcOptions
         );

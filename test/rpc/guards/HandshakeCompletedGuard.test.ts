@@ -157,6 +157,16 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.managerDisposed).to.equal(true);
     });
 
+    it("settles a pending handshake wait and every later wait as not completed once the runtime RPC root is disposed", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeHandshakeWaitDisposal()
+            .request();
+
+        expect(result.pendingCompleted).to.equal(false);
+        expect(result.laterCompleted).to.equal(false);
+    });
+
     it("does not revive a timed-out queue after late authentication", async function () {
         const result = await fixture
             .control()

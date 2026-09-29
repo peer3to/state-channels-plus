@@ -11,6 +11,7 @@ Exposes deploy, executeCall and simulateCall through the same receiving service 
 
 - Executor disposal is invoked through the root lifecycle service. Its operation still calls the executor owner; the lifecycle after-response hook retains dedicated-worker shutdown ordering. Inline disposal releases the engine and closes the root connection.
 
+- All three endpoints, `deploy`, `executeCall`, and `simulateCall`, delegate through `ContractExecutorService.admit` ([#L5-L17](../../../../../../../../../src/rpc/internal/services/contractExecutor/ContractExecutorRpcMethods.ts#L5-L17)); any of them can reach a custom precompile, so none bypasses shutdown admission. Admission and drain state stay on the [service](ContractExecutorService.ts.md); this class holds endpoints only.
 - Only public endpoint functions live on this receiver ([`ContractExecutorRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/contractExecutor/ContractExecutorRpcMethods.ts#L8)).
 - The sender and service belong to this invocation, not mutable shared dispatch state ([`ContractExecutorRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/contractExecutor/ContractExecutorRpcMethods.ts#L8)).
 

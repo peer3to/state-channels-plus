@@ -146,10 +146,7 @@ export async function assertExecutorManifestValues(
     const configuredAddress = Address.fromString(
         "0x00000000000000000000000000000000000000ce"
     );
-    const module = path.resolve(
-        __dirname,
-        "../runtimeRpc/RuntimeValuePrecompile.ts"
-    );
+    const module = path.resolve(__dirname, "./RuntimeValuePrecompile.ts");
     const options = {
         value: (1n << 200n) + 17n,
         bytes: new Uint8Array([0, 127, 255])

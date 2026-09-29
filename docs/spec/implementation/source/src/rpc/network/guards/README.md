@@ -11,6 +11,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [DeferredAdmissionGuard.ts](./DeferredAdmissionGuard.ts.md)
 - [HandshakeCompletedGuard.ts](./HandshakeCompletedGuard.ts.md)
 - [index.ts](./index.ts.md)
+- [LocalOnlyGuard.ts](./LocalOnlyGuard.ts.md)
 - [runGuards.ts](./runGuards.ts.md)
 
 ## Source inventory
@@ -21,6 +22,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [DeferredAdmissionGuard.ts](../../../../../../../../src/rpc/network/guards/DeferredAdmissionGuard.ts) | [DeferredAdmissionGuard.ts.md](./DeferredAdmissionGuard.ts.md) |
 | [HandshakeCompletedGuard.ts](../../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts) | [HandshakeCompletedGuard.ts.md](./HandshakeCompletedGuard.ts.md) |
 | [index.ts](../../../../../../../../src/rpc/network/guards/index.ts) | [index.ts.md](./index.ts.md) |
+| [LocalOnlyGuard.ts](../../../../../../../../src/rpc/network/guards/LocalOnlyGuard.ts) | [LocalOnlyGuard.ts.md](./LocalOnlyGuard.ts.md) |
 | [runGuards.ts](../../../../../../../../src/rpc/network/guards/runGuards.ts) | [runGuards.ts.md](./runGuards.ts.md) |
 
 ## Removed declaration or barrel

@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Network-category exports for the service base, explicit peer root and manifest types. Importing this file adds no services to a root and exports no internal service. The package RPC barrel keeps its base-first initialization order.
+Network-category exports for the service base, explicit peer root, manifest types, and the local `CustomRpcContext` construction type ([#L4-L8](../../../../../../../src/rpc/network/index.ts#L4-L8)). Importing this file adds no services to a root and exports no internal service. The package RPC barrel keeps its base-first initialization order.
 
 ## Key design decisions
 

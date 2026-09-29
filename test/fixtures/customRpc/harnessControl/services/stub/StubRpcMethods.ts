@@ -2968,8 +2968,44 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldHandshakeCount();
     }
 
+    public getAckedHeldHandshakeCount(): number {
+        return this.service.getAckedHeldHandshakeCount();
+    }
+
     public releaseInitHandshakes(): boolean {
         this.service.releaseInitHandshakes();
+        return true;
+    }
+
+    /** Drop a proven peer's profile; its open transports keep their address. */
+    public stubUnregisterPeerProfile(peerAddress: Address): boolean {
+        return this.service.unregisterPeerProfile(peerAddress);
+    }
+
+    /** Drop the profile of every transport the handshake hold parked. */
+    public stubUnregisterHeldHandshakeProfiles(): number {
+        return this.service.unregisterHeldHandshakeProfiles();
+    }
+
+    public restoreUnregisteredProfiles(): number {
+        return this.service.restoreUnregisteredProfiles();
+    }
+
+    /** Record inbound request frames for `service` with their connection. */
+    public stubCaptureInboundRequestFrames(service: string): boolean {
+        this.service.captureInboundRequestFrames(service);
+        return true;
+    }
+
+    /** Deliver a captured frame again on the connection it arrived on. */
+    public injectCapturedRequestFrame(
+        index: number
+    ): Promise<{ transportClosed: boolean }> {
+        return this.service.injectCapturedRequestFrame(index);
+    }
+
+    public restoreInboundRequestFrames(): boolean {
+        this.service.restoreInboundRequestFrames();
         return true;
     }
 

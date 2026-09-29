@@ -3,6 +3,7 @@ import type {
     CompletedGuardProbe,
     AddresslessGuardProbe,
     CustomFailureGuardProbe,
+    HandshakeWaitDisposalProbe,
     DisposedWaiterGuardProbe,
     HandshakeCompletedGuardProbeService,
     PunishmentGuardProbe,
@@ -59,6 +60,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ANetworkRpcMethods<H
 
     public probeAddresslessFallback(): Promise<AddresslessGuardProbe> {
         return this.service.probeAddresslessFallback();
+    }
+
+    public probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
+        return this.service.probeHandshakeWaitDisposal();
     }
 
     public probeCustomFailure(): Promise<CustomFailureGuardProbe> {

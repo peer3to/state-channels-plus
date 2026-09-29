@@ -384,15 +384,15 @@ Root classes now pass directly to createRoot. One platform worker creator takes 
 
 ## Client-root ownership and initialization
 
-The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation returns the registered typed handle, and without an explicit parent it adds one hidden parent for that worker alone (see the parentless-worker section below). No raw bootstrap port is exposed by that handle.
 
-The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+The new creation cases exercise delayed standalone initialization, parentless worker creation and cleanup, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
 
 The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
 
 ## Application setup ownership correction
 
-The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parented and parentless workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
 
 ## Logger gossip follow-up
 
@@ -591,3 +591,36 @@ A participant running a random-nonce signer excludes itself from its honest peer
 re-signs; deterministic signing is a stated participant assumption. In inline mode several runtimes
 share one memo and all of them act on each report. Canonical-form enforcement on-chain is out of this
 change.
+
+## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
+
+[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) now specifies host-only admission, implemented by the public SDK [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md). Loopback
+self-delivery stays the only guard bypass; every remote call that reaches the guard is refused before
+execution, never deferred or replayed, and handed to the canonical disconnect owner with the blacklist
+policy. Punishment follows the proven identity: a registered profile is blacklisted and all its live
+transports close; a proven address without a profile gets a recorded verdict; a transport with neither
+only closes, with no verdict or ban. The disconnect owner marks nothing for it, not even the transport
+handle, because the profile registry blacklists a transport only through a profile attached to it. Residual risk: an unidentified sender can reconnect under a fresh
+transport key and probe again; each probe still reaches no endpoint. The guard suppresses the
+guard-failure response only for requests it rejected, so an earlier guard's declared rejection is
+unchanged and a remote probe learns only that its session closed. A benign misconfigured remote caller
+sees a disconnect, not a diagnostic.
+
+[`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now gives custom RPC constructors and executor precompile factories an exact local owner
+reference. The reference stays in its realm and is never serialized, so one inline runtime's extension
+cannot create children under, or dispose, another runtime in the same realm; the multi-peer isolation
+case exercises this. Consumers can create parentless workers; each gets its own hidden parent that is
+never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The public
+entry now exports the generic root bases and creation functions but no concrete SDK root, so a consumer
+cannot construct or look up an SDK host or executor to gain a parent.
+
+Executor disposal now closes admission and waits for admitted work before children close. By engineer
+decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
+call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
+abandoned without a host error. By the engineer's later decision (option a after the second
+implementation review), every caller still waiting at the limit receives the disposal rejection, and the
+operation's later outcome is dropped: it may keep running and succeed, or fail against a closed child, but
+neither result reaches the caller or the host, so a caller never sees a result produced after the executor
+declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
+executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
+acceptance remain pending.

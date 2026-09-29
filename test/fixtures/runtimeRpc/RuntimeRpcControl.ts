@@ -3,7 +3,7 @@ import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import type { RpcRequestId } from "@/rpc/router/ARpcRouter";
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import type Rpc from "@/rpc/Rpc";
-import { isRpc, isRpcResponse } from "@/rpc/Rpc";
+import { isRpc, isRpcResponse, type RpcResponse } from "@/rpc/Rpc";
 import type InternalTransport from "@/transport/InternalTransport";
 
 /** Holds and observes actual deliveries; the production router still settles every request. */
@@ -23,7 +23,11 @@ export class RuntimeRpcControl {
         timed?: boolean;
     }> = [];
     private readonly restore: () => void;
-    private readonly held: Array<() => void> = [];
+    // Held frames in arrival order, each with the delivery that releases it.
+    private readonly held: Array<{
+        frame: Rpc | RpcResponse;
+        deliver: () => void;
+    }> = [];
     private holdMethod?: string;
     private holdIncomingMethod?: string;
     private failMethod?: string;
@@ -74,7 +78,7 @@ export class RuntimeRpcControl {
                     frame.requestId === this.heldRequestId) ||
                 (isRpc(frame) && frame.method === this.holdIncomingMethod)
             ) {
-                this.held.push(() => receive(frame));
+                this.held.push({ frame, deliver: () => receive(frame) });
                 this.received?.();
                 return;
             }
@@ -133,10 +137,17 @@ export class RuntimeRpcControl {
     }
 
     public releaseAt(index: number): void {
-        const [deliver] = this.held.splice(index, 1);
-        if (!deliver)
-            throw new Error("No held delivery at the requested index");
-        deliver();
+        const [entry] = this.held.splice(index, 1);
+        if (!entry) throw new Error("No held delivery at the requested index");
+        entry.deliver();
+    }
+
+    /**
+     * Copies of the held frames. Reading neither delivers nor releases a
+     * frame, and changing a copy leaves the held frame unchanged.
+     */
+    public heldFrames(): Array<Rpc | RpcResponse> {
+        return this.held.map(({ frame }) => structuredClone(frame));
     }
 
     public get heldCount(): number {
@@ -179,7 +190,7 @@ export class RuntimeRpcControl {
         this.holdIncomingMethod = undefined;
         this.holdMethod = undefined;
         this.heldRequestId = undefined;
-        for (const deliver of this.held.splice(0)) deliver();
+        for (const { deliver } of this.held.splice(0)) deliver();
     }
 
     public dispose(): void {

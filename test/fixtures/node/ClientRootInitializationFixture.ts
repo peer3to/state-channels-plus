@@ -100,26 +100,6 @@ export async function assertStandaloneRoot(fail: boolean): Promise<void> {
     });
 }
 
-export async function assertWorkerNeedsParent(): Promise<void> {
-    const before = new Set(RootCreationControl.roots);
-    let failure: unknown;
-    try {
-        await Reflect.apply(createRoot, undefined, [
-            ContractExecutorRoot,
-            {
-                mode: "worker",
-                args: { config, customPrecompiles: [] }
-            }
-        ]);
-    } catch (error) {
-        failure = error;
-    }
-    expect((failure as Error).message).to.equal(
-        "Worker roots require a parent"
-    );
-    expect([...RootCreationControl.roots]).to.deep.equal([...before]);
-}
-
 export async function assertClientInitialization(
     failDeployment?: 1 | 2 | "observer" | "host-observer",
     runSdkInThread = false
