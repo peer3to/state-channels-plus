@@ -211,6 +211,11 @@ export type AddresslessGuardProbe = {
     invocations: string[];
 };
 
+export type HandshakeWaitDisposalProbe = {
+    pendingCompleted: boolean;
+    laterCompleted: boolean;
+};
+
 export type CustomFailureGuardProbe = {
     failureCalls: number;
     disconnected: boolean;
@@ -232,6 +237,14 @@ export type DisposedWaiterGuardProbe = {
     closeCalls: number;
     responses: RpcResponse[];
     managerDisposed: boolean;
+};
+
+export type ShutdownDeferredRpcProbe = {
+    invocations: string[];
+    blacklisted: boolean;
+    closeCalls: number;
+    strikes: number;
+    p2pManagerDisposedAtExpiry: boolean;
 };
 
 export type RepeatedTimeoutGuardProbe = {
@@ -670,6 +683,26 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         }
     }
 
+    /**
+     * Runs the custom RPC root's runtime-shutdown hook while a handshake wait
+     * on a never-authenticated transport is pending, then waits again. Both
+     * waits use a timeout far beyond the test timeout, so only disposal can
+     * settle them in time.
+     */
+    public async probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
+        const transport = new GuardTransport(this.p2pManager);
+        const init = this.p2pManager.localRpc.initHandshakeService;
+        const pending = init.waitForHandshakeCompleted(transport, 600_000);
+        await this.p2pManager.localRpc.dispose();
+        return {
+            pendingCompleted: await pending,
+            laterCompleted: await init.waitForHandshakeCompleted(
+                transport,
+                600_000
+            )
+        };
+    }
+
     public async probeCustomFailure(): Promise<CustomFailureGuardProbe> {
         const transport = this.transport(
             "0xA000000000000000000000000000000000000008"
@@ -780,6 +813,37 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         } finally {
             init.isNegotiating = originalIsNegotiating;
             init.waitForHandshakeCompleted = originalWait;
+        }
+    }
+
+    /**
+     * The real shutdown order settles a deferred guarded RPC's handshake wait
+     * with false while the P2P manager is still alive: the RPC is dropped with
+     * no disconnect, no verdict and no retry-bound strike.
+     */
+    public async probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
+        const address = "0xA000000000000000000000000000000000000015";
+        const transport = this.transport(address);
+        const profile = this.register(transport, false);
+        const target = new GuardTargetService(this.p2pManager);
+        const init = this.p2pManager.localRpc.initHandshakeService;
+        const originalIsNegotiating = init.isNegotiating.bind(init);
+        // negotiating -> the guard defers onto the real handshake wait
+        init.isNegotiating = () => true;
+        try {
+            target.runRPC(this.rpc("shutdown-deferred"), transport);
+            await this.p2pManager.stateManager.stop();
+            const p2pManagerDisposedAtExpiry = this.p2pManager.isDisposed;
+            await this.flush();
+            return {
+                invocations: [...target.invocations],
+                blacklisted: profile.isBlackListed,
+                closeCalls: transport.closeCalls,
+                strikes: this.p2pManager.profileManager.getStrikes(address),
+                p2pManagerDisposedAtExpiry
+            };
+        } finally {
+            init.isNegotiating = originalIsNegotiating;
         }
     }
 

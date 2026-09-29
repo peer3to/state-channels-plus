@@ -8,6 +8,7 @@ import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
 import createEvm from "./EvmFactory";
 import type {
     EvmCustomPrecompile,
+    EvmCustomPrecompileContext,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,
@@ -38,6 +39,7 @@ export type {
     ContractExecutionLog,
     ContractExecutionResult,
     EvmCustomPrecompile,
+    EvmCustomPrecompileContext,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,

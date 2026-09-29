@@ -91,6 +91,38 @@ async function turn(prompt) {
         });
         return;
     }
+    if (thread.model.startsWith("login-refresh-race")) {
+        // The CLI's own failure when another process holds the login refresh:
+        // once for "login-refresh-race-model", on every turn for the
+        // "-persistent" variant. Later turns review normally.
+        thread.refreshRaces = (thread.refreshRaces || 0) + 1;
+        record(file(id), thread);
+        if (
+            thread.model === "login-refresh-race-persistent-model" ||
+            thread.refreshRaces === 1
+        ) {
+            send({
+                type: "assistant",
+                session_id: id,
+                error: "server_error",
+                message: {
+                    content: [
+                        {
+                            type: "text",
+                            text: "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a minute, and if it persists close other Claude Code processes or sign in again"
+                        }
+                    ]
+                }
+            });
+            send({
+                type: "result",
+                subtype: "success",
+                is_error: true,
+                session_id: id
+            });
+            return;
+        }
+    }
     if (thread.model.startsWith("probe-")) {
         // Probe: one tool call, recording exactly what the model received.
         const probes = {

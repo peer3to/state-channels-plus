@@ -18,6 +18,8 @@ One generic `createRootWorker` accepts an entry URL for every root. No concrete 
 
 Compiled and ts-node entries use the same bootstrap. All roots use the shared memory limit and full worker cleanup. The bootstrap installs the supplied global threadName before domain initialization. Every unexpected root-worker exit, including zero, is fatal for all roots. The common launcher owns connection-close failure ordering. An earlier worker error is delivered first. Failed initial transfer closes a worker still waiting for bootstrap.
 
+A `.ts` worker entry preloads `ts-node/register/transpile-only` and `tsconfig-paths/register` by absolute paths resolved from the SDK package with `require.resolve` ([#L39-L49](../../../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts#L39-L49)), not by bare names resolved from the process working directory. A consumer package whose working directory lacks `tsconfig-paths` (such as poker's own source prover and verifier entries) can therefore start its own `.ts` root entries through the SDK. The inherited `--cpu-prof` flags are kept. Compiled `.js` entries take no preloads. Within this repository every `.ts` worker test entry starts through these resolved preloads; a start from a consumer working directory is exercised only by consumer suites.
+
 ## Inputs, outputs, state, and side effects
 
 The public entry signatures define the startup values and platform handles. Domain roots own services; the common router owns pending requests. Startup and cleanup may allocate or release ports and workers. No separate readiness registry is introduced here.

@@ -45,6 +45,10 @@ export class RuntimeProbeRpcMethods extends InheritedRuntimeProbeRpcMethods {
     public sum(left: number, right = 0): number {
         return left + right;
     }
+    /** The execution context that ran this handler. */
+    public threadName(): string {
+        return globalThis.threadName;
+    }
     public reportError(message: string): void {
         this.service.root.reportError(new Error(message));
     }

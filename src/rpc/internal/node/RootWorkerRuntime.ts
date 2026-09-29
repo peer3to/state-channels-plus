@@ -33,15 +33,18 @@ export function createRootWorker(
     // An explicit execArgv replaces the inherited one, so keep the parent's
     // CPU-profiler flags: a `node --cpu-prof` run then profiles every root
     // thread, not only the main thread.
+    // The preloads resolve from this package, not the caller's working
+    // directory, so a consumer's own source entries start without it
+    // installing the SDK's loaders.
     const execArgv = workerPath.endsWith(".ts")
         ? [
               ...process.execArgv.filter((flag) =>
                   flag.startsWith("--cpu-prof")
               ),
               "-r",
-              "ts-node/register/transpile-only",
+              require.resolve("ts-node/register/transpile-only"),
               "-r",
-              "tsconfig-paths/register"
+              require.resolve("tsconfig-paths/register")
           ]
         : undefined;
     const worker = new Worker(workerPath, {

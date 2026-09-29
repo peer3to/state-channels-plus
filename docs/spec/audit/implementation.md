@@ -185,15 +185,15 @@ The shared global initializer does not create window. A temporary unified shim d
 
 ## Client-root ownership and initialization
 
-The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns a typed remote root handle. Its transport and connection record are private.
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation returns a typed remote root handle, and without an explicit parent it adds one hidden parent for that worker alone (see the parentless-worker section below). Its transport and connection record are private.
 
-The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. Logger connection discovery now follows root relationships without caller registration; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+The new creation cases exercise delayed standalone initialization, parentless worker creation and cleanup, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. Logger connection discovery now follows root relationships without caller registration; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
 
 The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
 
 ## Application setup ownership correction
 
-The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parented and parentless workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
 
 A worker exit during an awaited disposal now rejects that acknowledgement and removes its child connection. It is not ignored as an expected late exit; already closed connections still preserve their settled result. The real-worker regression checks repeat disposal and parent usability.
 
@@ -655,3 +655,59 @@ Specified in dispute-processing stage 5
 **Negotiation cleanup.** [OpenChannelNegotiationService.ts](../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md)
 `clearAttempt` takes the attempt it ends and does nothing when that attempt is no longer current, so a
 late opening-hook failure cannot clear its replacement.
+
+## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
+
+Conformance: [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) implements the host-only part of [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) with an always-failing check, a normal-return
+failure handler that delegates to `P2PManager.disconnectConnection` with `DisconnectPolicy.BLACKLIST`,
+and a `WeakSet`-scoped override of `AGuard.suppressesFailureResponse`; it is exported from the guard
+barrel and the public entry. For [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59), the host passes `{ owner: this }` through `StateManager` and
+`P2PManager` to the custom-RPC constructor, the executor passes `router.rpcRoot` through `createEvm` to
+precompile factories, `createRoot` supports parentless workers with a per-creation hidden parent, and
+`ContractExecutorService` owns admission and drain with all three endpoints delegating to it and
+`ContractExecutorRoot` running the drain as its disposal preparation. Node `.ts` worker preloads now
+resolve from the SDK package. File reports, the guards and internal-RPC inventories, and the runtime
+view record these; new component families are [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8),
+[`UNIT-TEST-EVM-FACTORY-1-002C8D`](../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), and
+[`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
+permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
+drain is bounded by the engineer decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym): `closeAdmission` races the admitted set against the exported
+`IN_FLIGHT_REPLY_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
+The second implementation review showed that `admit` returned the operation's own promise, so a call that
+completed after the limit, during the later in-flight reply drain, still returned its success to a caller
+the executor had declared abandoned. By the engineer's decision (option a) `admit` now returns a
+caller-facing promise behind a settle-once latch; at the limit `closeAdmission` rejects every caller still
+waiting with `Contract executor shut down before the operation finished`, and the operation's later
+success or failure is dropped with no host error, while work that finishes within the limit keeps its own
+result or error. This matches the amended [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) rule, which now states that the
+disposal rejection holds even when the operation later succeeds or fails. The admission family has
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P5`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p5) for the stuck call and gained
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p6), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p7) and
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p8) for late success, late failure, and mutex-queued work released after
+the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p2) now names a late deploy and simulation beside the late call.
+
+The earlier record said an unidentified transport's "handle is barred". That was wrong:
+`ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport
+with neither a profile nor a proven address is only closed and nothing is barred, which is what
+[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) states. The [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md) and
+[P2PManager](../implementation/source/src/P2PManager.ts.md) reports now say so, matching the corrected comment in
+`P2PManager.disconnectConnection`. Parentless workers now also document that a worker thread that exits
+unexpectedly leaves its hidden parent live until the handle is disposed, which then releases it
+([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v.p33)).
+
+A pre-existing shutdown defect is fixed in the same change: `InitHandshakeService` never settled pending
+`waitForHandshakeCompleted` waits at shutdown, so a wait timer could fire after its logger was disposed and
+surface as an unhandled `Logger InitHandshakeService has been disposed` error, contrary to the
+detached-work rule of [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59). The service now has a `dispose()` that marks it disposed and
+clears the completion barrier, so every pending and later wait settles as not completed at once, and
+`MainRpcService.dispose()` calls it first; the handshake guard suite reaches it through that runtime
+shutdown hook. The [InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) and
+[MainRpcService](../implementation/source/src/rpc/network/MainRpcService.ts.md) reports record it with
+[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r.p19) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p9).
+
+The first implementation review asked whether this settlement at runtime shutdown makes a
+`DeferredAdmissionGuard` queue expire as a peer timeout, with a warning and an `allowRetry` disconnect
+against a peer that was only mid-handshake. It does not, and no code change was made: at real runtime
+shutdown `StateManager.stop()` sets `isDisposed` before `localRpc.dispose()` runs, and
+`HandshakeAdmissionPolicy.onExpired` returns early when the state manager is disposed. The settled
+handshake wait therefore never leads to an expiry warning or a retry disconnect.

@@ -8,6 +8,8 @@ Both disposal directions await final acknowledgement. Parent-requested cleanup f
 
 Owns the typed remote RPC surface and connection lifetime for one created root.
 
+The type is exported from the public SDK entry ([index.ts](../../index.ts.md)), so consumers hold the handle `createRoot` returns for their own worker or parented roots. For a parentless worker the handle is the only object the caller sees; disposing it also disposes the hidden parent [createRoot](createRoot.ts.md) created for that worker, through a cleanup step that runs after the handle's own connection has closed.
+
 The handle retains the fatal child failure before transport close observers run. The SDK client uses that cause to suppress a duplicate generic close notification; RootErrorService delivers the original failure. Request diagnostics project the actual sent envelope, including its requestId.
 
 ## Key design decisions

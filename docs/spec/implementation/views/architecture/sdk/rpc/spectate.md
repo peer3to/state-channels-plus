@@ -47,7 +47,7 @@ the source of [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9
 
 Two trigger sites drive `sync` (both loopback, [./README.md](./README.md) §2.4/§3):
 post-handshake sync against a participant peer
-([`InitHandshakeService`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L28),
+([`InitHandshakeService`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L27),
 when the local node is in `OPENED` status and the peer is a dispute-eligible participant), and the
 block queue's `requestSync` when a queued block cannot be linked
 ([`BlockQueueManager`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L41)), which pins the

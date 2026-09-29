@@ -21,7 +21,7 @@
 
 ## Responsibility and observable boundary
 
-Guard re-exports. No behavior of its own.
+Guard re-exports, including the host-only [LocalOnlyGuard](LocalOnlyGuard.ts.md) that application services install to refuse remote callers. No behavior of its own.
 
 ## Key design decisions
 
@@ -53,7 +53,7 @@ claims complete conformance for a requirement that depends on other files.
 
 [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j): exports the existing network guard or service contracts. Root composition remains explicit; exports do not register internal endpoints.
 
-- Mechanical re-export.
+- Mechanical re-export. [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk): the barrel re-exports `LocalOnlyGuard` ([#L5](../../../../../../../../src/rpc/network/guards/index.ts#L5)) beside the other guards, so host-only admission reaches consumers through the same export path; guard behavior stays in [LocalOnlyGuard](LocalOnlyGuard.ts.md).
 
 ## Specification contradictions
 
@@ -81,6 +81,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- The exported modules' own reports.
+- The exported modules' own reports: [AGuard](AGuard.ts.md), [runGuards](runGuards.ts.md), [HandshakeCompletedGuard](HandshakeCompletedGuard.ts.md), [DeferredAdmissionGuard](DeferredAdmissionGuard.ts.md), [LocalOnlyGuard](LocalOnlyGuard.ts.md).
 
 The export boundary retains access to network guard implementations under [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk). Guard evaluation remains owned by [runGuards](runGuards.ts.md); the barrel adds no dispatch behavior.

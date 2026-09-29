@@ -1,4 +1,7 @@
-import type { CustomRpcConstructor } from "./rpc/network/registry";
+import type {
+    CustomRpcConstructor,
+    CustomRpcContext
+} from "./rpc/network/registry";
 import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
@@ -79,6 +82,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     constructor(
         stateManager: StateManager<TCustomRpc>,
         signer: ethers.Signer,
+        localContext: CustomRpcContext,
         customRpc?: CustomRpcConstructor<TCustomRpc, any>,
         customRpcOptions?: any
     ) {
@@ -100,7 +104,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (customRpc) {
             this.localRpc = new customRpc(
                 this.self,
-                customRpcOptions
+                customRpcOptions,
+                localContext
             ) as TCustomRpc;
         } else {
             if (customRpcOptions !== undefined) {
@@ -503,8 +508,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                     ? LoggerUtils.getTransportMetadata(peer)
                     : { peerAddress: peer, reason }
             );
-            // A proven peer is excluded by identity; an unproven transport by
-            // its own handle.
+            // A proven peer is excluded by identity. For an unproven transport
+            // only a profile attached to it is marked; with no profile nothing
+            // is recorded, and the close below is the only effect.
             const target = isTransport ? peer.peerAddress || peer : peer;
             if (isBlacklist) this.profileManager.blacklistPeer(target, reason);
             else this.profileManager.suspendPeer(target);

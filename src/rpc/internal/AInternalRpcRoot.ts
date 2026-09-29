@@ -21,8 +21,9 @@ import { createLogger } from "@platform/createLogger";
 // A handler still running when its root disposes usually finishes as soon as
 // domain cleanup releases what it waited on. One stuck on something cleanup
 // does not release holds the disposal open only this long; its request then
-// still ends in the parent's disposed rejection.
-const IN_FLIGHT_REPLY_DRAIN_MS = 5_000;
+// still ends in the parent's disposed rejection. The contract executor bounds
+// its wait for admitted work at shutdown by the same limit.
+export const IN_FLIGHT_REPLY_DRAIN_MS = 5_000;
 
 type RootRpcServices<T extends AInternalRpcRoot> = {
     [K in keyof T as T[K] extends AInternalRpcService<any>

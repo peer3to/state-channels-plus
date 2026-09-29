@@ -402,6 +402,32 @@ describe("Claude review adapter", function () {
             { provider: "claude" }
         );
     });
+    it("retries a turn once after Claude loses its login-refresh race and completes the review", async function () {
+        await executionFixture(
+            async ({ service, connected, input }) => {
+                service.config.model = "login-refresh-race-model";
+                service.config.limits.authRefreshRetryMs = 10;
+                const message = await request(await connected, input, "race");
+                assert.equal(message.operation, "result");
+                const native = await thread(service, message.value.sessionId);
+                // the lost race, then the same prompt once more
+                assert.equal(native.refreshRaces, 2);
+            },
+            { provider: "claude" }
+        );
+    });
+    it("fails with SERVICE_UNAVAILABLE when Claude loses its login-refresh race again after the one retry", async function () {
+        await executionFixture(
+            async ({ service, connected, input }) => {
+                service.config.model = "login-refresh-race-persistent-model";
+                service.config.limits.authRefreshRetryMs = 10;
+                const message = await request(await connected, input, "raced");
+                assert.equal(message.operation, "failure");
+                assert.equal(message.value.code, "SERVICE_UNAVAILABLE");
+            },
+            { provider: "claude" }
+        );
+    });
     it("stops the review when the CLI session exposes a tool beyond its sandboxed set", async function () {
         await executionFixture(
             async ({ service, connected, input }) => {

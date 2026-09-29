@@ -4,6 +4,8 @@ import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
+import type PeerProfile from "@/PeerProfile";
+import type { BannablePeerInfo } from "@/PeerProfile";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type LobbyMatchingRpcMethods from "@/rpc/network/services/lobbyMatching/LobbyMatchingRpcMethods";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
@@ -13,6 +15,7 @@ import type {
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
+import { deserializeRpcFrame } from "@/rpc/Rpc";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
@@ -578,6 +581,17 @@ export class StubService extends ANetworkRpcService<
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
     /** Record-only probe on the post-audit evidence comparison. */
     readonly evidenceComparisons = new EvidenceComparisonRecorder();
+    /** Profiles the unregister stubs took out of the profile maps, with their peer info. */
+    private readonly unregisteredProfiles: {
+        profile: PeerProfile;
+        peerInfo: BannablePeerInfo | undefined;
+    }[] = [];
+    /** Inbound request frames recorded by the capture stub, oldest first. */
+    private capturedRequestFrames: {
+        serializedRpc: string;
+        transport: NetworkTransport;
+    }[] = [];
+    private restoreRequestFrameCapture?: () => void;
 
     public recordLeaveWatchdog(): void {
         this.leaveWatchdogRestore?.();
@@ -1567,9 +1581,116 @@ export class StubService extends ANetworkRpcService<
         return this.heldHandshakeTransports.length;
     }
 
+    /** Held transports whose remote peer already acknowledged this peer. */
+    public getAckedHeldHandshakeCount(): number {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        return this.heldHandshakeTransports.filter((transport) =>
+            service.didReceiveAck(transport)
+        ).length;
+    }
+
     public releaseInitHandshakes(): void {
         this.releaseHandshakes?.();
         this.releaseHandshakes = undefined;
+    }
+
+    /**
+     * Fault injection: take a proven peer's profile out of the profile
+     * owner, as if it was dropped after the handshake. Its transports stay
+     * open and keep their proven address.
+     */
+    public unregisterPeerProfile(peerAddress: Address): boolean {
+        const profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(peerAddress);
+        if (!profile) return false;
+        this.unregisterProfile(profile);
+        return true;
+    }
+
+    /**
+     * Fault injection: take the profile of every transport the handshake
+     * hold parked out of the profile owner. Those transports then have
+     * neither a profile nor a proven address.
+     */
+    public unregisterHeldHandshakeProfiles(): number {
+        let unregistered = 0;
+        for (const transport of this.heldHandshakeTransports) {
+            const profile =
+                this.p2pManager.profileManager.getProfileByTransport(transport);
+            if (!profile) continue;
+            this.unregisterProfile(profile);
+            unregistered += 1;
+        }
+        return unregistered;
+    }
+
+    /** Register every profile the unregister stubs removed again. */
+    public restoreUnregisteredProfiles(): number {
+        const restored = this.unregisteredProfiles.splice(0);
+        for (const { profile, peerInfo } of restored) {
+            if (peerInfo) profile.setHolepunchPeerInfo(peerInfo);
+            this.p2pManager.profileManager.registerProfile(profile);
+        }
+        return restored.length;
+    }
+
+    /**
+     * Record-only: keep every inbound request frame for `service` that
+     * reaches the network router, with the connection it arrived on.
+     */
+    public captureInboundRequestFrames(service: string): void {
+        this.restoreInboundRequestFrames();
+        const router = this.p2pManager.rpcRouter;
+        const onRpc = router.onRpc;
+        const frames: typeof this.capturedRequestFrames = [];
+        this.capturedRequestFrames = frames;
+        router.onRpc = function (serializedRpc, transport) {
+            const frame = deserializeRpcFrame(serializedRpc);
+            if (
+                frame?.kind === "request" &&
+                frame.rpc.service === service &&
+                !transport.isTrusted
+            ) {
+                frames.push({ serializedRpc, transport });
+            }
+            return onRpc.call(this, serializedRpc, transport);
+        };
+        this.restoreRequestFrameCapture = () => {
+            router.onRpc = onRpc;
+        };
+    }
+
+    /**
+     * Fault injection: deliver a captured request frame again on the actual
+     * connection it arrived on, through the network router entry point.
+     */
+    public async injectCapturedRequestFrame(
+        index: number
+    ): Promise<{ transportClosed: boolean }> {
+        const frame = this.capturedRequestFrames[index];
+        if (!frame) throw new Error(`no captured request frame ${index}`);
+        const transportClosed = frame.transport.isClosed;
+        await this.p2pManager.rpcRouter.onRpc(
+            frame.serializedRpc,
+            frame.transport
+        );
+        return { transportClosed };
+    }
+
+    public restoreInboundRequestFrames(): void {
+        this.restoreRequestFrameCapture?.();
+        this.restoreRequestFrameCapture = undefined;
+        this.capturedRequestFrames = [];
+    }
+
+    private unregisterProfile(profile: PeerProfile): void {
+        const profileManager = this.p2pManager.profileManager;
+        const peerInfo = profile.getHolepunchPeerInfo();
+        // Unmap every live transport, not only the preferred one.
+        for (const transport of profile.getLiveTransports())
+            profileManager.unregisterProfile(profile, transport);
+        profileManager.unregisterProfile(profile);
+        this.unregisteredProfiles.push({ profile, peerInfo });
     }
 
     public countInitHandshakeCalls(): void {

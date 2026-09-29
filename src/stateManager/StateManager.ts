@@ -33,7 +33,10 @@ import { StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
-import type { CustomRpcConstructor } from "@/rpc/network/registry";
+import type {
+    CustomRpcConstructor,
+    CustomRpcContext
+} from "@/rpc/network/registry";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import Storage from "@/storage";
 
@@ -133,6 +136,7 @@ class StateManager<
         storage: Storage,
         logger: Logger,
         private readonly disposeRuntime: () => Promise<void>,
+        localContext: CustomRpcContext,
         customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
         customRpcOptions?: TCustomRpcOptions
     ) {
@@ -202,6 +206,7 @@ class StateManager<
         this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
             signer,
+            localContext,
             customRpc,
             customRpcOptions
         );

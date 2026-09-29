@@ -4,9 +4,20 @@ import {
     assertStandaloneBridge,
     assertDelayedHostInitialization,
     assertStandaloneRoot,
-    assertWorkerNeedsParent,
     assertClientInitialization
 } from "@test/fixtures/node/ClientRootInitializationFixture";
+import {
+    assertCrashedParentlessWorkerDisposalReleasesParent,
+    assertCrashedParentlessWorkerReportsToHandleListener,
+    assertDisposingOneParentlessWorkerKeepsOther,
+    assertFailedParentlessWorkerKeepsLiveOne,
+    assertInlineOwnersAreDistinct,
+    assertParentlessWorkerBorrowsCallerLogger,
+    assertParentlessWorkerDisposalReleasesParent,
+    assertParentlessWorkerServes,
+    assertParentlessWorkersHaveDistinctParents,
+    assertParentlessWorkerStartupFailureReleasesParent
+} from "@test/fixtures/node/ParentlessRootCreationFixture";
 import {
     assertRootStartupFailureRecovery,
     assertExitDuringDisposal
@@ -61,8 +72,35 @@ describe("RootCreation", () => {
     it("cleans a standalone executor after initialization fails", async () => {
         await assertStandaloneRoot(true);
     });
-    it("rejects worker creation without a parent before allocating a root", async () => {
-        await assertWorkerNeedsParent();
+    it("creates a parentless worker whose typed handle serves calls in the worker", async () => {
+        await assertParentlessWorkerServes();
+    });
+    it("gives each parentless worker its own hidden parent", async () => {
+        await assertParentlessWorkersHaveDistinctParents();
+    });
+    it("releases a parentless worker's hidden parent and connection when its handle is disposed", async () => {
+        await assertParentlessWorkerDisposalReleasesParent();
+    });
+    it("releases a parentless worker's hidden parent when worker startup fails", async () => {
+        await assertParentlessWorkerStartupFailureReleasesParent();
+    });
+    it("releases a crashed parentless worker's hidden parent when its handle is disposed", async () => {
+        await assertCrashedParentlessWorkerDisposalReleasesParent();
+    });
+    it("reports a crashed parentless worker's exit cause to its handle's error listener", async () => {
+        await assertCrashedParentlessWorkerReportsToHandleListener();
+    });
+    it("borrows a caller's logger for a parentless worker and leaves it usable after disposal", async () => {
+        await assertParentlessWorkerBorrowsCallerLogger();
+    });
+    it("keeps one parentless worker serving after another is disposed", async () => {
+        await assertDisposingOneParentlessWorkerKeepsOther();
+    });
+    it("keeps a live parentless worker serving when another worker's startup fails", async () => {
+        await assertFailedParentlessWorkerKeepsLiveOne();
+    });
+    it("passes each inline peer's exact host to its custom RPC before readiness and keeps peers isolated", async () => {
+        await assertInlineOwnersAreDistinct();
     });
     it("returns encoded deployment call data through a real SDK worker", async () => {
         await assertClientInitialization(undefined, true);

@@ -16,21 +16,26 @@ export class PingPongE2EFixture {
         deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
     });
 
+    public customRpcManifest() {
+        return {
+            module: path.resolve(__dirname, "customRpc/PingPongRpcManifest.ts")
+        };
+    }
+
+    public timeConfig() {
+        return {
+            agreementTime: 10,
+            p2pTime: 2,
+            chainFallbackTime: 2,
+            evidenceTime: 2
+        };
+    }
+
     public async setup(peerCount: number): Promise<void> {
         await this.harness.setup(peerCount, {
             autoConnect: false,
-            customRpcManifest: {
-                module: path.resolve(
-                    __dirname,
-                    "customRpc/PingPongRpcManifest.ts"
-                )
-            },
-            timeConfig: {
-                agreementTime: 10,
-                p2pTime: 2,
-                chainFallbackTime: 2,
-                evidenceTime: 2
-            }
+            customRpcManifest: this.customRpcManifest(),
+            timeConfig: this.timeConfig()
         });
         await this.harness.lifecycle.openChannel();
         await this.harness.network.connectPeers(
