@@ -79,7 +79,8 @@ export function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
 /**
  * A worker without an explicit parent: creation adds a hidden parent in the
  * caller's realm for this worker alone, and disposing the returned handle
- * also disposes that parent.
+ * also disposes that parent. A supplied `logger` is only borrowed: the hidden
+ * parent logs through a child of it, so the caller's logger stays usable.
  */
 export function createRoot<TRoot extends AInternalRpcRoot, TArgs, TLocal>(
     entry: RootConstructor<TRoot, TArgs, TLocal>,
@@ -208,7 +209,12 @@ async function createParentlessWorker<
     // One hidden parent per creation; it is never shared or reused.
     const parent = await createRoot(ParentlessWorkerParentRoot, {
         args: undefined,
-        logger: options.logger,
+        // A root owns the logger it is given and disposes it with itself; the
+        // caller never sees this parent, so it gets a child of the caller's
+        // logger and the caller's own logger outlives the handle.
+        logger: options.logger?.child({
+            component: ParentlessWorkerParentRoot.name
+        }),
         handlerExecutionContext: options.handlerExecutionContext
     });
     try {

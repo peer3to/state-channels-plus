@@ -128,9 +128,11 @@ any method logic runs. They are the admission layer, distinct from per-endpoint 
   guard came from another peer. That call is rejected at once: it never executes, is never deferred
   and is never replayed, including over a transport whose authentication is still in progress. The
   rejection closes the sender and punishes it according to what its transport has proven: a
-  registered peer identity is excluded with a recorded verdict and all its live transports close; a
-  proven address without a registered identity receives a recorded verdict for that address and the
-  transport closes; a transport with neither loses only itself, with no recorded verdict and no
+  registered peer identity with a proven address is excluded with a recorded verdict and all its live
+  transports close; a registered profile still negotiating, with no proven address, is excluded in
+  memory with no recorded verdict; a proven address without a registered identity receives a recorded
+  verdict for that address and the transport closes; a transport with neither loses only itself, with
+  no recorded verdict and no
   exclusion. A rejected request-style call receives no guard-failure response and no further
   communication for that request. The suppression applies only to requests the host-only guard
   itself rejected: a rejection by an earlier guard in the same chain keeps its declared response.
@@ -259,10 +261,12 @@ during sanctioned replacement overlap until the upgrade protocol closes it. A fr
 when its authenticated transport closes MUST be dropped without execution, disconnection, blacklisting,
 or punishment of a replacement transport. A host-only guard MUST admit no call that reaches it: the call
 MUST NOT execute, be deferred, or be replayed after authentication completes. Its failure handler MUST
-close the sender and apply identity-dependent punishment — a registered identity is excluded with a
-recorded verdict and all its live transports close; a proven address without a registered identity
-receives a recorded verdict and its transport closes; a transport with neither closes without a recorded
-verdict or exclusion — and MUST return normally. A request it rejects MUST receive no guard-failure
+close the sender and apply identity-dependent punishment — a registered identity with a proven address
+is excluded with a recorded verdict and all its live transports close; a registered profile still
+negotiating, with no proven address, is excluded in memory with no recorded verdict, since there is no
+proven address to record; a proven address without a registered identity receives a recorded verdict and
+its transport closes; a transport with neither closes without a recorded verdict or exclusion — and MUST
+return normally. A request it rejects MUST receive no guard-failure
 response and no further communication; this suppression MUST NOT change the response of a request
 rejected by any other guard.
 

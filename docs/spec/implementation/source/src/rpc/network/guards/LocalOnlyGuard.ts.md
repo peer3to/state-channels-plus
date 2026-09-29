@@ -37,9 +37,11 @@ consumers; the implementation is shared between node and browser builds.
    `P2PManager.disconnectConnection(transport, DisconnectPolicy.BLACKLIST, "remote call to a local-only RPC")`
    and returns normally ([#L20-L27](../../../../../../../../src/rpc/network/guards/LocalOnlyGuard.ts#L20-L27)).
    Identity effects therefore come from [P2PManager](../../../P2PManager.ts.md): a transport whose
-   profile is registered is blacklisted by identity and every live transport of that identity closes; a
-   transport with a proven address but no profile records the address verdict and closes; a transport
-   with neither closes with no recorded verdict or persistent ban. The guard copies no identity lookup,
+   registered profile has a proven address is blacklisted by identity with a recorded verdict and every
+   live transport of that identity closes; a registered profile still negotiating, with no proven
+   address, is marked excluded in memory with no recorded verdict; a transport with a proven address but
+   no profile records the address verdict and closes; a transport with neither closes with no recorded
+   verdict or persistent ban. The guard copies no identity lookup,
    warning, or rejection helper from [HandshakeCompletedGuard](HandshakeCompletedGuard.ts.md) and never
    throws.
 3. **Response suppression is scoped to the request this guard rejected.** `onFailure` records the exact

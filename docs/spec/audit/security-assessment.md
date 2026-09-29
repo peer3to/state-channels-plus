@@ -597,9 +597,11 @@ change.
 [`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) now specifies host-only admission, implemented by the public SDK [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md). Loopback
 self-delivery stays the only guard bypass; every remote call that reaches the guard is refused before
 execution, never deferred or replayed, and handed to the canonical disconnect owner with the blacklist
-policy. Punishment follows the proven identity: a registered profile is blacklisted and all its live
-transports close; a proven address without a profile gets a recorded verdict; a transport with neither
-only closes, with no verdict or ban. The disconnect owner marks nothing for it, not even the transport
+policy. Punishment follows the proven identity: a registered profile with a proven address is
+blacklisted with a recorded verdict and all its live transports close; a registered profile still
+negotiating, with no proven address, is marked excluded in memory and gets no recorded verdict; a proven
+address without a profile gets a recorded verdict; a transport with neither only closes, with no verdict
+or ban. The disconnect owner marks nothing for it, not even the transport
 handle, because the profile registry blacklists a transport only through a profile attached to it. Residual risk: an unidentified sender can reconnect under a fresh
 transport key and probe again; each probe still reaches no endpoint. The guard suppresses the
 guard-failure response only for requests it rejected, so an earlier guard's declared rejection is
@@ -610,9 +612,13 @@ sees a disconnect, not a diagnostic.
 reference. The reference stays in its realm and is never serialized, so one inline runtime's extension
 cannot create children under, or dispose, another runtime in the same realm; the multi-peer isolation
 case exercises this. Consumers can create parentless workers; each gets its own hidden parent that is
-never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The public
+never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The main
 entry now exports the generic root bases and creation functions but no concrete SDK root, so a consumer
-cannot construct or look up an SDK host or executor to gain a parent.
+of that entry cannot construct or look up an SDK host or executor to gain a parent. The published
+`./test-harness` subpath is the exception: for tests it exports `P2pRuntimeHostRoot` and
+`RootCreationControl`, whose observation hook sees every root created while it is active. A consumer
+that imports it runs in the same process as the SDK, so the residual risk is local only: that code
+could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
 Executor disposal now closes admission and waits for admitted work before children close. By engineer
 decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile

@@ -51,9 +51,12 @@ The standalone createContractExecutorFactory and ContractExecutorFactoryOptions 
    The concrete SDK roots (`P2pRuntimeHostRoot`, `ContractExecutorRoot`, the client and bridge roots)
    and their internal creation helpers are still not exported: a consumer obtains a parent only as the
    exact owner passed through its construction context, never by constructing or looking up an SDK root.
-   The one exception is test-only: the separate `./test-harness` entry
-   ([test-harness.ts#L17](../../../../../test-harness.ts#L17)) re-exports `P2pRuntimeHostRoot` so test
-   fixtures can type the concrete host. This public entry still keeps every concrete root private.
+   The one exception is test-only: the separate, published `./test-harness` entry
+   ([test-harness.ts#L15-L17](../../../../../test-harness.ts#L15-L17)) re-exports `P2pRuntimeHostRoot` so test
+   fixtures can type the concrete host, and `RootCreationControl`, whose observation hook sees every root
+   created while it is active. A consumer importing it runs in the SDK's own process, so the residual
+   risk is local only ([security assessment](../../../audit/security-assessment.md#host-only-guard-local-owners-parentless-workers-and-executor-drain--2026-09-29)).
+   This public entry still keeps every concrete root private.
 
 ## Inputs, outputs, state, and side effects
 

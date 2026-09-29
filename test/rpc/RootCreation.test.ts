@@ -8,9 +8,11 @@ import {
 } from "@test/fixtures/node/ClientRootInitializationFixture";
 import {
     assertCrashedParentlessWorkerDisposalReleasesParent,
+    assertCrashedParentlessWorkerReportsToHandleListener,
     assertDisposingOneParentlessWorkerKeepsOther,
     assertFailedParentlessWorkerKeepsLiveOne,
     assertInlineOwnersAreDistinct,
+    assertParentlessWorkerBorrowsCallerLogger,
     assertParentlessWorkerDisposalReleasesParent,
     assertParentlessWorkerServes,
     assertParentlessWorkersHaveDistinctParents,
@@ -84,6 +86,12 @@ describe("RootCreation", () => {
     });
     it("releases a crashed parentless worker's hidden parent when its handle is disposed", async () => {
         await assertCrashedParentlessWorkerDisposalReleasesParent();
+    });
+    it("reports a crashed parentless worker's exit cause to its handle's error listener", async () => {
+        await assertCrashedParentlessWorkerReportsToHandleListener();
+    });
+    it("borrows a caller's logger for a parentless worker and leaves it usable after disposal", async () => {
+        await assertParentlessWorkerBorrowsCallerLogger();
     });
     it("keeps one parentless worker serving after another is disposed", async () => {
         await assertDisposingOneParentlessWorkerKeepsOther();

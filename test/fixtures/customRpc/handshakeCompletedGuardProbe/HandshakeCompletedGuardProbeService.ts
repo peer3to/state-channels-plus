@@ -239,6 +239,14 @@ export type DisposedWaiterGuardProbe = {
     managerDisposed: boolean;
 };
 
+export type ShutdownDeferredRpcProbe = {
+    invocations: string[];
+    blacklisted: boolean;
+    closeCalls: number;
+    strikes: number;
+    p2pManagerDisposedAtExpiry: boolean;
+};
+
 export type RepeatedTimeoutGuardProbe = {
     strikesAfterEach: number[];
     suspendedAtBound: boolean;
@@ -805,6 +813,37 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         } finally {
             init.isNegotiating = originalIsNegotiating;
             init.waitForHandshakeCompleted = originalWait;
+        }
+    }
+
+    /**
+     * The real shutdown order settles a deferred guarded RPC's handshake wait
+     * with false while the P2P manager is still alive: the RPC is dropped with
+     * no disconnect, no verdict and no retry-bound strike.
+     */
+    public async probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
+        const address = "0xA000000000000000000000000000000000000015";
+        const transport = this.transport(address);
+        const profile = this.register(transport, false);
+        const target = new GuardTargetService(this.p2pManager);
+        const init = this.p2pManager.localRpc.initHandshakeService;
+        const originalIsNegotiating = init.isNegotiating.bind(init);
+        // negotiating -> the guard defers onto the real handshake wait
+        init.isNegotiating = () => true;
+        try {
+            target.runRPC(this.rpc("shutdown-deferred"), transport);
+            await this.p2pManager.stateManager.stop();
+            const p2pManagerDisposedAtExpiry = this.p2pManager.isDisposed;
+            await this.flush();
+            return {
+                invocations: [...target.invocations],
+                blacklisted: profile.isBlackListed,
+                closeCalls: transport.closeCalls,
+                strikes: this.p2pManager.profileManager.getStrikes(address),
+                p2pManagerDisposedAtExpiry
+            };
+        } finally {
+            init.isNegotiating = originalIsNegotiating;
         }
     }
 

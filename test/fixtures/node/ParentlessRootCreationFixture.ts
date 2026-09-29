@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: real SDK root-creation staging; executable evidence is mapped from test/rpc/RootCreation.test.ts
+import { createUploaderFixture } from "../logging/LogUploader.fixture";
 import { withRuntimeRpc } from "../RpcRouterFixture";
 import type {
     AInternalRpcRoot,
@@ -9,6 +10,7 @@ import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { config } from "@/utils/config";
+import type { LogEntry, Logger } from "@/utils/logging/Logger";
 import { ownerContextRecords } from "@test/fixtures/customRpc/OwnerContextRpcManifest";
 import type { RuntimeProbeRoot } from "@test/fixtures/runtimeRpc/probe/runtime/RuntimeProbeService";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
@@ -36,14 +38,17 @@ function probe(handle: RemoteRoot<ContractExecutorRoot>) {
 }
 
 /** Creates one parentless worker and observes the hidden parent it received. */
-async function createParentlessWorker(): Promise<ParentlessWorker> {
+async function createParentlessWorker(
+    logger?: Logger
+): Promise<ParentlessWorker> {
     const parents: AInternalRpcRoot[] = [];
     const handle = await RootCreationControl.observe(
         () =>
             createRoot(ContractExecutorRoot, {
                 mode: "worker",
                 workerUrl: PROBE_EXECUTOR_ENTRY,
-                args: { config, customPrecompiles: [] }
+                args: { config, customPrecompiles: [] },
+                logger
             }),
         (root) => parents.push(root)
     );
@@ -52,12 +57,17 @@ async function createParentlessWorker(): Promise<ParentlessWorker> {
 }
 
 const CRASH_ADDRESS = "0x00000000000000000000000000000000000000ab";
+const CRASH_EXIT_CODE = 31;
+const CRASH_CAUSE = `Root worker exited with ${CRASH_EXIT_CODE}`;
+const PARENT_ERROR_LOG = "Parentless worker reported an error";
 
 /**
  * A parentless worker whose precompile ends its thread on the first call,
  * and the hidden parent it received.
  */
-async function createCrashingParentlessWorker(): Promise<ParentlessWorker> {
+async function createCrashingParentlessWorker(
+    logger?: Logger
+): Promise<ParentlessWorker> {
     const parents: AInternalRpcRoot[] = [];
     const handle = await RootCreationControl.observe(
         () =>
@@ -76,11 +86,12 @@ async function createCrashingParentlessWorker(): Promise<ParentlessWorker> {
                             options: {
                                 expectedData: "0x1234",
                                 value: "0",
-                                exitCode: 31
+                                exitCode: CRASH_EXIT_CODE
                             }
                         }
                     ]
-                }
+                },
+                logger
             }),
         (root) => parents.push(root)
     );
@@ -273,22 +284,108 @@ export async function assertInlineOwnersAreDistinct(): Promise<void> {
     );
 }
 
-/**
- * The worker thread ends unexpectedly; disposing its handle afterwards still
- * releases the hidden parent and its connection.
- */
-export async function assertCrashedParentlessWorkerDisposalReleasesParent(): Promise<void> {
-    const worker = await createCrashingParentlessWorker();
-    const call = worker.handle.rpc.executor
+/** Calls the crashing precompile and returns the call's rejection message. */
+function crashWorker(worker: ParentlessWorker): Promise<string | null> {
+    return worker.handle.rpc.executor
         .executeCall("0x1234", CRASH_ADDRESS)
         .request()
         .then(
             () => null,
             (error: Error) => error.message
         );
-    await waitFor(() => worker.handle.isClosed, 30_000);
-    expect(await call).to.be.a("string");
-    expect(worker.parent.isDisposing).to.equal(false);
-    await worker.handle.dispose();
-    expectReleased(worker);
+}
+
+type CallerLogStore = { getAllLogs(): LogEntry[] };
+
+function logsOf(logStore: CallerLogStore): string {
+    return JSON.stringify(logStore.getAllLogs());
+}
+
+/** The messages of the errors the hidden parent logged into the caller's store. */
+function parentReportedErrors(logStore: CallerLogStore): string[] {
+    return logStore
+        .getAllLogs()
+        .filter((entry) => entry.message === PARENT_ERROR_LOG)
+        .map((entry) => (entry.meta[0] as { error: Error }).error.message);
+}
+
+/**
+ * The worker thread ends unexpectedly with no error listener on its handle:
+ * the call is rejected with the exit cause, the hidden parent logs that cause,
+ * and disposing the handle afterwards still releases the parent.
+ */
+export async function assertCrashedParentlessWorkerDisposalReleasesParent(): Promise<void> {
+    const { logger, logStore } = createUploaderFixture({ uploadEndpoint: "" });
+    try {
+        const worker = await createCrashingParentlessWorker(logger);
+        const call = crashWorker(worker);
+        await waitFor(() => worker.handle.isClosed, 30_000);
+        expect(worker.handle.failure?.message).to.equal(CRASH_CAUSE);
+        expect(await call).to.equal(CRASH_CAUSE);
+        await waitFor(() => parentReportedErrors(logStore).length > 0);
+        expect(parentReportedErrors(logStore)).to.deep.equal([CRASH_CAUSE]);
+        expect(worker.parent.isDisposing).to.equal(false);
+        await worker.handle.dispose();
+        expectReleased(worker);
+    } finally {
+        logger.dispose();
+    }
+}
+
+/**
+ * The worker thread ends unexpectedly while its handle has an error listener:
+ * the listener receives exactly the exit cause and the hidden parent does not
+ * log it.
+ */
+export async function assertCrashedParentlessWorkerReportsToHandleListener(): Promise<void> {
+    const { logger, logStore } = createUploaderFixture({ uploadEndpoint: "" });
+    try {
+        const worker = await createCrashingParentlessWorker(logger);
+        const received: Error[] = [];
+        worker.handle.onError((error) => received.push(error));
+        const call = crashWorker(worker);
+        await waitFor(() => worker.handle.isClosed, 30_000);
+        expect(await call).to.equal(CRASH_CAUSE);
+        expect(received.map((error) => error.message)).to.deep.equal([
+            CRASH_CAUSE
+        ]);
+        expect(received[0]).to.equal(worker.handle.failure);
+        expect(parentReportedErrors(logStore)).to.deep.equal([]);
+        await worker.handle.dispose();
+        expectReleased(worker);
+    } finally {
+        logger.dispose();
+    }
+}
+
+/**
+ * A caller-supplied logger is only borrowed: the worker's reports reach the
+ * caller's store, and disposing the handle leaves that logger usable.
+ */
+export async function assertParentlessWorkerBorrowsCallerLogger(): Promise<void> {
+    const { logger, logStore } = createUploaderFixture({ uploadEndpoint: "" });
+    try {
+        const worker = await createParentlessWorker(logger);
+        try {
+            await probe(worker.handle)
+                .reportError("reported from the parentless worker")
+                .request();
+            await waitFor(() => parentReportedErrors(logStore).length > 0);
+            expect(parentReportedErrors(logStore)).to.deep.equal([
+                "reported from the parentless worker"
+            ]);
+        } finally {
+            await worker.handle.dispose();
+        }
+        expectReleased(worker);
+        expect(logger.isDisposed).to.equal(false);
+        logger.info(
+            "caller logger remains usable after the handle is disposed"
+        );
+        expect(logsOf(logStore)).to.include(
+            "caller logger remains usable after the handle is disposed"
+        );
+    } finally {
+        logger.dispose();
+    }
 }

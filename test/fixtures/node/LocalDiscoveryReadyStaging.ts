@@ -1,5 +1,7 @@
+import type P2PManager from "@/P2PManager";
 import type { Logger } from "@/utils/logging/Logger";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 // @spec-test-coverage-ignore: stages a real accepted socket before runtime disposal
@@ -62,6 +64,45 @@ export function observeDiscoveryLogger() {
                 expect(Reflect.get(service, "stores").has(store)).to.equal(
                     false
                 );
+        }
+    };
+}
+
+/** The runtime among `managers` with a local dial in flight, once one has. */
+export async function waitForPendingLocalDial(
+    managers: P2PManager[]
+): Promise<P2PManager> {
+    // Read the real private dial registry; do not replace its behavior.
+    const dialing = Reflect.get(
+        LocalDiscoveryServer,
+        "dialingPeers"
+    ) as WeakMap<P2PManager, Set<string>>;
+    let owner: P2PManager | undefined;
+    await waitFor(() => {
+        owner = managers.find(
+            (manager) => (dialing.get(manager)?.size ?? 0) > 0
+        );
+        return owner !== undefined;
+    });
+    return owner!;
+}
+
+/**
+ * Records the peer retries scheduled from now on: a retry writes its count
+ * with its warning and its timer, and the count stays while the discovery
+ * session does.
+ */
+export function observeLocalDialRetries() {
+    const retryCounts = Reflect.get(
+        LocalDiscoveryServer,
+        "_peerRetryCount"
+    ) as Map<string, number>;
+    const before = new Map(retryCounts);
+    return {
+        scheduledSince(): string[] {
+            return [...retryCounts.entries()]
+                .filter(([key, count]) => before.get(key) !== count)
+                .map(([key]) => key);
         }
     };
 }
