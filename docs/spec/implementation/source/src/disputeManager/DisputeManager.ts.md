@@ -68,8 +68,9 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    through `preferLocal` on the local diamond: a local "not final" posts the data without asking
    the chain, because posting is never wrong, only costlier; a local "final" omits the data, which
    is slashable if the lagging mirror was wrong, so the chain confirms that answer and decides
-   ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The on-chain predicate judges the chain snapshot set, frozen for the kill
-   period, plus the joiners at or below the dispute's anchor, minus the dispute's own `onChainSlashes`, so
+   ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The on-chain predicate judges the chain snapshot set, which cannot move
+   while a proof can land (adoption targets only the latest undisputed fork, a disputed fork advances only by
+   reduction), plus the joiners at or below the dispute's anchor, minus the dispute's own `onChainSlashes`, so
    this construction-time probe and a later fraud-proof read of the committed dispute agree.
 5. **Construction aborts on partial data.** `getAuditingData` flags any locally unbackable element
    (`isPartial`) and `constructDispute` throws rather than submitting a dispute the node cannot

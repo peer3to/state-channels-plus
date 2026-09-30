@@ -329,6 +329,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         }
                         d.input.latestStateSnapshotHash =
                             sm.p2pManager.localRpc.dispute.randomHash();
+                        d.postedAuditingData = true;
                     });
 
                     await h.byzantine.submitInvalidStateTransitionBlock(0);

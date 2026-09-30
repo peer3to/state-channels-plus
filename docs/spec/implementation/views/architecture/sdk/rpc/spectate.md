@@ -88,7 +88,7 @@ The service is a long-lived singleton; RpcMethods instances are per-dispatch and
 
 Delivery: request/response. Guard: `HandshakeCompletedGuard`. Ordered stages
 ([`SpectateRpcMethods`](../../../../../../../src/rpc/network/services/spectate/SpectateRpcMethods.ts#L1) +
-[`SpectateService.generateSyncPayload`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L561)):
+[`SpectateService.generateSyncPayload`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L594)):
 
 1. **Sender identity present.** `senderTransport.peerAddress` must exist; else disconnect +
    blacklist the transport and throw. (Behind the guard this should hold.)
@@ -146,30 +146,42 @@ enumerated abort conditions in
 3. **Fetch on-chain truth.** `fetchAndPersistOnChainSnapshot(channelId)` syncs the local EVM to the
    real on-chain snapshot — the anchor everything is checked against.
 4. **Dispute-window walk.** Read chain finality in one static multicall before fetching and persisting
-   the claimed windows. Each window must exist and have an expired kill period. A non-final window
+   the claimed windows. A responder whose snapshot lags the chain may lead with windows the chain
+   already adopted: that leading prefix is skipped (`adoptedWindowCount`) only when each window in it
+   is chain-final, its chain-recorded `reducedResult.forkId` equals its claimed `reducedForkId`, it
+   starts on the previous window's `reducedForkId`, and the last one reduces into the on-chain fork.
+   Otherwise nothing is skipped. The remaining windows (`linkedDisputeWindows`) must form one chain:
+   the first on the on-chain fork, each next one on the fork the previous one reduced to, else abort
+   ("dispute window not linked"). When a prefix was skipped, the pre-genesis outbound blocks are
+   pruned to the on-chain outbound tip (`pruneOutboundMessageBlocks`) before step 7, and step 13
+   persists only `linkedDisputeWindows` and the pruned blocks; the pinned-mode lineage check in
+   step 8 still reads the full window list. Each window must
+   exist and have an expired kill period. A non-final window
    is reduced locally, with the claimed successor enforced by the contract, and its calldata stays
    in this request's snapshot simulation. More than one such window aborts. For an already-final
    window, compare the claimed successor with this request's fetched chain response. Neither branch
-   re-reads the mutable shared local window after reduction. `finalForkId` walks forward.
-5. **Genesis validity.** The tip fork's genesis must satisfy: `finalForkId == payload genesis forkId`,
+   re-reads the mutable shared local window after reduction. `currentForkId` walks forward.
+5. **Genesis validity.** The tip fork's genesis must satisfy: `currentForkId == payload genesis forkId`,
    `isGenesisSnapshotWithoutTimeCheck`, and `stateMachineStateHash == hash(encoded genesis state)`.
-6. **Stale-proof short-circuit.** If the on-chain snapshot is on the same fork but already past the
-   proved height, abort (nothing to teleport to).
+6. **Regression check.** The private `isSameForkRegression`, against the step-3 snapshot: on the same
+   fork the proof must end at that snapshot or a newer one (`isSnapshotNewer` on the local diamond), else
+   abort (nothing to teleport to). Another fork is linked by the step-4 walk.
 7. **Outbound range #1.** `verifyOutboundMessageBlocks` from on-chain tip → fork genesis.
 8. **Disputed / requested-fork check.** Latest mode (no requested fork): the tip fork must **not** be
-   disputed on-chain (`getDisputeWindowCreationTimestamp == 0`). Pinned mode: `finalForkId ==
-requested forkId`.
-9. **Milestone proof.** `verifyMilestones.staticCall(...)` proves the state proof; latest finalized
-   state hash must match `hash(latestFinalizedEncodedState)`.
-10. **Outbound range #2.** `verifyOutboundMessageBlocks` from fork genesis → latest finalized
-    snapshot.
+   disputed on-chain (`getDisputeWindowCreationTimestamp == 0`). Pinned mode: `currentForkId ==
+requested forkId`, or a payload window (skipped prefix included) is on the requested fork, so a verified
+   successor is accepted.
+9. **Milestone proof.** `verifyMilestones.staticCall(...)` proves the state proof from the fork genesis, or from the
+   on-chain snapshot when it is on the proven fork; latest finalized state hash must match
+   `hash(latestFinalizedEncodedState)`.
+10. **Outbound range #2.** `verifyOutboundMessageBlocks` from fork genesis (or the on-chain snapshot on the proven
+    fork, with the blocks pruned to its outbound head) → latest finalized snapshot.
 11. **Channel-balance invariant.** `verifyBalanceInvariantCheckSnapshot.staticCall(...)` on the
     latest finalized snapshot ([`INV-MSG-6-1C22RD`](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-6-1c22rd) / §6 of the protocol doc); abort on failure. This is the
     check that stops an economically unsound (undercollateralized) but internally consistent
     snapshot — §4.1.
-12. **Simulated advance.** `tryMulticallSnapshotUpdate` `staticCall`s the pending
-    `reduceAndFinalize` + `updateStateSnapshotFork` + `updateStateSnapshotSameFork` multicall; a
-    revert aborts, except `RaceConditionSnapshotUpdateDisputedFork` (either adoption call refused a disputed fork), which is accepted. Proves the teleport would actually succeed on-chain without sending a tx.
+12. **No simulated advance.** Verification is historic: on the proven fork, steps 9 and 10 start from the current
+    on-chain snapshot, so pruned history is never needed; nothing simulates an adoption against the live chain.
 13. **Persist.** `persistSyncPayload` under the state-manager mutex: skipped if local storage is
     already ahead; aborts on any finalized-block conflict with local storage; otherwise stores
     disputes, snapshots, states, inbound/outbound blocks and sets latest state.
@@ -186,22 +198,21 @@ flowchart TD
     RESP -- payload --> AV[applySyncResponse]
     AV --> V1[decode + RTT]
     V1 --> V2[fetch on-chain snapshot]
-    V2 --> V3[dispute-window walk: exists + expired + reduces]
-    V3 --> V4[genesis valid + outbound ranges]
+    V2 --> V3[dispute-window walk: linked + exists + expired + reduces]
+    V3 --> V4[genesis valid + no same-fork regression + outbound ranges]
     V4 --> V5[not-disputed / requested-fork]
     V5 --> V6[verifyMilestones + finalized state hash]
     V6 --> V7[balance invariant staticCall]
-    V7 --> V8[multicall staticCall advance]
-    V8 --> P[persist under mutex + replay suffix]
-    V1 & V2 & V3 & V4 & V5 & V6 & V7 & V8 & P -- fail --> AB[abort]
+    V7 --> P[persist under mutex + replay suffix]
+    V1 & V2 & V3 & V4 & V5 & V6 & V7 & P -- fail --> AB[abort]
 ```
 
 ### 3.4 `rejectSync(peerAddress, reason)` — failed proof
 
-[`SpectateService.rejectSync`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1171)
+[`SpectateService.rejectSync`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1109)
 disconnects and blacklists the responder and returns `false`. The caller owns the lifecycle
 consequence; a failed recovery request does not itself stop a synced observer. RPC failures take
-the same peer-liability path in [`runSync`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L118).
+the same peer-liability path in [`runSync`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L119).
 
 ## 4. Byzantine assessment
 
@@ -216,8 +227,10 @@ undercollateralized snapshot designed to lure the spectator into depositing.
 **What stops it.** The requester re-verifies every claim against the on-chain source of truth and
 contract logic, trusting nothing in the payload (§3.3):
 
-- A forged fork transition fails the dispute-window walk (must exist on-chain, kill period expired,
-  locally recomputed reduction must match the claimed successor — steps 4).
+- A forged fork transition fails the dispute-window walk (must link from the on-chain fork, or from
+  a chain-adopted prefix whose chain-recorded reductions reach it, exist
+  on-chain, have an expired kill period, and its locally recomputed reduction must match the claimed
+  successor — step 4).
 - A forged finality claim fails `verifyMilestones` (step 9) and the finalized-state-hash check.
 - A forged outbound history fails `verifyOutboundMessageBlocks` (steps 7, 10).
 - A snapshot whose in-channel balances exceed deposits minus withdrawals fails
@@ -227,7 +240,7 @@ contract logic, trusting nothing in the payload (§3.3):
   [../../open-questions.md](../../../../../specification/open-questions.md) [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx): even a _unanimous_ colluding participant
   set cannot get a newcomer to trust an unbacked snapshot, because agreement is not economic
   soundness and the invariant is checked against chain-anchored deposits/withdrawals.
-- A claim that would not actually apply on-chain fails the `multicall` `staticCall` (step 12).
+- A claim that does not verify from the current on-chain snapshot forward fails steps 9-11.
 - A finalized block conflicting with local storage aborts persistence (step 13).
 
 **Residual — [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx) dependency.** The balance-invariant check is trustworthy here _only because_ the
@@ -369,21 +382,18 @@ _Non-normative._
   §4.5).
 - Track the on-chain-snapshot-update invariant enforcement ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx)) so protection does not depend on
   the client always spectating (§4.1).
-- Resolve the spectate-simulation consumer-side-effect stubbing so the step-12 multicall simulation
-  is feasible when `withdraw` touches external assets
-  ([../../protocol/cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md) §3.2 TODO).
 
 ## Implementation traceability
 
 | Requirement / invariant                            | Statement                                                                                                                                                                             | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                     | Gap / divergence                                                           |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [`INV-SPC-1-ZV8QM5`](spectate.md#inv-spc-1-zv8qm5) | Served payload re-verified against on-chain truth + contract logic before any state effect.                                                                                           | Covered               | [SpectateService.applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L153)                                                                                                                                                                         | None.                                                                      |
-| [`INV-SPC-2-RPHNJ5`](spectate.md#inv-spc-2-rphnj5) | Payload validated against the requester's own request, not the peer's echo.                                                                                                           | Covered               | [SpectateService.sync / applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L49)                                                                                                                                                                   | None.                                                                      |
-| [`INV-SPC-3-EP3TPG`](spectate.md#inv-spc-3-ep3tpg) | One in-flight sync per peer, cleaned in `finally`.                                                                                                                                    | Covered               | [SpectateService.sync](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L49)                                                                                                                                                                                       | None.                                                                      |
-| [`INV-SPC-4-WVXS19`](spectate.md#inv-spc-4-wvxs19) | Fail-closed: any failure aborts with no partial commitment ([`REQ-MSG-9-BFN9P5`](../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)).                  | Covered               | [SpectateService.rejectSync](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1171); [SpectatingValidationStrategy](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21)                                                 | None.                                                                      |
-| [`INV-SPC-5-RHB7TK`](spectate.md#inv-spc-5-rhb7tk) | Adopted finalized snapshot satisfies the balance invariant ([`INV-MSG-6-1C22RD`](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-6-1c22rd)) client-side.      | Covered               | [SpectateService.applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L151) (step 11); [DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L493) | None.                                                                      |
-| [`INV-SPC-6-2NE2RA`](spectate.md#inv-spc-6-2ne2ra) | No sync step sends a transaction; verification via local EVM / `staticCall`.                                                                                                          | Covered               | [SpectateService](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L153)                                                                                                                                                                                           | None.                                                                      |
-| [`REQ-SPC-1-H10R5K`](spectate.md#req-spc-1-h10r5k) | The responder MUST prove at least the requested height on that fork or a verified successor whose lineage contains it; an unrelated fork or above-latest same-fork height is refused. | Covered               | [SpectateService.generateSyncPayload](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L561)                                                                                                                                                                       | None.                                                                      |
+| [`INV-SPC-1-ZV8QM5`](spectate.md#inv-spc-1-zv8qm5) | Served payload re-verified against on-chain truth + contract logic before any state effect.                                                                                           | Covered               | [SpectateService.applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L154)                                                                                                                                                                         | None.                                                                      |
+| [`INV-SPC-2-RPHNJ5`](spectate.md#inv-spc-2-rphnj5) | Payload validated against the requester's own request, not the peer's echo.                                                                                                           | Covered               | [SpectateService.sync / applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L50)                                                                                                                                                                   | None.                                                                      |
+| [`INV-SPC-3-EP3TPG`](spectate.md#inv-spc-3-ep3tpg) | One in-flight sync per peer, cleaned in `finally`.                                                                                                                                    | Covered               | [SpectateService.sync](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L50)                                                                                                                                                                                       | None.                                                                      |
+| [`INV-SPC-4-WVXS19`](spectate.md#inv-spc-4-wvxs19) | Fail-closed: any failure aborts with no partial commitment ([`REQ-MSG-9-BFN9P5`](../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)).                  | Covered               | [SpectateService.rejectSync](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1109); [SpectatingValidationStrategy](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21)                                                 | None.                                                                      |
+| [`INV-SPC-5-RHB7TK`](spectate.md#inv-spc-5-rhb7tk) | Adopted finalized snapshot satisfies the balance invariant ([`INV-MSG-6-1C22RD`](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-6-1c22rd)) client-side.      | Covered               | [SpectateService.applySyncResponse](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L152) (step 11); [DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L493) | None.                                                                      |
+| [`INV-SPC-6-2NE2RA`](spectate.md#inv-spc-6-2ne2ra) | No sync step sends a transaction; verification via local EVM / `staticCall`.                                                                                                          | Covered               | [SpectateService](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L154)                                                                                                                                                                                           | None.                                                                      |
+| [`REQ-SPC-1-H10R5K`](spectate.md#req-spc-1-h10r5k) | The responder MUST prove at least the requested height on that fork or a verified successor whose lineage contains it; an unrelated fork or above-latest same-fork height is refused. | Covered               | [SpectateService.generateSyncPayload](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L594)                                                                                                                                                                       | None.                                                                      |
 | [`REQ-SPC-2-45C3CT`](spectate.md#req-spc-2-45c3ct) | Request-path failures MUST distinguish availability/transport failure from Byzantine evidence before permanent exclusion.                                                             | Missing               | none — [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n) (over-broad blacklist)                                                                                                                                                                                          | Engineer audit pending; any divergence named in the evidence remains open. |
 | [`REQ-SPC-3-AZBKR1`](spectate.md#req-spc-3-azbkr1) | An honest can't-prove-yet request MUST NOT permanently blacklist the requester.                                                                                                       | Missing               | none — current code blacklists (§4.2)                                                                                                                                                                                                                                                       | Engineer audit pending; any divergence named in the evidence remains open. |
 | [`REQ-SPC-4-G5XXB2`](spectate.md#req-spc-4-g5xxb2) | Proof-serving MUST be resource-bounded per peer.                                                                                                                                      | Missing               | none — one-in-flight only; no rate limit                                                                                                                                                                                                                                                    | Engineer audit pending; any divergence named in the evidence remains open. |

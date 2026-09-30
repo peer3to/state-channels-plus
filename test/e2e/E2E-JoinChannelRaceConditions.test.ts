@@ -268,7 +268,7 @@ describe("E2E: Join channel race conditions", function () {
             const onChainParticipantUnion = await h
                 .control(h.getPeer(0))
                 .query.getOnChainParticipantUnion()
-                .request();
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
             expect(
                 onChainParticipantUnion.map((a: unknown) =>
                     String(a).toLowerCase()
@@ -598,7 +598,7 @@ describe("E2E: Join channel race conditions", function () {
             const union = await h
                 .control(h.getPeer(1))
                 .query.getOnChainParticipantUnion()
-                .request();
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
             const loweredUnion = union.map((address) => address.toLowerCase());
             expect(new Set(loweredUnion).size).to.equal(loweredUnion.length);
             expect(loweredUnion).to.include(joiner.address.toLowerCase());

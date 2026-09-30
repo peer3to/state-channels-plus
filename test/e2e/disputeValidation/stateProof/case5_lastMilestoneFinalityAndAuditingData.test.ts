@@ -5,13 +5,9 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
     describe("dispute.postedAuditingData = false AND stateProof.milestones[-1] is not final", function () {
         it("→ DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
+            // a joiner is on chain but not yet signed in -> it is in the committed set and never signed
+            await h.scenario.preDisputeSetupCalldataPath();
             const forkId = h.activeForkId!;
-
-            await h.transition.advanceState({ txFn: (c) => c.leaveChannel() });
-
-            //  peer 0 turn
-            await h.transition.advanceState({ waitForPeers: [0, 1] });
 
             h.event.resetEventSpies();
 

@@ -401,6 +401,13 @@ contract StateProofFacet is StateChannelCommon {
             if (!skippedMilestone) {
                 return true;
             }
+            // nothing above the threshold was proven -> the proof may only confirm the threshold snapshot
+            if (
+                keccak256(abi.encode(milestoneSnapshots[milestoneSnapshots.length - 1]))
+                    != keccak256(abi.encode(thresholdStateSnapshot))
+            ) {
+                return false;
+            }
 
             bytes memory previousEncodedBlock;
             Block memory currentBlock;
