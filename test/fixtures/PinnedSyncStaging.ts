@@ -577,3 +577,75 @@ export async function applyDisputedSyncPayload(
         await stub.restoreRecordedSyncRejections().request();
     }
 }
+
+/**
+ * Peer 0 serves a payload for the disputed source fork while the chain is
+ * still on it; the reduction and its fork adoption then land, and peer 2
+ * applies the (optionally altered) payload against the adopted fork.
+ */
+export async function applySyncPayloadServedBeforeAdoption(
+    h: MathPeerTestHarness,
+    mutate: (payload: SyncPayload) => void
+): Promise<{
+    accepted: boolean;
+    rejections: string[];
+    responderBlacklisted: boolean;
+}> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const source = h.getPeer(0);
+    const response = await h.execOnHost(
+        observer,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({ channelId: sm.channelId })
+                .request(args.source),
+        { source: source.address }
+    );
+    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
+        [sourceForkId]
+    );
+    const successorForkId = payload.disputeWindows[0].reducedForkId;
+    mutate(payload);
+
+    await h.control(source).stub.startTryReduce(sourceForkId).request();
+    await waitFor(
+        async () =>
+            StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            ).forkID === successorForkId,
+        h.event.protocolEventTimeoutMs()
+    );
+
+    const stub = h.control(observer).stub;
+    await stub.recordSyncRejections().request();
+    try {
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+        return {
+            accepted,
+            rejections: await stub.restoreRecordedSyncRejections().request(),
+            responderBlacklisted: await h
+                .control(observer)
+                .query.isBlacklisted(source.address)
+                .request()
+        };
+    } finally {
+        await stub.restoreRecordedSyncRejections().request();
+    }
+}

@@ -10,6 +10,7 @@ import {
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     applyDisputedSyncPayload,
+    applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
@@ -734,6 +735,31 @@ describe("Unit: SpectateService", function () {
                     payload.disputeWindows.push(payload.disputeWindows[0]);
                 }
             );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["dispute window not linked"]);
+        });
+
+        it("payload served before the chain adopted its window's reduced fork → prefix skipped, accepted, responder not blacklisted", async function () {
+            const { accepted, rejections, responderBlacklisted } =
+                await applySyncPayloadServedBeforeAdoption(
+                    TestSession.getHarness(),
+                    () => {}
+                );
+            expect(rejections).to.deep.equal([]);
+            expect(accepted).to.equal(true);
+            expect(responderBlacklisted).to.equal(false);
+        });
+
+        it("adopted prefix window claiming a reduced fork the chain did not record → rejected, dispute window not linked", async function () {
+            const { accepted, rejections } =
+                await applySyncPayloadServedBeforeAdoption(
+                    TestSession.getHarness(),
+                    (payload) => {
+                        payload.disputeWindows[0].reducedForkId = ethers.id(
+                            "not the recorded reduced fork"
+                        );
+                    }
+                );
             expect(accepted).to.equal(false);
             expect(rejections).to.deep.equal(["dispute window not linked"]);
         });

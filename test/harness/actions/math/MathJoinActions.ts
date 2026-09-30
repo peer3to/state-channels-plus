@@ -173,7 +173,8 @@ export class MathJoinActions extends JoinActions {
         const participantUnion = await this.harness
             .control(submitter)
             .query.getOnChainParticipantUnion()
-            .request();
+            // a chain read: a stalled shared node must not hit the protocol budget
+            .request({ timeoutMs: this.harness.event.hostExecTimeoutMs() });
         const isTopUp = participantUnion.some((address) =>
             addressesEqual(address, participant)
         );

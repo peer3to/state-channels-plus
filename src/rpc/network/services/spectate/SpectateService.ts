@@ -241,8 +241,35 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     forkIds
                 );
 
+            // A responder whose local snapshot lags the chain serves windows the chain
+            // already adopted. Skip that prefix only while its chain-final reductions
+            // lead, window by window, to the on-chain fork.
+            let adoptedWindowCount = 0;
+            for (const [index, dw] of syncPayload.disputeWindows.entries()) {
+                const onChainReducedForkId = onChainDisputeWindows.find(
+                    (window) => window.forkId === dw.forkId
+                )?.reducedResult.forkId;
+                const linksToPrevious =
+                    index === 0 ||
+                    dw.forkId ===
+                        syncPayload.disputeWindows[index - 1].reducedForkId;
+                if (
+                    dw.forkId === currentForkId ||
+                    !finalizedByFork.get(dw.forkId) ||
+                    onChainReducedForkId !== dw.reducedForkId ||
+                    !linksToPrevious
+                )
+                    break;
+                if (dw.reducedForkId === currentForkId) {
+                    adoptedWindowCount = index + 1;
+                    break;
+                }
+            }
+            const linkedDisputeWindows =
+                syncPayload.disputeWindows.slice(adoptedWindowCount);
+
             let notReducedCount = 0;
-            for (const dw of syncPayload.disputeWindows) {
+            for (const dw of linkedDisputeWindows) {
                 // each window must reduce the fork reached so far, starting at the on-chain fork
                 if (dw.forkId !== currentForkId)
                     return this.rejectSync(
@@ -344,8 +371,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const genesisSnapshot = StateSnapshot.from(
                 syncPayload.latestForkGenesisSnapshot
             );
+            // the skipped prefix's blocks are already below the on-chain outbound tip
+            const outboundMessageBlocksUpToLatestGenesis =
+                adoptedWindowCount > 0
+                    ? await diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
+                          syncPayload.outboundMessageBlocksUpToLatestGenesis,
+                          onChainSnapshot.latestOutboundMessageBlockHash
+                      )
+                    : syncPayload.outboundMessageBlocksUpToLatestGenesis;
             let areValidExitBlocks =
-                syncPayload.outboundMessageBlocksUpToLatestGenesis.length === 0;
+                outboundMessageBlocksUpToLatestGenesis.length === 0;
             if (onChainSnapshot.forkID !== genesisSnapshot.forkID) {
                 const { lowerOutboundSnapshot, upperOutboundSnapshot } =
                     SpectateService.orderOutboundSnapshots(
@@ -354,7 +389,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                 areValidExitBlocks =
                     await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
-                        syncPayload.outboundMessageBlocksUpToLatestGenesis,
+                        outboundMessageBlocksUpToLatestGenesis,
                         lowerOutboundSnapshot.toStruct().snapshotData,
                         upperOutboundSnapshot.toStruct().snapshotData
                     );
@@ -452,8 +487,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
+            // the skipped prefix was only checked against the chain's links -> not persisted
             const { shouldAbort } = await this.persistSyncPayload(
-                syncPayload,
+                {
+                    ...syncPayload,
+                    disputeWindows: linkedDisputeWindows,
+                    outboundMessageBlocksUpToLatestGenesis
+                },
                 onProvenFork ? onChainSnapshot.blockHeight : 0
             );
             if (shouldAbort)

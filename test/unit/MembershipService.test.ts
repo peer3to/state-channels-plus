@@ -829,7 +829,7 @@ describe("Unit: MembershipService", function () {
                     await h
                         .control(prepared.joiner)
                         .query.getOnChainParticipantUnion()
-                        .request()
+                        .request({ timeoutMs: h.event.hostExecTimeoutMs() })
                 ).to.include(prepared.joiner.address);
 
                 const latestChainBlock = await h.provider.getBlock("latest");
