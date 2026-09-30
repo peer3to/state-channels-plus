@@ -10,7 +10,7 @@ The snapshot-update suite keeps its shared 6-second evidence window by owner dec
 (Codex Security scan `b16b8056-1a2e-47ad-b510-34ef96ce1d0b`, finding
 `csf_9ab7cede3f992354ca5b0bd8`; needs review, low). The default test manifest
 has no guards, and `scenario.exec` evaluates a received body
-([ScenarioService.ts:16-24](../fixtures/customRpc/harnessControl/services/scenario/ScenarioService.ts#L16-L24),
+([HarnessControlRpc.ts:38](../fixtures/customRpc/harnessControl/HarnessControlRpc.ts#L38),
 [ScenarioRpcMethods.ts:30-42](../fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods.ts#L30-L42)).
 The loopback listener has no Origin check and accepts calls before the
 handshake completes. This is intentional for a code-executing test fixture,
