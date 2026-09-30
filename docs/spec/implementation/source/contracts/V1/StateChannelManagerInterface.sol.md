@@ -34,8 +34,8 @@ DisputeVerificationFacet ([#L165](../../../../../../contracts/V1/StateChannelMan
 FraudProofFacet ([#L199](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L199)),
 DisputeFraudProofFacet ([#L208](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L208)),
 StateSnapshotFacet ([#L223](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L223)),
-JoinChannelFacet ([#L244](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L244)) and
-StateProofFacet ([#L258](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L258)).
+JoinChannelFacet ([#L238](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L238)) and
+StateProofFacet ([#L252](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L252)).
 It inherits `StateChannelManagerEvents`, so a consumer bound to this type also decodes every event
 the diamond emits.
 

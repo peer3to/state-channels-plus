@@ -11,6 +11,7 @@ import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export interface SyncRequest {
@@ -204,7 +205,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
             const onChainSnapshot =
                 await this.fetchAndPersistOnChainSnapshot(channelId);
-            let finalForkId = onChainSnapshot.forkID;
+            let currentForkId = onChainSnapshot.forkID;
 
             // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
             const forkIds = syncPayload.disputeWindows.map(
@@ -242,6 +243,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
             let notReducedCount = 0;
             for (const dw of syncPayload.disputeWindows) {
+                // each window must reduce the fork reached so far, starting at the on-chain fork
+                if (dw.forkId !== currentForkId)
+                    return this.rejectSync(
+                        peerAddress,
+                        "dispute window not linked"
+                    );
                 // 2.2) verify that they're expired - if they're not expired abort
                 const { windowExists, isExpired } =
                     await diamondStateMachine.localDiamondContract.isKillPeriodExpired(
@@ -293,14 +300,14 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         );
                 }
                 // if the above call fails -> local evm will throw -> catch and abort
-                finalForkId = dw.reducedForkId;
+                currentForkId = dw.reducedForkId;
             }
 
             // 2.6) verify final genesisSnapshot is correct -> abort otherwise
             // Three checks: forkId resolves to this snapshot, forkId == keccak256(snapshotData)
             // and encoded state matches the declared hash.
             const finalForkIdMatchesGenesisForkId =
-                finalForkId === syncPayload.latestForkGenesisSnapshot.forkId;
+                currentForkId === syncPayload.latestForkGenesisSnapshot.forkId;
             const isGenesisValid =
                 await diamondStateMachine.localDiamondContract.isGenesisSnapshotWithoutTimeCheck(
                     syncPayload.latestForkGenesisSnapshot
@@ -321,16 +328,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.milestoneSnapshots.length > 0
                     ? syncPayload.milestoneSnapshots.at(-1)!
                     : syncPayload.latestForkGenesisSnapshot;
-            // the proof must extend the step-1 snapshot every other check here is anchored on
+            // the proof must not move back from the step-1 snapshot every other check here is anchored on
             if (
-                !(await diamondStateMachine.localDiamondContract.isExtendingOnChainSnapshot.staticCall(
-                    onChainSnapshot.toStruct(),
+                await this.isSameForkRegression(
+                    onChainSnapshot,
                     latestFinalizedSnapshot
-                ))
+                )
             )
                 return this.rejectSync(
                     peerAddress,
-                    "proof does not extend the on-chain snapshot"
+                    "proof regresses the on-chain snapshot"
                 );
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
@@ -367,7 +374,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 const _timestamp =
                     await stateManager.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
                         channelId,
-                        finalForkId
+                        currentForkId
                     );
                 if (Number(_timestamp) != 0)
                     return this.rejectSync(
@@ -377,7 +384,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             } else {
                 // 2.8.2) (requested)
                 if (
-                    finalForkId != syncRequest.forkId &&
+                    currentForkId != syncRequest.forkId &&
                     !syncPayload.disputeWindows.some(
                         (window) => window.forkId === syncRequest.forkId
                     )
@@ -461,7 +468,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     syncPayload.stateProof
                 );
             this.logger.debug(
-                `Spectate sync - next block height before pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+                `Spectate sync - next block height before pipeline ${stateManager.storage.blocks.getNextBlockHeight(currentForkId)}`
             );
             this.logger.debug(
                 `Spectate sync - BlockConfirmation pipeline for ${blockConfirmations.length} unfinalized block`,
@@ -502,14 +509,14 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 }
             }
             this.logger.debug(
-                `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
+                `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(currentForkId)}`
             );
             // 6) If state requested (forkId,blockHeight) - check if blockHeight reached
             if (
                 syncRequest.blockHeight !== undefined &&
                 !(
                     syncRequest.forkId !== undefined &&
-                    finalForkId !== syncRequest.forkId
+                    currentForkId !== syncRequest.forkId
                 )
             ) {
                 const [hasBlock, latestBlock] =
@@ -1029,6 +1036,21 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return true;
         }
         return false;
+    }
+
+    // true when `target` is on the on-chain fork but is neither the on-chain snapshot nor newer
+    // (older, or another snapshot at the same height); another fork is linked by the dispute-window loop
+    private async isSameForkRegression(
+        onChainSnapshot: StateSnapshot,
+        target: StateSnapshotStruct
+    ): Promise<boolean> {
+        const targetSnapshot = StateSnapshot.from(target);
+        if (targetSnapshot.forkID !== onChainSnapshot.forkID) return false;
+        if (targetSnapshot.hash === onChainSnapshot.hash) return false;
+        return !(await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isSnapshotNewer(
+            target,
+            onChainSnapshot.toStruct()
+        ));
     }
 
     public static orderOutboundSnapshots(

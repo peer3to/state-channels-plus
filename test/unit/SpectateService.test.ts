@@ -9,6 +9,7 @@ import {
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
 import {
+    applyDisputedSyncPayload,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
@@ -589,7 +590,7 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("historic verification rejections", function () {
-        it("proof ending at the on-chain height with another snapshot → rejected, the proof does not extend the on-chain snapshot", async function () {
+        it("proof ending at the on-chain height with another snapshot → rejected, the proof regresses the on-chain snapshot", async function () {
             const { accepted, rejections } = await applyAnchoredSyncPayload(
                 TestSession.getHarness(),
                 (payload, onChainSnapshot) => {
@@ -600,7 +601,22 @@ describe("Unit: SpectateService", function () {
             );
             expect(accepted).to.equal(false);
             expect(rejections).to.deep.equal([
-                "proof does not extend the on-chain snapshot"
+                "proof regresses the on-chain snapshot"
+            ]);
+        });
+
+        it("proof ending below the on-chain height on the same fork → rejected, the proof regresses the on-chain snapshot", async function () {
+            const { accepted, rejections } = await applyAnchoredSyncPayload(
+                TestSession.getHarness(),
+                (payload, onChainSnapshot) => {
+                    payload.milestoneSnapshots.at(-1)!.blockHeight = BigInt(
+                        onChainSnapshot.blockHeight - 1
+                    );
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal([
+                "proof regresses the on-chain snapshot"
             ]);
         });
 
@@ -693,6 +709,42 @@ describe("Unit: SpectateService", function () {
             expect(rejections).to.deep.equal([
                 "latest-fork outbound blocks invalid"
             ]);
+        });
+    });
+
+    describe("dispute window linkage", function () {
+        it("first dispute window not on the on-chain fork → rejected, dispute window not linked", async function () {
+            const { accepted, rejections } = await applyDisputedSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    // a real fork of this channel, but not the one the chain sits on
+                    payload.disputeWindows[0].forkId =
+                        payload.disputeWindows[0].reducedForkId;
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["dispute window not linked"]);
+        });
+
+        it("second dispute window not continuing from the first reduced fork → rejected, dispute window not linked", async function () {
+            const { accepted, rejections } = await applyDisputedSyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    // the repeat restarts at the source fork instead of its successor
+                    payload.disputeWindows.push(payload.disputeWindows[0]);
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["dispute window not linked"]);
+        });
+
+        it("single dispute window starting at the on-chain fork → accepted", async function () {
+            const { accepted, rejections } = await applyDisputedSyncPayload(
+                TestSession.getHarness(),
+                () => {}
+            );
+            expect(rejections).to.deep.equal([]);
+            expect(accepted).to.equal(true);
         });
     });
 

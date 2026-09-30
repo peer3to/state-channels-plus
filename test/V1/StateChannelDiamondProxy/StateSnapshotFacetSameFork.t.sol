@@ -162,48 +162,6 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
     /// Carries no value, so every message that succeeds leaves total
     /// withdrawals equal to the channel's (zero) deposits and the
     /// withdrawals-cap guard cannot fire before the index under test.
-    // ---- isExtendingOnChainSnapshot: the shared "proof extends the chain's snapshot" decision ----
-
-    function test_isExtendingOnChainSnapshot_newerOnSameFork_true() public {
-        (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
-        target.blockHeight = ON_CHAIN_BLOCK_HEIGHT + 1;
-        assertTrue(harness.isExtendingOnChainSnapshot(onChain, target));
-    }
-
-    function test_isExtendingOnChainSnapshot_equalAndIdentical_true() public {
-        (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        assertTrue(harness.isExtendingOnChainSnapshot(onChain, onChain));
-    }
-
-    function test_isExtendingOnChainSnapshot_equalHeightDifferentSnapshot_false() public {
-        (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
-        target.snapshotData.stateMachineStateHash = keccak256("another state at the same height");
-        assertFalse(harness.isExtendingOnChainSnapshot(onChain, target));
-    }
-
-    function test_isExtendingOnChainSnapshot_olderOnSameFork_false() public {
-        (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
-        target.blockHeight = SUBMITTED_BLOCK_HEIGHT;
-        assertFalse(harness.isExtendingOnChainSnapshot(onChain, target));
-    }
-
-    // another fork is linked through reductions, which this decision does not judge
-    function test_isExtendingOnChainSnapshot_otherFork_true() public {
-        (SameForkSnapshotHarness harness, StateSnapshot memory onChain) = _seededExtensionHarness();
-        StateSnapshot memory target = abi.decode(abi.encode(onChain), (StateSnapshot));
-        target.forkId = keccak256("another fork");
-        target.blockHeight = SUBMITTED_BLOCK_HEIGHT;
-        assertTrue(harness.isExtendingOnChainSnapshot(onChain, target));
-    }
-
-    function test_isExtendingOnChainSnapshot_routedThroughTheProxy() public view {
-        StateSnapshot memory onChain = diamond.getStateSnapshot(CHANNEL_ID);
-        assertTrue(diamond.isExtendingOnChainSnapshot(onChain, onChain));
-    }
-
     // every milestone starts below the chain height and none sits at it, so nothing is proven above the
     // chain snapshot; a forged newer snapshot behind such a proof must not be adopted by anyone
     function test_updateStateSnapshotSameFork_everyMilestoneBelowChainHeight_forgedNewerSnapshot_revertsInvalidStateProof(
@@ -260,17 +218,6 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
         proofs[0].blockConfirmations[0].signatures = new bytes[](0);
         snapshots = new StateSnapshot[](1);
         snapshots[0] = abi.decode(abi.encode(current), (StateSnapshot));
-    }
-
-    function _seededExtensionHarness()
-        internal
-        returns (SameForkSnapshotHarness harness, StateSnapshot memory onChain)
-    {
-        harness = new SameForkSnapshotHarness();
-        onChain.forkId = SEEDED_FORK_ID;
-        onChain.blockHeight = ON_CHAIN_BLOCK_HEIGHT;
-        onChain.snapshotData.stateMachineStateHash = keccak256("on-chain state");
-        harness.seedStateSnapshot(CHANNEL_ID, onChain);
     }
 
     function _zeroValueMessage(address participant) internal pure returns (Message memory message) {

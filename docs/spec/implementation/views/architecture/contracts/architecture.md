@@ -46,7 +46,7 @@ What it explicitly does not guarantee (Current):
   replaced or added after deployment.
 - **No EIP-2535 compliance.** Selector routing exists, but there is no `diamondCut` and no loupe;
   introspection is the single non-standard read-only
-  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80).
+  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79).
   The Diamond resemblance is structural (proxy + selector routing + facets + shared storage), not
   standard-conformant.
 
@@ -97,7 +97,7 @@ The mechanics, each verified in code:
 - **Selector routing in the fallback.** The proxy declares no forwarder bodies. `fallback()`
   ([#L67](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67))
   resolves `msg.sig` through the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L285)
   and delegatecalls that facet with raw `msg.data`. Revert data still bubbles through the unchanged
   [`GeneralUtils._delegatecall`](../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6).
   The constructor registers each entry with `_registerRoute(Facet.fn.selector, facetAddress)`, so
@@ -107,17 +107,17 @@ The mechanics, each verified in code:
   collision protection, events, and upgrade tests.
 - **Functions implemented on the proxy itself.** Only what needs the proxy's own storage and
   composition: `postBlockCalldata`
-  ([#L92](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L92)),
-  `open` ([#L119](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L119)),
+  ([#L91](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91)),
+  `open` ([#L118](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118)),
   `depositAssetsComposable`
-  ([#L199](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L199)),
+  ([#L198](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L198)),
   `withdrawAssetsComposable`
-  ([#L243](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L243)),
+  ([#L242](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242)),
   `executeStateTransition`
-  ([#L249](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)),
-  `multicall` ([#L264](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L264)),
+  ([#L248](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L248)),
+  `multicall` ([#L263](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L263)),
   and the read-only introspection `facetAddressForSelector`
-  ([#L80](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80)),
+  ([#L79](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79)),
   plus the fallback and the constructor
   ([#L33](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L33)).
   A selector the proxy declares itself never reaches the fallback, so those selectors are
@@ -133,11 +133,11 @@ The mechanics, each verified in code:
   and a facet running under delegatecall shares the proxy's `address(this)`, so the pattern works
   from inside facets. The proxy's own `open` calls itself as
   `StateChannelManagerProxy(address(this)).depositAssetsComposable(...)`
-  ([#L159](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159)).
+  ([#L158](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L158)).
   External callers can never satisfy the guard.
 - **Consumer fallback of last resort.** An unconfigured selector resolves to
   `consumerFacetAddress`
-  ([#L357](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L357)),
+  ([#L356](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L356)),
   so the integrator's `openChannelGenesis`, `deposit`, `withdraw`, and any custom consumer function
   are reachable at the proxy address. Note this forwards **every** unrouted selector — see the
   reachability concern in [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).
@@ -324,4 +324,4 @@ _Non-normative._
 | [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7) | Every production deployable stays within EIP-170 runtime and EIP-3860 initcode limits.                                                                                                             | Covered               | **Here:** final compiled sizes and the exact `LocalDiamond` exemption are recorded above. **Other files:** `ContractSize.test.ts` scans all classified artifacts.                                                                                                                                                                                                                                                                                                                                              | None.                                                         |
 | [`REQ-CON-2-CBVFV9`](architecture.md#req-con-2-cbvfv9) | Build and artifact-backed deployment automatically enforce the limits.                                                                                                                             | Covered               | **Here:** network enforcement remains final; the artifact scan and `deployArtifact` are early checks; `LocalDiamond` is narrowly exempt while `allowUnlimitedContractSize` remains enabled. **Other files:** `contractSize.ts`, `deploy.ts`, and Universal Deployment cover the artifact-backed `deployArtifact` path.                                                                                                                                                                                         | Paths without full artifact data rely on network enforcement. |
 | [`INV-CON-3-QSMFC7`](architecture.md#inv-con-3-qsmfc7) | Proxy and all facets share exactly one storage layout: facets inherit `StateChannelManagerStorage` and declare no state variables of their own.                                                    | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L7); all facets via [StateChannelCommon.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L13), `UtilityFacet` included since it gained that base ([UtilityFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L13))                                                                                                 | None.                                                         |
-| [`REQ-CON-4-H4YDV5`](architecture.md#req-con-4-h4ydv5) | `onlySelf` functions (`depositAssetsComposable`, `withdrawAssetsComposable`, `executeStateTransition`) MUST revert for any external caller; they are reachable only through the proxy's self-CALL. | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L61) (`onlySelf` modifier); call sites in [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159), [JoinChannelFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L83), [FraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150) | None.                                                         |
+| [`REQ-CON-4-H4YDV5`](architecture.md#req-con-4-h4ydv5) | `onlySelf` functions (`depositAssetsComposable`, `withdrawAssetsComposable`, `executeStateTransition`) MUST revert for any external caller; they are reachable only through the proxy's self-CALL. | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L61) (`onlySelf` modifier); call sites in [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L158), [JoinChannelFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L83), [FraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150) | None.                                                         |

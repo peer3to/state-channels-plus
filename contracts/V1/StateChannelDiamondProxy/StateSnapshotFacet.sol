@@ -51,18 +51,6 @@ contract StateSnapshotFacet is StateChannelCommon {
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
     }
 
-    /// a proof ending at `target` extends `onChainSnapshot` (the chain snapshot the caller read): another fork is
-    /// linked by reductions, not here; on the same fork only that snapshot itself or a newer one extends it
-    function isExtendingOnChainSnapshot(StateSnapshot memory onChainSnapshot, StateSnapshot memory target)
-        public
-        view
-        returns (bool)
-    {
-        if (onChainSnapshot.forkId != target.forkId) return true;
-        return keccak256(abi.encode(target)) == keccak256(abi.encode(onChainSnapshot))
-            || UtilityFacet(utilityFacetAddress).isSnapshotNewer(target, onChainSnapshot);
-    }
-
     function updateStateSnapshotSameFork(
         bytes32 channelId,
         MilestoneProof[] memory milestoneProofs,

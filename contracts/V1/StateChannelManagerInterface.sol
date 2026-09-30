@@ -235,12 +235,6 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         MessageBlock[] memory outboundMessageBlocks
     ) public virtual;
 
-    function isExtendingOnChainSnapshot(StateSnapshot memory onChainSnapshot, StateSnapshot memory target)
-        public
-        view
-        virtual
-        returns (bool);
-
     // ********** routed to JoinChannelFacet **********
 
     function joinChannel(
