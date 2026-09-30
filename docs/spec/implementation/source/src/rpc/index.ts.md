@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Public RPC surface re-exports, ordered to avoid CommonJS circular-init issues. No behavior of its own.
+Public RPC surface re-exports, ordered to avoid CommonJS circular-init issues. No behavior of its own. The custom-RPC type exports include the local `CustomRpcContext` construction type beside `CustomRpcConstructor` and `CustomRpcManifest` ([#L10-L14](../../../../../../src/rpc/index.ts#L10-L14)); its owner is defined in [registry](network/registry.ts.md).
 
 ## Key design decisions
 

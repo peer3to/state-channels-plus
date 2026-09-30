@@ -22,6 +22,7 @@ import {
 } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
+import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
@@ -38,6 +39,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, BytesLike } from "ethers";
+import { isEqual } from "lodash";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
@@ -64,6 +66,11 @@ class DisputeManager {
     mutex: Mutex;
     private eventSyncService: EventSyncService;
     private logger: Logger;
+    // Per disputed fork, whether our own dispute adds evidence to the first
+    // audited one (see shouldAddOwnEvidence).
+    private evidenceChecks = new Map<ForkId, Promise<boolean>>();
+    // The manager's getStateTransitionReplayGas, read on the first replay send.
+    private stateTransitionReplayGas?: Promise<bigint>;
 
     constructor(
         channelId: ChannelId,
@@ -143,9 +150,11 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
-            // No gas limit is passed: the chain signer sends each upload with
-            // its estimate plus headroom (see GAS_ESTIMATE_HEADROOM_PERCENT for
-            // the concurrent-dispute race this protects against).
+            // Without fraud proofs no gas limit is passed: the chain signer
+            // sends each upload with its estimate plus headroom (see
+            // GAS_ESTIMATE_HEADROOM_PERCENT for the concurrent-dispute race
+            // this protects against). A fraud-proof replay must also be
+            // funded upfront (see replayGasLimit).
 
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
@@ -174,10 +183,17 @@ class DisputeManager {
                         )
                     ).data!;
                 }
-                txResponse = await this.stateChannelManagerContract.multicall([
-                    fraudProofCalldata,
-                    uploadDisputeCalldata
-                ]);
+                const calls = [fraudProofCalldata, uploadDisputeCalldata];
+                txResponse = await this.stateChannelManagerContract.multicall(
+                    calls,
+                    {
+                        gasLimit: await this.replayGasLimit(
+                            this.stateChannelManagerContract
+                                .getFunction("multicall")
+                                .estimateGas(calls)
+                        )
+                    }
+                );
             } else {
                 // no multicall - upload dispute separately
                 if (shouldPostAuditingData) {
@@ -327,6 +343,143 @@ class DisputeManager {
         });
     }
 
+    /**
+     * Gas limit for a transaction that may replay a transition as fraud
+     * proof: the signer's estimate (with its headroom) plus the manager's
+     * replay requirement. The state machine refuses a replay unless its full
+     * budget is available when the replay starts, but an estimator that
+     * reports the gas a run spends (the peer3 hardhat fork) counts only what
+     * the transition used, never the unused budget that must be free, and the
+     * work before the replay (proof checks, setting the machine's state) can
+     * exceed any fixed margin. Adding the requirement to the estimate covers
+     * both. A searching estimator already includes the requirement, so there
+     * the limit asks for more than needed, which is safe. Callers estimate
+     * through getFunction, the contract's own method, so an estimate is never
+     * taken from a replaced or wrapped method property.
+     */
+    private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
+        let replayGas = this.stateTransitionReplayGas;
+        if (!replayGas) {
+            const read =
+                this.stateChannelManagerContract.getStateTransitionReplayGas();
+            replayGas = this.stateTransitionReplayGas = read;
+            // A failed read is retried on the next send.
+            read.catch(() => {
+                if (this.stateTransitionReplayGas === read)
+                    this.stateTransitionReplayGas = undefined;
+            });
+        }
+        const [estimated, required] = await Promise.all([estimate, replayGas]);
+        return estimated + required;
+    }
+
+    /**
+     * Whether this node should add its own dispute to the window of `forkId`.
+     * A node that already disputed the fork has committed its evidence. Otherwise
+     * the comparison runs once per disputed fork: reduction merges evidence
+     * monotonically, so a dispute of ours that adds nothing to the first audited
+     * dispute adds nothing once more disputes land. That holds only while the
+     * compared dispute stays in the window, so a kill drops the cached answer
+     * (forgetEvidenceComparison). Concurrent audits share the in-flight comparison; a
+     * failed or incomplete one (own auditing data only partly rebuilt) is not
+     * kept, and a positive answer stays positive so a failed upload is retried
+     * by the next audit.
+     */
+    public shouldAddOwnEvidence(
+        forkId: ForkId,
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        if (this.storage.disputes.didIDispute(forkId))
+            return Promise.resolve(false);
+        let check = this.evidenceChecks.get(forkId);
+        if (!check) {
+            const forget = () => {
+                if (this.evidenceChecks.get(forkId) === check)
+                    this.evidenceChecks.delete(forkId);
+            };
+            check = this.canConstructMoreEvidence(dispute).then(
+                (hasMoreEvidence) => {
+                    if (hasMoreEvidence === undefined) forget();
+                    return hasMoreEvidence ?? false;
+                },
+                (error: unknown) => {
+                    forget();
+                    throw error;
+                }
+            );
+            this.evidenceChecks.set(forkId, check);
+        }
+        return check;
+    }
+
+    /**
+     * Whether our own dispute adds evidence to `dispute`, or undefined when
+     * our auditing data could only be partly rebuilt (no answer yet).
+     */
+    private async canConstructMoreEvidence(
+        dispute: DisputeStruct
+    ): Promise<boolean | undefined> {
+        // Create our own dispute
+        let ourDispute: DisputeStruct;
+        try {
+            ourDispute = (await this.constructDispute(this.stateManager.forkId))
+                .dispute;
+        } catch (error) {
+            if (!(error instanceof PartialAuditingDataError)) throw error;
+            // we cannot rebuild our own auditing data -> we have no more
+            // evidence to give now. the caller falls through to scheduling the
+            // reduction instead of dying on the throw, and the next audit
+            // retries once the data may have been recovered
+            this.logger.warn(
+                "No more evidence: own auditing data could not be rebuilt locally",
+                {
+                    forkId: this.stateManager.forkId,
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
+            );
+            return undefined;
+        }
+
+        this.logger.verbose("Constructed our own dispute for comparison", {
+            ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
+            theirDispute: LoggerUtils.getDisputeMetadata(dispute)
+        });
+
+        let hasMoreEvidence;
+        try {
+            // Compare reduced disputes to see if we have more evidence
+            const singleDisputeReduction =
+                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
+                    [dispute]
+                );
+            const combinedDisputeReduction =
+                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
+                    [ourDispute, dispute]
+                );
+            hasMoreEvidence = !isEqual(
+                singleDisputeReduction,
+                combinedDisputeReduction
+            );
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            this.logger.error("Error during dispute reduction comparison", {
+                errors: error,
+                custom
+            });
+            throw error;
+        }
+        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
+        return hasMoreEvidence;
+    }
+
+    /**
+     * Drop the cached comparison for `forkId`: after a kill (the compared
+     * dispute may be gone) and once the fork's reduced result is committed.
+     */
+    public forgetEvidenceComparison(forkId: ForkId): void {
+        this.evidenceChecks.delete(forkId);
+    }
+
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
@@ -352,10 +505,18 @@ class DisputeManager {
                 );
                 return;
             }
+            const disputeFraudProofs = [disputeFraudProof];
             txResponse =
-                await this.stateChannelManagerContract.applyDisputeFraudProofs([
-                    disputeFraudProof
-                ]);
+                await this.stateChannelManagerContract.applyDisputeFraudProofs(
+                    disputeFraudProofs,
+                    {
+                        gasLimit: await this.replayGasLimit(
+                            this.stateChannelManagerContract
+                                .getFunction("applyDisputeFraudProofs")
+                                .estimateGas(disputeFraudProofs)
+                        )
+                    }
+                );
 
             await txResponse.wait();
             this.logger.info(
@@ -580,10 +741,21 @@ class DisputeManager {
             postedAuditingData: false
         };
 
-        const isLastMilestoneFinalByEveryone =
-            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                draftDispute
-            );
+        // Posting the auditing data is never wrong, only costlier, so a local
+        // "not final" posts it without asking the chain. A local "final" leaves
+        // it out, which is slashable if the lagging mirror was wrong, so the
+        // chain confirms that answer.
+        const isLastMilestoneFinalByEveryone = await preferLocal(
+            () =>
+                this.diamondStateMachine.localDiamondContract.isLastMilestoneFinalByEveryone.staticCall(
+                    draftDispute
+                ),
+            () =>
+                this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                    draftDispute
+                ),
+            (isFinal) => !isFinal
+        );
         const postedAuditingData = !isLastMilestoneFinalByEveryone;
 
         const dispute: DisputeStruct = {

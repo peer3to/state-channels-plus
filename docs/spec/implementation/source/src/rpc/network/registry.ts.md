@@ -19,12 +19,18 @@
 
 ## Responsibility and observable boundary
 
-Type definitions for custom RPC roots: the constructor signature and the serializable manifest
-(module specifier, optional export name, forwarded options).
+Type definitions for custom RPC roots: the constructor signature, the local construction context,
+and the serializable manifest (module specifier, optional export name, forwarded options).
 
 ## Key design decisions
 
 1. **Manifests are serializable by design** so a custom root can be declared across worker/process boundaries and loaded platform-appropriately.
+2. **The owner travels as a separate local context, never in the manifest.** `CustomRpcContext` carries
+   `readonly owner: AInternalRpcRoot` ([#L10-L13](../../../../../../../src/rpc/network/registry.ts#L10-L13)); `CustomRpcConstructor` takes it as a
+   third argument after the manager and the serialized options ([#L15-L22](../../../../../../../src/rpc/network/registry.ts#L15-L22)). The context
+   holds a live reference in the realm that builds the runtime, so it is never serialized, sent, or part
+   of the manifest options. A consumer that creates child roots passes this exact owner as their
+   `parent`; a constructor that needs no children ignores the argument.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +46,11 @@ Type definitions for custom RPC roots: the constructor signature and the seriali
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                     | Specification IDs |
-| --------------------------------------------------------------- | ----------------- |
-| [registry.ts](../../../../../../../src/rpc/network/registry.ts) |                   |
+| Source file                                                     | Specification IDs                                                                                |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [registry.ts](../../../../../../../src/rpc/network/registry.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
+
+- [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59): types the local owner reference a host gives its service extension, kept out of every serialized value.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -66,8 +74,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence |
+| ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** `CustomRpcContext` and the three-argument constructor type ([#L10](../../../../../../../src/rpc/network/registry.ts#L10), [#L15](../../../../../../../src/rpc/network/registry.ts#L15)). **Other files:** [P2pRuntimeHostRoot](../internal/roots/P2pRuntimeHostRoot.ts.md) supplies `{ owner: this }`; [StateManager](../../stateManager/StateManager.ts.md) and [P2PManager](../../P2PManager.ts.md) forward it to the constructor call. | None.            |
 
 ## Component test obligations
 
@@ -79,3 +88,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [resolveCustomRpcManifest](resolveCustomRpcManifest.ts.md) (the loader).
+- [P2PManager](../../P2PManager.ts.md) (constructs the custom RPC with the context).
+- [P2pRuntimeHostRoot](../internal/roots/P2pRuntimeHostRoot.ts.md) (supplies the owner).

@@ -104,11 +104,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getChainFallbackTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getEvidenceTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getGasLimit.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getStateTransitionReplayGas.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getMaxChannelParticipants.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
         _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
-        _registerRoute(UtilityFacet.isBlockAuthentic.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getWindowCommitments.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getDisputeWindowCreationTimestamp.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getReducedResult.selector, _utilityFacet);
@@ -336,6 +336,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         stateMachineImplementation.setState(encodedState);
         (bool success, bytes memory response) =
             address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
+        if (!success) _requireFundedReplay(response);
         if (success && response.length > 0) {
             (, outboundMessages) = abi.decode(response, (bool, Message[]));
         }
@@ -357,6 +358,24 @@ contract StateChannelManagerProxy is StateChannelCommon {
     }
 
     // ********** private/internal functions **********
+
+    /// @dev A transition the machine rejected is an invalid transition and stays a verdict for
+    /// the caller. A machine frame that refused to run without its full stipend, or that ran out
+    /// of gas outright (empty returndata), is no verdict at all: the sender under-funded the
+    /// transaction, and adjudicating on it would let the gas attached decide a fraud proof.
+    /// Fail the whole call instead so the sender retries with enough gas.
+    function _requireFundedReplay(bytes memory response) internal pure {
+        if (response.length == 0) revert ErrorStateTransitionFrameOutOfGas();
+        bytes4 selector;
+        assembly ("memory-safe") {
+            selector := mload(add(response, 32))
+        }
+        if (selector == ErrorInsufficientGasForStateTransition.selector) {
+            assembly ("memory-safe") {
+                revert(add(response, 32), mload(response))
+            }
+        }
+    }
 
     /// @dev Registers a compiler-derived selector once during construction.
     function _registerRoute(bytes4 selector, address facet) internal {

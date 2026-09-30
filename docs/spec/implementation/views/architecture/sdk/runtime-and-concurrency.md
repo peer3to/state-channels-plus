@@ -79,7 +79,7 @@ cases**. The consequences are the whole point of the design:
 - Callers keep **no separate inline and worker implementations**. The same
   [`P2pRuntimeClientRoot`](../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts) drives
   the host over whichever port it is handed; the same
-  [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L204) runs
+  [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205) runs
   the graph regardless of which side of the boundary it is on.
 - A component **can move into a worker when profiling shows a real limit**,
   without changing its higher-level communication contract. The move is a
@@ -122,7 +122,7 @@ Three execution contexts, connected only by serialized ports:
    only client-realm proxy objects: the two client signers, a main-thread
    contract mirror, and the client `EventBus`. It owns **no node state**.
 2. **SDK runtime host.** Built by
-   [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L204). It
+   [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205). It
    **owns the node state** (`StateManager` and everything it owns — managers,
    storage, RPC services, transports, event listener), **owns the signing key**,
    and **owns the chain nonce** (built on its own provider/wallet in
@@ -200,7 +200,7 @@ and the **diamond** instance embedded in the `LocalDiamond` for dispute replay.
 That split is a _logical_ separation to keep dispute replay from corrupting live
 state. It is **orthogonal to the thread boundary**: both instances and the
 `LocalDiamond` live behind the _same_ contract executor
-([`buildRuntime`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L299) passes one
+([`buildRuntime`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L307) passes one
 `contractExecutor` and both addresses to
 `createStandaloneFromLocalStateMachineWithExecutor`). `VM_DEDICATED_THREAD` moves
 the **whole EVM** — both instances — behind the executor worker; it never moves
@@ -226,7 +226,7 @@ once (precedence: overrides > `process.env` > `peer3.config.ts` > defaults,
 [../reference/configuration.md](../../operations/configuration.md)) into the
 `SetupPayload`, and the worker re-establishes the identical singleton via
 `createConfig(payload.config)`
-([host root](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L152)).
+([host root](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L153)).
 A worker that re-read `process.env` could diverge from the main thread; it
 deliberately does not.
 
@@ -286,7 +286,7 @@ the worker before the request protocol begins
 - **Host construction failure** posts a `hostError` and closes the port; the
   client creation rejects and all pending requests reject
   (`dispatchHostError`). A provider-creation failure before the graph exists is
-  handled the same way ([`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L204)
+  handled the same way ([`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205)
   early `catch`).
 - **Autonomous host errors** (a worker `unhandledRejection`/`uncaughtException`
   not tied to a request) are funnelled over the port as `hostError`
@@ -722,7 +722,7 @@ Common lifecycle composition: every internal endpoint owns readiness waits and c
 
 ## Common root creation
 
-[createRoot](../../../../../../src/rpc/internal/createRoot.ts) connects an existing parent to the selected root entry using a local channel or transferred worker port. Both modes await initialization and return the same concrete remote service surface. Lifecycle owns recursive readiness and child cleanup. Top-level creation is inline and returns the root directly. Worker creation requires a parent. Client creation establishes communication with its host child. setupP2pRuntime then performs application deployments and invokes deployComplete; executor initialization precedes communication readiness.
+[createRoot](../../../../../../src/rpc/internal/createRoot.ts) connects an existing parent to the selected root entry using a local channel or transferred worker port. Both modes await initialization and return the same concrete remote service surface. Lifecycle owns recursive readiness and child cleanup. Top-level creation is inline and returns the root directly. Worker creation without an explicit parent creates one hidden, service-less parent for that worker alone in the caller realm and returns the usual typed handle; disposing the handle, or a failed worker startup, disposes that hidden parent ([createRoot report](../../../source/src/rpc/internal/createRoot.ts.md)). Custom RPCs and executor precompile factories receive their exact local owner through construction contexts and parent their own children there. Client creation establishes communication with its host child. setupP2pRuntime then performs application deployments and invokes deployComplete; executor initialization precedes communication readiness.
 
 Root files export their receiving start operations and remain inert when imported. Thin worker entry files set the diagnostic thread name and call the common bootstrap with the root class. Internal browser URL modules resolve the bundled entries; Node launches those entries with compiled/ts-node selection. All worker roots share memory-limit and graceful-shutdown policy. An explicit threadName worker option overrides the entry default before root initialization.
 

@@ -246,12 +246,74 @@ Root classes now pass directly to createRoot. One platform worker creator takes 
 
 ## Client-root ownership and initialization
 
-The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation returns the registered typed handle, and without an explicit parent it adds one hidden parent for that worker alone (see the parentless-worker section below). No raw bootstrap port is exposed by that handle.
 
-The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+The new creation cases exercise delayed standalone initialization, parentless worker creation and cleanup, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
 
 The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
 
 ## Application setup ownership correction
 
-The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parented and parentless workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
+
+The [LocalOnlyGuard unit report](../verification/tests/test/rpc/guards/LocalOnlyGuard.test.ts.md) and
+[E2E report](../verification/tests/test/e2e/E2E-LocalOnlyGuard.test.ts.md) map the
+[`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutations. By engineer decision after
+the second implementation review, the unit suite now runs on two real harness peers instead of
+substitute recorder transports and hardcoded identities. The negotiating state uses the real registered
+pre-handshake profile. The "neither profile nor proven address" and "proven address without profile"
+states unregister the real profile for one call through the harness stub pairs and restore it. The
+retired-transport call re-injects a captured real request frame on its closed connection. A record-only
+observation, patched only on the receiver's own transports, reads response attempts, response frames
+matched by request id and exact transport, `Failed to send RPC response`
+errors, and every disconnect decision with its origin (direct, response-failure path, or close
+bookkeeping), so the response-path oracles are now observed directly rather than inferred from caller
+outcomes. The E2E remote-request case now reads zero response attempts and settlement by closure, and a
+new control case shows that an earlier guard's rejection still reaches a real remote requester, which
+stays connected; it covers the new [`REQ-RPC-7-9CBSHK.T2.P13`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p13). The negotiating E2E case asserts no
+guard-failure response, no execution, settlement through the closed pre-handshake transport rather than
+by timeout, and no verdict against the sender's unproven claimed address, as the amended
+[`REQ-RPC-7-9CBSHK.T2.P4`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p4) states. Before proof the receiver only closes that transport and bars nothing.
+
+The shared no-response helper requires exactly one direct `BLACKLIST` decision per rejected delivery,
+so the single-delivery notification and earlier-passing-guard cases also establish the "one decision"
+oracles, and every [`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutation is assigned to one
+declaration. The [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md)
+drops the removed parentless-rejection case, maps the six parentless-worker cases and the inline-owner
+case, and repairs the shifted declaration lines. The [EvmFactory report](../verification/tests/test/evm/EvmFactory.test.ts.md)
+maps the owner-context and admission-drain cases and the existing bare-EVM composition case. The
+late-admission case now also sends a late deploy and a late simulation, and all three settle with the
+shutdown error without entering the EVM. Three new cases load a real precompile that answers, or fails,
+1.2 seconds after the drain limit. For a late success, a late failure, and a deploy and a simulation
+queued behind the late call, each reads that the caller settled with exactly `Contract executor shut down
+before the operation finished`. A record-only wrapper on the real executor root's
+`ContractExecutorService.admit`, restored in the same block, records each admitted operation's own
+settlement; the assertions run only after every admitted operation has itself finished, the admitted
+count is 1, 1 and 3, and no host executor error is recorded. They cover
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p6)–[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p8) and [`REQ-RUNTIME-3-VQXW59.T1.P79`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p79)–[`REQ-RUNTIME-3-VQXW59.T1.P81`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p81),
+the stronger disposal-rejection contract the second review found unproven. The RootCreation report
+also maps the new crashed parentless worker case: its worker thread exits during a real call, the call
+rejects, the handle closes while the hidden parent is still live, and disposing the handle afterwards
+leaves that parent disposing with no connections
+([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v.p33), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
+
+The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
+stuck past the drain limit, closes the child, and reports no error` never releases the held reply, measures
+disposal against the exported limit, and reads the closed child, the rejected call, the call count, and an
+empty host error list. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
+flight` passes again: worker SDK disposal completes with the executor call still held, the SDK worker exits,
+no host error is recorded, and a sibling keeps serving, so it now covers the worker-placement permutation
+[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); it does not measure the limit, which the unit case does. Starting a consumer's own
+`.ts` worker entry from another package's working directory is exercised only by consumer suites, not in
+this repository.
+
+The handshake-wait disposal fix has unit evidence for the service itself: `HandshakeCompletedGuard >
+settles a pending handshake wait and every later wait as not completed once the service is disposed`
+covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r.p19) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p9): its probe awaits the runtime RPC root's real
+`dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
+their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
+immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard
+reconnect case no longer fails in cleanup, but cleanup success is not an asserted oracle and earns no
+credit.

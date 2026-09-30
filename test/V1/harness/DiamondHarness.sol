@@ -33,7 +33,13 @@ abstract contract DiamondHarness is Test {
     /// @dev Returns the diamond typed as its full external surface: the proxy
     /// implements only a few selectors itself and routes the rest to facets.
     function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
-        stateMachine = new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS);
+        return deployDiamondWith(new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS));
+    }
+
+    /// @dev Same deployment behind a caller-supplied machine (a Math variant), for suites that
+    /// need transitions the reference machine does not have.
+    function deployDiamondWith(MathStateMachine machine) internal returns (StateChannelManagerInterface diamond) {
+        stateMachine = machine;
         DisputeManagerFacet disputeManager = new DisputeManagerFacet();
         DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
         fraudProofFacet = new FraudProofFacet();

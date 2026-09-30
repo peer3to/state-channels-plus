@@ -11,7 +11,7 @@ import P2PManager from "@/P2PManager";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
-import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import { HandshakeCompletedGuard, LocalOnlyGuard } from "@/rpc/network/guards";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkTransport } from "@/transport";
 import {
@@ -23,7 +23,7 @@ import {
     getChecksumAddress
 } from "@/utils";
 export * from "@/rpc/network/services";
-export type { CustomRpcConstructor } from "@/rpc";
+export type { CustomRpcConstructor, CustomRpcContext } from "@/rpc";
 
 export { ethers } from "ethers";
 export type {
@@ -38,6 +38,7 @@ export type {
     ContractExecutionLog,
     ContractExecutionResult,
     EvmCustomPrecompile,
+    EvmCustomPrecompileContext,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,
@@ -64,6 +65,7 @@ export {
     ANetworkRpcService,
     MainRpcService,
     HandshakeCompletedGuard,
+    LocalOnlyGuard,
     NetworkTransport,
     getChecksumAddress
 };
@@ -96,6 +98,7 @@ export {
     stateChannelManagerAbi
 } from "@/utils/stateChannelManager";
 export {
+    assertArtifactRuntimeSize,
     ContractSizeLimitError,
     EIP170_RUNTIME_LIMIT_BYTES,
     EIP3860_INITCODE_LIMIT_BYTES,
@@ -109,3 +112,21 @@ export * as DisputeTypes from "../typechain-types/contracts/V1/types/DisputeType
 export * from "../scripts/V1/deploy";
 
 export { default as ATransport } from "./transport/ATransport";
+
+// Generic internal RPC roots for consumers that run their own services in a
+// worker or inline under an explicit local owner.
+export {
+    AInternalRpcRoot,
+    type RuntimeConnection
+} from "@/rpc/internal/AInternalRpcRoot";
+export { AInternalRpcService } from "@/rpc/internal/AInternalRpcService";
+export { AInternalRpcMethods } from "@/rpc/internal/AInternalRpcMethods";
+export {
+    createRoot,
+    startRootWorker,
+    type RootConstructor,
+    type RootStartContext
+} from "@/rpc/internal/createRoot";
+export type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
+export type { InternalRpcRouter } from "@/rpc/router/InternalRpcRouter";
+export type { default as InternalTransport } from "@/transport/InternalTransport";

@@ -40,7 +40,7 @@ import type {
     BalanceStruct,
     OpenChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers, ZeroHash } from "ethers";
+import { ethers, ZeroHash, type BytesLike } from "ethers";
 
 type MatchedAttempt = LobbyMatch & {
     mode: NegotiationMode;
@@ -165,6 +165,24 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         return new OpenChannelNegotiationRpcMethods(transport, this);
     }
 
+    /**
+     * Application opening data placed in `OpenChannel.data` and handed to the
+     * consumer facet's genesis hook on-chain. The default root opens with no
+     * data. A custom root overrides this to supply its genesis; the result
+     * MUST be a pure function of the agreed channel, participants, and
+     * balances, because the lower address builds the proposal with it and the
+     * higher address rebuilds it independently and rejects any proposal whose
+     * data differs.
+     */
+    protected async buildOpeningData(
+        _terms: Pick<
+            OpenChannelStruct,
+            "channelId" | "participants" | "balances"
+        >
+    ): Promise<BytesLike> {
+        return "0x";
+    }
+
     public async initMatchedNegotiation(
         match: LobbyMatch,
         options: MatchedNegotiationOptions = {}
@@ -240,7 +258,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                     this.observeChannelOpened(String(openedChannelId))
             );
         this.state.channelOpened = false;
-        this.readiness.signal();
+        void this.readiness.signal();
 
         if (compareAddresses(me, peer) < 0) {
             void this.runLowerAddressNegotiation(attempt);
@@ -251,8 +269,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     }
 
     public async dispose(): Promise<void> {
-        if (!this.state.attempt) return;
-        await this.clearAttempt("runtime disposed", "cancelled");
+        const attempt = this.state.attempt;
+        if (!attempt) return;
+        await this.clearAttempt(attempt, "runtime disposed", "cancelled");
     }
 
     private observeChannelOpened(channelId: string): void {
@@ -355,6 +374,25 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
 
         const { participants, balances, lower } =
             this.getParticipantsAndBalances(attempt);
+        let expectedData: BytesLike;
+        try {
+            expectedData = await this.buildOpeningData({
+                channelId: attempt.channelId,
+                participants,
+                balances
+            });
+        } catch (error) {
+            // A local failure to derive the terms is not the peer's fault.
+            await this.clearAttempt(
+                attempt,
+                `opening data unavailable: ${errorMessage(error)}`,
+                this.failureOutcome(attempt)
+            );
+            throw new Error("Opening data unavailable");
+        }
+        if (this.state.attempt !== attempt) {
+            return { status: "submitted" };
+        }
         let decoded: OpenChannelStruct;
         let recovered: Address;
         try {
@@ -379,7 +417,12 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         const nowSeconds = Clock.getTimeInSeconds();
         const mismatch = getOpenChannelProposalMismatch(
             decoded,
-            { channelId: attempt.channelId, participants, balances },
+            {
+                channelId: attempt.channelId,
+                participants,
+                balances,
+                data: expectedData
+            },
             {
                 nowSeconds,
                 maxSeconds: nowSeconds + OPEN_CHANNEL_DEADLINE_SECONDS * 2
@@ -503,6 +546,24 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             attempt.theirBalance = theirBalance;
             const { participants, balances } =
                 this.getParticipantsAndBalances(attempt);
+            let data: BytesLike;
+            try {
+                data = await this.buildOpeningData({
+                    channelId: attempt.channelId,
+                    participants,
+                    balances
+                });
+            } catch (error) {
+                // A local failure to derive the terms is not the peer's fault;
+                // the peer's initiator deadline releases its side.
+                await this.clearAttempt(
+                    attempt,
+                    `opening data unavailable: ${errorMessage(error)}`,
+                    this.failureOutcome(attempt)
+                );
+                return;
+            }
+            if (this.state.attempt !== attempt) return;
             const deadlineTimestamp =
                 Clock.getTimeInSeconds() + OPEN_CHANNEL_DEADLINE_SECONDS;
             const openChannel: OpenChannelStruct = {
@@ -511,7 +572,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 balances,
                 deadlineTimestamp,
                 isAtomic: true,
-                data: "0x"
+                data
             };
             const { encoded, signature } = await SignatureUtils.signOpenChannel(
                 openChannel,
@@ -556,6 +617,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 } else {
                     if (attempt.mode === "targeted") {
                         await this.clearAttempt(
+                            attempt,
                             errorMessage(error),
                             "targeted-failed"
                         );
@@ -645,6 +707,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                         );
                     }
                     await this.clearAttempt(
+                        attempt,
                         "opening payload expired",
                         this.failureOutcome(attempt)
                     );
@@ -667,6 +730,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         }
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(
+                attempt,
                 "committed peer disconnected",
                 this.failureOutcome(attempt)
             );
@@ -731,7 +795,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     /** Shared tail of both failure paths; a signed attempt keeps running. */
     private endFailedAttempt(attempt: MatchedAttempt, reason: string): void {
         if (!attempt.localOpeningSignatureIssued) {
-            void this.clearAttempt(reason, this.failureOutcome(attempt));
+            void this.clearAttempt(
+                attempt,
+                reason,
+                this.failureOutcome(attempt)
+            );
         }
     }
 
@@ -748,12 +816,17 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         return attempt.mode === "targeted" ? "targeted-failed" : "retry";
     }
 
+    /**
+     * Ends `attempt` only while it is still the current attempt. A failure
+     * that settles after its attempt was cancelled or replaced must not
+     * clear the newer attempt or resolve it with the old outcome.
+     */
     private async clearAttempt(
+        attempt: MatchedAttempt,
         reason: string,
         outcome: "retry" | "targeted-failed" | "cancelled"
     ): Promise<void> {
-        const attempt = this.state.attempt;
-        if (!attempt) return;
+        if (this.state.attempt !== attempt) return;
         this.logger.info("Negotiation attempt cleared", { reason });
         this.detachAttempt(attempt);
         if (attempt.mode === "ordinary") {
@@ -831,12 +904,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             attempt,
             "ordinary negotiated channel opened by another participant set"
         );
-        if (this.state.attempt === attempt) {
-            await this.clearAttempt(
-                "ordinary negotiated channel opened before completion",
-                "retry"
-            );
-        }
+        await this.clearAttempt(
+            attempt,
+            "ordinary negotiated channel opened before completion",
+            "retry"
+        );
     }
 
     private async observeOpeningReceipt(
@@ -857,6 +929,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                     return;
                 }
                 await this.clearAttempt(
+                    attempt,
                     "targeted opening receipt failed",
                     "targeted-failed"
                 );
@@ -865,7 +938,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             // The receipt may have failed on our own chain provider, so the
             // peer is closed without a strike.
             this.closeAttemptPeer(attempt, DisconnectPolicy.ALLOW);
-            await this.clearAttempt("ordinary opening receipt failed", "retry");
+            await this.clearAttempt(
+                attempt,
+                "ordinary opening receipt failed",
+                "retry"
+            );
             throw error;
         }
     }

@@ -1,6 +1,8 @@
 // @spec-test-coverage-ignore: real SDK root-creation staging; executable evidence is mapped from test/rpc/RootCreation.test.ts
 import { withRuntimeRpc } from "./RpcRouterFixture";
+import type { SetupPayload } from "@/evm/p2pRuntime/types";
 import { createRoot } from "@/rpc/internal/createRoot";
+import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
@@ -112,13 +114,19 @@ export async function assertRootCreationCloneFailure(
 }
 
 async function assertCreatedRootTypes(
-    parent: P2pRuntimeHostRoot
+    parent: P2pRuntimeHostRoot,
+    payload: SetupPayload
 ): Promise<void> {
-    // @ts-expect-error - top-level roots cannot select worker placement without a parent connection.
-    await createRoot(ContractExecutorRoot, {
-        mode: "worker",
-        args: { config, customPrecompiles: [] }
-    });
+    // A parentless worker returns the usual typed worker handle.
+    const parentless: RemoteRoot<ContractExecutorRoot> = await createRoot(
+        ContractExecutorRoot,
+        {
+            mode: "worker",
+            args: { config, customPrecompiles: [] }
+        }
+    );
+    // @ts-expect-error - a parentless worker handle is remote, not the local root.
+    parentless.executor;
     await createRoot(ContractExecutorRoot, {
         mode: "inline",
         args: { config, customPrecompiles: [] }
@@ -142,6 +150,26 @@ async function assertCreatedRootTypes(
     // @ts-expect-error - cleanup is installed through the explicit setter.
     child.afterDispose = () => {};
     void disposed;
+    // An inline child, or one whose placement is chosen at runtime, takes local state.
+    void createRoot(P2pRuntimeHostRoot, {
+        parent,
+        mode: "inline",
+        args: payload,
+        local: {}
+    });
+    void createRoot(P2pRuntimeHostRoot, {
+        parent,
+        mode: parent.isDisposing ? "worker" : "inline",
+        args: payload,
+        local: {}
+    });
+    void createRoot(P2pRuntimeHostRoot, {
+        parent,
+        mode: "worker",
+        args: payload,
+        // @ts-expect-error - a known worker child never receives local state.
+        local: {}
+    });
 }
 void assertCreatedRootTypes;
 

@@ -1,7 +1,9 @@
 import { sleep } from "@/utils";
 import {
     stageLocalDiscoveryReady,
-    observeDiscoveryLogger
+    observeDiscoveryLogger,
+    observeLocalDialRetries,
+    waitForPendingLocalDial
 } from "@test/fixtures/node/LocalDiscoveryReadyStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -35,6 +37,38 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             socket.dispose();
             await discoveryLogger.cleanup();
         }
+    });
+
+    it("schedules no retry for a local dial whose handshake is pending when its runtime shuts down", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        // neither peer answers a handshake challenge -> a dial stays pending
+        for (const peer of h.peers)
+            await h.rpcStub.stubHandshakeResponse(peer.index, {
+                delayMs: 600_000
+            });
+        const topic = ethers.id("local-dial-pending-at-shutdown");
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        const dialer = await waitForPendingLocalDial(
+            h.peers.map(
+                (peer) => runtimeEndpointFor(peer.p2pInstance).sm.p2pManager
+            )
+        );
+        const retries = observeLocalDialRetries();
+
+        // the first half of shutdown settles the dial's handshake wait with
+        // false while its P2P manager and discovery session are still alive
+        await dialer.stateManager.stop();
+
+        expect(dialer.isDisposed).to.equal(false);
+        expect(retries.scheduledSince()).to.deep.equal([]);
     });
 
     it("redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave", async function () {

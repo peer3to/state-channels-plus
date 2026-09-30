@@ -384,6 +384,51 @@ describe("Unit: SpectateService", function () {
                 await h.control(requester).query.getStatus().request()
             ).to.equal(Status.SYNCED);
         });
+
+        it("an unfinalized block whose bytes do not decode → the pipeline rejects it, the sync does not throw", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const responder = h.getPeer(0);
+            const requester = h.getPeer(2);
+
+            const latestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(latestHeight).to.not.equal(null);
+            const payload = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId,
+                    forkId,
+                    latestHeight!
+                )
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            expect(payload).to.not.equal(null);
+
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            await stub.stubUndecodableUnfinalizedBlock(false).request();
+            try {
+                const accepted = await h
+                    .control(requester)
+                    .spectate.applySyncResponse(
+                        responder.address,
+                        forkId,
+                        latestHeight!,
+                        payload!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                expect(accepted).to.equal(false);
+                expect(
+                    await stub.restoreRecordedSyncRejections().request()
+                ).to.deep.equal(["block confirmation rejected"]);
+            } finally {
+                await stub.restoreUndecodableUnfinalizedBlock().request();
+                await stub.restoreRecordedSyncRejections().request();
+            }
+        });
     });
 
     describe("historic verification", function () {

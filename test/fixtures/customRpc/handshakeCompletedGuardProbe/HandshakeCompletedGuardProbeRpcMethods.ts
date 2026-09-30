@@ -3,6 +3,7 @@ import type {
     CompletedGuardProbe,
     AddresslessGuardProbe,
     CustomFailureGuardProbe,
+    HandshakeWaitDisposalProbe,
     DisposedWaiterGuardProbe,
     HandshakeCompletedGuardProbeService,
     PunishmentGuardProbe,
@@ -15,6 +16,7 @@ import type {
     ClosedTransportDispatchGuardProbe,
     LateCompletionGuardProbe,
     RepeatedTimeoutGuardProbe,
+    ShutdownDeferredRpcProbe,
     TimeoutGuardProbe,
     DeferredAdmissionProbe
 } from "./HandshakeCompletedGuardProbeService";
@@ -61,6 +63,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ANetworkRpcMethods<H
         return this.service.probeAddresslessFallback();
     }
 
+    public probeHandshakeWaitDisposal(): Promise<HandshakeWaitDisposalProbe> {
+        return this.service.probeHandshakeWaitDisposal();
+    }
+
     public probeCustomFailure(): Promise<CustomFailureGuardProbe> {
         return this.service.probeCustomFailure();
     }
@@ -73,6 +79,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ANetworkRpcMethods<H
         completed: boolean
     ): Promise<DisposedWaiterGuardProbe> {
         return this.service.probeDisposedWaiter(completed);
+    }
+
+    public probeShutdownDropsDeferredRpc(): Promise<ShutdownDeferredRpcProbe> {
+        return this.service.probeShutdownDropsDeferredRpc();
     }
 
     public probeRepeatedTimeoutsSuspend(): Promise<RepeatedTimeoutGuardProbe> {

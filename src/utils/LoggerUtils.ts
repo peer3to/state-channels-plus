@@ -5,6 +5,7 @@ import { hash } from "./hash";
 import { localDiamondAbi } from "./localDiamond";
 import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
+import type { DoubleSignatureReport } from "@/cache";
 import Clock from "@/Clock";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import { Block, StateSnapshot, StateProof } from "@/models";
@@ -507,6 +508,24 @@ export class LoggerUtils {
         };
     }
 
+    /**
+     * `fullEvidence` keeps the whole digest and both canonical signatures so
+     * an exclusion can be verified later; otherwise they are shortened.
+     */
+    static getDoubleSignatureMetadata(
+        report: DoubleSignatureReport,
+        fullEvidence = false
+    ) {
+        const format = (value: string) =>
+            fullEvidence ? value : this.formatHash(value);
+        return {
+            signer: report.signer,
+            message: format(String(report.message)),
+            firstSignature: format(String(report.firstSignature)),
+            secondSignature: format(String(report.secondSignature))
+        };
+    }
+
     static getTransportMetadata(transport: NetworkTransport) {
         const peerAddress = transport.peerAddress || "unknown";
         const stateManager = transport.p2pManager.stateManager;
@@ -562,16 +581,25 @@ export class LoggerUtils {
     static getBlockConfirmationStructMetadata(
         blockConfirmation: BlockConfirmationStruct
     ) {
-        const blockStruct = Codec.decode(
-            blockConfirmation.signedBlock.encodedBlock,
-            Type.Block
-        );
+        // Callers log refused confirmations, whose bytes may not decode: the
+        // block fields are then left out instead of the log throwing.
+        let blockMetadata: Record<string, unknown>;
+        try {
+            blockMetadata = this.getBlockStructMetadata(
+                Codec.decode(
+                    blockConfirmation.signedBlock.encodedBlock,
+                    Type.Block
+                )
+            );
+        } catch {
+            blockMetadata = { undecodableBlock: true };
+        }
 
         return {
             blockConfirmationHash: String(
                 hash(Codec.encode(blockConfirmation, Type.BlockConfirmation))
             ),
-            ...this.getBlockStructMetadata(blockStruct),
+            ...blockMetadata,
             originalSignature: String(blockConfirmation.signedBlock.signature),
             confirmationSignatures: blockConfirmation.signatures.map(
                 (signature) => String(signature)

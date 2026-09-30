@@ -1,61 +1,24 @@
 import * as factory from "../factory";
+import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import type { Address, ForkId, Hash } from "@/types/types";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import type { Address, Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
-    MathPeerTestHarness,
-    MathTestSession as TestSession
-} from "@test/harness";
+    encodeLinkedNextBlock,
+    signEncodedBlock
+} from "@test/fixtures/BlockEncodingFixture";
+import { BUDGET_ABOVE_DEFAULT } from "@test/fixtures/LocalEvmCallGas.fixture";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 
 // the pipeline is entered the way production does: through the queue
 // (transition.ingestBlockConfirmation) or, for callers with no transport, by
 // handing a confirmation straight to onBlockConfirmationStruct.
-
-// a genuinely authored, linked next block - only its stateSnapshotHash (the
-// factory's random default) is wrong, so it dies at the state-transition gate
-async function encodeLinkedNextBlock(
-    h: MathPeerTestHarness,
-    writerIndex: number,
-    observerIndex: number,
-    forkId: ForkId,
-    messageBlocks?: MessageBlockStruct[]
-) {
-    const writer = h.getPeer(writerIndex);
-    const observer = h.getPeer(observerIndex);
-    const bundle = await h
-        .control(observer)
-        .query.getLatestBlockBundle(forkId)
-        .request();
-    const height = await h
-        .control(observer)
-        .query.getNextBlockHeight(forkId)
-        .request();
-    const call =
-        await writer.p2pInstance.p2pContractInstance.add.populateTransaction(1);
-
-    return factory.buildAndEncodeBlock(writer.signer, {
-        header: {
-            channelId: h.channelId,
-            forkId,
-            transactionCnt: height,
-            participant: writer.address as Address,
-            // inside the previous block's p2pTime window regardless of how
-            // long the test staging took
-            timestamp: bundle!.timestamp + 1
-        },
-        transaction: factory.transaction({
-            body: {
-                encodedData: call.data,
-                data: call.data
-            }
-        }),
-        previousBlockHash: bundle!.hash,
-        ...(messageBlocks ? { messageBlocks } : {})
-    });
-}
 
 describe("Unit: BlockIngestService", function () {
     it("fresh signer validation reads the resulting participant union before persisting the snapshot", async () => {
@@ -363,10 +326,72 @@ describe("Unit: BlockIngestService", function () {
             expect(after!.onChainTimestamp).to.equal(onChainTimestamp);
         });
 
-        // no test here: the stray-signature merge and its blacklisting is
-        // E2E-BlockQueueManager's "queued entry that becomes stored merges at
-        // queue timeout: strays stripped, supplier blacklisted".
-        it.skip("stray signatures on a stored block → stripped and supplier cut", function () {});
+        it("stray signatures on a stored block → stripped and supplier cut", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            await h.assert.sync.peersInSyncWait();
+
+            const observer = h.getPeer(0);
+            const supplier = h.getPeer(1);
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            const confirmation = Codec.decode(
+                stored!.encodedBlockConfirmation,
+                Type.BlockConfirmation
+            );
+            // a real signature over the block by a key outside the channel
+            const straySignature = signEncodedBlock(
+                factory.randomWallet(),
+                confirmation.signedBlock.encodedBlock as Bytes
+            );
+
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    signedBlock: confirmation.signedBlock,
+                    signatures: [
+                        ...confirmation.signatures,
+                        straySignature as Bytes
+                    ]
+                },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
+                waitForProcessed: false
+            });
+
+            await waitFor(
+                async () =>
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs()
+            );
+            const after = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, 1)
+                .request();
+            expect(after!.hash).to.equal(stored!.hash);
+            // the valid confirmations stay, the stray one is stripped
+            expect(after!.confirmationSignatures).to.include.members(
+                stored!.confirmationSignatures
+            );
+            expect(after!.confirmationSignatures).to.not.include(
+                straySignature
+            );
+            // only the supplier of the stray signature is cut
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(2).address)
+                    .request()
+            ).to.equal(false);
+        });
     });
 
     describe("onBlockConfirmationStruct", function () {
@@ -417,6 +442,170 @@ describe("Unit: BlockIngestService", function () {
         });
     });
 
+    describe("onBlockConfirmationStruct → undecodable bytes under the dispute strategy", function () {
+        // The dispute audit replays the unfinalized part of a state proof
+        // through onBlockConfirmationStruct. Bytes the client cannot decode are
+        // judged by the canonical Solidity structure predicate over the
+        // dispute's own state proof, never by a local decode throw.
+        it("an undecodable replayed block whose state-proof structure is invalid → false + one DisputeInvalidBlockStructure, no throw", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute } = await h.dispute.fetchConstructedDispute(3);
+            // no milestones -> the unfinalized part is signedBlocks
+            expect(dispute.input.stateProof.milestones.length).to.equal(0);
+            const replayed = dispute.input.stateProof.signedBlocks[0];
+            replayed.encodedBlock = factory.hash(); // bytes that do not decode as a block
+            const auditor = h.getPeer(1);
+            expect(
+                await h
+                    .control(auditor)
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([]);
+
+            const probe = await h
+                .control(auditor)
+                .validation.runBlockConfirmationStructUnderDispute(
+                    Codec.encode(
+                        { signedBlock: replayed, signatures: [] },
+                        Type.BlockConfirmation
+                    ) as string,
+                    Codec.encode(dispute, Type.Dispute) as string
+                )
+                .request();
+
+            expect(probe).to.deep.equal({ accepted: false, threw: null });
+            expect(
+                await h
+                    .control(auditor)
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([
+                String(
+                    toSolidityDisputeFraudProofType(
+                        DisputeFraudProofType.DisputeInvalidBlockStructure
+                    )
+                )
+            ]);
+        });
+
+        it("an undecodable replayed block whose state-proof structure is valid → true, no proof, no throw", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute } = await h.dispute.fetchConstructedDispute(3);
+            expect(dispute.input.stateProof.milestones.length).to.equal(0);
+            // the state proof keeps its honest first block, which the
+            // contracts decode; only the client's copy does not decode
+            const replayed = {
+                ...dispute.input.stateProof.signedBlocks[0],
+                encodedBlock: factory.hash()
+            };
+            const auditor = h.getPeer(1);
+
+            const probe = await h
+                .control(auditor)
+                .validation.runBlockConfirmationStructUnderDispute(
+                    Codec.encode(
+                        { signedBlock: replayed, signatures: [] },
+                        Type.BlockConfirmation
+                    ) as string,
+                    Codec.encode(dispute, Type.Dispute) as string
+                )
+                .request();
+
+            // SUCCESS continues the replay: this proof type does not apply
+            expect(probe).to.deep.equal({ accepted: true, threw: null });
+            expect(
+                await h
+                    .control(auditor)
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([]);
+        });
+    });
+
+    describe("onBlockConfirmation → a local EVM failure is not an invalid state transition", function () {
+        // Only a failure inside the EVM may become a fraud proof. Peer 2's
+        // local EVM grants the EVM default call gas, below what the machine's
+        // 17M budget needs, so it refuses a transition every other peer runs.
+        it("a block one peer's local EVM refuses to run throws out of its ingest with no fraud proof, no dispute and the VM restored, while another peer commits it", async function () {
+            const h = TestSession.getHarness();
+            const limited = 2;
+            await h.lifecycle.start(3, 0, {
+                stateMachineGasLimit: Number(BUDGET_ABOVE_DEFAULT),
+                executorCallGasLimitByPeer: {
+                    [limited]: Number(DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT)
+                }
+            });
+            const forkId = h.activeForkId!;
+            const { leader, authored } =
+                await h.transition.authorNextBlockOffWireWait({
+                    observerIndex: limited
+                });
+            // premise: the limited peer judges the block, it does not author it
+            expect(leader.index).to.not.equal(limited);
+            const other = h.peers.find(
+                (p) => p.index !== leader.index && p.index !== limited
+            )!;
+            const turnBefore = await h
+                .control(h.getPeer(limited))
+                .query.getNextToWrite()
+                .request();
+            const heightBefore = await h
+                .control(h.getPeer(limited))
+                .query.getNextBlockHeight(forkId)
+                .request();
+
+            const refused = await h
+                .control(h.getPeer(limited))
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+
+            // the local failure surfaces instead of judging the block
+            expect(refused.threw).to.include(
+                "ErrorInsufficientGasForStateTransition"
+            );
+            expect(refused.keepConnection).to.equal(null);
+            expect(refused.firedHooks).to.not.include(
+                "invalidStateTransitionDetected"
+            );
+            expect(refused.fraudProofType).to.equal(null);
+            expect(refused.disputedForkIds).to.deep.equal([]);
+            expect(refused.disconnectedAddresses).to.deep.equal([]);
+            // the VM and storage are where they were
+            expect(
+                await h
+                    .control(h.getPeer(limited))
+                    .query.getNextToWrite()
+                    .request()
+            ).to.equal(turnBefore);
+            expect(
+                await h
+                    .control(h.getPeer(limited))
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore);
+
+            // a peer whose local EVM funds the transition commits the block
+            const committed = await h
+                .control(other)
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+            expect(committed).to.include({
+                keepConnection: true,
+                threw: null,
+                fraudProofType: null
+            });
+            expect(committed.firedHooks).to.deep.equal([]);
+            expect(
+                await h
+                    .control(other)
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore + 1);
+        });
+    });
+
     describe("onBlockConfirmation → carried inbound message blocks", function () {
         it("a run linked to a held inbound block → the store head advances with the snapshot", async function () {
             const h = TestSession.getHarness();
@@ -431,12 +620,25 @@ describe("Unit: BlockIngestService", function () {
                 participant: h.getPeer(0).address,
                 observePeerIndices: [0, 1]
             });
+            const topUpHash = (await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request()) as Hash;
             // two writers -> at least one non-lagging author carries the top-up
             await h.transition.advanceState({
                 count: 2,
                 waitForFinalization: true
             });
             await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(topUpHash)
+                        .request()) !== null
+            );
 
             const r = await h.execOnHost(
                 h.getPeer(lagging),
@@ -513,6 +715,15 @@ describe("Unit: BlockIngestService", function () {
                 waitForFinalization: true
             });
             await h.assert.sync.peersInSyncWait();
+            // in sync only means the carrying block is stored; its run is
+            // persisted once that block's commit returns, so wait for the run
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(lagging))
+                        .query.getInboundMessageBlock(secondTopUpHash)
+                        .request()) !== null
+            );
 
             const r = await h.execOnHost(
                 h.getPeer(lagging),

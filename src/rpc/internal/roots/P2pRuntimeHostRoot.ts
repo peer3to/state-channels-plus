@@ -9,6 +9,7 @@ import { P2pSignerService } from "../services/p2pSigner/P2pSignerService";
 import { SdkSetupService } from "../services/sdkSetup/SdkSetupService";
 import Clock from "@/Clock";
 import { AContractExecutor } from "@/evm/contractExecutor";
+import { localEvmCallGasLimit } from "@/evm/contractExecutor/ContractExecutor";
 import {
     createContractExecutor,
     type ContractExecutorFactoryOptions
@@ -224,9 +225,12 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         });
-        this.disputeExecutionGasLimit = Number(
-            await connectedScmContract.getGasLimit()
-        );
+        const [disputeExecutionGasLimit, stateTransitionReplayGas] =
+            await Promise.all([
+                connectedScmContract.getGasLimit(),
+                connectedScmContract.getStateTransitionReplayGas()
+            ]);
+        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
         this.maxChannelParticipants = Number(
             await connectedScmContract.getMaxChannelParticipants()
         );
@@ -268,6 +272,10 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             {
                 dedicatedThread: payload.config.VM_DEDICATED_THREAD,
                 customPrecompiles: payload.customPrecompiles,
+                callGasLimit: localEvmCallGasLimit(
+                    disputeExecutionGasLimit,
+                    stateTransitionReplayGas
+                ),
                 logger: payload.config.VM_DEDICATED_THREAD
                     ? undefined
                     : logger.child({ component: "ContractExecutor" })
@@ -350,6 +358,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             storage,
             logger,
             () => this.dispose(),
+            // Local-only: consumer custom RPCs parent their child roots here.
+            { owner: this },
             customRpcResolved?.customRpc,
             customRpcResolved?.customRpcOptions
         );

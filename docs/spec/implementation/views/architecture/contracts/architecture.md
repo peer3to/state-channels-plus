@@ -137,7 +137,7 @@ The mechanics, each verified in code:
   External callers can never satisfy the guard.
 - **Consumer fallback of last resort.** An unconfigured selector resolves to
   `consumerFacetAddress`
-  ([#L355](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)),
+  ([#L357](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L357)),
   so the integrator's `openChannelGenesis`, `deposit`, `withdraw`, and any custom consumer function
   are reachable at the proxy address. Note this forwards **every** unrouted selector — see the
   reachability concern in [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).
@@ -151,7 +151,7 @@ The mechanics, each verified in code:
       ([report](../../../source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md));
       they need no storage context;
     - the **proxy-storage views**
-      ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L262)) —
+      ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)) —
       participants, slash sets, snapshots, balances, timing config, calldata commitments, dispute
       windows and their period predicates — are routed selectors and run under `delegatecall`, so
       they read the **proxy's** storage.
@@ -164,19 +164,16 @@ The mechanics, each verified in code:
     in sync.
 
 - **The state machine is a separate deployment.** `stateMachineImplementation` is an
-  [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L6) instance with its own storage; the
+  [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L10) instance with its own storage; the
   manager drives it with plain calls (`setState` → execute → `getState`) during dispute
   re-execution. All channels currently share the single implementation instance
   (`executeStateTransition` ignores `channelId` for machine selection — noted in code).
 - **Test-only variant.**
   [`LocalDiamond`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L20) extends the
-  proxy with storage-sync event handlers and a zero consumer facet for local testing. It also
-  redeclares `isBlockAuthentic`
-  ([#L442](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L442)) so local
-  deployments keep reaching its debug `_isBlockAuthentic` override
-  ([#L446](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)): a declared
-  function dispatches before the fallback, whereas production routes that selector to
-  `UtilityFacet`. It is not a production deployable.
+  proxy with storage-sync event handlers and a zero consumer facet for local testing. It keeps a
+  debug `_isBlockAuthentic` override ([#L444](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444)). Neither it nor production has an
+  external block-authenticity or block-decoding selector for the client. It is not a production
+  deployable.
 - **Callers use one manager binding.** `connectStateChannelManager` starts with the exact
   `StateChannelManagerInterface` function/event surface and generated `errorAbis`, then appends any
   consumer ABI. SDK fragments win duplicate signatures; consumer-only fragments remain available

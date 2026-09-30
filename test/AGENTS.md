@@ -84,7 +84,16 @@ harness `FooActions` drives it, its host methods belong in a `foo` service —
 don't grow a catch-all.
 
 Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
-`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `runtimeRpc`.
+`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `lifecycle`,
+`validation`, `runtimeRpc`, `mirror`.
+
+`mirror` (`services/mirror/`, driven by `MirrorActions`) controls local mirror
+versus chain for the local-first reads (`preferLocal` callers): record-only
+observation of each side's reads and answers, a one-shot local or chain read
+fault (`revert` runs the real contract with cut ABI arguments; `transport`
+fails the call without a verdict), serving chain reads just before a named
+chain event, and holds on the local diamond's event application so the mirror
+lags the chain for real. It never replaces a read's answer.
 
 ### Serialization rules for endpoints
 
@@ -302,8 +311,16 @@ with the suite still green.
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
-- Canonical full gate: `yarn test:parallel:distributed`. Add `--e2e-only` to run
-  only E2E tests, or `--grep <regexp>` for the narrowest relevant task.
+- Canonical full gate: `yarn test:parallel:distributed`, which runs the Mocha,
+  forge and browser tiers. Add `--e2e-only` to run only E2E tests (it drops the
+  forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
+  task.
+- Browser gates and Mocha files marked `// @distributed-requires: browser` need
+  a protocol 14 worker host whose runner image was built with
+  `yarn test:parallel:image`. Without one they are skipped after the discovery
+  window with a warning that lists them; check a green run for it. A Mocha file
+  that launches Chromium must carry that marker in its leading comments. See
+  "Browser tests" in the root `README.md`.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).

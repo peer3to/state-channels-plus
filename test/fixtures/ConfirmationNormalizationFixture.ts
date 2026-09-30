@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared fixture triggers production behavior; executable evidence belongs to its calling test declarations
 import { Codec, Type } from "@/utils";
+import { contractRejectedEncodings } from "@test/fixtures/SignatureEncodingFixture";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 
@@ -10,6 +11,9 @@ export async function normalizeRealConfirmations(options: {
     malformedOnly?: boolean;
     duplicateBad?: boolean;
     invalidV?: boolean;
+    // the bad copy re-encodes a real confirmation (v of 0/1) instead of
+    // carrying zero bytes: ethers recovers it, the contracts reject it
+    contractRejectedEncoding?: boolean;
 }) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(3, 1);
@@ -29,12 +33,14 @@ export async function normalizeRealConfirmations(options: {
         bundle.encodedBlockConfirmation,
         Type.BlockConfirmation
     );
-    const malformed = "0x" + "00".repeat(64) + (options.invalidV ? "ff" : "1b");
     const good = options.malformedOnly
         ? []
         : bundle.confirmationSignatures.filter(
               (signature) => signature !== confirmation.signedBlock.signature
           );
+    const malformed = options.contractRejectedEncoding
+        ? contractRejectedEncodings(good[0])["v of 0/1"]
+        : "0x" + "00".repeat(64) + (options.invalidV ? "ff" : "1b");
     const copies = [
         {
             encodedBlockConfirmation: String(

@@ -9,6 +9,7 @@ import MainRpcService from "./network/MainRpcService";
 export { MainRpcService };
 export type {
     CustomRpcConstructor,
+    CustomRpcContext,
     CustomRpcManifest
 } from "./network/registry";
 export { resolveCustomRpcConstructor } from "./network/resolveCustomRpcManifest";

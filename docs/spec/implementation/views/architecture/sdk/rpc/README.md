@@ -115,7 +115,7 @@ helpers and stored callbacks belong on the service or in JavaScript `#private` f
 
 ### 2.2 MainRpcService — the root
 
-[`MainRpcService`](../../../../../../../src/rpc/network/MainRpcService.ts#L10) is the dispatch root. Its constructor
+[`MainRpcService`](../../../../../../../src/rpc/network/MainRpcService.ts#L16) is the dispatch root. Its constructor
 instantiates the six built-in services as public properties (`initHandshakeService`,
 `webRTCSetupService`, `stateTransitionService`, `spectateService`, `isForkDisputedService`,
 `joinChannelService`); the property name is the wire-visible service name (`rpc.service`).
@@ -184,12 +184,12 @@ under every mode its type admits (e.g. a `void` method must tolerate being broad
 ### 2.5 Custom roots — manifest + registry
 
 Integrators extend the boundary by subclassing `MainRpcService` and shipping the subclass as a
-[`CustomRpcManifest`](../../../../../../../src/rpc/network/registry.ts#L12) (`{module, exportName?, options?}`) via
+[`CustomRpcManifest`](../../../../../../../src/rpc/network/registry.ts#L24) (`{module, exportName?, options?}`) via
 `p2pSetup(options.customRpcManifest)` ([architecture.md](../architecture.md) §1.1). The host side
 resolves the manifest with
 [`resolveCustomRpcConstructor`](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L5) (dynamic module
 load; throws unless the export is a constructor) and passes the constructor into
-[`P2PManager`](../../../../../../../src/P2PManager.ts#L34), which instantiates it in place of the base root and
+[`P2PManager`](../../../../../../../src/P2PManager.ts#L40), which instantiates it in place of the base root and
 derives `remoteRpc` from it. Typing flows through the `TCustomRpc extends MainRpcService`
 parameter, so custom services get the same typed sending surface as built-ins
 (`RemoteRpcProxyType<TCustomRpc>`), including through `hostRpc` (§3). `customRpcOptions` without a
@@ -513,7 +513,7 @@ state effect is a defect.
   §2.2), then `P2PManager.dispose()` disconnects all transports — rejecting all pending requests —
   and disposes discovery. Handlers already in flight are not cancelled; long-running service work
   checks `stateManager.isDisposed` at its own checkpoints (e.g.
-  [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242)).
+  [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409)).
 - **Transport replacement.** Peer identity is the EVM address; profiles (and blacklist state)
   survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H`](../components.md#inv-sdk-6-ccg31h)). The
   WebRTC upgrade retires the old transport after an `agreementTime` grace; address-targeted

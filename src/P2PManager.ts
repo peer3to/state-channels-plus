@@ -1,9 +1,13 @@
-import type { CustomRpcConstructor } from "./rpc/network/registry";
+import type {
+    CustomRpcConstructor,
+    CustomRpcContext
+} from "./rpc/network/registry";
 import RemoteRpcProxy, {
     RemoteRpcProxyType
 } from "./rpc/network/RemoteRpcProxy";
 import { Address, PeerKey } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
+import { DoubleSignatureReport, onDoubleSignature } from "@/cache";
 import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
@@ -12,6 +16,7 @@ import ProfileManager from "@/ProfileManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import type StateManager from "@/stateManager";
+import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import type { BlacklistReason } from "@/storage/BlacklistStorage";
 import {
     NetworkTransport,
@@ -23,6 +28,7 @@ import { Status } from "@/types";
 import { isEngagedStatus } from "@/types/flags";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
+import { addressesEqual } from "@/utils/address";
 import { requireBytes32 } from "@/utils/bytes32";
 import { config, isNodeRuntime } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
@@ -53,6 +59,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // status, and an abort keeps OPENED but announces itself through its hook.
     private readonly unsubscribeStatusChanged: () => void;
     private readonly unsubscribeAbort: () => void;
+    // Removes this manager's double-signature handler from the thread-wide
+    // signer recovery cache on dispose.
+    private readonly unsubscribeDoubleSignature: () => void;
     private initialSyncStarted = false;
     private initialSyncSettled = false;
     // Remembered so a wait created after settlement (abort before the
@@ -64,9 +73,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     // observer that never reaches a sync request must not wait forever.
     private initialSyncDeadline?: ReturnType<typeof setTimeout>;
 
+    /**
+     * `signer` must be deterministic (RFC 6979, as ethers wallets are): one
+     * message always yields one signature. A signer that picks a random
+     * nonce (for example a KMS signer) produces a second, different signature
+     * when it re-signs, and peers blacklist it as a double signer.
+     */
     constructor(
         stateManager: StateManager<TCustomRpc>,
         signer: ethers.Signer,
+        localContext: CustomRpcContext,
         customRpc?: CustomRpcConstructor<TCustomRpc, any>,
         customRpcOptions?: any
     ) {
@@ -88,7 +104,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         if (customRpc) {
             this.localRpc = new customRpc(
                 this.self,
-                customRpcOptions
+                customRpcOptions,
+                localContext
             ) as TCustomRpc;
         } else {
             if (customRpcOptions !== undefined) {
@@ -129,6 +146,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 void this.onHandshakeCompleted(peerAddress);
             }
         );
+        this.unsubscribeDoubleSignature = onDoubleSignature((report) =>
+            this.onDoubleSignature(report)
+        );
         return this.self;
     }
     //Mark resources for garbage collection
@@ -138,6 +158,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                 () => this.unsubscribeHandshakeCompleted(),
                 () => this.unsubscribeStatusChanged(),
                 () => this.unsubscribeAbort(),
+                () => this.unsubscribeDoubleSignature(),
                 () => this.settleInitialSync(false),
                 () => this.profileManager.dispose(),
                 () => {
@@ -150,6 +171,55 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     public get isDisposed(): boolean {
         return this.disposalPromise !== undefined;
+    }
+
+    /**
+     * Blacklists the signer of a detected double signature. The signer is the
+     * offender, never the peer that relayed it; this node never blacklists
+     * itself. Only signers the membership cache currently knows as eligible
+     * are blacklisted, so throwaway keys cannot grow the blacklist. Runs
+     * inside signer recovery, so it never throws.
+     */
+    private onDoubleSignature(report: DoubleSignatureReport): void {
+        try {
+            if (this.isDisposed) return;
+            if (
+                addressesEqual(report.signer, this.stateManager.signerAddress)
+            ) {
+                this.logger.error(
+                    "Double signature under this node's own key; the signer is non-deterministic or the key is used elsewhere",
+                    LoggerUtils.getDoubleSignatureMetadata(report, true)
+                );
+                return;
+            }
+            const eligibility =
+                this.stateManager.membershipService.getCachedSourceEligibility(
+                    report.signer
+                );
+            if (eligibility !== SourceEligibility.ELIGIBLE) {
+                this.logger.debug(
+                    "Double signature by a non-eligible signer; ignoring",
+                    {
+                        ...LoggerUtils.getDoubleSignatureMetadata(report),
+                        eligibility: SourceEligibility[eligibility]
+                    }
+                );
+                return;
+            }
+            this.logger.warn(
+                "Double signature detected; blacklisting the signer",
+                LoggerUtils.getDoubleSignatureMetadata(report, true)
+            );
+            this.disconnectAndBlacklistPeerByEvmAddress(
+                report.signer,
+                "double signature"
+            );
+        } catch (error) {
+            this.logger.error("Failed to handle a double signature", {
+                ...LoggerUtils.getDoubleSignatureMetadata(report),
+                error: errorMessage(error)
+            });
+        }
     }
 
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
@@ -438,8 +508,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                     ? LoggerUtils.getTransportMetadata(peer)
                     : { peerAddress: peer, reason }
             );
-            // A proven peer is excluded by identity; an unproven transport by
-            // its own handle.
+            // A proven peer is excluded by identity. For an unproven transport
+            // only a profile attached to it is marked; with no profile nothing
+            // is recorded, and the close below is the only effect.
             const target = isTransport ? peer.peerAddress || peer : peer;
             if (isBlacklist) this.profileManager.blacklistPeer(target, reason);
             else this.profileManager.suspendPeer(target);

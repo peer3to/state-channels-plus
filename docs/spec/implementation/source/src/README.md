@@ -18,6 +18,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [ProfileManager.ts](./ProfileManager.ts.md)
 - [StateChannelEventListener.ts](./StateChannelEventListener.ts.md)
 - [agreementManager/](./agreementManager/README.md)
+- [cache/](./cache/README.md)
 - [disputeManager/](./disputeManager/README.md)
 - [eventHandlers/](./eventHandlers/README.md)
 - [events/](./events/README.md)

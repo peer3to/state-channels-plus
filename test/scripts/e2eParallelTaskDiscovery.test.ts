@@ -17,6 +17,7 @@ const { discoverTasks } =
                 fullTitle: string;
                 isE2E: boolean;
                 args: string[];
+                requires?: string[];
             }>;
         };
     };
@@ -91,6 +92,70 @@ describe("parallel Mocha task discovery", function () {
                     ?.isE2E
             ).to.equal(false);
             expect(tasks[0].args).to.include("--grep");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("gives every task of a file marked @distributed-requires the runners it names, and none to an unmarked file", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-requires-"));
+        const testDir = path.join(root, "test");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(testDir, "chromium.test.ts"),
+            [
+                "// @spec-test-coverage-ignore: tooling",
+                "// @distributed-requires: browser",
+                'describe("chromium", () => { it("launches", () => {}); it("reaps", () => {}); });'
+            ].join("\n")
+        );
+        fs.writeFileSync(
+            path.join(testDir, "logic.test.ts"),
+            'describe("logic", () => { it("works", () => {}); });'
+        );
+
+        try {
+            const { tasks } = discoverTasks(testDir);
+            expect(
+                Object.fromEntries(
+                    tasks.map((task) => [task.fullTitle, task.requires ?? null])
+                )
+            ).to.deep.equal({
+                "chromium launches": ["browser"],
+                "chromium reaps": ["browser"],
+                "logic works": null
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("ignores a @distributed-requires line below the file's leading comments and rejects an unknown runner", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-requires-"));
+        const testDir = path.join(root, "test");
+        fs.mkdirSync(testDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(testDir, "late.test.ts"),
+            [
+                'describe("late", () => { it("runs", () => {}); });',
+                "// @distributed-requires: browser"
+            ].join("\n")
+        );
+
+        try {
+            expect(discoverTasks(testDir).tasks[0].requires).to.equal(
+                undefined
+            );
+            fs.writeFileSync(
+                path.join(testDir, "typo.test.ts"),
+                [
+                    "// @distributed-requires: browsr",
+                    'describe("typo", () => { it("runs", () => {}); });'
+                ].join("\n")
+            );
+            expect(() => discoverTasks(testDir)).to.throw(
+                "@distributed-requires names unknown runner(s) browsr"
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

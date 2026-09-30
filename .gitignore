@@ -13,6 +13,7 @@ cache
 !/src/cache/
 !/test/cache/
 !/docs/spec/verification/tests/test/cache/
+!/docs/spec/implementation/source/src/cache/
 artifacts
 typechain-types
 

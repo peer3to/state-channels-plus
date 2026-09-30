@@ -72,7 +72,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
   where the fallback would send a selector. Selectors the proxy declares itself never reach the
   fallback, so they are not in the table and this view reports the consumer facet for them.
 - **Unconfigured selectors** resolve to `consumerFacetAddress`
-  ([#L355](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)) —
+  ([#L357](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L357)) —
   the fallback of last resort, which is how the integrator's consumer functions are reachable.
 - **Deliberate exclusions (`notRouted`).** Some `public`/`external` facet functions are internal
   steps of a larger operation and are intentionally kept off the diamond surface, so they fall
@@ -148,24 +148,24 @@ Every view on the diamond surface is routed to `UtilityFacet` and runs under `de
 reads the proxy's storage (§4.8). Each one is a thin wrapper over a `StateChannelCommon` `internal`
 accessor or a direct storage read.
 
-| Function                                                                                                                                                                          | Returns                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `isChannelOpen(bytes32 channelId)`                                                                                                                                                | `(bool, StateSnapshot)` — open iff the stored snapshot has ≥ 1 participant.           |
-| `getParticipants(bytes32 channelId)` / `getSnapshotParticipants(bytes32 channelId)`                                                                                               | Snapshot participants (both call the same accessor).                                  |
-| `getPendingParticipants(bytes32 channelId)`                                                                                                                                       | Derived by walking the inbound chain for unconsumed `JOIN`s.                          |
-| `getOnChainSlashedParticipants(bytes32)` / `getOnChainSlashedParticipantsUpToTimestamp(bytes32, uint256)` / `isParticipantSlashedOnChain(bytes32, address)`                       | On-chain slash set, whole or as of a timestamp.                                       |
-| `getOnChainThresholdSet(bytes32 channelId)` / `canParticipateInDisputes(bytes32, address)`                                                                                        | Eligibility set (snapshot ∪ pending − slashed) and membership in it.                  |
-| `getStateSnapshot(bytes32 channelId)` / `getChannelBalance(bytes32 channelId)`                                                                                                    | The canonical snapshot; the channel's balance/head accounting.                        |
-| `getP2pTime() / getAgreementTime() / getChainFallbackTime() / getEvidenceTime() / getGasLimit() / getAllTimes()`                                                                  | Timing and execution config (§3).                                                     |
-| `getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)`                                                                         | `(bool found, bytes32 commitment)`.                                                   |
-| `hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)`                                                                                                             | Whether the inbound block is persisted.                                               |
-| `isBlockAuthentic(SignedBlock memory)`                                                                                                                                            | Block decodes and its signature recovers to the declared author.                      |
-| `isForkDisputed(bytes32 channelId, bytes32 forkId)`                                                                                                                               | Whether a dispute window exists for the fork.                                         |
-| `isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory)`                                                                                                                         | `forkId == keccak256(abi.encode(snapshotData)) && blockHeight == 0`.                  |
-| `isSnapshotNewer(StateSnapshot memory, StateSnapshot memory)`                                                                                                                     | Height comparison with a genesis-replacement special case.                            |
-| `getWindowCommitments(bytes32, bytes32)` / `getDisputeWindowCreationTimestamp(bytes32, bytes32)` / `getReducedResult(bytes32, bytes32)` / `getDisputeWindows(bytes32, bytes32[])` | Dispute-window observation.                                                           |
-| `isKillPeriodExpired(bytes32, bytes32)`                                                                                                                                           | `(bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)`. |
-| `isReduceChallengePeriodExpired(bytes32, bytes32)`                                                                                                                                | Whether the reduction challenge period has passed.                                    |
+| Function                                                                                                                                                                          | Returns                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isChannelOpen(bytes32 channelId)`                                                                                                                                                | `(bool, StateSnapshot)` — open iff the stored snapshot has ≥ 1 participant.                                                                                                                                               |
+| `getParticipants(bytes32 channelId)` / `getSnapshotParticipants(bytes32 channelId)`                                                                                               | Snapshot participants (both call the same accessor).                                                                                                                                                                      |
+| `getPendingParticipants(bytes32 channelId)`                                                                                                                                       | Derived by walking the inbound chain for unconsumed `JOIN`s.                                                                                                                                                              |
+| `getOnChainSlashedParticipants(bytes32)` / `getOnChainSlashedParticipantsUpToTimestamp(bytes32, uint256)` / `isParticipantSlashedOnChain(bytes32, address)`                       | On-chain slash set, whole or as of a timestamp.                                                                                                                                                                           |
+| `getOnChainThresholdSet(bytes32 channelId)` / `canParticipateInDisputes(bytes32, address)`                                                                                        | Eligibility set (snapshot ∪ pending − slashed) and membership in it.                                                                                                                                                      |
+| `getStateSnapshot(bytes32 channelId)` / `getChannelBalance(bytes32 channelId)`                                                                                                    | The canonical snapshot; the channel's balance/head accounting.                                                                                                                                                            |
+| `getP2pTime() / getAgreementTime() / getChainFallbackTime() / getEvidenceTime() / getGasLimit() / getAllTimes()`                                                                  | Timing and execution config (§3).                                                                                                                                                                                         |
+| `getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)`                                                                         | `(bool found, bytes32 commitment)`.                                                                                                                                                                                       |
+| `hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)`                                                                                                             | Whether the inbound block is persisted.                                                                                                                                                                                   |
+| `getStateTransitionReplayGas()`                                                                                                                                                   | Gas a fraud-proof transaction adds to its estimate so the replayed transition gets its full stipend: the machine's `getStateTransitionGasRequirement()` with `x * 64 / 63 + 1` applied once per enclosing call level (4). |
+| `isForkDisputed(bytes32 channelId, bytes32 forkId)`                                                                                                                               | Whether a dispute window exists for the fork.                                                                                                                                                                             |
+| `isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory)`                                                                                                                         | `forkId == keccak256(abi.encode(snapshotData)) && blockHeight == 0`.                                                                                                                                                      |
+| `isSnapshotNewer(StateSnapshot memory, StateSnapshot memory)`                                                                                                                     | Height comparison with a genesis-replacement special case.                                                                                                                                                                |
+| `getWindowCommitments(bytes32, bytes32)` / `getDisputeWindowCreationTimestamp(bytes32, bytes32)` / `getReducedResult(bytes32, bytes32)` / `getDisputeWindows(bytes32, bytes32[])` | Dispute-window observation.                                                                                                                                                                                               |
+| `isKillPeriodExpired(bytes32, bytes32)`                                                                                                                                           | `(bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)`.                                                                                                                                     |
+| `isReduceChallengePeriodExpired(bytes32, bytes32)`                                                                                                                                | Whether the reduction challenge period has passed.                                                                                                                                                                        |
 
 `isGenesisSnapshotWithoutTimeCheck` and `isSnapshotNewer` are `pure`, so the storage context does
 not matter for them; they are routed like the rest and are also `public` on the deployed facet
@@ -364,7 +364,7 @@ deployment with two surfaces, which is why it is
   `retrieveSignerAddress`, `decodeBlock` / `tryDecodeBlock`, and the address/bytes/exit-channel
   array operations. They need no storage context, so the facet's own storage is irrelevant to them.
 - **Proxy-storage views, reached by delegatecall** through the routing table
-  ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L262)):
+  ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)):
   the whole of §2.4 plus `verifyOutboundMessageBlocks` / `pruneOutboundMessageBlocks` (§2.3). Each
   is a thin wrapper over a `StateChannelCommon` `internal` accessor or a direct read of
   `disputeData`, so they need the shared layout and read the **proxy's** storage under
@@ -390,12 +390,12 @@ subclass with event-driven storage sync, zero consumer facet) and
 [`LibraryTestContract`](../../../../../../contracts/V1/helpers/LibraryTestContract.sol#L4) (delegatecall
 forwarder for library tests) are test-support only and MUST NOT be deployed to production.
 
-`LocalDiamond` redeclares
-[`isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L442) so
-local deployments keep its debug
-[`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)
-override: a declared function dispatches before the fallback, whereas production routes that
-selector to `UtilityFacet`.
+Block authenticity has no external selector: `_isBlockAuthentic` is internal on
+`StateChannelCommon`, used by the fraud-proof and state-proof facets. `LocalDiamond` keeps its
+debug [`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444) override for mirrored proof checks and adds no client-facing
+decoding entry: the client decodes blocks with `Codec` and checks author signatures under the
+signature carve-out of [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) (decoding parity is open,
+[`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 
 Because routed selectors are absent from the proxy's own compiled ABI, SDK callers bind both:
 [`src/utils/localDiamond.ts`](../../../../../../src/utils/localDiamond.ts)

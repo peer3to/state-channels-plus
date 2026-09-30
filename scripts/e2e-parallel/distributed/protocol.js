@@ -1,8 +1,29 @@
 const { EventEmitter } = require("events");
+const { TASK_RUNNERS, normalizeTaskRunner } = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 13;
+// The runner protocol this checkout speaks. 14 added the browser tier: the
+// `browser` runner, the worker fork carrying the image's browser environment,
+// and Chromium in the runner image. Hardhat and forge tasks are unchanged.
+const DISTRIBUTED_PROTOCOL_VERSION = 14;
+// The oldest worker host protocol the orchestrator still leases. A host
+// between it and the current version runs only the runners it knows, so a pool
+// can upgrade one host at a time.
+const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 13;
+// What each accepted worker protocol can execute. The orchestrator schedules a
+// task only on a worker whose protocol lists the task's runner.
+const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
+    [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
+    [
+        14,
+        new Set([
+            TASK_RUNNERS.HARDHAT,
+            TASK_RUNNERS.FORGE,
+            TASK_RUNNERS.BROWSER
+        ])
+    ]
+]);
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const REVIEW_KINDS = new Set([
     "REVIEW_HELLO",
@@ -342,6 +363,44 @@ class ProtocolPeer extends EventEmitter {
     }
 }
 
+/**
+ * The runners a worker host speaking `version` can execute, or null when this
+ * orchestrator does not lease that version at all.
+ */
+function runnersForDistributedProtocol(version) {
+    if (
+        !Number.isInteger(version) ||
+        version < MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL ||
+        version > DISTRIBUTED_PROTOCOL_VERSION
+    ) {
+        return null;
+    }
+    return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
+}
+
+/** Every runner a task needs: its own, plus what its test file declares. */
+function runnersNeededByTask(task) {
+    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
+}
+
+/** Whether a worker whose protocol lists `runners` can execute `task`. */
+function workerCanRunTask(runners, task) {
+    return runnersNeededByTask(task).every((runner) => runners.has(runner));
+}
+
+/** The oldest accepted worker protocol that can run `task`, or null. */
+function minimumProtocolForTask(task) {
+    for (
+        let version = MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL;
+        version <= DISTRIBUTED_PROTOCOL_VERSION;
+        version++
+    ) {
+        const runners = runnersForDistributedProtocol(version);
+        if (runners && workerCanRunTask(runners, task)) return version;
+    }
+    return null;
+}
+
 function waitForMessage(peer, kind, timeoutMs = 10000) {
     const pending = peer.takePending(kind);
     if (pending) return Promise.resolve(pending);
@@ -369,8 +428,13 @@ function waitForMessage(peer, kind, timeoutMs = 10000) {
 
 module.exports = {
     DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL,
     PROTOCOL_VERSION,
     MESSAGE_KINDS,
     ProtocolPeer,
+    minimumProtocolForTask,
+    runnersNeededByTask,
+    workerCanRunTask,
+    runnersForDistributedProtocol,
     waitForMessage
 };

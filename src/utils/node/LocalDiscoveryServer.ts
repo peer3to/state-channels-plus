@@ -1304,6 +1304,11 @@ export class LocalDiscoveryServer {
                         p2pManager.stateManager.timeConfig.agreementTime * 1000
                     )
                     .then((completed) => {
+                        // Shutdown settles every pending handshake wait with
+                        // false before the P2P manager itself is disposed; that
+                        // is not a failed handshake, so nothing is retried.
+                        if (!completed && p2pManager.stateManager.isDisposed)
+                            return;
                         if (!completed) {
                             p2pManager.disconnectConnection(
                                 lt,

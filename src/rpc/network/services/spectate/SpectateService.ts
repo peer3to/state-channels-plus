@@ -465,11 +465,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
             this.logger.debug(
                 `Spectate sync - BlockConfirmation pipeline for ${blockConfirmations.length} unfinalized block`,
+                // Bytes that do not decode are refused by the pipeline below,
+                // not by this log.
                 blockConfirmations.map((bc) => {
-                    const _block = Block.fromBlockConfirmation(bc);
+                    const _block = Block.tryFromBlockConfirmation(bc);
                     return {
-                        blockHeight: _block.height,
-                        signerAddress: _block.author
+                        blockHeight: _block?.height,
+                        signerAddress: _block?.author
                     };
                 })
             );

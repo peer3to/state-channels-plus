@@ -87,6 +87,8 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function getGasLimit() public view virtual returns (uint256);
 
+    function getStateTransitionReplayGas() public view virtual returns (uint256 required);
+
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
 
     function getMaxChannelParticipants() public view virtual returns (uint256);
@@ -98,8 +100,6 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         returns (bool found, bytes32 blockCalldataCommitment);
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool);
-
-    function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool);
 
     function getWindowCommitments(bytes32 channelId, bytes32 forkId)
         public

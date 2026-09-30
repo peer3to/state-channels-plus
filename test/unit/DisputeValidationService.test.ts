@@ -83,6 +83,27 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.storedProof).to.equal(undefined);
             expect(run.disputeFraudProofCount).to.equal(0);
         });
+
+        it("unfinalized block bytes that do not decode AND an invalid state-proof structure -> the replay rejects: false + one DisputeInvalidBlockStructure, no throw", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // the replayed confirmation does not decode, and the structure
+            // predicate judges it invalid: only the replay loop meets these
+            // bytes, since the dispute itself decodes
+            const stub = h.control(h.getPeer(1)).stub;
+            await stub.stubUndecodableUnfinalizedBlock(true).request();
+            try {
+                const run = await h.dispute.auditDispute(1, dispute);
+                expect(run).to.include({ outcome: "returned", isValid: false });
+                expect(run.storedProof?.disputeFraudProofType).to.equal(
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
+                );
+                expect(run.disputeFraudProofCount).to.equal(1);
+            } finally {
+                await stub.restoreUndecodableUnfinalizedBlock().request();
+            }
+        });
     });
 
     describe("header + structure", function () {
@@ -638,15 +659,21 @@ describe("Unit: DisputeValidationService", function () {
             });
         });
 
-        // no test: the false branch of isLastMilestoneStoredLocally needs an
-        // auditor that never stored the last milestone's first block.
-        // _isLastMilestoneFinalByEveryone (DisputeFraudProofFacet.sol:764-775)
-        // only reports final when every expected participant signed it, so a
-        // participant auditor necessarily has it; while any participant is
-        // disconnected no milestone forms at all (see "E2E: ... stateProof /
-        // case3_signedBlocksOnly"); and a peer that joined after the milestone
-        // still syncs it, pinned by the test above. only a peer that left the
-        // channel is outside the expected set, and it no longer audits.
+        // Disposition: unreachable, kept skipped. The false branch of
+        // isLastMilestoneStoredLocally needs an auditor that never stored the
+        // last milestone's first block. Predecessor invariant: the audit gets
+        // here only after tryCreateLastMilestoneNotFinalProof let the dispute
+        // through, i.e. the milestone is final by everyone. A final milestone
+        // carries every expected participant's signature, and a peer signs a
+        // block only after it stored it (block storage has no delete path).
+        // Evidence for the three auditor kinds: a participant auditor signed
+        // it; a joiner still syncs it ("dispute.input.latestInboundMessageBlockHash
+        // = pre-join head -> joiner still holds milestones[-1].blockConfirmations[0],
+        // audits it" above); with a participant offline no milestone forms
+        // ("E2E: dispute validation / stateProof / case3_signedBlocksOnly").
+        // A lagging mirror cannot open it either: it can only shrink the
+        // expected set, whose members all signed and stored the block. Only a
+        // peer that left the channel is outside the set, and it no longer audits.
         it.skip("milestones[-1].blockConfirmations[0] missing from the auditor's block storage -> audit skipped", function () {});
 
         // the auditor rebuilds the inbound run the dispute names from its own
@@ -893,12 +920,16 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        // no test: the pipeline only sees false from
-        // interpretFinalValidationResult(DISPUTE) (DisputeValidationStrategy.ts:110);
-        // SUCCESS and DUPLICATE return true (:90, :97) and every other result
-        // throws inside the strategy. each DISPUTE return stores its proof
-        // immediately above it (:78-82, :153-160, :201-208, :224-225, :244-245,
-        // :256-257, :328-329), so false-with-empty-proof-store has no producer
+        // Disposition: unreachable, kept skipped. Predecessor invariant: with
+        // the dispute strategy, onBlockConfirmationStruct returns false only
+        // from DisputeValidationStrategy.interpretFinalValidationResult(DISPUTE);
+        // SUCCESS and DUPLICATE return true and every other result throws
+        // inside the strategy. Every strategy path that returns DISPUTE stores
+        // its dispute fraud proof first, so "false with an empty proof store"
+        // has no producer. Evidence: each replay rejection in this file asserts
+        // false together with its stored proof ("signedBlocks[-1].encodedBlock.
+        // stateSnapshotHash = ZeroHash -> false + DisputeInvalidBlockInStateProofApplyFraudProof"
+        // above, and the "state proof decode" and "header + structure" cases).
         it.skip("onBlockConfirmationStruct false with an empty disputeFraudProofs store -> throw", function () {});
     });
 
@@ -1372,14 +1403,21 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(1);
         });
 
-        // no test: timeoutTimestamp comes from
-        // getDisputeWindowCreationTimestamp and previousTimestamp from the
-        // stored previous block, so hitting equality means landing the upload
-        // transaction in one chosen second - only evm_setNextBlockTimestamp
-        // does that, and AGENTS.md forbids node-wide time RPCs on a shared
-        // node. both sides of the strict `<` are pinned by the too-early and
-        // pass-through tests above, and by the three-way forfeit test which
-        // moves previousTimestamp across the same comparison
+        // Disposition: reachable only with owned chain time, kept skipped.
+        // timeoutTimestamp is the window's creation block timestamp and
+        // previousTimestamp comes from the stored previous block or snapshot
+        // (its timestamp or current timestamp, per the forfeit signature), so equality
+        // means mining the upload in one chosen second. Only
+        // evm_setNextBlockTimestamp does that deterministically, and it needs
+        // a node the test owns for the whole session: the harness session
+        // runs on the shared slot node (test/AGENTS.md forbids node-wide time
+        // RPCs there), and withIsolatedHardhatNode serves raw-provider tests
+        // only, with no deployment, peers or discovery. Both sides of the
+        // strict `<` stay pinned: "window creation timestamp < previous block
+        // timestamp + timeoutWaitTime -> false + TimeoutTooEarly", "window
+        // creation timestamp >= previous block timestamp + timeoutWaitTime ->
+        // timeout checks pass, true", and the three-way forfeit test below,
+        // which moves previousTimestamp across the same comparison.
         it.skip("window creation timestamp == previous block timestamp + timeoutWaitTime -> accepted", function () {});
 
         it("timeout.participantSignatureOnPreviousBlock: 0x / timed-out signer / other signer -> TimeoutTooEarly, none, TimeoutTooEarly", async function () {
@@ -1485,16 +1523,18 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        // no test: the [check] N/N Threshold check reads the block at
-        // timeout.blockHeight, which the [check] isLinked to stateProof check
-        // above it pins to stateProof head + 1. didEveryoneSign needs every
-        // participant of that block signed, so if the disputer is one of them
-        // it signed above the dispute's own snapshot height and the earlier
-        // DisputeNotLatestState fires instead. that leaves only a disputer
-        // outside the block's participant set, which uploadDispute rejects
-        // with ErrorCantParticipateInDispute - enforced by
-        // "E2E: dispute validation / uploadRevert / channelId" and
-        // "... / uploadRevert / disputer".
+        // Disposition: unreachable, kept skipped. Predecessor invariants: the
+        // N/N threshold check reads the block at timeout.blockHeight, which the
+        // earlier isLinked check pins to stateProof head + 1 ("dispute.input.
+        // timeout.blockHeight += 1 -> false + TimeoutNotLinkedToLatestState").
+        // didEveryoneSign needs every participant of that block, so a
+        // participant disputer signed above its own snapshot height and the
+        // earlier DisputeNotLatestState fires first ("stateProof truncated
+        // below the disputer's latest signed block -> false +
+        // DisputeNotLatestState carrying that block"). A disputer outside the
+        // block's participant set cannot upload at all: uploadDispute rejects
+        // it ("E2E: dispute validation / uploadRevert / channelId" and
+        // "E2E: dispute validation / uploadRevert / disputer").
         it.skip("block at timeout.blockHeight signed by every participant -> false + TimeoutThreshold", function () {});
 
         it("timeout.blockHeight = a block whose calldata is on-chain, isForced true -> false + TimeoutCalldataPosted", async function () {

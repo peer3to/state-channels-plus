@@ -27,7 +27,8 @@ const {
     sanitizeWorkerLabel
 } = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
 const {
-    DISTRIBUTED_PROTOCOL_VERSION
+    DISTRIBUTED_PROTOCOL_VERSION,
+    MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
     acknowledgeLoglessAttempt,
@@ -50,10 +51,10 @@ describe("distributed orchestrator logs", function () {
     it("rejects an incompatible worker host before leasing it", function () {
         expect(() =>
             assertCompatibleWorkerProtocol({
-                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION - 1
+                distributedProtocol: MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL - 1
             })
         ).to.throw(
-            `Distributed worker protocol mismatch: orchestrator requires ${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+            `Distributed worker protocol mismatch: orchestrator accepts ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL}-${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL - 1}`
         );
     });
 

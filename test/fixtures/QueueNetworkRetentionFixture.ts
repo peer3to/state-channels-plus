@@ -126,12 +126,14 @@ export async function assertIndependentNetworkAllowances(
             expect(stored?.confirmationSignatures).to.include.members(
                 badValues.slice(0, 2)
             );
+        // Malformed values blacklist their supplier and nonce variants are
+        // double signatures by its key: no honest supplier overflows.
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(badSource.address)
                 .request()
-        ).to.equal(!validVariants);
+        ).to.equal(true);
         expect(
             await h
                 .control(observer)
@@ -592,12 +594,14 @@ export async function assertStoredCopyQuota(network: boolean) {
             ])
         ]);
         expect(after?.height).to.equal(block.height);
+        // The quota bounds each copy; the nonce variants are also double
+        // signatures by the source's key, so the source is blacklisted.
         expect(
             await h
                 .control(observer)
                 .query.isBlacklisted(source.address)
                 .request()
-        ).to.equal(false);
+        ).to.equal(true);
     } finally {
         await hold.release();
         await h.control(observer).stub.restoreAdmissionObservation().request();

@@ -409,6 +409,7 @@ export class MathScenarioActions extends ScenarioActions {
     async stageUnkilledSpamDispute(options?: {
         killerIndex?: number;
         spammerIndex?: number;
+        peerCount?: number;
         beforeDispute?: () => Promise<void>;
         addSpectatorBeforeDispute?: boolean;
         timeConfig?: {
@@ -428,6 +429,7 @@ export class MathScenarioActions extends ScenarioActions {
         const addSpectatorBeforeDispute =
             options?.addSpectatorBeforeDispute ?? false;
         await this.preDisputeSetup({
+            peerCount: options?.peerCount,
             transitionCount: addSpectatorBeforeDispute ? 0 : undefined,
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });

@@ -6,6 +6,9 @@ error ErrorAtLeastTwoParticipantsRequired(uint256 participantCount);
 error ErrorTooManyParticipants(uint256 requested, uint256 maximum);
 error ErrorDuplicateParticipant(address participant);
 
+//State transition replay
+error ErrorStateTransitionFrameOutOfGas();
+
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted(
     bytes32 forkId, uint256 transactionCnt, address participant, bytes32 existingCommitment
