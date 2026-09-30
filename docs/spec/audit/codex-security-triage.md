@@ -1,12 +1,19 @@
 # Codex Security finding reassessment
 
-> **Status:** Current static assessment; engineer review pending. No risk acceptance or fix approval is recorded.
+> **Status:** Current static assessment. **Engineer decision (2026-09-30):** publish this assessment now, with no fixes in this change; every finding stays open in its owner's tracker until its fix lands. No risk acceptance or fix approval is recorded.
 > **Reviewed:** 2026-09-30, `dispute` at `9dc2437696fbe5d18e7a63d881c249382579f84d`, including the nine existing uncommitted files.
 > **Scope:** Reassess the 12 findings from Codex Security scan `b16b8056-1a2e-47ad-b510-34ef96ce1d0b` at `d0ee003884e559a50c4128fe3c3b3064bd11a53e`. This is not a fresh repository-wide scan.
 
 ## Result and handoff
 
-**9 confirmed, 1 not actionable because its exact path is fixed, and 2 needing boundary/reachability review.** Among the nine confirmed findings, the original scan ratings are five high, three medium and one low. Ratings are retained for continuity; queue rank orders exploitability separately. The two needs-review items retain their original low rating only as input metadata, not as confirmed vulnerabilities.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
+
+The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
+
+- Docker workload filtering and the supervisor log queue (both confirmed): [distributed runner open security findings](../../../README.md#open-security-findings).
+- Publication journal overwrite (confirmed): [review service open security findings](../../../scripts/bot/README.md#open-security-findings).
+- Harness code execution before authentication (needs boundary review): [test harness open security questions](../../../test/harness/README.md#open-security-questions).
+- Malformed discovery registration (needs boundary review): [local infrastructure open security questions](../../../scripts/infra/README.md#open-security-questions).
 
 Read each item's preconditions before implementing a fix. Confirmed means the source supports the claim under those preconditions, not that an exploit was executed. No application, tests, builds or exploit probes were run during this reassessment. Documentation checks are recorded in the final handoff. No source fixes were made. The completed original scan remains immutable; the current decisions are here and in [open findings](./open-findings.md#codex-security-reassessment).
 
@@ -16,22 +23,17 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 
 ## Triage queue
 
-| Original rule         | Current result | Original severity | Queue rank | Finding / tracking                                                                                                                                                |
-| --------------------- | -------------- | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `milestone-skip`      | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
-| `zero-verdict`        | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
-| `unbound-snapshot`    | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
-| `pruned-inbound`      | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
-| `open-deadline`       | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
-| `sync-inbound`        | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
-| `sync-genesis-time`   | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
-| `host-input`          | confirmed      | low               | 9          | [Docker workload filtering omits worker-host services](#host-input) · [`FIND-SECURITY-7-SKBT55`](open-findings.md#find-security-7-skbt55)                         |
-| `log-queue`           | confirmed      | medium            | 7          | [Guest log output can exhaust the worker supervisor](#log-queue) · [`FIND-SECURITY-8-J2S8H3`](open-findings.md#find-security-8-j2s8h3)                            |
-| `publication-journal` | confirmed      | medium            | 8          | [Review clients can overwrite shared publication history](#publication-journal) · [`FIND-SECURITY-9-R9W4MP`](open-findings.md#find-security-9-r9w4mp)             |
-| `harness-eval`        | needs_review   | low               | 1          | [Test harness exposes code execution before peer authentication](#harness-eval)                                                                                   |
-| `registry-null`       | needs_review   | low               | 2          | [Malformed registration can stop the local discovery registry](#registry-null)                                                                                    |
+| Original rule       | Current result | Original severity | Queue rank | Finding / tracking                                                                                                                                                |
+| ------------------- | -------------- | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `milestone-skip`    | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
+| `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
+| `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
+| `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
+| `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
+| `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
+| `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
-Ranks are unique within each of the confirmed and needs-review queues. Unauthenticated on-chain paths rank before peer-assisted signing paths; admitted tooling clients rank later. The fixed item has no rank. All 12 inputs are retained, including the fixed and uncertain claims.
+Ranks are unique within the confirmed queue. Unauthenticated on-chain paths rank before peer-assisted signing paths. The fixed item has no rank. All 7 protocol inputs are retained here, including the fixed claim.
 
 <a id="milestone-skip"></a>
 
@@ -214,121 +216,6 @@ Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occur
 These are proposed regression obligations, not evidence of passing tests. Before implementing, update the owning plans and exact test mappings in the same pass.
 
 **Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The new regression helper is not a full genesis authentication check.
-
-<a id="host-input"></a>
-
-## 8. Docker workload filtering omits worker-host services
-
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** low · **confirmed rank:** 9 · [`FIND-SECURITY-7-SKBT55`](open-findings.md#find-security-7-skbt55).
-
-Source identity: `csf_6eed22aa96514ee57ddf2190`; rule `host-input`; occurrence `occ_3eb4bef4a6924cd99f4c5d34`.
-
-**Current evidence and path.** The Linux backend still installs the host-CIDR deny rules only through DOCKER-USER. Container-to-host traffic uses INPUT, so a guest can reach a listening host service unless an independent INPUT policy blocks it. README explicitly promises Linux worker-host blocking, establishing the supported boundary.
-
-**Locations:** [scripts/e2e-parallel/distributed/egressPolicy.js:88–112](../../../scripts/e2e-parallel/distributed/egressPolicy.js#L88-L112); [scripts/e2e-parallel/distributed/isolatedEnvironment.js:498–507](../../../scripts/e2e-parallel/distributed/isolatedEnvironment.js#L498-L507).
-
-**Boundary:** authenticated developer infrastructure. README explicitly promises Linux worker-host egress blocking. The claimed input crosses the stated authorization, evidence-integrity or isolation boundary under the listed preconditions.
-
-**Counterevidence and limits.** Forwarded private traffic is filtered; Docker Desktop is explicitly weaker. A host service and missing independent INPUT protection are prerequisites. Host code execution is not established.
-
-**Proof gaps.** Static only; Linux bridge and sentinel-host-service reproduction remains needed.
-
-**Fix handoff (proposed, not implemented):** Use `$codex-security:fix-finding` for [`FIND-SECURITY-7-SKBT55`](open-findings.md#find-security-7-skbt55). Install and maintain filtering on the container-to-host INPUT path as well as forwarded egress. Test against a known listening host sentinel. Preserve the preconditions and limits above. Required regression work:
-
-- With a listening bridge-host sentinel, assert guest TCP is denied.
-- Cover policy setup, container reuse and cleanup for INPUT and forwarding paths.
-
-These are proposed regression obligations, not evidence of passing tests. Before implementing, update the owning plans and exact test mappings in the same pass.
-
-<a id="log-queue"></a>
-
-## 9. Guest log output can exhaust the worker supervisor
-
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** medium · **confirmed rank:** 7 · [`FIND-SECURITY-8-J2S8H3`](open-findings.md#find-security-8-j2s8h3).
-
-Source identity: `csf_a62e0fe543a39012e6a874cf`; rule `log-queue`; occurrence `occ_2b5242d4c9e42b81fc5798f5`.
-
-**Current evidence and path.** Guest preparation output still reaches independently scheduled async handlers. Each outbound send allocates buffers before joining an unbounded writeChain. An admitted orchestrator can arrange noisy preparation, stop draining outbound data, and keep inbound heartbeats alive; queued buffers consume supervisor memory outside guest limits.
-
-**Locations:** [scripts/e2e-parallel/distributed/server.js:372–375](../../../scripts/e2e-parallel/distributed/server.js#L372-L375); [scripts/e2e-parallel/distributed/server.js:1287–1293](../../../scripts/e2e-parallel/distributed/server.js#L1287-L1293); [scripts/e2e-parallel/distributed/protocol.js:265–289](../../../scripts/e2e-parallel/distributed/protocol.js#L265-L289).
-
-**Boundary:** authenticated developer infrastructure. README documents isolated guest workloads and worker resource ceilings. The claimed input crosses the stated authorization, evidence-integrity or isolation boundary under the listed preconditions.
-
-**Counterevidence and limits.** Authentication, per-frame limits and guest memory limits remain. They do not impose an aggregate host-side log queue bound. The attacker needs pool admission and control over preparation/read pace.
-
-**Proof gaps.** Static only; quantify host memory growth and lease behavior before setting a production resource threshold.
-
-**Fix handoff (proposed, not implemented):** Use `$codex-security:fix-finding` for [`FIND-SECURITY-8-J2S8H3`](open-findings.md#find-security-8-j2s8h3). Bound per-connection queued bytes and propagate backpressure to guest control input, or stop over-budget producers. Bound stalled-output duration separately from inbound heartbeat. Preserve the preconditions and limits above. Required regression work:
-
-- A slow-reading orchestrator plus continuous preparation output must stay within a host queue budget.
-- Verify isolation/cleanup without affecting other worker leases.
-
-These are proposed regression obligations, not evidence of passing tests. Before implementing, update the owning plans and exact test mappings in the same pass.
-
-<a id="publication-journal"></a>
-
-## 10. Review clients can overwrite shared publication history
-
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** medium · **confirmed rank:** 8 · [`FIND-SECURITY-9-R9W4MP`](open-findings.md#find-security-9-r9w4mp).
-
-Source identity: `csf_bed946f1d1cab3ad7562ef4f`; rule `publication-journal`; occurrence `occ_190a5e602b6ad6c28fe7f6e4`.
-
-**Current evidence and path.** A completed ordinary review delivery still authorizes publication load/save without checking CI publication authority. The journal is keyed only by repository and PR. The caller can read its digest and replace states with an empty array. The documented boundary says mode binds CI-only publication; the implemented operation does not enforce that distinction.
-
-**Locations:** [scripts/bot/server.js:226–248](../../../scripts/bot/server.js#L226-L248); [scripts/bot/publication-store.js:13–18](../../../scripts/bot/publication-store.js#L13-L18); [scripts/bot/publication-store.js:56–81](../../../scripts/bot/publication-store.js#L56-L81).
-
-**Boundary:** authenticated developer infrastructure. scripts/bot/README.md documents CI-only publication and a separate publisher token. The claimed input crosses the stated authorization, evidence-integrity or isolation boundary under the listed preconditions.
-
-**Counterevidence and limits.** Compare-and-swap prevents stale writes, not unauthorized current writes. Live CI/head/thread checks still guard final approval; this finding does not claim unconditional GitHub autoapproval.
-
-**Proof gaps.** Static only; if all admitted clients are intentionally authorized to publish every PR, document that different trust model before closing the finding.
-
-**Fix handoff (proposed, not implemented):** Use `$codex-security:fix-finding` for [`FIND-SECURITY-9-R9W4MP`](open-findings.md#find-security-9-r9w4mp). Require a separate publication capability bound to repository, PR, head and CI execution. Validate journal/receipt mutations against worker-owned results and preserve caller authority in shared state. Preserve the preconditions and limits above. Required regression work:
-
-- An ordinary local review client cannot mutate the CI publication journal or receipts.
-- Authorized publisher mutations must remain bound to the reviewed result and exact PR/head.
-
-These are proposed regression obligations, not evidence of passing tests. Before implementing, update the owning plans and exact test mappings in the same pass.
-
-<a id="harness-eval"></a>
-
-## 11. Test harness exposes code execution before peer authentication
-
-**Verdict:** `needs_review` · **Confidence:** medium · **Original severity:** low · **needs_review rank:** 1.
-
-Source identity: `csf_9ab7cede3f992354ca5b0bd8`; rule `harness-eval`; occurrence `occ_fc2c43256bb7546b44e4e279`.
-
-**Current evidence and path.** The code condition remains: the default test manifest intentionally has no guards and scenario.exec evaluates a received body. The loopback listener has no Origin check and installs the transport before handshake completion. However, this is a deliberately code-executing test fixture, not the production manifest; an actual lower-trust browser-to-harness path was not established.
-
-**Locations:** [test/fixtures/customRpc/harnessControl/services/scenario/ScenarioService.ts:16–24](../../../test/fixtures/customRpc/harnessControl/services/scenario/ScenarioService.ts#L16-L24); [test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods.ts:30–42](../../../test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods.ts#L30-L42).
-
-**Boundary:** test/fixture. Fixture/development comments establish intended trusted use; browser boundary support remains unclear. A supported lower-trust crossing is not established.
-
-**Counterevidence and limits.** Same-user local processes are not a security boundary. The listener is temporary and browser local-network/mixed-content policy may block access. The fixture comment explicitly requests pre-handshake access.
-
-**Proof gaps.** Determine whether untrusted browser origins can reach this listener in a supported developer setup and whether the harness promises isolation from them. Then validate a local-only execution guard without breaking required probes.
-
-**Next step:** resolve the specific boundary question above before treating this as a security fix. No fix-finding handoff is issued yet.
-
-<a id="registry-null"></a>
-
-## 12. Malformed registration can stop the local discovery registry
-
-**Verdict:** `needs_review` · **Confidence:** medium · **Original severity:** low · **needs_review rank:** 2.
-
-Source identity: `csf_638ea73947731f98d7f29fdf`; rule `registry-null`; occurrence `occ_e21fa134630b24544d8b0877`.
-
-**Current evidence and path.** The parser defect remains: JSON null parses successfully, then parsed.port throws outside the catch. The registry defaults to loopback and has no Origin check. Its security impact depends on an untrusted browser being allowed to connect, or a supported externally bound deployment.
-
-**Locations:** [scripts/infra/local-discovery-registry.js:26–36](../../../scripts/infra/local-discovery-registry.js#L26-L36); [scripts/infra/local-discovery-registry.js:5–10](../../../scripts/infra/local-discovery-registry.js#L5-L10).
-
-**Boundary:** local developer service. Fixture/development comments establish intended trusted use; browser boundary support remains unclear. A supported lower-trust crossing is not established.
-
-**Counterevidence and limits.** A trusted same-user caller can already stop its own development process. Browser reachability and intended support for hostile clients were not established. Socket error handling does not catch this application exception.
-
-**Proof gaps.** Confirm a supported lower-trust caller path. Independently, non-null object validation is a straightforward robustness fix; no runtime crash test was run.
-
-**Next step:** resolve the specific boundary question above before treating this as a security fix. No fix-finding handoff is issued yet.
 
 ## Running security review for GitHub PRs
 
