@@ -11,6 +11,15 @@ Root lifecycle changes retain internal endpoint composition and exact transport 
 
 The shared frame decoder keeps the size gate before parsing and response-first classification for dual-shaped input. Lobby policy callbacks run after the same malformed-input and reservation checks. Negotiation preserves raw nonce/challenge comparison and malformed-address failure. No authorization, punishment, timeout or signed-attempt release policy changes; implementation-only coercion helpers do not broaden trust. The review follow-up changes the bytes32 type assertion and import order without adding a trust-boundary branch.
 
+## Current Codex Security findings
+
+The [finding reassessment](./codex-security-triage.md) checks the 12 supplied scan findings
+against current `dispute` source and the preserved local edits. Nine remain confirmed by static
+evidence, the all-skipped milestone replacement is fixed, and two development-tool claims need
+boundary/reachability review. The [open finding entries](./open-findings.md#codex-security-reassessment)
+link the affected paths, counterevidence and proposed regression work. This does not complete the
+formal security review, establish runtime reproduction, or record engineer risk acceptance.
+
 ## Awaited RPC dispatch
 
 Router ingress awaits service.runRPC. Guards retain their existing response suppression and replay behavior. Shared RpcDispatch handles endpoint execution and response construction, with service-local policies and no exception wrapper or extra service-shape requirements. Error response construction remains separate from peer punishment: request endpoint errors return failures; synchronous one-way throws retain disconnect/blacklist behavior, and asynchronous one-way rejection retains disconnect-only behavior. Failed response sends have one attempt. Internal uncaught dispatch failures reach the root error handler from the port callback. Message callbacks remain independent, so a held invocation does not block reply or cancellation traffic.

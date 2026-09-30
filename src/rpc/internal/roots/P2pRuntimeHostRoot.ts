@@ -1,5 +1,4 @@
 import { createRoot, type RootStartContext } from "../createRoot";
-import type { RemoteRoot } from "../RemoteRoot";
 import type { P2pRuntimeClientRoot } from "./P2pRuntimeClientRoot";
 import { WebRTCWorkerBridgeRoot } from "./WebRTCWorkerBridgeRoot";
 import { ChainSignerService } from "../services/chainSigner/ChainSignerService";
@@ -465,5 +464,3 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         );
     }
 }
-
-export type P2pRuntimeHostRemoteRoot = RemoteRoot<P2pRuntimeHostRoot>;

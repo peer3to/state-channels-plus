@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Owns peer callbacks, channel proxies and connection state for one host's WebRTC bridge. It retains the WebRTCWorkerBridgeRemoteRoot created by the RuntimeHost. Negotiation calls use that handle; transferred data channels reach the normal WebRTC transport and untransferable channels use the proxy path.
+Owns peer callbacks, channel proxies and connection state for one host's WebRTC bridge. It retains the `RemoteRoot<WebRTCWorkerBridgeRoot>` created by the RuntimeHost. Negotiation calls use that handle; transferred data channels reach the normal WebRTC transport and untransferable channels use the proxy path.
 
 ## Key design decisions
 

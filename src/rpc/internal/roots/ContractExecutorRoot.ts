@@ -1,5 +1,4 @@
 import { type RootStartContext } from "../createRoot";
-import type { RemoteRoot } from "../RemoteRoot";
 import {
     ContractExecutorService,
     type ContractExecutorInitialization
@@ -59,5 +58,3 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
         await this.executor.init(this.initialization);
     }
 }
-
-export type ContractExecutorRemoteRoot = RemoteRoot<ContractExecutorRoot>;

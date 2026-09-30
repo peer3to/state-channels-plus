@@ -15,7 +15,7 @@ Calls createRoot with ContractExecutorRoot, its required owner and the fixed int
 
 The local EVM call gas crosses the placement boundary as data. The optional `callGasLimit` factory option ([#L18](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L18)) is sent in the initialization arguments as a decimal string ([#L42](../../../../../../../src/evm/contractExecutor/createContractExecutor.ts#L42)), because a structured-clone message is built the same way for both placements; absent, the receiving executor keeps the EVM default. The host root computes the value ([P2pRuntimeHostRoot](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md)); [ContractExecutorService](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) parses it back ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
 
-The returned ContractExecutorRemoteRoot is the only connection field passed to RpcContractExecutor. Common creation waits for executor initialization and readiness. Common root lifetime installs diagnostics and discovers logger connections automatically. No factory observer or logger announcement is needed.
+The returned `RemoteRoot<ContractExecutorRoot>` is the only connection field passed to RpcContractExecutor. Common creation waits for executor initialization and readiness. Common root lifetime installs diagnostics and discovers logger connections automatically. No factory observer or logger announcement is needed.
 
 ## Inputs, outputs, state, and side effects
 

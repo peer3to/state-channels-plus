@@ -23,6 +23,7 @@ Generated success is never semantic approval. The current top-level view is
 - [Verification assessment](./verification.md)
 - [Security assessment](./security-assessment.md)
 - [Open findings](./open-findings.md)
+- [Codex Security finding reassessment](./codex-security-triage.md)
 - [Open audit questions](./open-questions.md)
 - [Engineer approvals](./approvals.md)
 
