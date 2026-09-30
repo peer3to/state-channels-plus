@@ -1,12 +1,13 @@
 import AContractExecutor, {
     type ContractExecutionResult
 } from "./AContractExecutor";
-import type { ContractExecutorRemoteRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
+import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
+import type { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
 import type { Address, Bytes } from "@/types/types";
 import { ethers } from "ethers";
 export default class RpcContractExecutor extends AContractExecutor {
     constructor(
-        private readonly contractExecutorRemoteRoot: ContractExecutorRemoteRoot
+        private readonly contractExecutorRemoteRoot: RemoteRoot<ContractExecutorRoot>
     ) {
         super();
     }

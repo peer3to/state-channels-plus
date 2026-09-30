@@ -71,7 +71,24 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-None demonstrated.
+Both items let a proof succeed against an honest participant. They contradict
+[`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4),
+which lets only successful proofs of real misconduct append to the slash set.
+
+- **An unlinked previous snapshot slashes an honest signer**
+  ([`FIND-SECURITY-2-J3J60V`](../../../../../audit/open-findings.md#find-security-2-j3j60v)).
+  The invalid-transition handler returns a valid verdict against the signer when the supplied
+  previous snapshot is on another fork
+  ([#L129](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L129)).
+  This return runs before the handler binds that snapshot to the signed block's predecessor, so
+  the caller chooses the snapshot freely.
+- **A pruned genuine inbound block counts as forged**
+  ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
+  The forged-inbound handler treats absence from the live inbound map as forgery and exempts only
+  the current snapshot head
+  ([#L351-L362](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L351-L362)).
+  Snapshot adoption deletes earlier genuine heads, so an honest block that includes one of them
+  satisfies the proof.
 
 ## Missing behavior
 
@@ -83,11 +100,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                               | Implementation status | Evidence                                | Gap / divergence                                                                           |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`REQ-ENFFP-1-BREACW`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw) | Covered               | **Here:** the submitter-slash branches. | Ineligible-submitter penalty remains the open protocol question (implemented as no-slash). |
-| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** strict type dispatch.         | None.                                                                                      |
-| [`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4) | Covered               | **Here:** append + skip-if-slashed.     | None.                                                                                      |
+| Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                                 | Gap / divergence                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`REQ-ENFFP-1-BREACW`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw) | Covered               | **Here:** the submitter-slash branches.                                                                                                  | Ineligible-submitter penalty remains the open protocol question (implemented as no-slash).                                                                                                                                                                                                                                                                                                  |
+| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** strict type dispatch.                                                                                                          | None.                                                                                                                                                                                                                                                                                                                                                                                       |
+| [`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4) | Contradicts           | **Here:** append + skip-if-slashed ([#L11-L27](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L27)). | Two handlers return a valid verdict against an honest participant, so a proof that shows no misconduct appends to the slash set: the unlinked previous snapshot ([`FIND-SECURITY-2-J3J60V`](../../../../../audit/open-findings.md#find-security-2-j3j60v)) and the pruned genuine inbound block ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)). |
 
 ## Component test obligations
 

@@ -13,7 +13,7 @@ The receiving ContractExecutorRoot controls the engine. Connection failure and c
 
 ## Inputs, outputs, state, and side effects
 
-Stores one ContractExecutorRemoteRoot handle. Calls return the shared router's request promises. Handle disposal uses the same recursive root contract in both placements.
+Stores one `RemoteRoot<ContractExecutorRoot>` handle. Calls return the shared router's request promises. Handle disposal uses the same recursive root contract in both placements.
 
 ## Linked requirements
 

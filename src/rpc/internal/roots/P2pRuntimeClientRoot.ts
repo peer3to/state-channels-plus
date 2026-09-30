@@ -4,10 +4,8 @@ import {
     deserializeError,
     type SerializedError
 } from "../errorWire";
-import {
-    P2pRuntimeHostRoot,
-    type P2pRuntimeHostRemoteRoot
-} from "./P2pRuntimeHostRoot";
+import { P2pRuntimeHostRoot } from "./P2pRuntimeHostRoot";
+import type { RemoteRoot } from "../RemoteRoot";
 import {
     installWebRTCMainThreadBridge,
     type WebRTCMainThreadBridgeHandle
@@ -34,7 +32,7 @@ export interface ClientRootDependencies
 /** Owns client communication with the SDK host. */
 export class P2pRuntimeClientRoot extends AInternalRpcRoot {
     public readonly sdkClient: SdkClientService;
-    public p2pRuntimeHostRemoteRoot?: P2pRuntimeHostRemoteRoot;
+    public p2pRuntimeHostRemoteRoot?: RemoteRoot<P2pRuntimeHostRoot>;
     public webRTCBridgePort?: MessagePort;
     public readonly events: EventBus;
     private readonly hostErrorListeners = new Set<(error: Error) => void>();

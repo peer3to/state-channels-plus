@@ -303,6 +303,40 @@ archive chunks as data and never extracts them. The trusted guest runner
 verifies and extracts source, installs each repository with pnpm, provisions test
 infrastructure, and executes every task inside the same isolated environment.
 
+#### Open security findings
+
+These findings come from Codex Security scan
+`b16b8056-1a2e-47ad-b510-34ef96ce1d0b`, reassessed statically on 2026-09-30.
+They are confirmed from source but not reproduced at runtime, and not fixed.
+
+- **Docker workload filtering omits worker-host services** (low; Codex
+  `csf_6eed22aa96514ee57ddf2190`). The Linux backend installs its host-CIDR
+  deny rules only in `DOCKER-USER`
+  ([egressPolicy.js:88-112](scripts/e2e-parallel/distributed/egressPolicy.js#L88-L112),
+  [isolatedEnvironment.js:498-507](scripts/e2e-parallel/distributed/isolatedEnvironment.js#L498-L507)).
+  Container-to-host traffic uses `INPUT`, so a guest can reach a listening
+  worker-host service unless a separate `INPUT` policy blocks it. This breaks
+  the worker-host blocking promised above. Forwarded private traffic is still
+  filtered, and Docker Desktop is weaker by design.
+  - Fix: filter the container-to-host `INPUT` path as well as forwarded egress.
+  - Regression: with a listening sentinel on the bridge host, guest TCP is
+    denied; policy setup, container reuse and cleanup cover both paths.
+- **Guest log output can exhaust the worker supervisor** (medium; Codex
+  `csf_a62e0fe543a39012e6a874cf`). Guest preparation output reaches
+  independently scheduled handlers, and each outbound send allocates its
+  buffer before it joins an unbounded write chain
+  ([server.js:372-375](scripts/e2e-parallel/distributed/server.js#L372-L375),
+  [server.js:1287-1293](scripts/e2e-parallel/distributed/server.js#L1287-L1293),
+  [protocol.js:265-289](scripts/e2e-parallel/distributed/protocol.js#L265-L289)).
+  An admitted orchestrator that stops reading while it keeps heartbeats alive
+  grows supervisor memory outside the guest limits. Authentication, frame
+  limits and guest memory limits remain.
+  - Fix: bound queued bytes per connection and apply backpressure to guest
+    output, or stop an over-budget producer; bound stalled output separately
+    from the inbound heartbeat.
+  - Regression: a slow-reading orchestrator with continuous preparation output
+    stays within the queue budget, and other worker leases are unaffected.
+
 #### Distributed storage and cleanup
 
 `distributed-worker` is the default directory for worker-managed data, not a

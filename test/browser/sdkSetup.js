@@ -257,6 +257,7 @@ export async function createBrowserSdkExecutor(options = {}) {
     await Clock.init(stack.provider);
     let executor;
     let shiftedClock;
+    let clockAdjustmentSeconds;
     try {
         const instance = await setupBrowserPeer(
             stack.peerWallets[0],
@@ -284,6 +285,11 @@ export async function createBrowserSdkExecutor(options = {}) {
                                     Clock.getClockAdjustmentSeconds()
                             );
                             await Clock.init(shiftedClock);
+                            // The sync keeps any offset within one average
+                            // block time, so the adjustment the executor
+                            // receives can differ from the requested one.
+                            clockAdjustmentSeconds =
+                                Clock.getClockAdjustmentSeconds();
                         }
                         const NativeWorker = globalThis.Worker;
                         if (options.dependencies?.workerUrl) {
@@ -330,6 +336,7 @@ export async function createBrowserSdkExecutor(options = {}) {
         return {
             executor,
             instance,
+            clockAdjustmentSeconds,
             async dispose() {
                 try {
                     await instance.dispose();

@@ -100,5 +100,3 @@ export class WebRTCWorkerBridgeRoot extends AInternalRpcRoot {
         );
     }
 }
-
-export type WebRTCWorkerBridgeRemoteRoot = RemoteRoot<WebRTCWorkerBridgeRoot>;

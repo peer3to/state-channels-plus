@@ -194,6 +194,17 @@ None demonstrated.
 
 ## Missing behavior
 
+- **No opening-deadline check in `open`**
+  ([`FIND-SECURITY-4-02DYWZ`](../../../../../audit/open-findings.md#find-security-4-02dywz)).
+  `open` verifies the unanimous signatures and copies `OpenChannel.deadlineTimestamp` into each
+  composed join, but never compares it with chain time
+  ([#L220-L234](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L220-L234)).
+  The direct join path does check its deadline. A counterparty that kept the opening signatures
+  can therefore open the channel after the signed window, unless the integrator's deposit adapter
+  rejects it. No requirement states that `open` must enforce the deadline, so this is not a
+  specification contradiction and no conformance row changes;
+  [`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../../../../../specification/open-questions.md#oq-spec-open-1-12rh7a)
+  asks the engineer for the rule.
 - **No rejection of an unowned selector.** [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) requires that an
   externally reachable operation with no owning group cannot affect channel state. An unrouted
   selector is delegatecalled into the integrator's consumer facet in this contract's storage

@@ -304,14 +304,24 @@ try {
                 "runContractExecutorWorkerClockBrowserSmoke"
             )
         };
-        // The browser worker's ambient block time is wall time plus the host's
-        // clock adjustment, within the one-second sampling boundary, and advances.
-        // Bracket the asynchronous read so reply latency is not clock drift.
-        const { firstOffsetLowerBound, firstOffsetUpperBound } =
-            result.contractExecutorClock;
+        // The browser worker's ambient block time is wall time plus the host
+        // Clock's adjustment, within the one-second sampling boundary, and
+        // advances. Bracket the asynchronous read so reply latency is not clock
+        // drift. The host's adjustment is the one Clock settled on, not the
+        // requested 600: the sync tolerates up to one average block time.
+        const {
+            hostAdjustmentSeconds,
+            firstOffsetLowerBound,
+            firstOffsetUpperBound
+        } = result.contractExecutorClock;
         assert.ok(
-            firstOffsetLowerBound <= 601 && firstOffsetUpperBound >= 599,
-            `browser worker block.timestamp offset range ${firstOffsetLowerBound}..${firstOffsetUpperBound}`
+            Math.abs(hostAdjustmentSeconds - 600) < 60,
+            `host Clock adjustment ${hostAdjustmentSeconds}`
+        );
+        assert.ok(
+            firstOffsetLowerBound <= hostAdjustmentSeconds + 1 &&
+                firstOffsetUpperBound >= hostAdjustmentSeconds - 1,
+            `browser worker block.timestamp offset range ${firstOffsetLowerBound}..${firstOffsetUpperBound}, host adjustment ${hostAdjustmentSeconds}`
         );
         assert.equal(result.contractExecutorClock.advanced, true);
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
