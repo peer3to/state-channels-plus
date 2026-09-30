@@ -153,8 +153,8 @@ enumerated abort conditions in
    re-reads the mutable shared local window after reduction. `finalForkId` walks forward.
 5. **Genesis validity.** The tip fork's genesis must satisfy: `finalForkId == payload genesis forkId`,
    `isGenesisSnapshotWithoutTimeCheck`, and `stateMachineStateHash == hash(encoded genesis state)`.
-6. **Stale-proof short-circuit.** If the on-chain snapshot is on the same fork but already past the
-   proved height, abort (nothing to teleport to).
+6. **Extension check.** `isExtendingOnChainSnapshot` on the local diamond, against the step-3 snapshot:
+   on the same fork the proof must end at that snapshot or a newer one, else abort (nothing to teleport to).
 7. **Outbound range #1.** `verifyOutboundMessageBlocks` from on-chain tip → fork genesis.
 8. **Disputed / requested-fork check.** Latest mode (no requested fork): the tip fork must **not** be
    disputed on-chain (`getDisputeWindowCreationTimestamp == 0`). Pinned mode: `finalForkId ==
@@ -187,13 +187,12 @@ flowchart TD
     AV --> V1[decode + RTT]
     V1 --> V2[fetch on-chain snapshot]
     V2 --> V3[dispute-window walk: exists + expired + reduces]
-    V3 --> V4[genesis valid + outbound ranges]
+    V3 --> V4[genesis valid + extends on-chain snapshot + outbound ranges]
     V4 --> V5[not-disputed / requested-fork]
     V5 --> V6[verifyMilestones + finalized state hash]
     V6 --> V7[balance invariant staticCall]
-    V7 --> V8[multicall staticCall advance]
-    V8 --> P[persist under mutex + replay suffix]
-    V1 & V2 & V3 & V4 & V5 & V6 & V7 & V8 & P -- fail --> AB[abort]
+    V7 --> P[persist under mutex + replay suffix]
+    V1 & V2 & V3 & V4 & V5 & V6 & V7 & P -- fail --> AB[abort]
 ```
 
 ### 3.4 `rejectSync(peerAddress, reason)` — failed proof

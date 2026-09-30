@@ -127,20 +127,21 @@ Behavior: [../protocol/disputes.md](../../../../specification/disputes/disputes.
 Behavior: [../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md),
 [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md).
 
-| Function                                                                                                                                                   | Routes to                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `verifyStateProof(Dispute memory, DisputeAuditingData memory) returns (bool)`                                                                              | `StateProofFacet`          |
-| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                        | `StateProofFacet`          |
-| `areSignedBlocksLinkedAndVerified(SignedBlock[] memory) returns (bool)`                                                                                    | `StateProofFacet`          |
-| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                | `StateProofFacet`          |
-| `findFirstInvalidBlockStructureInStateProof(StateProof memory) returns (bool found, uint256 blockIndex)`                                                   | `StateProofFacet`          |
-| `verifyMilestones(bytes32 forkId, MilestoneProof[] memory, StateSnapshot[] memory, StateSnapshot memory thresholdStateSnapshot) returns (bool)`            | `StateProofFacet`          |
-| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)` | `StateProofFacet`          |
-| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                           | `StateSnapshotFacet`       |
-| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`             | `StateSnapshotFacet`       |
-| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                        | `DisputeVerificationFacet` |
-| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                  | `UtilityFacet` (view)      |
-| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                     | `UtilityFacet` (pure)      |
+| Function                                                                                                                                                   | Routes to                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `verifyStateProof(Dispute memory, DisputeAuditingData memory) returns (bool)`                                                                              | `StateProofFacet`           |
+| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                        | `StateProofFacet`           |
+| `areSignedBlocksLinkedAndVerified(SignedBlock[] memory) returns (bool)`                                                                                    | `StateProofFacet`           |
+| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                | `StateProofFacet`           |
+| `findFirstInvalidBlockStructureInStateProof(StateProof memory) returns (bool found, uint256 blockIndex)`                                                   | `StateProofFacet`           |
+| `verifyMilestones(bytes32 forkId, MilestoneProof[] memory, StateSnapshot[] memory, StateSnapshot memory thresholdStateSnapshot) returns (bool)`            | `StateProofFacet`           |
+| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)` | `StateProofFacet`           |
+| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                           | `StateSnapshotFacet`        |
+| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`             | `StateSnapshotFacet`        |
+| `isExtendingOnChainSnapshot(StateSnapshot memory onChainSnapshot, StateSnapshot memory target) returns (bool)`                                             | `StateSnapshotFacet` (view) |
+| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                        | `DisputeVerificationFacet`  |
+| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                  | `UtilityFacet` (view)       |
+| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                     | `UtilityFacet` (pure)       |
 
 ### 2.4 Views
 
@@ -262,6 +263,9 @@ outbound message (`EXIT` → consumer `withdraw`; unknown types revert
   advance **within the fork** by milestone finality proof: same fork required, snapshot must be
   newer, milestones verified via `verifyMilestones`, and the new snapshot must consume all pending
   inbound blocks (`RaceConditionPendingInboundNotConsumed`).
+- `isExtendingOnChainSnapshot(onChainSnapshot, target)` — view the sync requester calls on the
+  local diamond: a proof ending at `target` extends the snapshot the caller read when it is on another
+  fork (linked by reductions), or on the same fork is that snapshot itself or a newer one.
 - Housekeeping: a channel reaching 0 participants is closed and its storage cleared (with a
   `TODO` in source: remaining funds to a treasury — unresolved); undisputed same-fork updates also
   clear old dispute data and consumed inbound blocks (`ChannelStorageCleared`).
