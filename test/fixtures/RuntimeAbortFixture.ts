@@ -1,11 +1,12 @@
-import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
 // @spec-test-coverage-ignore: shared abort assertions exercised by StateManagerAbort and P2PManager tests
+import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Status } from "@/types";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { WebSocketProvider } from "ethers";
+import { type WebSocketProvider } from "ethers";
 
 export async function assertAbortClosesRuntime(worker: boolean): Promise<void> {
     const harness = MathTestSession.getHarness();
@@ -107,15 +108,44 @@ export async function assertProviderShutdownOrder(): Promise<void> {
     const host = inlineHostFor(peer.p2pInstance);
     const sm = host.hostRpc.requireManager().stateManager;
     const provider = sm.stateChannelManagerContract.runner!.provider!;
-    if (!(provider instanceof WebSocketProvider))
-        throw new Error("Expected the host WebSocket provider");
-    const listenerCount = await provider.listenerCount();
-    expect(listenerCount).to.be.greaterThan(0);
+    if (!(provider instanceof MultiRpcProvider))
+        throw new Error("Expected the host RPC node provider");
+    // each node's open socket carries the channel's event subscription
+    const sockets = provider.nodes.map((node) => {
+        let socket: WebSocketProvider | undefined;
+        node.watchSockets((open) => {
+            socket = open;
+        })();
+        if (!socket) throw new Error("Expected every node to be connected");
+        return socket;
+    });
+    const socketListenerCounts = await Promise.all(
+        sockets.map((socket) => socket.listenerCount())
+    );
+    for (const count of socketListenerCounts)
+        expect(count).to.be.greaterThan(0);
     await sm.stop();
     expect(provider.destroyed).to.equal(false);
-    expect(await provider.listenerCount()).to.equal(listenerCount);
+    expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
+        provider.nodes.map(() => false)
+    );
+    expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
+        sockets.map(() => false)
+    );
+    expect(
+        await Promise.all(sockets.map((socket) => socket.listenerCount()))
+    ).to.deep.equal(socketListenerCounts);
     await peer.p2pInstance.dispose();
     expect(provider.destroyed).to.equal(true);
     expect(await provider.listenerCount()).to.equal(0);
+    expect(provider.nodes.map((node) => node.destroyed)).to.deep.equal(
+        provider.nodes.map(() => true)
+    );
+    expect(sockets.map((socket) => socket.destroyed)).to.deep.equal(
+        sockets.map(() => true)
+    );
+    expect(
+        await Promise.all(sockets.map((socket) => socket.listenerCount()))
+    ).to.deep.equal(sockets.map(() => 0));
     await peer.p2pInstance.dispose();
 }
