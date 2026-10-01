@@ -13,6 +13,8 @@ Each fallback host creates its own WebRTC bridge factory and binds it to its man
 
 ## Key design decisions
 
+Disposal destroys the runtime's [MultiRpcProvider](../../../evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) unless the process-wide Clock still reads through it; then it only stops the nodes' reconnects and logs ([dispose](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L440)).
+
 Startup reads the bound manager's maximum participant count and rejects nonpositive or unsafe integer values before constructing storage. The same value reaches the queue and admission limits. No independent four-times signature cap remains. Node and browser deployment callers pass the same effective N to the reference math machine. See [maxChannelParticipants](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L132).
 
 The root reports what the peer spent on chain once, at disposal, before the provider is destroyed and while its logger is still alive. The report goes through the recorder's settle-then-snapshot, so the receipts a shutdown's own transactions are still waiting for are in it; that wait is bounded by `GAS_USAGE_SETTLE_MS`, because disposal must not hang on the chain. Right after the report the root disposes the recorder, which ends every receipt wait still running as not counted, before the provider that would never end them closes. The root has no gas usage read of its own: callers read the table through the chain-signer service. See [dispose](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L409).

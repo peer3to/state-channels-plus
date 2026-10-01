@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debug gates).
+Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debug gates). `PROVIDER_URLS` lists the RPC endpoints in priority order; unset or empty means the single `PROVIDER_URL` ([RuntimeChainContext](../evm/p2pRuntime/RuntimeChainContext.ts.md)).
 
 ## Key design decisions
 

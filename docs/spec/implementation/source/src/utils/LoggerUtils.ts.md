@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
+Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting). RPC endpoint metadata names an endpoint by scheme and host only, since provider URLs can carry credentials; contract-log metadata gives a log's chain coordinates.
 
 ## Key design decisions
 

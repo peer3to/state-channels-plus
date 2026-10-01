@@ -640,6 +640,21 @@ declared it abandoned. The residual risk is local: only local executor calls are
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
 
+## Multiple RPC endpoints — chain observation
+
+The runtime now reaches the chain through an ordered endpoint list
+([`REQ-CHAINOBS-1-5JTHY8`](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)). Each request uses
+the first connected endpoint and fails over when it drops; a transaction is never sent to two
+endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3`](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)). Every endpoint streams
+the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
+watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP`](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
+across streams; removed events are ignored and lagging deliveries below the watermark are dropped
+([`INV-CHAINOBS-1-ASVKC1`](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). Endpoint URLs are logged by scheme and host
+only. Residual risks: answers are not cross-checked between endpoints; a removed event's effects stay
+applied; a socket drop in the middle of one block's events can leave part of a block below the
+watermark unread until a recovery query reads it; a late-connecting endpoint is not checked against
+the others' chain id. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
+
 ## Milestone-only proof update — current assessment
 
 The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
