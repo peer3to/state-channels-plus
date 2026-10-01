@@ -436,8 +436,12 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                         if (provider && !Clock.ownsProvider(provider))
                             await provider.destroy();
                         // The Clock keeps reading through it, but this
-                        // runtime's node reconnects and their logs end here.
-                        else provider?.stopReconnecting();
+                        // runtime's node reconnects and their logs end here;
+                        // the Clock destroys it once a new provider replaces it.
+                        else if (provider) {
+                            provider.stopReconnecting();
+                            Clock.releaseProvider(provider);
+                        }
                     } finally {
                         if (runtimeHandle) {
                             await runtimeHandle.stateManager.dispose();

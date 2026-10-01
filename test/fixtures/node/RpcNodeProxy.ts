@@ -5,26 +5,39 @@ import { type RawData, WebSocket, WebSocketServer } from "ws";
 /** A JSON-RPC method name, e.g. `eth_sendRawTransaction`. */
 type JsonRpcMethod = string;
 
-function readJsonRpcMethod(data: RawData): JsonRpcMethod | undefined {
+/** A JSON-RPC request or response id. */
+type JsonRpcId = number | string;
+
+/** The method and id of a JSON-RPC request, or the id of a response. */
+function readJsonRpcFrame(data: RawData): {
+    method?: JsonRpcMethod;
+    id?: JsonRpcId;
+} {
     try {
         const message: unknown = JSON.parse(data.toString());
-        if (
-            typeof message === "object" &&
-            message !== null &&
-            "method" in message &&
-            typeof message.method === "string"
-        )
-            return message.method;
+        if (typeof message !== "object" || message === null) return {};
+        const method =
+            "method" in message && typeof message.method === "string"
+                ? message.method
+                : undefined;
+        const id =
+            "id" in message &&
+            (typeof message.id === "number" || typeof message.id === "string")
+                ? message.id
+                : undefined;
+        return { method, id };
     } catch {
         // not JSON: forwarded unread
+        return {};
     }
-    return undefined;
 }
 
 /**
  * A WebSocket proxy in front of one RPC node, so a test can stand it in for
  * a separate node. `cut()` drops every socket through it and refuses new ones
- * until `restore()`. It only cuts sockets: the node's state and every other
+ * until `restore()`; `blackhole()` keeps sockets open but forwards nothing.
+ * Per-method faults hold, swallow or fail requests, or swallow replies. It
+ * acts only on the sockets through it: the node's state and every other
  * client of the node are untouched.
  */
 export class RpcNodeProxy {
@@ -36,7 +49,16 @@ export class RpcNodeProxy {
     private readonly links = new Map<WebSocket, WebSocket>();
     /** Methods whose requests are recorded but never forwarded. */
     private readonly swallowedMethods = new Set<JsonRpcMethod>();
+    /** Methods whose requests are forwarded but whose replies are dropped. */
+    private readonly swallowedReplyMethods = new Set<JsonRpcMethod>();
+    /** Ids of forwarded requests whose replies are dropped. */
+    private readonly swallowedReplyIds = new Set<JsonRpcId>();
+    /** Methods whose next request this proxy answers with an error. */
+    private readonly failingMethods = new Set<JsonRpcMethod>();
+    /** Methods whose requests wait here until their hold is released. */
+    private readonly heldMethods = new Map<JsonRpcMethod, (() => void)[]>();
     private isCut = false;
+    private isBlackholed = false;
 
     private constructor(server: WebSocketServer, upstreamUrl: string) {
         this.server = server;
@@ -76,8 +98,38 @@ export class RpcNodeProxy {
         this.swallowedMethods.add(method);
     }
 
+    /** Forward `method`'s requests but drop the node's replies to them. */
+    swallowReplies(method: JsonRpcMethod): void {
+        this.swallowedReplyMethods.add(method);
+    }
+
+    /** Answer the next `method` request with a JSON-RPC error, unforwarded. */
+    failNextRequest(method: JsonRpcMethod): void {
+        this.failingMethods.add(method);
+    }
+
+    /**
+     * Keep `method`'s requests at the proxy until the returned release runs,
+     * then forward them.
+     */
+    holdRequests(method: JsonRpcMethod): () => void {
+        this.heldMethods.set(method, []);
+        return () => {
+            const held = this.heldMethods.get(method) ?? [];
+            this.heldMethods.delete(method);
+            for (const forward of held) forward();
+        };
+    }
+
+    /** Keep every socket open but forward nothing in either direction. */
+    blackhole(): void {
+        this.isBlackholed = true;
+    }
+
+    /** Undo {@link cut} and {@link blackhole}. */
     restore(): void {
         this.isCut = false;
+        this.isBlackholed = false;
     }
 
     async close(): Promise<void> {
@@ -101,19 +153,46 @@ export class RpcNodeProxy {
             client.terminate();
             upstream.terminate();
         };
-        client.on("message", (data, isBinary) => {
-            const method = readJsonRpcMethod(data);
-            if (method) this.forwardedMethods.push(method);
-            if (method && this.swallowedMethods.has(method)) return;
+        const forward = (data: RawData, isBinary: boolean) => {
             if (upstream.readyState === WebSocket.OPEN)
                 upstream.send(data, { binary: isBinary });
             else pending.push({ data, isBinary });
+        };
+        client.on("message", (data, isBinary) => {
+            if (this.isBlackholed) return;
+            const { method, id } = readJsonRpcFrame(data);
+            if (method) this.forwardedMethods.push(method);
+            if (method && this.swallowedMethods.has(method)) return;
+            if (method && id !== undefined && this.failingMethods.has(method)) {
+                this.failingMethods.delete(method);
+                client.send(
+                    JSON.stringify({
+                        jsonrpc: "2.0",
+                        id,
+                        error: { code: -32005, message: "request failed" }
+                    })
+                );
+                return;
+            }
+            if (
+                method &&
+                id !== undefined &&
+                this.swallowedReplyMethods.has(method)
+            )
+                this.swallowedReplyIds.add(id);
+            const held = method ? this.heldMethods.get(method) : undefined;
+            if (held) held.push(() => forward(data, isBinary));
+            else forward(data, isBinary);
         });
         upstream.on("open", () => {
             for (const frame of pending.splice(0))
                 upstream.send(frame.data, { binary: frame.isBinary });
         });
         upstream.on("message", (data, isBinary) => {
+            if (this.isBlackholed) return;
+            const { method, id } = readJsonRpcFrame(data);
+            if (!method && id !== undefined && this.swallowedReplyIds.has(id))
+                return;
             if (client.readyState === WebSocket.OPEN)
                 client.send(data, { binary: isBinary });
         });
