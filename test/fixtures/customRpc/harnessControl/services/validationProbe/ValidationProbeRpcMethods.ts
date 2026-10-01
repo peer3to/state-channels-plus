@@ -9,7 +9,7 @@ import type {
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
     InboundLogRedelivery,
-    InboundLogRedeliveryProbe,
+    StreamedLogDeliveryProbe,
     InboundRunRecoveryProbe,
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
@@ -60,7 +60,7 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
 
     public async probeInboundLogRedelivery(
         redelivery: InboundLogRedelivery
-    ): Promise<InboundLogRedeliveryProbe> {
+    ): Promise<StreamedLogDeliveryProbe> {
         return this.service.probeInboundLogRedelivery(redelivery);
     }
 
@@ -68,11 +68,27 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.runCatchUpFromFirstNode();
     }
 
-    public async probeStreamedLogBelowWatermark(): Promise<{
-        handlerCalls: number;
-        logBlockNumber: number;
-        watermark: number | null;
-    }> {
+    public async runCatchUpThroughNode(nodeUrl: string): Promise<boolean> {
+        return this.service.runCatchUpThroughNode(nodeUrl);
+    }
+
+    public async getEventWatermark(): Promise<number | null> {
+        return this.service.getEventWatermark();
+    }
+
+    public async getChannelSubscriptionCounts(): Promise<(number | null)[]> {
+        return this.service.getChannelSubscriptionCounts();
+    }
+
+    public async clearChannelListener(): Promise<boolean> {
+        return this.service.clearChannelListener();
+    }
+
+    public async restoreChannelListener(): Promise<boolean> {
+        return this.service.restoreChannelListener();
+    }
+
+    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
         return this.service.probeStreamedLogBelowWatermark();
     }
 

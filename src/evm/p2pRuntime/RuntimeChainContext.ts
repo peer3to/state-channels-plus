@@ -13,13 +13,33 @@ export interface RuntimeChainContext {
 }
 
 export function resolveWebSocketProviderUrl(providerUrl: string): string {
-    if (/^wss?:\/\//i.test(providerUrl)) return providerUrl;
-    if (/^https?:\/\//i.test(providerUrl)) {
-        return providerUrl.replace(/^http(s?):\/\//i, "ws$1://");
+    let webSocketUrl: string;
+    if (/^wss?:\/\//i.test(providerUrl)) webSocketUrl = providerUrl;
+    else if (/^https?:\/\//i.test(providerUrl))
+        webSocketUrl = providerUrl.replace(/^http(s?):\/\//i, "ws$1://");
+    else
+        throw new Error(
+            "P2P runtime requires a ws:// or wss:// WebSocket provider URL"
+        );
+    assertOpenableWebSocketUrl(webSocketUrl);
+    return webSocketUrl;
+}
+
+/**
+ * Rejects a URL a WebSocket cannot open: unparseable, an out-of-range port,
+ * or a fragment. The error names the endpoint by scheme and host only.
+ */
+function assertOpenableWebSocketUrl(webSocketUrl: string): void {
+    let parsed: URL | undefined;
+    try {
+        parsed = new URL(webSocketUrl);
+    } catch {
+        parsed = undefined;
     }
-    throw new Error(
-        "P2P runtime requires a ws:// or wss:// WebSocket provider URL"
-    );
+    if (!parsed || parsed.hash)
+        throw new Error(
+            `P2P runtime cannot open the WebSocket provider URL ${LoggerUtils.getRpcNodeMetadata(webSocketUrl).rpcNode}`
+        );
 }
 
 /**
@@ -61,6 +81,11 @@ export async function createRuntimeChainContext(
     signerSecret: string,
     logger: Logger
 ): Promise<RuntimeChainContext> {
+    const secret = signerSecret.trim();
+    // derived before any node opens, so a bad secret leaves nothing behind
+    const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)
+        ? new Wallet(secret)
+        : Wallet.fromPhrase(secret);
     const expectedChain: ExpectedChain = {};
     const nodes = resolveProviderUrls(config).map(
         (url) => new RpcNodeProvider(url, logger, expectedChain)
@@ -80,9 +105,5 @@ export async function createRuntimeChainContext(
         );
     }
     const provider = new MultiRpcProvider(nodes, logger);
-    const secret = signerSecret.trim();
-    const signer = /^0x[0-9a-fA-F]{64}$/.test(secret)
-        ? new Wallet(secret, provider)
-        : Wallet.fromPhrase(secret).connect(provider);
-    return { provider, signer };
+    return { provider, signer: wallet.connect(provider) };
 }

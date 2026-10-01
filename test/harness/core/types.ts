@@ -160,6 +160,12 @@ export type HarnessOptions = {
      * node. Read them with `PeerTestHarness.getRpcNodeProxies`.
      */
     rpcNodeProxiesByPeer?: Record<number, number>;
+    /**
+     * Proxies of `rpcNodeProxiesByPeer` cut before their peer starts (peer
+     * index -> proxy positions), so that peer starts with those RPC nodes
+     * down. Restore them through `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesCutAtStart?: Record<number, number[]>;
 };
 
 export type TestPeer<

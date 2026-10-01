@@ -1,6 +1,14 @@
 import { getReconnectDelayMs } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import {
     assertBlockEventsComeFromNodeSockets,
+    assertDestroyDuringPendingAttemptStaysQuiet,
+    assertFailedLogPageAnsweredForRetry,
+    assertFirstNodeErrorAnswerIsFinal,
+    assertHeartbeatErrorAnswerKeepsNode,
+    assertInvalidSecretOpensNoNode,
+    assertLogPagesReadInAscendingWindows,
+    assertMalformedEndpointRejectsStartupQuietly,
+    assertOneWarningPerOutageOfEveryNode,
     assertDestroyRejectsInFlightRead,
     assertDestroyRejectsWaitingRead,
     assertNodeOnAnotherChainRefused,
@@ -58,6 +66,14 @@ describe("RpcNodeProvider", () => {
         await assertDestroyFailsHeldRequest();
     });
 
+    it("logs nothing and leaves no unhandled rejection when destroyed during a connection attempt", async () => {
+        await assertDestroyDuringPendingAttemptStaysQuiet();
+    });
+
+    it("keeps a node whose heartbeat is answered with an error", async () => {
+        await assertHeartbeatErrorAnswerKeepsNode();
+    });
+
     it("refuses a node that serves another chain than the first connected node", async () => {
         await assertNodeOnAnotherChainRefused();
     });
@@ -108,6 +124,22 @@ describe("MultiRpcProvider", () => {
         await assertStopReconnectingRejectsWaitingRead();
     });
 
+    it("passes the first node's error answer to the caller without failing over", async () => {
+        await assertFirstNodeErrorAnswerIsFinal();
+    });
+
+    it("warns once per outage of every node and again after a reconnect", async () => {
+        await assertOneWarningPerOutageOfEveryNode();
+    });
+
+    it("rejects startup over a malformed endpoint before any node opens and without its secret", async () => {
+        await assertMalformedEndpointRejectsStartupQuietly();
+    });
+
+    it("rejects startup over an invalid signer secret without opening a node", async () => {
+        await assertInvalidSecretOpensNoNode();
+    });
+
     it("relays each new block once from the node sockets without polling", async () => {
         await assertBlockEventsComeFromNodeSockets();
     });
@@ -122,5 +154,15 @@ describe("MultiRpcProvider", () => {
 
     it("starts the runtime chain context without waiting for a silent node", async () => {
         await assertStartupDoesNotWaitForASilentNode();
+    });
+});
+
+describe("readLogPages", () => {
+    it("reads logs in ascending windows and hands each window over before reading the next", async () => {
+        await assertLogPagesReadInAscendingWindows();
+    });
+
+    it("answers the failed window so a retry reads only from there", async () => {
+        await assertFailedLogPageAnsweredForRetry();
     });
 });

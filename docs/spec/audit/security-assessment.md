@@ -652,8 +652,8 @@ across streams; removed events are ignored and lagging deliveries below the wate
 ([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). Endpoint URLs are logged by scheme and host
 only. Residual risks: answers are not cross-checked between endpoints; a removed event's effects stay
 applied; a socket drop in the middle of one block's events can leave part of a block below the
-watermark unread until a recovery query reads it; a late-connecting endpoint is not checked against
-the others' chain id. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
+watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
+and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
 
 ## Milestone-only proof update — current assessment
 

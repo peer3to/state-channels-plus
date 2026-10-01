@@ -301,7 +301,8 @@ export class PeerTestHarness<
             customPrecompiles: options?.customPrecompiles || [],
             customRpcManifest: options?.customRpcManifest,
             executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
-            rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer
+            rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
+            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -871,6 +872,9 @@ export class PeerTestHarness<
         const proxies = await Promise.all(
             Array.from({ length: count }, () => RpcNodeProxy.start(nodeUrl))
         );
+        for (const position of this.options.rpcNodeProxiesCutAtStart?.[index] ??
+            [])
+            proxies[position].cut();
         this.rpcNodeProxies.set(index, proxies);
         return proxies;
     }

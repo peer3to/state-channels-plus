@@ -1,5 +1,4 @@
 import { Hash } from "@/types/types";
-import { sleep } from "@/utils";
 import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
@@ -12,23 +11,11 @@ import { hexlify, zeroPadValue } from "ethers";
 
 // mirrors LOG_RECOVERY_ATTEMPTS in EventSyncService
 const LOG_RECOVERY_ATTEMPTS = 3;
-/**
- * Time is the input: the spies count handler calls the host forwards over the
- * runtime port, which may arrive just after the drained catch-up returns.
- */
-const SPY_FORWARD_WINDOW_MS = 500;
-
-/** ChannelOpened and InboundMessagesProcessed handler calls of one peer. */
-function catchUpHandlerCalls(
-    h: ReturnType<typeof TestSession.getHarness>,
-    peerIndex: number
-): number {
-    const spies = h.getPeer(peerIndex).eventSpies;
-    return (
-        spies.onChannelOpened!.callCount +
-        spies.onInboundMessagesProcessed!.callCount
-    );
-}
+/** The handlers a catch-up of the channel's subscribed logs can dispatch. */
+const CATCH_UP_HANDLERS = [
+    "onChannelOpened",
+    "onInboundMessagesProcessed"
+] as const;
 
 describe("EventSyncService", function () {
     it("drops subscription callbacks while stop is still draining scheduled work", async () => {
@@ -506,12 +493,11 @@ describe("EventSyncService", function () {
                     .request()
             ).not.to.equal(inboundHead);
             // every earlier handler call has reached the spies
-            await h
-                .control(h.getPeer(lagging))
-                .validation.drainScheduledEvents()
-                .request();
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            const callsBefore = catchUpHandlerCalls(h, lagging);
+            await h.event.settleContractEvents(lagging);
+            const callsBefore = h.event.getEventCallCounts(
+                lagging,
+                CATCH_UP_HANDLERS
+            );
 
             const read = await h
                 .control(h.getPeer(lagging))
@@ -519,9 +505,15 @@ describe("EventSyncService", function () {
                 .request();
 
             expect(read).to.equal(true);
-            await waitFor(() => catchUpHandlerCalls(h, lagging) > callsBefore);
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            expect(catchUpHandlerCalls(h, lagging)).to.equal(callsBefore + 1);
+            await waitFor(
+                () =>
+                    h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS) >
+                    callsBefore
+            );
+            await h.event.settleContractEvents(lagging);
+            expect(
+                h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS)
+            ).to.equal(callsBefore + 1);
             expect(
                 await h
                     .control(h.getPeer(lagging))
@@ -537,12 +529,11 @@ describe("EventSyncService", function () {
             // the watermark is the opening block, so the read includes its
             // ChannelOpened and genesis inbound logs
             // every earlier handler call has reached the spies
-            await h
-                .control(h.getPeer(1))
-                .validation.drainScheduledEvents()
-                .request();
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            const callsBefore = catchUpHandlerCalls(h, 1);
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
 
             const read = await h
                 .control(h.getPeer(1))
@@ -550,8 +541,10 @@ describe("EventSyncService", function () {
                 .request();
 
             expect(read).to.equal(true);
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            expect(catchUpHandlerCalls(h, 1)).to.equal(callsBefore);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
         });
 
         it("does not dispatch a log this peer already processed again", async function () {
@@ -562,12 +555,11 @@ describe("EventSyncService", function () {
             });
 
             // every earlier handler call has reached the spies
-            await h
-                .control(h.getPeer(1))
-                .validation.drainScheduledEvents()
-                .request();
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            const callsBefore = catchUpHandlerCalls(h, 1);
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
 
             const read = await h
                 .control(h.getPeer(1))
@@ -575,8 +567,10 @@ describe("EventSyncService", function () {
                 .request();
 
             expect(read).to.equal(true);
-            await sleep(SPY_FORWARD_WINDOW_MS);
-            expect(catchUpHandlerCalls(h, 1)).to.equal(callsBefore);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
         });
     });
 

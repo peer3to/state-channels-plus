@@ -8,10 +8,14 @@ type JsonRpcMethod = string;
 /** A JSON-RPC request or response id. */
 type JsonRpcId = number | string;
 
-/** The method and id of a JSON-RPC request, or the id of a response. */
+/** One request a client sent through the proxy. */
+export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
+
+/** The method, id and params of a JSON-RPC request, or the id of a response. */
 function readJsonRpcFrame(data: RawData): {
     method?: JsonRpcMethod;
     id?: JsonRpcId;
+    params?: unknown;
 } {
     try {
         const message: unknown = JSON.parse(data.toString());
@@ -25,11 +29,34 @@ function readJsonRpcFrame(data: RawData): {
             (typeof message.id === "number" || typeof message.id === "string")
                 ? message.id
                 : undefined;
-        return { method, id };
+        const params = "params" in message ? message.params : undefined;
+        return { method, id, params };
     } catch {
         // not JSON: forwarded unread
         return {};
     }
+}
+
+/** The [fromBlock, toBlock] of an eth_getLogs request, from its hex bounds. */
+function logBounds(params: unknown): [number, number] | undefined {
+    if (!Array.isArray(params)) return undefined;
+    const [filter]: unknown[] = params;
+    if (
+        typeof filter !== "object" ||
+        filter === null ||
+        !("fromBlock" in filter) ||
+        !("toBlock" in filter) ||
+        typeof filter.fromBlock !== "string" ||
+        typeof filter.toBlock !== "string"
+    )
+        return undefined;
+    return [Number(filter.fromBlock), Number(filter.toBlock)];
+}
+
+/** Blocks an eth_getLogs request spans; 0 without explicit bounds. */
+function logSpan(params: unknown): number {
+    const bounds = logBounds(params);
+    return bounds ? bounds[1] - bounds[0] + 1 : 0;
 }
 
 /**
@@ -41,8 +68,10 @@ function readJsonRpcFrame(data: RawData): {
  * client of the node are untouched.
  */
 export class RpcNodeProxy {
-    /** JSON-RPC methods clients sent through this proxy, in order. */
+    /** JSON-RPC methods clients sent to this proxy, in order, forwarded or not. */
     readonly forwardedMethods: JsonRpcMethod[] = [];
+    /** The requests behind {@link forwardedMethods}, with their params. */
+    readonly forwardedRequests: ForwardedRequest[] = [];
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -53,8 +82,12 @@ export class RpcNodeProxy {
     private readonly swallowedReplyMethods = new Set<JsonRpcMethod>();
     /** Ids of forwarded requests whose replies are dropped. */
     private readonly swallowedReplyIds = new Set<JsonRpcId>();
-    /** Methods whose next request this proxy answers with an error. */
-    private readonly failingMethods = new Set<JsonRpcMethod>();
+    /** Method -> how many of its next requests this proxy answers with an error. */
+    private readonly failingMethods = new Map<JsonRpcMethod, number>();
+    /** Method -> the result this proxy answers its requests with, unforwarded. */
+    private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
+    /** Most blocks an eth_getLogs may span before this proxy rejects it. */
+    private maxLogSpan?: number;
     /** Methods whose requests wait here until their hold is released. */
     private readonly heldMethods = new Map<JsonRpcMethod, (() => void)[]>();
     private isCut = false;
@@ -105,7 +138,43 @@ export class RpcNodeProxy {
 
     /** Answer the next `method` request with a JSON-RPC error, unforwarded. */
     failNextRequest(method: JsonRpcMethod): void {
-        this.failingMethods.add(method);
+        this.failingMethods.set(method, 1);
+    }
+
+    /** Answer every `method` request with an error until {@link stopFailingRequests}. */
+    failRequests(method: JsonRpcMethod): void {
+        this.failingMethods.set(method, Number.POSITIVE_INFINITY);
+    }
+
+    stopFailingRequests(method: JsonRpcMethod): void {
+        this.failingMethods.delete(method);
+    }
+
+    /** Answer every `method` request with `result` itself, unforwarded. */
+    answerRequests(method: JsonRpcMethod, result: unknown): void {
+        this.answeredMethods.set(method, result);
+    }
+
+    /** Reject eth_getLogs requests spanning more than `maxSpan` blocks. */
+    rejectLogSpansAbove(maxSpan: number): void {
+        this.maxLogSpan = maxSpan;
+    }
+
+    /** The [fromBlock, toBlock] of every eth_getLogs request, in order. */
+    forwardedLogWindows(): [number, number][] {
+        return this.forwardedRequests
+            .filter((request) => request.method === "eth_getLogs")
+            .map((request) => {
+                const bounds = logBounds(request.params);
+                if (!bounds)
+                    throw new Error("eth_getLogs without block bounds");
+                return bounds;
+            });
+    }
+
+    /** How many `method` requests clients sent through this proxy. */
+    forwardedCount(method: JsonRpcMethod): number {
+        return this.forwardedMethods.filter((sent) => sent === method).length;
     }
 
     /**
@@ -159,19 +228,42 @@ export class RpcNodeProxy {
             else pending.push({ data, isBinary });
         };
         client.on("message", (data, isBinary) => {
+            const { method, id, params } = readJsonRpcFrame(data);
+            if (method) {
+                this.forwardedMethods.push(method);
+                this.forwardedRequests.push({ method, params });
+            }
+            // recorded, then lost: the path to the node is dead
             if (this.isBlackholed) return;
-            const { method, id } = readJsonRpcFrame(data);
-            if (method) this.forwardedMethods.push(method);
             if (method && this.swallowedMethods.has(method)) return;
-            if (method && id !== undefined && this.failingMethods.has(method)) {
-                this.failingMethods.delete(method);
-                client.send(
-                    JSON.stringify({
-                        jsonrpc: "2.0",
-                        id,
-                        error: { code: -32005, message: "request failed" }
-                    })
-                );
+            const reply = (answer: object) =>
+                client.send(JSON.stringify({ jsonrpc: "2.0", id, ...answer }));
+            const failures = method
+                ? this.failingMethods.get(method)
+                : undefined;
+            if (method && id !== undefined && failures) {
+                if (failures === 1) this.failingMethods.delete(method);
+                else this.failingMethods.set(method, failures - 1);
+                reply({ error: { code: -32005, message: "request failed" } });
+                return;
+            }
+            if (
+                method &&
+                id !== undefined &&
+                this.answeredMethods.has(method)
+            ) {
+                reply({ result: this.answeredMethods.get(method) });
+                return;
+            }
+            if (
+                method === "eth_getLogs" &&
+                id !== undefined &&
+                this.maxLogSpan !== undefined &&
+                logSpan(params) > this.maxLogSpan
+            ) {
+                reply({
+                    error: { code: -32005, message: "block range too large" }
+                });
                 return;
             }
             if (

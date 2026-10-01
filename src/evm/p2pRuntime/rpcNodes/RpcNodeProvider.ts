@@ -53,6 +53,21 @@ type NodeConnection = {
  */
 export type ExpectedChain = { chainId?: bigint };
 
+/**
+ * A socket to `url`. A URL the WebSocket constructor rejects becomes an error
+ * that names the endpoint by scheme and host only: its text would carry the
+ * whole URL, credentials included.
+ */
+function openSocket(url: string): WebSocketProvider {
+    try {
+        return new WebSocketProvider(url);
+    } catch {
+        throw new Error(
+            `Cannot open a WebSocket to ${LoggerUtils.getRpcNodeMetadata(url).rpcNode}`
+        );
+    }
+}
+
 /** Rejects with `message` after `ms`; `cancel` stops the timer. */
 function deadline(ms: number, message: string) {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -228,8 +243,10 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
 
     /**
      * Keeps the open socket serving requests but never reconnects or logs
-     * again. For a runtime that is gone while the process-wide Clock still
-     * reads through this provider.
+     * again, and rejects the requests waiting for a reconnect. A request in
+     * flight on the open socket still gets its answer, and fails only if the
+     * socket drops. For a runtime that is gone while the process-wide Clock
+     * still reads through this provider.
      */
     stopReconnecting(): void {
         this.reconnects = false;
@@ -254,6 +271,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     // the current socket and fails the requests waiting for a reconnect.
     override destroy(): void {
         this.stopped = true;
+        this.reconnects = false;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = undefined;
         const connection = this.connection;
@@ -333,13 +351,14 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
 
     // never rejects: a failed attempt schedules the next one
     private async connect(): Promise<Error | undefined> {
-        const socket = new WebSocketProvider(this.url);
-        const socketEnd = watchSocketEnd(socket);
+        let socket: WebSocketProvider | undefined;
         const attemptDeadline = deadline(
             CONNECT_TIMEOUT_MS,
             "RPC node connection attempt timed out"
         );
         try {
+            socket = openSocket(this.url);
+            const socketEnd = watchSocketEnd(socket);
             const network = await Promise.race([
                 socket.getNetwork(),
                 socketEnd.then((reason) => Promise.reject(reason)),
@@ -358,10 +377,11 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             this.attach(socket, socketEnd);
             return undefined;
         } catch (error) {
-            await socket.destroy();
+            await socket?.destroy();
             const reason =
                 error instanceof Error ? error : new Error(String(error));
-            if (!this.reconnects) return reason;
+            // the owner is gone, and so may be its logger
+            if (this.stopped || !this.reconnects) return reason;
             this.logFailedAttempt(reason);
             this.scheduleReconnect();
             return reason;
@@ -431,9 +451,21 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             HEARTBEAT_TIMEOUT_MS,
             "RPC node heartbeat timed out"
         );
+        // an error answer is still an answer: the socket is alive
+        const answered = connection.socket.send("eth_blockNumber", []).then(
+            () => undefined,
+            (error: unknown) => {
+                if (connection.hasEnded || this.stopped || !this.reconnects)
+                    return;
+                this.logger.debug("RPC node heartbeat answered with an error", {
+                    ...LoggerUtils.getRpcNodeMetadata(this.url),
+                    error
+                });
+            }
+        );
         try {
             await Promise.race([
-                connection.socket.send("eth_blockNumber", []),
+                answered,
                 connection.ended,
                 heartbeatDeadline.expired
             ]);
