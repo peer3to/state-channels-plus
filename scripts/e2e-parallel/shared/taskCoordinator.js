@@ -1,4 +1,6 @@
 const logging = require("./logging");
+const { coldCost } = require("./costCache");
+const { MAX_HEAVY_PER_WORKER } = require("./constants");
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -130,6 +132,12 @@ class TaskCoordinator {
         this.unservableSince = null;
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
+        this.schedule = options.schedule ?? "fifo";
+        if (!["fifo", "cost"].includes(this.schedule))
+            throw new Error("Invalid task schedule");
+        this.now = options.now ?? Date.now;
+        this.costCache = options.costCache;
+        this.workerLabel = options.workerLabel ?? ((id) => id);
         this.speculative = options.speculative === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
@@ -149,9 +157,45 @@ class TaskCoordinator {
     requestTask(workerId) {
         this.registerWorker(workerId);
         const worker = this.workers.get(workerId);
-        const index = this.queue.findIndex((entry) =>
-            worker.canRun(entry.task)
-        );
+        let index;
+        if (this.schedule === "cost") {
+            for (const entry of this.queue) {
+                entry.task.cost =
+                    this.costCache?.resolve(entry.task) ??
+                    entry.task.cost ??
+                    coldCost(entry.task);
+            }
+            const eligible = this.queue
+                .filter((entry) => worker.canRun(entry.task))
+                .map((entry) => {
+                    const task = entry.task;
+                    const tier =
+                        task.runner === "browser" ||
+                        task.requires?.includes("browser")
+                            ? 0
+                            : 1;
+                    return { ...entry, tier };
+                });
+            const atHeavyLimit =
+                [...this.assignments.values()].filter(
+                    (assignment) =>
+                        assignment.workerId === workerId &&
+                        assignment.task.cost?.heavy
+                ).length >= MAX_HEAVY_PER_WORKER;
+            const nonHeavy = eligible.filter((entry) => !entry.task.cost.heavy);
+            const candidates =
+                atHeavyLimit && nonHeavy.length ? nonHeavy : eligible;
+            candidates.sort((a, b) => {
+                const durationOrder =
+                    b.task.cost.durationMs - a.task.cost.durationMs;
+                return a.tier - b.tier || durationOrder || a.seq - b.seq;
+            });
+            index = this.queue.findIndex(
+                (entry) => entry.seq === candidates[0]?.seq
+            );
+        } else {
+            index = this.queue.findIndex((entry) => worker.canRun(entry.task));
+        }
         const queued =
             index === -1
                 ? this.speculativeTask(workerId)
@@ -165,6 +209,7 @@ class TaskCoordinator {
             ...queued,
             taskId: String(queued.seq),
             attemptId: String(this.nextAttemptId++),
+            assignedAt: this.now(),
             workerId
         };
         this.replications.add(`${assignment.taskId}:${workerId}`);
@@ -182,6 +227,7 @@ class TaskCoordinator {
                 .map((assignment) => assignment.taskId)
         );
         const canRun = this.workers.get(workerId)?.canRun || (() => true);
+        const now = this.now();
         const candidate = active
             .filter(
                 (assignment) =>
@@ -190,13 +236,36 @@ class TaskCoordinator {
                     !workerTaskIds.has(assignment.taskId) &&
                     !this.replications.has(`${assignment.taskId}:${workerId}`)
             )
-            .sort((a, b) => b.seq - a.seq)[0];
+            .sort((a, b) => {
+                if (this.schedule !== "cost") return b.seq - a.seq;
+                const remainingA =
+                    a.task.cost.durationMs - (now - a.assignedAt);
+                const remainingB =
+                    b.task.cost.durationMs - (now - b.assignedAt);
+                const remainingOrder = remainingB - remainingA;
+                return remainingOrder || a.seq - b.seq;
+            })[0];
         return candidate
             ? { task: candidate.task, seq: candidate.seq, speculative: true }
             : null;
     }
 
     completeAttempt(workerId, attempt) {
+        const assignment =
+            this.assignments.get(String(attempt.attemptId)) ??
+            this.settledSpeculativeAssignments.get(String(attempt.attemptId));
+        const result = this.completeAttemptResult(workerId, attempt);
+        if (result.accepted && assignment) {
+            this.costCache?.record(assignment.task, attempt, {
+                disposition: result.disposition,
+                server: this.workerLabel(workerId),
+                starveCount: result.parsed?.starveCount ?? 0
+            });
+        }
+        return result;
+    }
+
+    completeAttemptResult(workerId, attempt) {
         const assignment = this.assignments.get(String(attempt.attemptId));
         if (!assignment || assignment.workerId !== workerId) {
             const settled = this.settledSpeculativeAssignments.get(

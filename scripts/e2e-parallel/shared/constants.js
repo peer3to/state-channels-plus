@@ -37,6 +37,43 @@ const TASK_COST_SAMPLE_MS = 100;
 // Linux USER_HZ ABI: process CPU counters are ticks, not milliseconds.
 const PROC_CLOCK_TICKS_PER_SECOND = 100;
 
+// placeholder — calibrate from run-metrics.json
+const COST_EWMA_ALPHA = 0.3;
+// placeholder — calibrate from run-metrics.json
+const HEAVY_STARVE_RUNS = 3;
+// placeholder — calibrate from run-metrics.json
+const MAX_HEAVY_PER_WORKER = 1;
+// placeholder — calibrate from run-metrics.json
+const COST_CPU_BUDGET = 1.0;
+// placeholder — calibrate from run-metrics.json
+const COST_CPU_VALVE = 0.95;
+// placeholder — calibrate from run-metrics.json
+const HEAVY_EL_MS = 500;
+// placeholder — calibrate from run-metrics.json
+const HEAVY_CORES = 1.5;
+// placeholder — calibrate from run-metrics.json
+const HEAVY_RSS_GB = 2.5;
+// placeholder — calibrate from run-metrics.json
+const COLD_LIGHT_DURATION_MS = 5000;
+// placeholder — calibrate from run-metrics.json
+const COLD_MEDIUM_DURATION_MS = 30000;
+// placeholder — calibrate from run-metrics.json
+const COLD_HEAVY_DURATION_MS = 120000;
+// placeholder — calibrate from run-metrics.json
+const COLD_LIGHT_CORES = 0.3;
+// placeholder — calibrate from run-metrics.json
+const COLD_MEDIUM_CORES = 0.8;
+// placeholder — calibrate from run-metrics.json
+const COLD_HEAVY_CORES = 2.0;
+// placeholder — calibrate from run-metrics.json
+const COLD_LIGHT_RSS_GB = 0.5;
+// placeholder — calibrate from run-metrics.json
+const COLD_MEDIUM_RSS_GB = 1.4;
+// placeholder — calibrate from run-metrics.json
+const COLD_HEAVY_RSS_GB = 3.0;
+const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";
+const DEFAULT_COST_OVERRIDES_PATH = "test/test-costs.overrides.json";
+
 // Admit another test only while avg OS load per core is below this.
 const TARGET_LOAD_PER_CORE = 0.8;
 
@@ -60,6 +97,25 @@ module.exports = {
     SCHEDULER_TICK_MS,
     TASK_COST_SAMPLE_MS,
     PROC_CLOCK_TICKS_PER_SECOND,
+    COST_EWMA_ALPHA,
+    HEAVY_STARVE_RUNS,
+    MAX_HEAVY_PER_WORKER,
+    COST_CPU_BUDGET,
+    COST_CPU_VALVE,
+    HEAVY_EL_MS,
+    HEAVY_CORES,
+    HEAVY_RSS_GB,
+    COLD_LIGHT_DURATION_MS,
+    COLD_MEDIUM_DURATION_MS,
+    COLD_HEAVY_DURATION_MS,
+    COLD_LIGHT_CORES,
+    COLD_MEDIUM_CORES,
+    COLD_HEAVY_CORES,
+    COLD_LIGHT_RSS_GB,
+    COLD_MEDIUM_RSS_GB,
+    COLD_HEAVY_RSS_GB,
+    DEFAULT_COST_CACHE_PATH,
+    DEFAULT_COST_OVERRIDES_PATH,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     PER_TEST_MEM_GB

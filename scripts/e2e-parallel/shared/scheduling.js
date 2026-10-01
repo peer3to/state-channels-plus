@@ -14,6 +14,9 @@ function holdReason(options) {
         options;
     if (running >= concurrencyCap)
         return `cap (running ${running}/${concurrencyCap})`;
+    if (options.schedule === "cost") {
+        return `${resourceGate.lastHoldReason ?? "unknown"} (cost budget; owned ${resourceGate.occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB, cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%)`;
+    }
     if (resourceGate.occupiedGb + resourceGate.avgPerTestGb >= memBoundGb) {
         return `memory (owned ${resourceGate.occupiedGb.toFixed(1)}+${resourceGate.avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`;
     }

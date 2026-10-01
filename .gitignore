@@ -51,3 +51,4 @@ docs/spec/generated/
 /profiles
 
 /extensions
+/.cache/test-costs.json

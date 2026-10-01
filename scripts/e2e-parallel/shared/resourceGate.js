@@ -3,7 +3,12 @@ const os = require("os");
 const fs = require("fs");
 const path = require("path");
 const { promisify } = require("util");
-const { PER_TEST_MEM_GB, PROC_CLOCK_TICKS_PER_SECOND } = require("./constants");
+const {
+    PER_TEST_MEM_GB,
+    PROC_CLOCK_TICKS_PER_SECOND,
+    COST_CPU_BUDGET,
+    COST_CPU_VALVE
+} = require("./constants");
 const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
 
 const execFileAsync = promisify(execFile);
@@ -392,11 +397,42 @@ class ResourceGate {
         }
     }
 
-    async allows(running, concurrencyCap) {
+    async allows(
+        running,
+        concurrencyCap,
+        { schedule = "fifo", runningCost, nextCost } = {}
+    ) {
         await this.sample();
         this.lastHoldReason = null;
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
+        if (!["fifo", "cost"].includes(schedule))
+            throw new Error("Invalid admission schedule");
+        if (schedule === "cost") {
+            if (
+                [runningCost, nextCost].some(
+                    (cost) =>
+                        !cost ||
+                        !["cores", "rssGb"].every(
+                            (field) =>
+                                Number.isFinite(cost[field]) && cost[field] >= 0
+                        ) ||
+                        (Object.hasOwn(cost, "heavy") &&
+                            typeof cost.heavy !== "boolean")
+                )
+            )
+                throw new Error("Invalid admission cost");
+            if (
+                runningCost.cores + nextCost.cores >
+                this.cpuCores * COST_CPU_BUDGET
+            )
+                return this.hold("cpu");
+            const projectedRssGb =
+                Math.max(this.occupiedGb, runningCost.rssGb) + nextCost.rssGb;
+            if (projectedRssGb >= this.memBoundGb) return this.hold("memory");
+            if (this.cpuUtil >= COST_CPU_VALVE) return this.hold("cpu");
+            return true;
+        }
         if (this.cpuUtil >= this.targetLoad) return this.hold("cpu");
         if (this.occupiedGb + this.avgPerTestGb >= this.memBoundGb)
             return this.hold("memory");

@@ -1,6 +1,8 @@
 class WorkerScheduler {
     constructor(options) {
-        this.options = options;
+        this.options = { schedule: "fifo", ...options };
+        if (!["fifo", "cost"].includes(this.options.schedule))
+            throw new Error("Invalid worker schedule");
         this.running = 0;
         this.runningAssignments = new Set();
         this.concurrencyStartedAt = Date.now();
@@ -34,7 +36,26 @@ class WorkerScheduler {
         this.requestPending = true;
         let assignment;
         try {
-            if (!(await this.options.canRun(this.running))) {
+            if (
+                this.options.schedule === "cost" &&
+                this.running >= this.options.concurrencyCap
+            ) {
+                await this.options.canRun(
+                    this.running,
+                    this.bufferedAssignment,
+                    this.runningAssignments
+                );
+                this.scheduleRetry();
+                return;
+            }
+            if (
+                this.options.schedule === "fifo" &&
+                !(await this.options.canRun(
+                    this.running,
+                    null,
+                    this.runningAssignments
+                ))
+            ) {
                 this.scheduleRetry();
                 return;
             }
@@ -44,6 +65,19 @@ class WorkerScheduler {
             if (!assignment) {
                 this.scheduleRetry();
                 return;
+            }
+            if (this.options.schedule === "cost") {
+                if (
+                    !(await this.options.canRun(
+                        this.running,
+                        assignment,
+                        this.runningAssignments
+                    ))
+                ) {
+                    this.bufferedAssignment = assignment;
+                    this.scheduleRetry();
+                    return;
+                }
             }
         } finally {
             this.requestPending = false;
@@ -110,7 +144,9 @@ class WorkerScheduler {
             this.stopped ||
             this.requestPending ||
             this.bufferedAssignment ||
-            this.running === 0
+            this.running === 0 ||
+            (this.options.schedule === "cost" &&
+                this.running >= this.options.concurrencyCap)
         )
             return;
         this.requestPending = true;

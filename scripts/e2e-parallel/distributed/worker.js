@@ -203,13 +203,30 @@ async function start(config) {
         concurrencyCap: config.concurrencyCap,
         retryMs: config.schedulerTickMs,
         prefetch: true,
-        canRun: async (running) => {
+        canRun: async (running, assignment, activeAssignments) => {
+            const schedule = scheduler.options.schedule;
+            const runningCost =
+                schedule === "cost"
+                    ? [...activeAssignments].reduce(
+                          (sum, active) => ({
+                              cores: sum.cores + active.task.cost.cores,
+                              rssGb: sum.rssGb + active.task.cost.rssGb
+                          }),
+                          { cores: 0, rssGb: 0 }
+                      )
+                    : undefined;
             const allowed = await resources.allows(
                 running,
-                config.concurrencyCap
+                config.concurrencyCap,
+                {
+                    schedule,
+                    runningCost,
+                    nextCost: assignment?.task.cost ?? { cores: 0, rssGb: 0 }
+                }
             );
             if (!allowed) {
                 const reason = holdReason({
+                    schedule,
                     running,
                     concurrencyCap: config.concurrencyCap,
                     resourceGate: resources,
@@ -225,7 +242,16 @@ async function start(config) {
             }
             return allowed;
         },
-        requestTask: async () => request("TASK_REQUEST"),
+        requestTask: async () => {
+            const assignment = await request("TASK_REQUEST");
+            if (assignment) {
+                const task = fromWireTask(assignment.task, config.projectRoot);
+                scheduler.options.schedule = Object.hasOwn(task, "cost")
+                    ? "cost"
+                    : "fifo";
+            }
+            return assignment;
+        },
         runTask: async (assignment) => {
             const task = fromWireTask(assignment.task, config.projectRoot);
             // Forge brings its own EVM and a browser gate starts its own node:

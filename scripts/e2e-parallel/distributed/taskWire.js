@@ -6,12 +6,26 @@ const { normalizeTaskRunner } = require("../shared/taskRunners");
 // out here is silently dropped. `runner` carries the tier so the worker can
 // keep forge tasks off its slot and account pools; a worker whose runner code
 // predates the field simply gives every task a slot it may not need.
-function toWireTask(task, projectRoot) {
+function toWireTask(
+    task,
+    projectRoot,
+    { schedule = "fifo", distributedProtocol } = {}
+) {
     const root = path.resolve(projectRoot);
+    const includeCost = schedule === "cost" && distributedProtocol >= 15;
     return {
         label: task.label,
         logName: task.logName,
         runner: normalizeTaskRunner(task.runner),
+        ...(includeCost
+            ? {
+                  cost: {
+                      cores: task.cost.cores,
+                      rssGb: task.cost.rssGb,
+                      heavy: task.cost.heavy
+                  }
+              }
+            : {}),
         args: task.args.map((arg) => {
             if (!path.isAbsolute(arg)) return arg;
             const contained = assertContained(root, arg, {
@@ -25,6 +39,23 @@ function toWireTask(task, projectRoot) {
 
 function fromWireTask(task, projectRoot) {
     const root = path.resolve(projectRoot);
+    if (Object.hasOwn(task, "cost")) {
+        const cost = task.cost;
+        if (
+            !cost ||
+            typeof cost !== "object" ||
+            Array.isArray(cost) ||
+            Object.keys(cost).length !== 3 ||
+            !Object.keys(cost).every((field) =>
+                ["cores", "rssGb", "heavy"].includes(field)
+            ) ||
+            !["cores", "rssGb"].every(
+                (field) => Number.isFinite(cost[field]) && cost[field] >= 0
+            ) ||
+            typeof cost.heavy !== "boolean"
+        )
+            throw new Error("Invalid wire task cost");
+    }
     return {
         ...task,
         runner: normalizeTaskRunner(task.runner),

@@ -10,7 +10,8 @@ const {
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     MAX_SLOTS_FROM_POOL,
-    DEFAULT_STREAM_CHILD_OUTPUT
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    DEFAULT_COST_OVERRIDES_PATH
 } = require("./e2e-parallel/shared/constants");
 
 const {
@@ -440,7 +441,10 @@ async function main(options = {}) {
                 );
                 const stats = await runDistributed({
                     tasks,
+                    schedule: cli.schedule,
                     projectRoot: process.cwd(),
+                    costCachePath: cli.costCachePath,
+                    costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
                     archivePath,
                     manifest,
                     logDir,
@@ -537,6 +541,10 @@ async function main(options = {}) {
 
         const stats = await runScheduler({
             tasks,
+            schedule: cli.schedule,
+            projectRoot: process.cwd(),
+            costCachePath: cli.costCachePath,
+            costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
             slots,
             slotCount,
             concurrencyCap,

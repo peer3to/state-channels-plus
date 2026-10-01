@@ -538,6 +538,12 @@ function formatWorkerSummary(worker, completed) {
 async function runDistributed(options) {
     options = { schedule: "fifo", ...options };
     const startedAt = Date.now();
+    const { CostCache } = require("../shared/costCache");
+    const costCache = new CostCache({
+        projectRoot: options.projectRoot,
+        cachePath: options.costCachePath,
+        overridesPath: options.costOverridesPath
+    });
     const keys = derivePoolKeys(options.poolSecret);
     console.log(
         `Discovering workers on topic ${keys.workerTopic.toString("hex").slice(0, 12)}`
@@ -608,6 +614,9 @@ async function runDistributed(options) {
     }
 
     const coordinator = new TaskCoordinator(options.tasks, {
+        schedule: options.schedule,
+        costCache,
+        workerLabel: (id) => workerLabelById.get(id) || id,
         speculative: true,
         onWorkAvailable(workerId) {
             const worker = workers.get(workerId);
@@ -965,7 +974,10 @@ async function runDistributed(options) {
             }
             const wireAssignment = {
                 ...assignment,
-                task: toWireTask(assignment.task, options.projectRoot)
+                task: toWireTask(assignment.task, options.projectRoot, {
+                    schedule: options.schedule,
+                    distributedProtocol: worker.distributedProtocol
+                })
             };
             const attemptPath = logging.getAttemptLogPath(
                 options.logDir,
@@ -1317,6 +1329,7 @@ async function runDistributed(options) {
         workerLabel: (id) => workerLabelById.get(id) || id
     });
     logging.writeRunMetrics(options.logDir, metrics);
+    costCache.commit({ interrupted: options.signal?.aborted || !state.done });
     return {
         failed: state.failed,
         completed: state.completed,

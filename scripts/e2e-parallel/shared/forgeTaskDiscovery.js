@@ -348,6 +348,7 @@ function discoverForgeTasks(testDir, grep, options = {}) {
     );
     assertUniqueContractNames(discovered);
     const tasks = discovered.map(({ file, contract }) => ({
+        sourceFile: file,
         label: `forge:${path.basename(file)}:${contract}`,
         args: [
             FORGE_TEST_TASK,

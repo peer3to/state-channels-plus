@@ -12,6 +12,7 @@ const {
 } = require("../shared/resourceGate");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
+const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
 const { holdReason } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -51,6 +52,11 @@ async function runScheduler({
     costOverridesPath
 }) {
     const startedAt = Date.now();
+    const costCache = new CostCache({
+        projectRoot,
+        cachePath: costCachePath,
+        overridesPath: costOverridesPath
+    });
     const taskResources = new TaskResourcePool({
         baseEnv,
         slots,
@@ -71,6 +77,8 @@ async function runScheduler({
 
     let scheduler;
     const coordinator = new TaskCoordinator(tasks, {
+        schedule,
+        costCache,
         onWorkAvailable: () => scheduler?.workAvailable(),
         onResult: ({ assignment, attempt, code, parsed }) => {
             if (code !== 0) {
@@ -97,14 +105,31 @@ async function runScheduler({
     coordinator.registerWorker("local");
 
     scheduler = new WorkerScheduler({
+        schedule,
         concurrencyCap,
         retryMs: tickMs,
-        canRun: async (running) => {
-            if (coordinator.queue.length === 0) return false;
-            const allowed = await resources.allows(running, concurrencyCap);
+        canRun: async (running, assignment, activeAssignments) => {
+            if (schedule === "fifo" && coordinator.queue.length === 0)
+                return false;
+            const runningCost =
+                schedule === "cost"
+                    ? [...activeAssignments].reduce(
+                          (sum, active) => ({
+                              cores: sum.cores + active.task.cost.cores,
+                              rssGb: sum.rssGb + active.task.cost.rssGb
+                          }),
+                          { cores: 0, rssGb: 0 }
+                      )
+                    : undefined;
+            const allowed = await resources.allows(running, concurrencyCap, {
+                schedule,
+                runningCost,
+                nextCost: assignment?.task.cost ?? { cores: 0, rssGb: 0 }
+            });
             if (!allowed && coordinator.finish().pending) {
-                const next = coordinator.queue[0];
+                const next = assignment ?? coordinator.queue[0];
                 const reason = holdReason({
+                    schedule,
                     running,
                     concurrencyCap,
                     resourceGate: resources,
@@ -219,6 +244,7 @@ async function runScheduler({
         sumDurationMs: coordinator.sumDurationMs
     });
     logging.writeRunMetrics(logDir, metrics);
+    costCache.commit();
     return {
         failed: coordinator.failed,
         completed: coordinator.completed,
