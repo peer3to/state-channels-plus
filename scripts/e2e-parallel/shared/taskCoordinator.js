@@ -256,11 +256,19 @@ class TaskCoordinator {
             this.settledSpeculativeAssignments.get(String(attempt.attemptId));
         const result = this.completeAttemptResult(workerId, attempt);
         if (result.accepted && assignment) {
-            this.costCache?.record(assignment.task, attempt, {
-                disposition: result.disposition,
-                server: this.workerLabel(workerId),
-                starveCount: result.parsed?.starveCount ?? 0
-            });
+            // A local attempt carries raw output, not `reduced`: its event-loop
+            // peak exists only in the parsed timing, so hand it to the cache.
+            const peakElMs =
+                result.parsed?.timing?.maxEventLoopDelayMs ?? attempt.peakElMs;
+            this.costCache?.record(
+                assignment.task,
+                { ...attempt, peakElMs },
+                {
+                    disposition: result.disposition,
+                    server: this.workerLabel(workerId),
+                    starveCount: result.parsed?.starveCount ?? 0
+                }
+            );
         }
         return result;
     }

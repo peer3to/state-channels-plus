@@ -308,6 +308,37 @@ describe("task cost cache", function () {
         }
     });
 
+    it("records the event-loop peak parsed from a local attempt's output", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-local-el-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const coordinator = new TaskCoordinator([{ ...example }], {
+                costCache: cache
+            });
+            const assignment = coordinator.requestTask("local");
+            const { peakElMs: _absent, ...localAttempt } = sample;
+            coordinator.completeAttempt("local", {
+                ...localAttempt,
+                attemptId: assignment.attemptId,
+                stdout: '##E2E_TIMING## {"elThread":"sdk","maxEventLoopDelayMs":640}\n',
+                stderr: ""
+            });
+            cache.commit();
+            const stored = JSON.parse(
+                fs.readFileSync(
+                    path.join(root, ".cache/test-costs.json"),
+                    "utf8"
+                )
+            );
+            expect(stored.tasks[cache.key(example)]).to.include({
+                peakElMs: 640
+            });
+            expect(cache.resolve(example).heavy).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("persists starvation-only outcomes without numeric samples", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cost-starvation-only-")
