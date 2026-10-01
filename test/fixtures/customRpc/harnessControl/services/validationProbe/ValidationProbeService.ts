@@ -441,40 +441,21 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Run the reconnect catch-up from this peer's first RPC node and wait for
-     * the logs it scheduled. Count-and-forward: each ChannelOpened and
-     * InboundMessagesProcessed dispatch is counted and still applied.
+     * the logs it scheduled. Answers whether the read succeeded; dispatches
+     * are observed through the peer's forwarded event-handler spies.
      */
-    public async probeInboundLogCatchUp(): Promise<{ handlerCalls: number }> {
+    public async runCatchUpFromFirstNode(): Promise<boolean> {
         const sm = this.sm;
         const provider = sm.stateChannelManagerContract.runner?.provider;
         if (!(provider instanceof MultiRpcProvider))
             throw new Error("Expected the runtime RPC node provider");
-        const eventHandler = sm.eventHandler;
-        const originalInbound = eventHandler.onInboundMessagesProcessed;
-        const originalOpened = eventHandler.onChannelOpened;
-        let handlerCalls = 0;
-        eventHandler.onInboundMessagesProcessed = async (...args) => {
-            handlerCalls += 1;
-            return originalInbound.apply(eventHandler, args);
-        };
-        eventHandler.onChannelOpened = async (...args) => {
-            handlerCalls += 1;
-            return originalOpened.apply(eventHandler, args);
-        };
-        try {
-            await sm.eventSyncService.catchUpLogs(
-                provider.nodes[0],
-                sm.channelId,
-                0
-            );
-            await sm.eventSyncService.waitForScheduled(
-                CATCH_UP_DRAIN_TIMEOUT_MS
-            );
-            return { handlerCalls };
-        } finally {
-            eventHandler.onInboundMessagesProcessed = originalInbound;
-            eventHandler.onChannelOpened = originalOpened;
-        }
+        const read = await sm.eventSyncService.catchUpLogs(
+            provider.nodes[0],
+            sm.channelId,
+            0
+        );
+        await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
+        return read;
     }
 
     /**

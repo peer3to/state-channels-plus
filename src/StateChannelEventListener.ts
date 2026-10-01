@@ -1,6 +1,7 @@
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
-    getReconnectDelayMs
+    getReconnectDelayMs,
+    NodeSocketSubscriptions
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import { ChannelId } from "@/types/types";
@@ -14,10 +15,7 @@ class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
     /** Every node socket the channel is subscribed on, with its callback. */
-    private readonly subscribedSockets = new Map<
-        WebSocketProvider,
-        (log: Log) => void
-    >();
+    private readonly subscribedSockets = new NodeSocketSubscriptions();
     private currentChannelKey?: ChannelKey;
     private filter?: Filter;
     private listener?: (log: Log) => void;
@@ -68,13 +66,10 @@ class StateChannelEventListener {
         this.unwatchNodes = provider.nodes.map((node) =>
             node.watchSockets((socket, reopened) => {
                 if (this.disposed || generation !== this.generation) return;
-                for (const subscribed of this.subscribedSockets.keys()) {
-                    if (subscribed.destroyed)
-                        this.subscribedSockets.delete(subscribed);
-                }
                 if (!reopened) {
-                    this.subscribedSockets.set(socket, listener);
-                    subscriptions.push(socket.on(filter, listener));
+                    subscriptions.push(
+                        this.subscribedSockets.add(socket, filter, listener)
+                    );
                     return;
                 }
                 // Hold this socket's live logs until its catch-up scheduled
@@ -87,12 +82,11 @@ class StateChannelEventListener {
                     if (catchingUp) held.push(log);
                     else listener(log);
                 };
-                this.subscribedSockets.set(socket, socketListener);
                 // subscribe first, then read up to the head: a log after the
                 // read arrives on the new subscription
                 DetachedPromises.collect(
-                    socket
-                        .on(filter, socketListener)
+                    this.subscribedSockets
+                        .add(socket, filter, socketListener)
                         .then(() =>
                             this.catchUpUntilRead(
                                 node,
@@ -164,18 +158,9 @@ class StateChannelEventListener {
 
     private async removeListener(): Promise<void> {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
-        const filter = this.filter;
-        const sockets = [...this.subscribedSockets];
-        this.subscribedSockets.clear();
         this.filter = undefined;
         this.listener = undefined;
-        if (!filter) return;
-        // a destroyed socket has already dropped its subscriptions
-        await Promise.all(
-            sockets
-                .filter(([socket]) => !socket.destroyed)
-                .map(([socket, callback]) => socket.off(filter, callback))
-        );
+        await this.subscribedSockets.clear();
     }
 
     private getProvider(): MultiRpcProvider {
