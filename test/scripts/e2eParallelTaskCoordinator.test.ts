@@ -2,7 +2,9 @@
 import { expect } from "chai";
 
 const {
-    TaskCoordinator
+    TaskCoordinator,
+    reduceAttemptOutput,
+    validateReducedAttempt
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
 function task(label: string): {
@@ -18,6 +20,106 @@ function task(label: string): {
 }
 
 describe("distributed task coordinator", function () {
+    it("copies local and reduced CPU measurements into task records", function () {
+        const tasks = [task("local"), task("reduced"), task("unavailable")];
+        const coordinator = new TaskCoordinator(tasks);
+        const local = coordinator.requestTask("local");
+        coordinator.completeAttempt("local", {
+            attemptId: local.attemptId,
+            code: 0,
+            durationMs: 10,
+            peakRssGb: 0.5,
+            avgCores: 0.75,
+            measurementReason: null
+        });
+        expect(local.task).to.include({
+            peakRssGb: 0.5,
+            avgCores: 0.75,
+            measurementReason: null
+        });
+        expect(local.task.finalAttempt.avgCores).to.equal(0.75);
+        const remote = coordinator.requestTask("remote");
+        coordinator.completeAttempt("remote", {
+            attemptId: remote.attemptId,
+            code: 0,
+            durationMs: 20,
+            peakRssGb: 9,
+            avgCores: 9,
+            reduced: {
+                ...reduceAttemptOutput(),
+                peakRssGb: 0.25,
+                avgCores: 0.125
+            }
+        });
+        expect(remote.task).to.include({
+            peakRssGb: 0.25,
+            avgCores: 0.125,
+            measurementReason: null
+        });
+        const unavailable = coordinator.requestTask("remote");
+        coordinator.completeAttempt("remote", {
+            attemptId: unavailable.attemptId,
+            code: 0,
+            peakRssGb: 9,
+            avgCores: 9,
+            reduced: {
+                ...reduceAttemptOutput(),
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: null
+            }
+        });
+        expect(unavailable.task).to.include({
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "process-sampling-unavailable"
+        });
+    });
+
+    it("rejects malformed reduced resource measurements", function () {
+        const metadata = reduceAttemptOutput();
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: -1, avgCores: 0 })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: 0, avgCores: NaN })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: Infinity,
+                avgCores: 0
+            })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: "1", avgCores: 0 })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: null })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: "unknown"
+            })
+        ).to.throw("resource measurements");
+        expect(validateReducedAttempt(metadata)).to.include({
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "legacy-measurements-unavailable"
+        });
+        expect(
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: null,
+                avgCores: 0,
+                measurementReason: null
+            })
+        ).to.include({ measurementReason: "process-sampling-unavailable" });
+    });
+
     it("uses worker-reduced metadata when successful output is not uploaded", function () {
         const firstTask = task("starved");
         const coordinator = new TaskCoordinator([firstTask]);

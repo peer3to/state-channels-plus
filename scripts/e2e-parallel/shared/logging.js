@@ -255,7 +255,8 @@ function cleanupNonErrorLogs(
 
     if (!fs.existsSync(resolved)) return;
     for (const entry of fs.readdirSync(resolved)) {
-        if (entry.startsWith("error_")) continue;
+        if (entry.startsWith("error_") || entry === "run-metrics.json")
+            continue;
         const target = path.join(resolved, entry);
         if (
             entry === "infra" &&
@@ -725,7 +726,97 @@ function markLogAsError(logDir, logName) {
     }
 }
 
+function writeRunMetrics(logDir, metrics) {
+    fs.mkdirSync(logDir, { recursive: true });
+    const temporary = path.join(
+        logDir,
+        `.run-metrics-${crypto.randomUUID()}.tmp`
+    );
+    try {
+        fs.writeFileSync(temporary, `${JSON.stringify(metrics, null, 2)}\n`, {
+            flag: "wx"
+        });
+        fs.renameSync(temporary, path.join(logDir, "run-metrics.json"));
+    } catch (error) {
+        try {
+            fs.rmSync(temporary, { force: true });
+        } catch (cleanupError) {
+            throw new Error(
+                `Unable to write run metrics: ${error.message}; temporary cleanup: ${cleanupError.message}`
+            );
+        }
+        throw new Error(`Unable to write run metrics: ${error.message}`);
+    }
+}
+
+function buildRunMetrics({
+    tasks,
+    workers,
+    makespanMs,
+    sumDurationMs,
+    workerLabel = (id) => id
+}) {
+    return {
+        version: 1,
+        makespanMs,
+        sumDurationMs,
+        workers: workers.map(({ id, label, stats, legacyAdmission }) => {
+            const missing =
+                [
+                    "meanConcurrency",
+                    "peakConcurrency",
+                    "concurrencyWallMs"
+                ].some((field) => stats?.[field] === undefined) ||
+                !stats?.holdCounts;
+            return {
+                id,
+                label,
+                legacyAdmission,
+                meanConcurrency: stats?.meanConcurrency ?? null,
+                peakConcurrency: stats?.peakConcurrency ?? null,
+                concurrencyWallMs: stats?.concurrencyWallMs ?? null,
+                holdCounts: {
+                    cap: stats?.holdCounts?.cap ?? null,
+                    memory: stats?.holdCounts?.memory ?? null,
+                    cpu: stats?.holdCounts?.cpu ?? null
+                },
+                ...(missing
+                    ? { measurementReason: "legacy-worker-stats-unavailable" }
+                    : {})
+            };
+        }),
+        starvations: tasks.flatMap((task) =>
+            (task.starvations || []).map((event) => ({
+                ...event,
+                server: workerLabel(event.server)
+            }))
+        ),
+        retries: {
+            starvation: tasks.reduce(
+                (sum, task) => sum + (task.starvationRetryCount || 0),
+                0
+            ),
+            infrastructure: tasks.reduce(
+                (sum, task) => sum + (task.infrastructureRetryCount || 0),
+                0
+            )
+        },
+        tasks: tasks.map((task) => ({
+            label: task.label,
+            durationMs: task.finalAttempt?.durationMs ?? null,
+            peakRssGb: task.finalAttempt?.peakRssGb ?? null,
+            avgCores: task.finalAttempt?.avgCores ?? null,
+            measurementReason: task.finalAttempt
+                ? task.finalAttempt.measurementReason
+                : "legacy-measurements-unavailable",
+            peakElMs: task.finalAttempt?.peakElMs ?? 0
+        }))
+    };
+}
+
 module.exports = {
+    writeRunMetrics,
+    buildRunMetrics,
     formatCpuDetail,
     formatCpuPressure,
     formatDurationMs,

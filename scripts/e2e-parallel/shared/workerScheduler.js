@@ -2,6 +2,12 @@ class WorkerScheduler {
     constructor(options) {
         this.options = options;
         this.running = 0;
+        this.runningAssignments = new Set();
+        this.concurrencyStartedAt = Date.now();
+        this.concurrencyUpdatedAt = this.concurrencyStartedAt;
+        this.concurrencyIntegral = 0;
+        this.peakConcurrency = 0;
+        this.concurrencyStoppedAt = null;
         this.stopped = false;
         this.requestPending = false;
         this.bufferedAssignment = null;
@@ -43,18 +49,45 @@ class WorkerScheduler {
             this.requestPending = false;
         }
         if (this.stopped) return;
+        this.updateConcurrency();
+        this.runningAssignments.add(assignment);
         this.running++;
+        this.peakConcurrency = Math.max(this.peakConcurrency, this.running);
         this.run(assignment);
         this.scheduleRetry();
         if (this.options.prefetch) this.prefetchAssignment();
     }
 
-    complete() {
+    updateConcurrency() {
+        const now = this.concurrencyStoppedAt ?? Date.now();
+        this.concurrencyIntegral +=
+            this.running * (now - this.concurrencyUpdatedAt);
+        this.concurrencyUpdatedAt = now;
+    }
+
+    stats() {
+        this.updateConcurrency();
+        const concurrencyWallMs =
+            this.concurrencyUpdatedAt - this.concurrencyStartedAt;
+        return {
+            meanConcurrency: concurrencyWallMs
+                ? this.concurrencyIntegral / concurrencyWallMs
+                : 0,
+            peakConcurrency: this.peakConcurrency,
+            concurrencyWallMs
+        };
+    }
+
+    complete(assignment) {
+        this.updateConcurrency();
+        this.runningAssignments.delete(assignment);
         this.running--;
         this.scheduleRetry();
     }
 
     stop() {
+        this.updateConcurrency();
+        this.concurrencyStoppedAt ??= this.concurrencyUpdatedAt;
         this.stopped = true;
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.retryTimer = null;
@@ -68,7 +101,7 @@ class WorkerScheduler {
             this.stop();
             this.options.onError?.(error);
         } finally {
-            this.complete();
+            this.complete(assignment);
         }
     }
 

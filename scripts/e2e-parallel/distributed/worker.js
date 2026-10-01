@@ -282,7 +282,12 @@ async function start(config) {
                 assignment: { ...assignment, task },
                 result: {
                     ...wireResult,
-                    reduced: reduceAttemptOutput(output.stdout, output.stderr)
+                    reduced: {
+                        ...reduceAttemptOutput(output.stdout, output.stderr),
+                        peakRssGb: result.peakRssGb,
+                        avgCores: result.avgCores,
+                        measurementReason: result.measurementReason
+                    }
                 },
                 spoolPath
             });
@@ -309,7 +314,10 @@ async function stop(
         }
         rejectPending(new Error("Distributed worker stopped"));
         completionExitCode = exitCode;
-        process.send({ kind: "WORKER_COMPLETE", stats: resources?.stats() });
+        process.send({
+            kind: "WORKER_COMPLETE",
+            stats: { ...resources?.stats(), ...scheduler?.stats() }
+        });
         return;
     }
     rejectPending(new Error("Distributed worker stopped"));

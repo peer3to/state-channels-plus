@@ -9,6 +9,43 @@ function reduceAttemptOutput(stdout = "", stderr = "") {
     };
 }
 
+function resourceMeasurements(metadata) {
+    const fields = ["peakRssGb", "avgCores"];
+    const supplied = fields.filter((field) => Object.hasOwn(metadata, field));
+    const reason = metadata.measurementReason;
+    if (
+        (supplied.length && supplied.length !== fields.length) ||
+        supplied.some(
+            (field) =>
+                metadata[field] !== null &&
+                (!Number.isFinite(metadata[field]) || metadata[field] < 0)
+        ) ||
+        (reason !== undefined &&
+            reason !== null &&
+            ![
+                "process-sampling-unavailable",
+                "legacy-measurements-unavailable"
+            ].includes(reason))
+    ) {
+        throw new Error("Worker returned invalid resource measurements");
+    }
+    if (!supplied.length)
+        return {
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "legacy-measurements-unavailable"
+        };
+    return {
+        peakRssGb: metadata.peakRssGb,
+        avgCores: metadata.avgCores,
+        measurementReason:
+            reason ??
+            (fields.some((field) => metadata[field] === null)
+                ? "process-sampling-unavailable"
+                : null)
+    };
+}
+
 function validateReducedAttempt(reduced) {
     const timingFields = [
         "startupMs",
@@ -40,7 +77,7 @@ function validateReducedAttempt(reduced) {
     ) {
         throw new Error("Worker returned invalid attempt metadata");
     }
-    return reduced;
+    return { ...reduced, ...resourceMeasurements(reduced) };
 }
 
 function reduceAttempt(task, attempt) {
@@ -48,6 +85,10 @@ function reduceAttempt(task, attempt) {
     const { oomCount, starveCount, timing } = attempt.reduced
         ? validateReducedAttempt(attempt.reduced)
         : reduceAttemptOutput(attempt.stdout, attempt.stderr);
+    const usage = resourceMeasurements(attempt.reduced ?? attempt);
+    task.peakRssGb = usage.peakRssGb;
+    task.avgCores = usage.avgCores;
+    task.measurementReason = usage.measurementReason;
     task.oomCount = (task.oomCount || 0) + oomCount;
     task.starveCount = (task.starveCount || 0) + starveCount;
     task.startupMs = (task.startupMs || 0) + timing.startupMs;
@@ -174,11 +215,16 @@ class TaskCoordinator {
         this.sumDurationMs += attempt.durationMs || 0;
         const parsed = reduceAttempt(assignment.task, attempt);
         // which worker each starved attempt ran on, in attempt order
-        if (parsed.starveCount > 0)
+        if (parsed.starveCount > 0) {
             assignment.task.starvedOn = [
                 ...(assignment.task.starvedOn || []),
                 workerId
             ];
+            assignment.task.starvations = [
+                ...(assignment.task.starvations || []),
+                { server: workerId, at: new Date().toISOString() }
+            ];
+        }
 
         if (attempt.cancelled) {
             attempt.failureReason = attempt.signal
@@ -358,6 +404,11 @@ class TaskCoordinator {
     }
 
     finalize(assignment, attempt, code, parsed) {
+        assignment.task.finalAttempt = {
+            ...attempt,
+            ...resourceMeasurements(attempt.reduced ?? attempt),
+            peakElMs: parsed.timing.maxEventLoopDelayMs
+        };
         this.completedTaskIds.add(assignment.taskId);
         for (const [attemptId, other] of this.assignments) {
             if (other.taskId === assignment.taskId) {
@@ -401,6 +452,11 @@ class TaskCoordinator {
         if (parsed.starveCount > 0) {
             return { accepted: false, reason: "redundant-starvation" };
         }
+        assignment.task.finalAttempt = {
+            ...attempt,
+            ...resourceMeasurements(attempt.reduced ?? attempt),
+            peakElMs: parsed.timing.maxEventLoopDelayMs
+        };
         this.failedTaskIds.add(assignment.taskId);
         this.failed.push(assignment.task);
         const result = {

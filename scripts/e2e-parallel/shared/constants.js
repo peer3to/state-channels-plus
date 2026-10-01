@@ -32,6 +32,11 @@ const DEFAULT_SLOTS = 1;
 // react between launches — pacing one test per tick lets it settle.
 const SCHEDULER_TICK_MS = 1000;
 
+// placeholder — calibrate from run-metrics.json
+const TASK_COST_SAMPLE_MS = 100;
+// Linux USER_HZ ABI: process CPU counters are ticks, not milliseconds.
+const PROC_CLOCK_TICKS_PER_SECOND = 100;
+
 // Admit another test only while avg OS load per core is below this.
 const TARGET_LOAD_PER_CORE = 0.8;
 
@@ -53,6 +58,8 @@ module.exports = {
     DEFAULT_STREAM_CHILD_OUTPUT,
     DEFAULT_SLOTS,
     SCHEDULER_TICK_MS,
+    TASK_COST_SAMPLE_MS,
+    PROC_CLOCK_TICKS_PER_SECOND,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     PER_TEST_MEM_GB

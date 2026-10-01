@@ -271,6 +271,29 @@ function validateWorkerStats(stats) {
     ) {
         throw new Error("Worker returned invalid resource statistics");
     }
+    const concurrencyFields = [
+        "meanConcurrency",
+        "peakConcurrency",
+        "concurrencyWallMs"
+    ];
+    if (
+        concurrencyFields.some(
+            (field) =>
+                Object.hasOwn(stats, field) &&
+                (!Number.isFinite(stats[field]) || stats[field] < 0)
+        ) ||
+        (Object.hasOwn(stats, "peakConcurrency") &&
+            !Number.isInteger(stats.peakConcurrency)) ||
+        (Object.hasOwn(stats, "holdCounts") &&
+            (!stats.holdCounts ||
+                ["cap", "memory", "cpu"].some(
+                    (field) =>
+                        !Number.isInteger(stats.holdCounts[field]) ||
+                        stats.holdCounts[field] < 0
+                )))
+    ) {
+        throw new Error("Worker returned invalid admission statistics");
+    }
     return stats;
 }
 
@@ -513,6 +536,8 @@ function formatWorkerSummary(worker, completed) {
 }
 
 async function runDistributed(options) {
+    options = { schedule: "fifo", ...options };
+    const startedAt = Date.now();
     const keys = derivePoolKeys(options.poolSecret);
     console.log(
         `Discovering workers on topic ${keys.workerTopic.toString("hex").slice(0, 12)}`
@@ -1278,6 +1303,20 @@ async function runDistributed(options) {
     }
     const state = coordinator.finish();
     const resourceStats = aggregateWorkerStats(usedWorkers);
+    const metrics = logging.buildRunMetrics({
+        tasks: options.tasks,
+        workers: usedWorkers.map((worker) => ({
+            id: worker.id,
+            label: worker.label,
+            stats: worker.stats,
+            legacyAdmission:
+                options.schedule !== "cost" || worker.distributedProtocol < 15
+        })),
+        makespanMs: Date.now() - startedAt,
+        sumDurationMs: state.sumDurationMs,
+        workerLabel: (id) => workerLabelById.get(id) || id
+    });
+    logging.writeRunMetrics(options.logDir, metrics);
     return {
         failed: state.failed,
         completed: state.completed,

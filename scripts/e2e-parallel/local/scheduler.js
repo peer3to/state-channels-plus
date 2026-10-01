@@ -44,8 +44,13 @@ async function runScheduler({
     tickMs = SCHEDULER_TICK_MS,
     runTaskImpl = runTask,
     accountPartitions = new AccountPartitionPool(),
-    resourceGate
+    resourceGate,
+    projectRoot = process.cwd(),
+    schedule = "fifo",
+    costCachePath,
+    costOverridesPath
 }) {
+    const startedAt = Date.now();
     const taskResources = new TaskResourcePool({
         baseEnv,
         slots,
@@ -200,6 +205,20 @@ async function runScheduler({
     });
 
     const resourceStats = resources.stats();
+    const metrics = logging.buildRunMetrics({
+        tasks,
+        workers: [
+            {
+                id: "local",
+                label: "local",
+                stats: { ...resourceStats, ...scheduler.stats() },
+                legacyAdmission: schedule !== "cost"
+            }
+        ],
+        makespanMs: Date.now() - startedAt,
+        sumDurationMs: coordinator.sumDurationMs
+    });
+    logging.writeRunMetrics(logDir, metrics);
     return {
         failed: coordinator.failed,
         completed: coordinator.completed,

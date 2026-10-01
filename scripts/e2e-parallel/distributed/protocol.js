@@ -3,10 +3,9 @@ const { TASK_RUNNERS, normalizeTaskRunner } = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-// The runner protocol this checkout speaks. 14 added the browser tier: the
-// `browser` runner, the worker fork carrying the image's browser environment,
-// and Chromium in the runner image. Hardhat and forge tasks are unchanged.
-const DISTRIBUTED_PROTOCOL_VERSION = 14;
+// The runner protocol this checkout speaks. 15 adds task resource measurements
+// and cost-aware admission; 14 added the browser tier. Older hosts remain leased.
+const DISTRIBUTED_PROTOCOL_VERSION = 15;
 // The oldest worker host protocol the orchestrator still leases. A host
 // between it and the current version runs only the runners it knows, so a pool
 // can upgrade one host at a time.
@@ -15,6 +14,14 @@ const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 13;
 // task only on a worker whose protocol lists the task's runner.
 const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
     [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
+    [
+        15,
+        new Set([
+            TASK_RUNNERS.HARDHAT,
+            TASK_RUNNERS.FORGE,
+            TASK_RUNNERS.BROWSER
+        ])
+    ],
     [
         14,
         new Set([
