@@ -1,16 +1,23 @@
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import RpcNodeProvider, {
+    getReconnectDelayMs
+} from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import { ChannelId } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
+import { DetachedPromises, Logger, sleep } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { Filter, Log, WebSocketProvider } from "ethers";
 
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
-    /** Every node socket the current listener was subscribed on. */
-    private readonly subscribedSockets = new Set<WebSocketProvider>();
+    /** Every node socket the channel is subscribed on, with its callback. */
+    private readonly subscribedSockets = new Map<
+        WebSocketProvider,
+        (log: Log) => void
+    >();
     private currentChannelKey?: ChannelKey;
     private filter?: Filter;
     private listener?: (log: Log) => void;
@@ -43,11 +50,10 @@ class StateChannelEventListener {
         const filter = this.eventSyncService.getSubscriptionFilter(channelId);
         const listener = (log: Log) => {
             if (this.disposed || generation !== this.generation) return;
-            this.logger.info("On-chain event received", {
-                blockNumber: log.blockNumber,
-                logIndex: log.index,
-                transactionHash: log.transactionHash
-            });
+            this.logger.debug(
+                "On-chain event streamed",
+                LoggerUtils.getContractLogMetadata(log)
+            );
             DetachedPromises.collect(
                 this.eventSyncService.scheduleStreamedLog(log, channelId)
             );
@@ -62,26 +68,44 @@ class StateChannelEventListener {
         this.unwatchNodes = provider.nodes.map((node) =>
             node.watchSockets((socket, reopened) => {
                 if (this.disposed || generation !== this.generation) return;
-                for (const subscribed of this.subscribedSockets) {
+                for (const subscribed of this.subscribedSockets.keys()) {
                     if (subscribed.destroyed)
                         this.subscribedSockets.delete(subscribed);
                 }
-                this.subscribedSockets.add(socket);
-                const subscription = socket.on(filter, listener);
                 if (!reopened) {
-                    subscriptions.push(subscription);
+                    this.subscribedSockets.set(socket, listener);
+                    subscriptions.push(socket.on(filter, listener));
                     return;
                 }
+                // Hold this socket's live logs until its catch-up scheduled
+                // the logs it read. Otherwise a newer live log can complete
+                // first, move the watermark past a missed block, and the
+                // catch-up drops that block's logs as below the watermark.
+                const held: Log[] = [];
+                let catchingUp = true;
+                const socketListener = (log: Log) => {
+                    if (catchingUp) held.push(log);
+                    else listener(log);
+                };
+                this.subscribedSockets.set(socket, socketListener);
                 // subscribe first, then read up to the head: a log after the
                 // read arrives on the new subscription
                 DetachedPromises.collect(
-                    subscription.then(() =>
-                        this.eventSyncService.catchUpLogs(
-                            node,
-                            channelId,
-                            subscribedAtBlock
+                    socket
+                        .on(filter, socketListener)
+                        .then(() =>
+                            this.catchUpUntilRead(
+                                node,
+                                socket,
+                                channelId,
+                                subscribedAtBlock,
+                                generation
+                            )
                         )
-                    )
+                        .finally(() => {
+                            catchingUp = false;
+                            for (const log of held.splice(0)) listener(log);
+                        })
                 );
             })
         );
@@ -113,20 +137,44 @@ class StateChannelEventListener {
         }
     }
 
+    /**
+     * Run the catch-up on a reopened socket until one read succeeded, retrying
+     * with the reconnect backoff while the socket stays open and the
+     * subscription is current.
+     */
+    private async catchUpUntilRead(
+        node: RpcNodeProvider,
+        socket: WebSocketProvider,
+        channelId: ChannelId,
+        subscribedAtBlock: number,
+        generation: number
+    ): Promise<void> {
+        for (let failedAttempts = 0; ; failedAttempts++) {
+            if (this.disposed || generation !== this.generation) return;
+            if (socket.destroyed) return;
+            const read = await this.eventSyncService.catchUpLogs(
+                node,
+                channelId,
+                subscribedAtBlock
+            );
+            if (read) return;
+            await sleep(getReconnectDelayMs(failedAttempts));
+        }
+    }
+
     private async removeListener(): Promise<void> {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
         const filter = this.filter;
-        const listener = this.listener;
         const sockets = [...this.subscribedSockets];
         this.subscribedSockets.clear();
         this.filter = undefined;
         this.listener = undefined;
-        if (!filter || !listener) return;
+        if (!filter) return;
         // a destroyed socket has already dropped its subscriptions
         await Promise.all(
             sockets
-                .filter((socket) => !socket.destroyed)
-                .map((socket) => socket.off(filter, listener))
+                .filter(([socket]) => !socket.destroyed)
+                .map(([socket, callback]) => socket.off(filter, callback))
         );
     }
 

@@ -180,6 +180,10 @@ export default class EventSyncService {
         const eventKey = `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
+        this.logger.info(
+            "On-chain event received",
+            LoggerUtils.getContractLogMetadata(log)
+        );
 
         const channelKey = toChannelKey(scheduledChannelId);
         const states = this.getBlockStates(channelKey);
@@ -199,9 +203,7 @@ export default class EventSyncService {
             .catch((error) => {
                 state.failed = true;
                 this.logger.error("Contract event pipeline failed", {
-                    blockNumber: log.blockNumber,
-                    logIndex: log.index,
-                    transactionHash: log.transactionHash,
+                    ...LoggerUtils.getContractLogMetadata(log),
                     error
                 });
                 throw error;
@@ -220,20 +222,21 @@ export default class EventSyncService {
      * Re-read this channel's subscribed logs from one RPC node whose socket
      * reopened, from the completed-block watermark (or `fromBlock` before
      * one exists) up to that node's head, and schedule each log.
-     * scheduleStreamedLog deduplicates the logs another stream delivered. Never throws:
-     * a failed read is logged, and the node's next reconnect catches up again.
+     * scheduleStreamedLog deduplicates the logs another stream delivered.
+     * Every read log is scheduled before this returns. Never throws: a failed
+     * read is logged and answers `false`, so the caller can retry.
      */
     async catchUpLogs(
         node: Provider,
         channelId: ChannelId,
         fromBlock: BlockNumber
-    ): Promise<void> {
+    ): Promise<boolean> {
         const watermark =
             this.storage.eventSync.getLatestProcessedBlock(channelId);
         const catchUpFrom = watermark ?? fromBlock;
         try {
             const toBlock = await node.getBlockNumber();
-            if (toBlock < catchUpFrom) return;
+            if (toBlock < catchUpFrom) return true;
             const logs = await node.getLogs({
                 ...this.getSubscriptionFilter(channelId),
                 fromBlock: catchUpFrom,
@@ -250,12 +253,14 @@ export default class EventSyncService {
                     this.scheduleStreamedLog(log, channelId)
                 );
             }
+            return true;
         } catch (error) {
             this.logger.warn("Contract event catch-up read failed", {
                 channelId,
                 fromBlock: catchUpFrom,
                 error
             });
+            return false;
         }
     }
 

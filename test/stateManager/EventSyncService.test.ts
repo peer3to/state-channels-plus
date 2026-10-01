@@ -445,6 +445,25 @@ describe("EventSyncService", function () {
         });
     });
 
+    describe("scheduleStreamedLog at the watermark", function () {
+        it("dispatches a never-seen log in the watermark block", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("reorgedAtWatermark")
+                .request();
+
+            // premise - the log's block is the completed watermark itself
+            expect(probe.watermark).to.equal(probe.logBlockNumber);
+            expect(probe.handlerCalls).to.equal(1);
+        });
+    });
+
     describe("catchUpLogs", function () {
         it("schedules the log this peer's subscription lost", async function () {
             const h = TestSession.getHarness();

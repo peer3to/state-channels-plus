@@ -120,7 +120,7 @@ structs (field-level reference: [../reference/data-types.md](../../../../specifi
 [`src/utils/config.ts`](../../../../../../src/utils/config.ts#L1) — process-lifespan
 singleton set by `createConfig` during `p2pSetup`; precedence overrides >
 `process.env` > `peer3.config.ts` > defaults. Operationally significant keys:
-`PROVIDER_URL` (single chain endpoint; must resolve to WebSocket —
+`PROVIDER_URLS` (ordered chain endpoints; falls back to the single `PROVIDER_URL`; each must resolve to WebSocket —
 [architecture.md](./architecture.md) §3), `RUN_SDK_IN_THREAD`,
 `VM_DEDICATED_THREAD`, `HOLEPUNCH_RELAYER_URLS`,
 `LOCAL_DISCOVERY_REGISTRY_URL` + `DEBUG_LOCAL_TRANSPORT` (test meshes),

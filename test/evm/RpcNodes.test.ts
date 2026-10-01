@@ -1,6 +1,14 @@
 import { getReconnectDelayMs } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import {
     assertBlockEventsComeFromNodeSockets,
+    assertDestroyRejectsInFlightRead,
+    assertDestroyRejectsWaitingRead,
+    assertNodeOnAnotherChainRefused,
+    assertSilentNodeMarkedDeadAndReadFailsOver,
+    assertStartupDoesNotWaitForASilentNode,
+    assertStopReconnectingRejectsWaitingRead,
+    assertTransactionFailsOverAfterFirstNodeForwardedIt,
+    assertTransactionWaitResolvesAfterReconnect,
     assertDestroyFailsHeldRequest,
     assertHeldRequestAnsweredAfterRestore,
     assertNeverConnectedNodeFailsAtOnce,
@@ -49,6 +57,10 @@ describe("RpcNodeProvider", () => {
     it("fails a request held for a reconnect when destroyed", async () => {
         await assertDestroyFailsHeldRequest();
     });
+
+    it("refuses a node that serves another chain than the first connected node", async () => {
+        await assertNodeOnAnotherChainRefused();
+    });
 });
 
 describe("MultiRpcProvider", () => {
@@ -72,6 +84,30 @@ describe("MultiRpcProvider", () => {
         await assertReadFailsOverWhenNodeDropsMidRequest();
     });
 
+    it("marks a node whose socket stops answering as dead and fails the read over", async () => {
+        await assertSilentNodeMarkedDeadAndReadFailsOver();
+    });
+
+    it("fails a transaction over to the next node when the first drops after forwarding it", async () => {
+        await assertTransactionFailsOverAfterFirstNodeForwardedIt();
+    });
+
+    it("resolves a transaction wait from a node socket's block event after a reconnect", async () => {
+        await assertTransactionWaitResolvesAfterReconnect();
+    });
+
+    it("rejects a read in flight when destroyed", async () => {
+        await assertDestroyRejectsInFlightRead();
+    });
+
+    it("rejects a read waiting for a node when destroyed", async () => {
+        await assertDestroyRejectsWaitingRead();
+    });
+
+    it("rejects a read waiting for a node when reconnects stop", async () => {
+        await assertStopReconnectingRejectsWaitingRead();
+    });
+
     it("relays each new block once from the node sockets without polling", async () => {
         await assertBlockEventsComeFromNodeSockets();
     });
@@ -82,5 +118,9 @@ describe("MultiRpcProvider", () => {
 
     it("fails runtime startup when no node is reachable and names every node", async () => {
         await assertStartupFailsWithoutReachableNode();
+    });
+
+    it("starts the runtime chain context without waiting for a silent node", async () => {
+        await assertStartupDoesNotWaitForASilentNode();
     });
 });

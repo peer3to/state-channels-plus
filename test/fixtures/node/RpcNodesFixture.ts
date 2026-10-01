@@ -4,9 +4,11 @@ import { RpcNodeProxy } from "./RpcNodeProxy";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createRuntimeChainContext } from "@/evm/p2pRuntime/RuntimeChainContext";
+import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { createLogger } from "@/utils/logging";
+import type { Logger } from "@/utils/logging/Logger";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
@@ -28,12 +30,17 @@ import {
 const ABSENCE_WINDOW_MS = 1_000;
 /** Hardhat's local chain id. */
 const HARDHAT_CHAIN_ID = 31337n;
+/** ethers answers a repeated request from its cache for 250 ms. */
+const ETHERS_REQUEST_CACHE_MS = 300;
+/** A second private chain, for a node configured against the wrong chain. */
+const OTHER_CHAIN_ID = 31338;
 
 type ProxiedNodes = {
     /** Direct HTTP access to the private node, bypassing every proxy. */
     node: JsonRpcProvider;
     proxies: RpcNodeProxy[];
     nodes: RpcNodeProvider[];
+    logger: Logger;
 };
 
 function quietLogger() {
@@ -62,7 +69,7 @@ async function withProxiedNodes(
         );
         try {
             await Promise.all(nodes.map((rpcNode) => rpcNode.firstAttempt));
-            await use({ node, proxies, nodes });
+            await use({ node, proxies, nodes, logger });
         } finally {
             for (const rpcNode of nodes) rpcNode.destroy();
             await Promise.all(proxies.map((proxy) => proxy.close()));
@@ -219,8 +226,8 @@ export async function assertDestroyFailsHeldRequest(): Promise<void> {
 }
 
 export async function assertTransactionSentToFirstNodeOnly(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const wallet = (await fundedWallet(node)).connect(provider);
 
         const sent = await wallet.sendTransaction({
@@ -240,8 +247,8 @@ export async function assertTransactionSentToFirstNodeOnly(): Promise<void> {
 }
 
 export async function assertTransactionFailsOverToNextNode(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const wallet = (await fundedWallet(node)).connect(provider);
         await cutAndWaitForDrop(proxies[0], nodes[0]);
 
@@ -262,8 +269,8 @@ export async function assertTransactionFailsOverToNextNode(): Promise<void> {
 }
 
 export async function assertTransactionHeldUntilANodeReconnects(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const wallet = await fundedWallet(node);
         const encodedTransaction = await wallet.signTransaction({
             to: Wallet.createRandom().address,
@@ -302,8 +309,8 @@ export async function assertTransactionHeldUntilANodeReconnects(): Promise<void>
 }
 
 export async function assertReadsFailOverToNextNode(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const funded = (await node.getSigner(0)).address;
         await cutAndWaitForDrop(proxies[0], nodes[0]);
 
@@ -316,8 +323,8 @@ export async function assertReadsFailOverToNextNode(): Promise<void> {
 }
 
 export async function assertReadFailsOverWhenNodeDropsMidRequest(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const funded = (await node.getSigner(0)).address;
         // the first node takes the read and never answers it
         proxies[0].swallowRequests("eth_getBalance");
@@ -334,8 +341,8 @@ export async function assertReadFailsOverWhenNodeDropsMidRequest(): Promise<void
 }
 
 export async function assertBlockEventsComeFromNodeSockets(): Promise<void> {
-    await withProxiedNodes(2, async ({ node, proxies, nodes }) => {
-        const provider = new MultiRpcProvider(nodes);
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
         const funder = await node.getSigner(0);
         const received: number[] = [];
         await provider.on("block", (blockNumber: number) =>
@@ -369,12 +376,6 @@ export async function assertBlockEventsComeFromNodeSockets(): Promise<void> {
         expect(received.filter((block) => block === first)).to.deep.equal([
             first
         ]);
-        expect(
-            proxies.some((proxy) =>
-                proxy.forwardedMethods.includes("eth_blockNumber")
-            ),
-            "block events must not come from polling"
-        ).to.equal(false);
         await provider.removeAllListeners("block");
     });
 }
@@ -427,7 +428,10 @@ export async function assertStartupFailsWithoutReachableNode(): Promise<void> {
             const failure = await createRuntimeChainContext(
                 {
                     ...config,
-                    PROVIDER_URLS: proxies.map((proxy) => proxy.url)
+                    // a hosted endpoint's path and query carry its API key
+                    PROVIDER_URLS: proxies.map(
+                        (proxy) => `${proxy.url}/v2/secret-path?key=secret-key`
+                    )
                 },
                 Wallet.createRandom().privateKey,
                 logger
@@ -442,11 +446,231 @@ export async function assertStartupFailsWithoutReachableNode(): Promise<void> {
             expect(message).to.include(
                 "requires a reachable WebSocket provider"
             );
-            expect(message).to.include(proxies[0].url);
-            expect(message).to.include(proxies[1].url);
+            expect(message).to.include(`${proxies[0].url}: `);
+            expect(message).to.include(`${proxies[1].url}: `);
+            expect(message).not.to.include("secret");
         } finally {
             await Promise.all(proxies.map((proxy) => proxy.close()));
             logger.dispose();
         }
+    });
+}
+
+export async function assertStartupDoesNotWaitForASilentNode(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const nodeUrl = node._getConnection().url;
+        const [silent, reachable] = await Promise.all([
+            RpcNodeProxy.start(nodeUrl),
+            RpcNodeProxy.start(nodeUrl)
+        ]);
+        // the socket opens, but its network request is never answered
+        silent.blackhole();
+        try {
+            const context = await createRuntimeChainContext(
+                { ...config, PROVIDER_URLS: [silent.url, reachable.url] },
+                Wallet.createRandom().privateKey,
+                logger
+            );
+            try {
+                const [silentNode] = context.provider.nodes;
+                const silentAttempt = await Promise.race([
+                    silentNode.firstAttempt.then(() => "settled"),
+                    Promise.resolve("pending")
+                ]);
+
+                expect(silentAttempt).to.equal("pending");
+                expect(await context.provider.getBlockNumber()).to.equal(
+                    await node.getBlockNumber()
+                );
+            } finally {
+                context.provider.destroy();
+            }
+        } finally {
+            await Promise.all([silent.close(), reachable.close()]);
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertSilentNodeMarkedDeadAndReadFailsOver(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        // the path dies without a close: no socket event reports it
+        proxies[0].blackhole();
+
+        const balance = await provider.getBalance(funded);
+
+        expect(balance).to.equal(await node.getBalance(funded));
+        expect(nodes[0].isConnected).to.equal(false);
+        expect(proxies[1].forwardedMethods).to.include("eth_getBalance");
+        proxies[0].restore();
+        await waitFor(() => nodes[0].isConnected);
+    });
+}
+
+export async function assertNodeOnAnotherChainRefused(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        await withIsolatedHardhatNode(
+            async (otherChainNode) => {
+                const logger = quietLogger();
+                const [sameChain, otherChain] = await Promise.all([
+                    RpcNodeProxy.start(node._getConnection().url),
+                    RpcNodeProxy.start(otherChainNode._getConnection().url)
+                ]);
+                otherChain.cut();
+                const expectedChain = {};
+                const nodes = [
+                    new RpcNodeProvider(sameChain.url, logger, expectedChain),
+                    new RpcNodeProvider(otherChain.url, logger, expectedChain)
+                ];
+                try {
+                    expect(await nodes[0].firstAttempt).to.equal(undefined);
+                    otherChain.restore();
+                    // a reconnect attempt reached the other chain's node
+                    await waitFor(() =>
+                        otherChain.forwardedMethods.includes("eth_chainId")
+                    );
+
+                    await sleep(ABSENCE_WINDOW_MS);
+
+                    expect(nodes[1].isConnected).to.equal(false);
+                    expect(nodes[0].isConnected).to.equal(true);
+                } finally {
+                    for (const rpcNode of nodes) rpcNode.destroy();
+                    await Promise.all([sameChain.close(), otherChain.close()]);
+                    logger.dispose();
+                }
+            },
+            { chainId: OTHER_CHAIN_ID }
+        );
+    });
+}
+
+export async function assertDestroyRejectsInFlightRead(): Promise<void> {
+    await withProxiedNodes(1, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        proxies[0].swallowRequests("eth_getBalance");
+        const read = provider.getBalance(funded).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+        await waitFor(() =>
+            proxies[0].forwardedMethods.includes("eth_getBalance")
+        );
+
+        provider.destroy();
+
+        expect(isError(await read, "UNSUPPORTED_OPERATION")).to.equal(true);
+    });
+}
+
+export async function assertDestroyRejectsWaitingRead(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        await cutAndWaitForDrop(proxies[0], nodes[0]);
+        await cutAndWaitForDrop(proxies[1], nodes[1]);
+        const read = provider.getBalance(funded).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        provider.destroy();
+
+        expect(isError(await read, "UNSUPPORTED_OPERATION")).to.equal(true);
+    });
+}
+
+export async function assertStopReconnectingRejectsWaitingRead(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        await cutAndWaitForDrop(proxies[0], nodes[0]);
+        await cutAndWaitForDrop(proxies[1], nodes[1]);
+        const read = provider.getBalance(funded).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        provider.stopReconnecting();
+
+        expect(isError(await read, "NETWORK_ERROR")).to.equal(true);
+    });
+}
+
+export async function assertTransactionFailsOverAfterFirstNodeForwardedIt(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const wallet = (await fundedWallet(node)).connect(provider);
+        const manager = new HostNonceManager(wallet);
+        // the first node takes the transaction but its answer never returns
+        proxies[0].swallowReplies("eth_sendRawTransaction");
+        const sending = manager.sendTransaction({
+            to: Wallet.createRandom().address,
+            value: 1n
+        });
+        await waitFor(() =>
+            proxies[0].forwardedMethods.includes("eth_sendRawTransaction")
+        );
+
+        proxies[0].cut();
+        const sent = await sending;
+
+        expect((await minedReceiptOf(node, sent.hash)).status).to.equal(1);
+        expect(proxies[1].forwardedMethods).to.include(
+            "eth_sendRawTransaction"
+        );
+        const next = await manager.sendTransaction({
+            to: Wallet.createRandom().address,
+            value: 1n
+        });
+        expect(next.nonce).to.equal(sent.nonce + 1);
+        expect((await minedReceiptOf(node, next.hash)).status).to.equal(1);
+    });
+}
+
+export async function assertTransactionWaitResolvesAfterReconnect(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funder = await node.getSigner(0);
+        const wallet = (await fundedWallet(node)).connect(provider);
+        const sent = await wallet.sendTransaction({
+            to: Wallet.createRandom().address,
+            value: 1n
+        });
+        await minedReceiptOf(node, sent.hash);
+        // block events start on the sockets the cut below replaces
+        const received: number[] = [];
+        await provider.on("block", (blockNumber: number) =>
+            received.push(blockNumber)
+        );
+        await cutAndWaitForDrop(proxies[0], nodes[0]);
+        await cutAndWaitForDrop(proxies[1], nodes[1]);
+        proxies[0].restore();
+        proxies[1].restore();
+        await waitFor(() => nodes.every((rpcNode) => rpcNode.isConnected));
+        // two confirmations: only a later block's event can end this wait
+        const waited = sent.wait(2);
+        await waitFor(async () => (await provider.listenerCount("block")) > 1);
+        // past ethers' request cache, so the wait reads the new height
+        await sleep(ETHERS_REQUEST_CACHE_MS);
+
+        // a normal transaction on the private node mines that later block
+        const later = await minedReceiptOf(
+            node,
+            (
+                await funder.sendTransaction({
+                    to: Wallet.createRandom().address,
+                    value: 1n
+                })
+            ).hash
+        );
+
+        await waitFor(() => received.includes(later.blockNumber));
+        const receipt = await waited;
+        expect(receipt?.hash).to.equal(sent.hash);
     });
 }

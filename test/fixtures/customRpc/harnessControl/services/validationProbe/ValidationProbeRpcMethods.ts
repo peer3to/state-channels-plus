@@ -9,6 +9,7 @@ import type {
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
     InboundLogRedelivery,
+    InboundLogRedeliveryProbe,
     InboundRunRecoveryProbe,
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
@@ -53,9 +54,13 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.probeDisputeReductionChallenge(reducedForkId);
     }
 
+    public async drainScheduledEvents(): Promise<boolean> {
+        return this.service.drainScheduledEvents();
+    }
+
     public async probeInboundLogRedelivery(
         redelivery: InboundLogRedelivery
-    ): Promise<{ handlerCalls: number }> {
+    ): Promise<InboundLogRedeliveryProbe> {
         return this.service.probeInboundLogRedelivery(redelivery);
     }
 

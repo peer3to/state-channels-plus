@@ -239,6 +239,15 @@ export class LoggerUtils {
         }
     }
 
+    /** Several RPC node endpoints, each without path, query or credentials. */
+    static getRpcNodesMetadata(nodeUrls: readonly string[]) {
+        return {
+            rpcNodes: nodeUrls.map(
+                (url) => this.getRpcNodeMetadata(url).rpcNode
+            )
+        };
+    }
+
     /** Chain coordinates of one contract log. */
     static getContractLogMetadata(log: ethers.Log) {
         return {

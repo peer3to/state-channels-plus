@@ -13,7 +13,7 @@ Each fallback host creates its own WebRTC bridge factory and binds it to its man
 
 ## Key design decisions
 
-Disposal destroys the runtime's [MultiRpcProvider](../../../evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) unless the process-wide Clock still reads through it; then it only stops the nodes' reconnects and logs ([dispose](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L440)).
+Disposal destroys the runtime's [MultiRpcProvider](../../../evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) unless the process-wide Clock still reads through it; then it stops the nodes' reconnects and logs and releases the provider to the Clock, which destroys it once a new provider replaces it ([dispose](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L443)).
 
 Startup reads the bound manager's maximum participant count and rejects nonpositive or unsafe integer values before constructing storage. The same value reaches the queue and admission limits. No independent four-times signature cap remains. Node and browser deployment callers pass the same effective N to the reference math machine. See [maxChannelParticipants](../../../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L132).
 

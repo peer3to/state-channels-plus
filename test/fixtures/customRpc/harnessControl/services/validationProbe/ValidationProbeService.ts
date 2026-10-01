@@ -66,7 +66,19 @@ export type InboundRunRecoveryProbe = {
  * log (a second node's stream), the log re-mined in another block after a
  * reorg, or that re-mined log removed by a further reorg.
  */
-export type InboundLogRedelivery = "duplicate" | "reorged" | "removed";
+export type InboundLogRedelivery =
+    | "duplicate"
+    | "reorged"
+    | "removed"
+    // the re-mined log, streamed once its block is the completed watermark
+    | "reorgedAtWatermark";
+
+export type InboundLogRedeliveryProbe = {
+    handlerCalls: number;
+    logBlockNumber: number;
+    /** The completed-block watermark when the log was delivered. */
+    watermark: number | null;
+};
 
 export type BlockCalldataRecoveryProbe = {
     /** Whether the recovery ended with the calldata in local storage. */
@@ -356,11 +368,16 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Run the real `loadSynchronizedInboundRun` for `upperBlockHash`, bounded
-     * below by this peer's fork-genesis inbound head, recording the chain
-     * queries it makes (count and each query's span) and how many logs it
-     * dispatched.
+     * Wait until every contract event this peer scheduled has settled. Answers
+     * `true`, so the caller awaits the drain.
      */
+    public async drainScheduledEvents(): Promise<boolean> {
+        await this.sm.eventSyncService.waitForScheduled(
+            CATCH_UP_DRAIN_TIMEOUT_MS
+        );
+        return true;
+    }
+
     /**
      * Deliver the channel's newest InboundMessagesProcessed log again through
      * the real scheduler. Record-only: the handler records each call instead
@@ -368,8 +385,12 @@ export class ValidationProbeService extends ANetworkRpcService<
      */
     public async probeInboundLogRedelivery(
         redelivery: InboundLogRedelivery
-    ): Promise<{ handlerCalls: number }> {
+    ): Promise<InboundLogRedeliveryProbe> {
         const sm = this.sm;
+        if (redelivery === "reorgedAtWatermark")
+            await sm.eventSyncService.waitForScheduled(
+                CATCH_UP_DRAIN_TIMEOUT_MS
+            );
         const contract = sm.stateChannelManagerContract;
         const logs = await contract.queryFilter(
             contract.filters.InboundMessagesProcessed(sm.channelId)
@@ -399,9 +420,20 @@ export class ValidationProbeService extends ANetworkRpcService<
         eventHandler.onInboundMessagesProcessed = async () => {
             handlerCalls += 1;
         };
+        const watermark =
+            sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
         try {
-            await sm.eventSyncService.scheduleLog(delivered, sm.channelId);
-            return { handlerCalls };
+            if (redelivery === "reorgedAtWatermark")
+                await sm.eventSyncService.scheduleStreamedLog(
+                    delivered,
+                    sm.channelId
+                );
+            else await sm.eventSyncService.scheduleLog(delivered, sm.channelId);
+            return {
+                handlerCalls,
+                logBlockNumber: log.blockNumber,
+                watermark
+            };
         } finally {
             eventHandler.onInboundMessagesProcessed = original;
         }
@@ -479,6 +511,12 @@ export class ValidationProbeService extends ANetworkRpcService<
         }
     }
 
+    /**
+     * Run the real `loadSynchronizedInboundRun` for `upperBlockHash`, bounded
+     * below by this peer's fork-genesis inbound head, recording the chain
+     * queries it makes (count and each query's span) and how many logs it
+     * dispatched.
+     */
     public async probeInboundRunRecovery(
         upperBlockHash: Hash,
         options?: { failChainQueries?: boolean }

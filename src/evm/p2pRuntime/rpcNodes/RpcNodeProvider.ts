@@ -13,6 +13,14 @@ import {
 const RECONNECT_INITIAL_DELAY_MS = 250;
 /** Upper bound of the doubling reconnect delay. */
 const RECONNECT_MAX_DELAY_MS = 5_000;
+/** How long one connection attempt may take before it counts as failed. */
+const CONNECT_TIMEOUT_MS = 10_000;
+/** How often an open socket proves it still answers. */
+const HEARTBEAT_INTERVAL_MS = 10_000;
+/** How long a heartbeat may take before the socket counts as dead. */
+const HEARTBEAT_TIMEOUT_MS = 5_000;
+/** Least time between two warnings about one node's failed reconnects. */
+const RECONNECT_WARNING_INTERVAL_MS = 60_000;
 
 /** Marks a request whose socket ended before it answered. */
 const SOCKET_ENDED = Symbol("socket ended");
@@ -32,7 +40,25 @@ type NodeConnection = {
     socket: WebSocketProvider;
     ended: Promise<typeof SOCKET_ENDED>;
     hasEnded: boolean;
+    /** Ends the connection, e.g. after a failed heartbeat. */
+    end: (reason: Error) => void;
+    heartbeat: ReturnType<typeof setInterval>;
 };
+
+/**
+ * The chain every node of one runtime must serve. The first node to connect
+ * pins it; a node that serves another chain is refused and keeps retrying.
+ */
+export type ExpectedChain = { chainId?: bigint };
+
+/** Rejects with `message` after `ms`; `cancel` stops the timer. */
+function deadline(ms: number, message: string) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return { expired, cancel: () => clearTimeout(timer) };
+}
 
 /**
  * The delay before reconnect attempt `failedAttempts + 1`: doubling from
@@ -79,10 +105,11 @@ function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
 
 /**
  * One RPC node behind a stable provider. Requests go to the node's current
- * WebSocket. A dropped socket is reconnected with a bounded doubling backoff;
- * requests wait for the reconnect and are then sent again, so a node that
- * dropped never answers with a connection error. A node that never connected
- * fails its requests at once. Each open socket is handed to the registered
+ * WebSocket. A dropped socket, or one that stops answering its heartbeat, is
+ * reconnected with a bounded doubling backoff; requests wait for the
+ * reconnect and are then sent again, so a node that dropped never answers
+ * with a connection error. A node that never connected fails its requests at
+ * once. Each open socket is handed to the registered
  * {@link RpcNodeSocketWatcher}s for subscriptions.
  */
 export default class RpcNodeProvider extends JsonRpcApiProvider {
@@ -91,21 +118,29 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     readonly firstAttempt: Promise<Error | undefined>;
     private readonly logger: Logger;
     private readonly watchers = new Set<RpcNodeSocketWatcher>();
+    /** Called when an open socket of this node ends. */
+    private readonly lossWatchers = new Set<() => void>();
     /** Requests waiting for this node to reconnect. */
     private readonly connectionWaiters = new Set<() => void>();
+    private readonly expectedChain: ExpectedChain;
     private connection?: NodeConnection;
-    private chainId?: bigint;
     private failedAttempts = 0;
+    private lastReconnectWarningAt?: number;
     private reconnectTimer?: ReturnType<typeof setTimeout>;
     private hasConnected = false;
     private stopped = false;
     /** False once the owning runtime is gone: no reconnect and no log. */
     private reconnects = true;
 
-    constructor(url: string, logger: Logger) {
+    constructor(
+        url: string,
+        logger: Logger,
+        expectedChain: ExpectedChain = {}
+    ) {
         super(undefined, { staticNetwork: true, batchMaxCount: 1 });
         this.url = url;
         this.logger = logger.child({ component: "RpcNode" });
+        this.expectedChain = expectedChain;
         this.firstAttempt = this.connect();
     }
 
@@ -122,6 +157,14 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         if (this.connection) watcher(this.connection.socket, false);
         return () => {
             this.watchers.delete(watcher);
+        };
+    }
+
+    /** Calls `watcher` whenever an open socket of this node ends. */
+    watchConnectionLoss(watcher: () => void): () => void {
+        this.lossWatchers.add(watcher);
+        return () => {
+            this.lossWatchers.delete(watcher);
         };
     }
 
@@ -149,6 +192,9 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         this.reconnects = false;
         if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
         this.reconnectTimer = undefined;
+        if (this.connection) clearInterval(this.connection.heartbeat);
+        // nothing will reconnect for requests still waiting
+        this.releaseConnectionWaiters();
     }
 
     // Implements JsonRpcApiProvider._send: forwards each request to the
@@ -171,10 +217,14 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         this.connection = undefined;
         if (connection) {
             connection.hasEnded = true;
+            clearInterval(connection.heartbeat);
+            // a request in flight on the socket answers as dropped
+            connection.end(new Error("RPC node provider destroyed"));
             void connection.socket.destroy();
         }
         this.releaseConnectionWaiters();
         this.watchers.clear();
+        this.lossWatchers.clear();
         super.destroy();
     }
 
@@ -226,6 +276,12 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
                 throw makeError("RPC node never connected", "NETWORK_ERROR", {
                     event: method
                 });
+            if (!this.reconnects)
+                throw makeError(
+                    "RPC node stopped reconnecting; cancelled request",
+                    "NETWORK_ERROR",
+                    { event: method }
+                );
             await new Promise<void>((resolve) =>
                 this.connectionWaiters.add(resolve)
             );
@@ -236,20 +292,26 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private async connect(): Promise<Error | undefined> {
         const socket = new WebSocketProvider(this.url);
         const socketEnd = watchSocketEnd(socket);
+        const attemptDeadline = deadline(
+            CONNECT_TIMEOUT_MS,
+            "RPC node connection attempt timed out"
+        );
         try {
             const network = await Promise.race([
                 socket.getNetwork(),
-                socketEnd.then((reason) => Promise.reject(reason))
+                socketEnd.then((reason) => Promise.reject(reason)),
+                attemptDeadline.expired
             ]);
-            if (this.chainId !== undefined && network.chainId !== this.chainId)
+            const expected = this.expectedChain.chainId;
+            if (expected !== undefined && network.chainId !== expected)
                 throw new Error(
-                    `RPC node changed chain from ${this.chainId} to ${network.chainId}`
+                    `RPC node serves chain ${network.chainId}, expected ${expected}`
                 );
             if (this.stopped || !this.reconnects) {
                 await socket.destroy();
                 return undefined;
             }
-            this.chainId = network.chainId;
+            this.expectedChain.chainId = network.chainId;
             this.attach(socket, socketEnd);
             return undefined;
         } catch (error) {
@@ -257,25 +319,54 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             const reason =
                 error instanceof Error ? error : new Error(String(error));
             if (!this.reconnects) return reason;
-            this.logger.warn("RPC node connection attempt failed", {
-                ...LoggerUtils.getRpcNodeMetadata(this.url),
-                failedAttempts: this.failedAttempts + 1,
-                error: reason
-            });
+            this.logFailedAttempt(reason);
             this.scheduleReconnect();
             return reason;
+        } finally {
+            attemptDeadline.cancel();
+        }
+    }
+
+    // the first failure of an outage warns, later ones at most once a minute
+    private logFailedAttempt(reason: Error): void {
+        const now = Date.now();
+        const metadata = {
+            ...LoggerUtils.getRpcNodeMetadata(this.url),
+            failedAttempts: this.failedAttempts + 1,
+            error: reason
+        };
+        if (
+            this.failedAttempts === 0 ||
+            this.lastReconnectWarningAt === undefined ||
+            now - this.lastReconnectWarningAt >= RECONNECT_WARNING_INTERVAL_MS
+        ) {
+            this.lastReconnectWarningAt = now;
+            this.logger.warn("RPC node connection attempt failed", metadata);
+        } else {
+            this.logger.debug("RPC node connection attempt failed", metadata);
         }
     }
 
     private attach(socket: WebSocketProvider, socketEnd: Promise<Error>) {
+        let end!: (reason: Error) => void;
+        const endReason = new Promise<Error>((resolve) => {
+            end = resolve;
+        });
+        void socketEnd.then(end);
         const connection: NodeConnection = {
             socket,
-            ended: socketEnd.then(() => SOCKET_ENDED),
-            hasEnded: false
+            ended: endReason.then(() => SOCKET_ENDED),
+            hasEnded: false,
+            end,
+            heartbeat: setInterval(
+                () => void this.checkHeartbeat(connection),
+                HEARTBEAT_INTERVAL_MS
+            )
         };
         const reopened = this.hasConnected;
         this.connection = connection;
         this.failedAttempts = 0;
+        this.lastReconnectWarningAt = undefined;
         if (!this.hasConnected) {
             this.hasConnected = true;
             // network detection and the request queue start now
@@ -285,13 +376,36 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             reopened ? "RPC node reconnected" : "RPC node connected",
             LoggerUtils.getRpcNodeMetadata(this.url)
         );
-        void socketEnd.then((reason) => this.onSocketEnded(connection, reason));
+        void endReason.then((reason) => this.onSocketEnded(connection, reason));
         this.releaseConnectionWaiters();
         for (const watcher of this.watchers) watcher(socket, true);
     }
 
+    // a socket whose path died silently reports no close: it must answer
+    private async checkHeartbeat(connection: NodeConnection): Promise<void> {
+        if (connection.hasEnded) return;
+        const heartbeatDeadline = deadline(
+            HEARTBEAT_TIMEOUT_MS,
+            "RPC node heartbeat timed out"
+        );
+        try {
+            await Promise.race([
+                connection.socket.send("eth_blockNumber", []),
+                connection.ended,
+                heartbeatDeadline.expired
+            ]);
+        } catch (error) {
+            connection.end(
+                error instanceof Error ? error : new Error(String(error))
+            );
+        } finally {
+            heartbeatDeadline.cancel();
+        }
+    }
+
     private onSocketEnded(connection: NodeConnection, reason: Error): void {
         connection.hasEnded = true;
+        clearInterval(connection.heartbeat);
         if (this.connection !== connection) return;
         this.connection = undefined;
         void connection.socket.destroy();
@@ -300,6 +414,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
             ...LoggerUtils.getRpcNodeMetadata(this.url),
             error: reason
         });
+        for (const watcher of this.lossWatchers) watcher();
         this.scheduleReconnect();
     }
 

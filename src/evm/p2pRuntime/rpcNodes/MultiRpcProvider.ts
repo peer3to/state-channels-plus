@@ -1,4 +1,6 @@
 import type RpcNodeProvider from "./RpcNodeProvider";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { Logger } from "@/utils/logging/Logger";
 import {
     type AbstractProvider,
     JsonRpcApiProvider,
@@ -70,25 +72,43 @@ class RpcNodesBlockSubscriber implements Subscriber {
  * request, read or transaction, goes to the first node with an open socket
  * and moves to the next one only when that node has no open socket or loses
  * it before answering. While no node is connected a request waits for the
- * first one to reconnect, as a single dropped node's requests do. Block
- * events come from the nodes' sockets. Contract log subscriptions are made
- * per node on {@link nodes}, not on this provider.
+ * first one to reconnect; the wait is warned about once per outage and ends
+ * with a rejection on destroy or stopReconnecting. Block events come from the
+ * nodes' sockets. Contract log subscriptions are made per node on
+ * {@link nodes}, not on this provider.
  */
 export default class MultiRpcProvider extends JsonRpcApiProvider {
     readonly nodes: readonly RpcNodeProvider[];
+    private readonly logger: Logger;
     /** Requests waiting for any node to connect. */
     private readonly connectionWaiters = new Set<() => void>();
+    /** False once the owning runtime is gone; waiting requests are rejected. */
+    private reconnects = true;
+    /** Whether this outage of every node was already warned about. */
+    private allNodesDownWarned = false;
 
-    constructor(nodes: readonly RpcNodeProvider[]) {
+    constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
         super(undefined, { staticNetwork: true, batchMaxCount: 1 });
         this.nodes = nodes;
+        this.logger = logger.child({ component: "RpcNodes" });
+        for (const node of nodes) {
+            node.watchConnectionLoss(() => this.onNodeLost());
+            node.watchSockets(() => {
+                this.allNodesDownWarned = false;
+            });
+        }
         // network detection and the request queue start now
         this._start();
     }
 
-    /** See {@link RpcNodeProvider.stopReconnecting}; applies to every node. */
+    /**
+     * See {@link RpcNodeProvider.stopReconnecting}; applies to every node and
+     * rejects the requests waiting for a node to connect.
+     */
     stopReconnecting(): void {
+        this.reconnects = false;
         for (const node of this.nodes) node.stopReconnecting();
+        this.releaseConnectionWaiters();
     }
 
     // Implements JsonRpcApiProvider._send: each request goes to the first
@@ -110,7 +130,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     // Overrides JsonRpcApiProvider.destroy: also destroys every node and
-    // fails the requests waiting for a node to connect.
+    // rejects the requests waiting for or in flight on a node.
     override destroy(): void {
         for (const node of this.nodes) node.destroy();
         super.destroy();
@@ -122,12 +142,7 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
             ? request.params
             : [request.params];
         for (;;) {
-            if (this.destroyed)
-                throw makeError(
-                    "RPC node provider destroyed; cancelled request",
-                    "UNSUPPORTED_OPERATION",
-                    { operation: request.method }
-                );
+            this.assertServing(request.method);
             for (const node of this.nodes) {
                 const sent = await node.trySendOnCurrentSocket(
                     request.method,
@@ -135,8 +150,35 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                 );
                 if (sent) return { id: request.id, result: sent.result };
             }
+            // destroyed while the request was on a node
+            this.assertServing(request.method);
+            if (!this.reconnects)
+                throw makeError(
+                    "no RPC node is connected and none reconnects",
+                    "NETWORK_ERROR",
+                    { event: request.method }
+                );
             await this.waitForConnectedNode();
         }
+    }
+
+    private assertServing(method: string): void {
+        if (this.destroyed)
+            throw makeError(
+                "RPC node provider destroyed; cancelled request",
+                "UNSUPPORTED_OPERATION",
+                { operation: method }
+            );
+    }
+
+    private onNodeLost(): void {
+        if (this.allNodesDownWarned || !this.reconnects) return;
+        if (this.nodes.some((node) => node.isConnected)) return;
+        this.allNodesDownWarned = true;
+        this.logger.warn(
+            "Every RPC node is disconnected; chain requests wait for a reconnect",
+            LoggerUtils.getRpcNodesMetadata(this.nodes.map((node) => node.url))
+        );
     }
 
     private waitForConnectedNode(): Promise<void> {
@@ -150,6 +192,10 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                 for (const unwatch of unwatchNodes.splice(0)) unwatch();
                 resolve();
             };
+            if (this.destroyed || !this.reconnects) {
+                resume();
+                return;
+            }
             this.connectionWaiters.add(resume);
             // a node connected now calls resume at once
             for (const node of this.nodes)
