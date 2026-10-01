@@ -65,8 +65,8 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.probeInboundLogRedelivery(redelivery);
     }
 
-    public async probeInboundLogCatchUp(): Promise<{ handlerCalls: number }> {
-        return this.service.probeInboundLogCatchUp();
+    public async runCatchUpFromFirstNode(): Promise<boolean> {
+        return this.service.runCatchUpFromFirstNode();
     }
 
     public async probeStreamedLogBelowWatermark(): Promise<{

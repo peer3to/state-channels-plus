@@ -1,3 +1,4 @@
+import { NodeSocketSubscriptions } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -9,8 +10,7 @@ import {
     type JsonRpcResult,
     makeError,
     type Subscriber,
-    type Subscription,
-    type WebSocketProvider
+    type Subscription
 } from "ethers";
 
 /**
@@ -22,7 +22,7 @@ class RpcNodesBlockSubscriber implements Subscriber {
     private readonly nodes: readonly RpcNodeProvider[];
     private readonly unwatchNodes: (() => void)[] = [];
     /** Node sockets this subscriber listens on. */
-    private readonly sockets = new Set<WebSocketProvider>();
+    private readonly sockets = new NodeSocketSubscriptions();
     private latestBlockNumber = -1;
     private paused = false;
     private readonly onBlock = (blockNumber: number) => {
@@ -40,11 +40,7 @@ class RpcNodesBlockSubscriber implements Subscriber {
         for (const node of this.nodes) {
             this.unwatchNodes.push(
                 node.watchSockets((socket) => {
-                    for (const listened of this.sockets) {
-                        if (listened.destroyed) this.sockets.delete(listened);
-                    }
-                    this.sockets.add(socket);
-                    void socket.on("block", this.onBlock);
+                    void this.sockets.add(socket, "block", this.onBlock);
                 })
             );
         }
@@ -52,10 +48,7 @@ class RpcNodesBlockSubscriber implements Subscriber {
 
     stop(): void {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
-        for (const socket of this.sockets) {
-            if (!socket.destroyed) void socket.off("block", this.onBlock);
-        }
-        this.sockets.clear();
+        void this.sockets.clear();
     }
 
     pause(): void {

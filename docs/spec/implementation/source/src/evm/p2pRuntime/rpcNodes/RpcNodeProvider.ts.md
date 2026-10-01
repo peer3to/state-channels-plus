@@ -27,25 +27,26 @@ and sends a request again on the next socket when the socket drops before answer
 ## Key design decisions
 
 1. **Bounded backoff:** 250 ms doubling to a 5 s cap per failed attempt, reset by a successful
-   connection ([getReconnectDelayMs](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L67)).
+   connection ([getReconnectDelayMs](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L69)).
 2. **Bounded attempts and liveness:** a connection attempt fails after 10 s
-   ([connect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L292)); an open socket must answer `eth_blockNumber` every
-   10 s within 5 s, or it is ended and reconnected ([checkHeartbeat](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L385)).
+   ([connect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L335)); an open socket must answer `eth_blockNumber` every
+   10 s within 5 s, or it is ended and reconnected ([checkHeartbeat](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L428)).
 3. **Hold, do not fail, after a drop:** a node that has connected never answers with a connection
    error while it reconnects; a node that never connected, or one that stopped reconnecting, fails at
-   once ([awaitConnection](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L265)).
-4. **No wait for failover:** [trySendOnCurrentSocket](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L176) answers
+   once ([awaitConnection](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L308)).
+4. **No wait for failover:** [trySendOnCurrentSocket](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L219) answers
    `undefined` when there is no socket or it ends before answering, so the caller moves on. Destroy
    ends the current socket, so a request in flight answers the same way.
-5. **Socket hand-over and loss:** [watchSockets](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L155) passes the open socket
+5. **Socket hand-over and loss:** [watchSockets](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L198) passes the open socket
    at registration (`reopened` false) and every later socket (`reopened` true);
-   [watchConnectionLoss](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L164) reports each lost socket.
+   [watchConnectionLoss](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L207) reports each lost socket.
 6. **One chain:** the nodes of one runtime share an expected chain id set by the first connected
-   node; a node serving another chain is refused, logged and retried ([connect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L292)).
-7. **Owner gone:** [stopReconnecting](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L191) stops reconnects, heartbeats and
+   node; a node serving another chain is refused, logged and retried ([connect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L335)).
+7. **Owner gone:** [stopReconnecting](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L234) stops reconnects, heartbeats and
    logs for a runtime that disposed while the Clock still reads through the provider, and fails the
    requests still waiting for a reconnect.
-8. **Quiet when down:** the first failed attempt of an outage warns, later ones at most once a minute.
+8. **One owner of socket subscriptions:** [NodeSocketSubscriptions](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L114) subscribes a callback on a node socket, forgets destroyed sockets and unsubscribes the live ones; the block relay and the event listener both use it.
+9. **Quiet when down:** the first failed attempt of an outage warns, later ones at most once a minute.
 
 ## Inputs, outputs, state, and side effects
 
@@ -95,8 +96,8 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                       | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Gap / divergence |
 | ------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CHAINOBS-3-N137ZP`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp) | Covered               | **Here:** [scheduleReconnect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L421) and [onSocketEnded](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L406) reconnect with the bounded backoff; [watchSockets](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L155) hands each reopened socket over. **Other files:** [StateChannelEventListener](../../../StateChannelEventListener.ts.md) renews subscriptions and starts the catch-up in [EventSyncService](../../../stateManager/eventSync/EventSyncService.ts.md). | —                |
-| [`REQ-CHAINOBS-2-2NCSQ3`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3) | Covered               | **Here:** [trySendOnCurrentSocket](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L176) reports a missing or dropped socket instead of waiting. **Other files:** [MultiRpcProvider](MultiRpcProvider.ts.md) chooses the endpoint and fails over.                                                                                                                                                                                                                                                                                                                        | —                |
+| [`REQ-CHAINOBS-3-N137ZP`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp) | Covered               | **Here:** [scheduleReconnect](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L464) and [onSocketEnded](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L449) reconnect with the bounded backoff; [watchSockets](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L198) hands each reopened socket over. **Other files:** [StateChannelEventListener](../../../StateChannelEventListener.ts.md) renews subscriptions and starts the catch-up in [EventSyncService](../../../stateManager/eventSync/EventSyncService.ts.md). | —                |
+| [`REQ-CHAINOBS-2-2NCSQ3`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3) | Covered               | **Here:** [trySendOnCurrentSocket](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L219) reports a missing or dropped socket instead of waiting. **Other files:** [MultiRpcProvider](MultiRpcProvider.ts.md) chooses the endpoint and fails over.                                                                                                                                                                                                                                                                                                                        | —                |
 
 ## Component test obligations
 

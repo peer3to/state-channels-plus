@@ -25,15 +25,15 @@ open socket and moves to the next one when that node has none or loses it before
 
 ## Key design decisions
 
-1. **One rule for reads and sends:** [forward](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L140)
+1. **One rule for reads and sends:** [forward](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L133)
    tries the nodes in list order; a transaction is never sent to two nodes at once.
 2. **All nodes down:** a request waits for the first node to reconnect
-   ([waitForConnectedNode](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L184)); the outage is warned once
-   ([onNodeLost](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L174)).
-3. **Release:** [destroy](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L134) and
-   [stopReconnecting](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L108) reject waiting requests, and a request in flight
+   ([waitForConnectedNode](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L177)); the outage is warned once
+   ([onNodeLost](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L167)).
+3. **Release:** [destroy](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L127) and
+   [stopReconnecting](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L101) reject waiting requests, and a request in flight
    on a destroyed node is rejected too.
-4. **Block events from sockets:** [\_getSubscriber](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L126)
+4. **Block events from sockets:** [\_getSubscriber](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L119)
    relays each node socket's `block` events, each new height once, so transaction waits do not poll.
 
 ## Inputs, outputs, state, and side effects
@@ -79,7 +79,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                       | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Gap / divergence |
 | ------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CHAINOBS-2-2NCSQ3`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3) | Covered               | **Here:** [forward](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L140) picks the first connected node and moves on when it drops; [waitForConnectedNode](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L184) waits while none is connected. **Other files:** [RpcNodeProvider](RpcNodeProvider.ts.md) reports a dropped socket; [HostNonceManager](../../signer/HostNonceManager.ts.md) reconciles a failed broadcast. | —                |
+| [`REQ-CHAINOBS-2-2NCSQ3`](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3) | Covered               | **Here:** [forward](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L133) picks the first connected node and moves on when it drops; [waitForConnectedNode](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L177) waits while none is connected. **Other files:** [RpcNodeProvider](RpcNodeProvider.ts.md) reports a dropped socket; [HostNonceManager](../../signer/HostNonceManager.ts.md) reconciles a failed broadcast. | —                |
 
 ## Component test obligations
 

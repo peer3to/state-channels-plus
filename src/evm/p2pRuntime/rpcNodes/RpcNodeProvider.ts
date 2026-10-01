@@ -3,6 +3,8 @@ import type { Logger } from "@/utils/logging/Logger";
 import {
     JsonRpcApiProvider,
     type JsonRpcError,
+    type Listener,
+    type ProviderEvent,
     type JsonRpcPayload,
     type JsonRpcResult,
     makeError,
@@ -101,6 +103,47 @@ function watchSocketEnd(socket: WebSocketProvider): Promise<Error> {
         if ("onclose" in websocket)
             websocket.onclose = () => resolve(new Error("WebSocket closed"));
     });
+}
+
+/**
+ * The node sockets one subscriber listens on, each with its event and
+ * callback. Sockets come and go with reconnects; this is the one owner of
+ * subscribing on a socket, forgetting destroyed ones and unsubscribing the
+ * live ones.
+ */
+export class NodeSocketSubscriptions {
+    /** Each subscribed socket and the event and callback it carries. */
+    private readonly subscriptions = new Map<
+        WebSocketProvider,
+        { event: ProviderEvent; callback: Listener }
+    >();
+
+    /** Subscribe `callback` to `event` on `socket`. */
+    add(
+        socket: WebSocketProvider,
+        event: ProviderEvent,
+        callback: Listener
+    ): Promise<WebSocketProvider> {
+        for (const subscribed of this.subscriptions.keys()) {
+            if (subscribed.destroyed) this.subscriptions.delete(subscribed);
+        }
+        this.subscriptions.set(socket, { event, callback });
+        return socket.on(event, callback);
+    }
+
+    /** Unsubscribe every socket still open and forget them all. */
+    async clear(): Promise<void> {
+        const subscriptions = [...this.subscriptions];
+        this.subscriptions.clear();
+        // a destroyed socket has already dropped its subscriptions
+        await Promise.all(
+            subscriptions
+                .filter(([socket]) => !socket.destroyed)
+                .map(([socket, { event, callback }]) =>
+                    socket.off(event, callback)
+                )
+        );
+    }
 }
 
 /**
