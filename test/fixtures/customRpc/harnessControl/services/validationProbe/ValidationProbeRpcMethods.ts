@@ -9,6 +9,7 @@ import type {
     ConcurrentCalldataRecoveryProbe,
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
+    InboundLogRedelivery,
     InboundRunRecoveryProbe,
     IsDisputedForkProbe,
     MissingParticipantSnapshotsProbe,
@@ -51,6 +52,24 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         reducedForkId: ForkId
     ): Promise<ReductionChallengeProbe> {
         return this.service.probeDisputeReductionChallenge(reducedForkId);
+    }
+
+    public async probeInboundLogRedelivery(
+        redelivery: InboundLogRedelivery
+    ): Promise<{ handlerCalls: number }> {
+        return this.service.probeInboundLogRedelivery(redelivery);
+    }
+
+    public async probeInboundLogCatchUp(): Promise<{ handlerCalls: number }> {
+        return this.service.probeInboundLogCatchUp();
+    }
+
+    public async probeStreamedLogBelowWatermark(): Promise<{
+        handlerCalls: number;
+        logBlockNumber: number;
+        watermark: number | null;
+    }> {
+        return this.service.probeStreamedLogBelowWatermark();
     }
 
     public async probeInboundRunRecovery(

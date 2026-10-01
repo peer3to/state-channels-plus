@@ -12,6 +12,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [RuntimeChainContext.ts](./RuntimeChainContext.ts.md)
 - [setupP2pRuntime.ts](./setupP2pRuntime.ts.md)
 - [types.ts](./types.ts.md)
+- [rpcNodes/](./rpcNodes/README.md) — ordered RPC endpoints with reconnect and failover
 
 ## Source inventory
 

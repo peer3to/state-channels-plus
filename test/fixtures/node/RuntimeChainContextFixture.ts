@@ -12,9 +12,12 @@ import {
     createContractExecutor,
     type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor/createContractExecutor";
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
+import { createLogger } from "@/utils/logging";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { WebSocketProvider } from "ethers";
 import { ethers } from "ethers";
@@ -191,27 +194,40 @@ export async function assertSubscriptionCleanup(
     const { createConfig } = await import("@/utils/config");
     const context = await createRuntimeChainContext(
         createConfig(setup.setupOptions.config),
-        setup.setupOptions.signerSecret!
+        setup.setupOptions.signerSecret!,
+        createLogger({}, {}, { level: "error", attachErrorListener: false })
     );
     const provider = context.provider;
-    if (!(provider instanceof WebSocketProvider))
-        throw new Error("Expected the runtime socket provider");
+    if (!(provider instanceof MultiRpcProvider))
+        throw new Error("Expected the runtime RPC node provider");
+    const [node] = provider.nodes;
+    let socket: WebSocketProvider | undefined;
+    node.watchSockets((open) => {
+        socket = open;
+    })();
+    if (!socket) throw new Error("Expected the node's open socket");
+    const nodeSocket = socket;
     try {
         if (subscribed) {
-            const send = provider.send.bind(provider);
+            // block events reach this provider through the node's socket
+            const send = nodeSocket.send.bind(nodeSocket);
             let subscriptionReady: Promise<unknown> | undefined;
-            provider.send = (...args) => {
+            nodeSocket.send = (...args) => {
                 const pending = send(...args);
                 if (args[0] === "eth_subscribe") subscriptionReady = pending;
                 return pending;
             };
             await provider.on("block", () => {});
+            // the relay subscribes on the socket after on() resolves
+            await waitFor(() => subscriptionReady !== undefined);
             await subscriptionReady;
-            provider.send = send;
+            nodeSocket.send = send;
         }
         await provider.destroy();
         expect(provider.destroyed).to.equal(true);
         expect(await provider.listenerCount()).to.equal(0);
+        expect(node.destroyed).to.equal(true);
+        expect(nodeSocket.destroyed).to.equal(true);
         await provider.destroy();
         expect(provider.destroyed).to.equal(true);
     } finally {

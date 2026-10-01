@@ -19,8 +19,11 @@
 
 ## Responsibility and observable boundary
 
-The provider-event subscription: registers for manager events and forwards logs into the event
-sync scheduler in arrival order.
+The manager-event subscription on every RPC endpoint: [setChannelId](../../../../../src/StateChannelEventListener.ts#L35) subscribes the
+channel's filter on each node's open socket, and on every socket a node opens later, and forwards
+each log into the event sync scheduler through scheduleStreamedLog. A socket that reopened is
+subscribed first and then caught up from the completed-block watermark
+([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)).
 
 ## Key design decisions
 
@@ -44,9 +47,9 @@ Channel identity uses the shared permissive string/lowercase conversion; event m
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                     | Specification IDs                                                                     |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts) | [`REQ-STOR-3-4RJGER`](../../../specification/storage/durability.md#req-stor-3-4rjger) |
+| Source file                                                                     | Specification IDs                                                                                                                                                                           |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts) | [`REQ-STOR-3-4RJGER`](../../../specification/storage/durability.md#req-stor-3-4rjger), [`REQ-CHAINOBS-3-N137ZP`](../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -70,8 +73,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                  | Gap / divergence |
+| ---------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-CHAINOBS-3-N137ZP`](../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp) | Covered               | **Here:** [watchSockets registration](../../../../../src/StateChannelEventListener.ts#L63) subscribes every node socket and starts the catch-up for a reopened one at [L79](../../../../../src/StateChannelEventListener.ts#L79). **Other files:** [EventSyncService](stateManager/eventSync/EventSyncService.ts.md) reads and deduplicates; [RpcNodeProvider](evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md) reconnects. | —                |
 
 ## Component test obligations
 

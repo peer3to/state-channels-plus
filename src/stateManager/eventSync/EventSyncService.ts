@@ -31,7 +31,15 @@ import {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
+import {
+    BytesLike,
+    Filter,
+    Log,
+    Provider,
+    Result,
+    hexlify,
+    zeroPadValue
+} from "ethers";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
@@ -132,11 +140,44 @@ export default class EventSyncService {
         );
     }
 
+    /**
+     * Schedule a log one RPC node's stream (live or catch-up) delivered. A
+     * log below the completed-block watermark is dropped: its block is fully
+     * processed and its dedup key may already be pruned, so a lagging node
+     * would otherwise dispatch it again. Recovery queries still use
+     * scheduleLog: they deliberately re-read blocks below the watermark.
+     */
+    scheduleStreamedLog(
+        log: Log,
+        scheduledChannelId: ChannelId = this.channelId
+    ): Promise<void> {
+        const watermark =
+            this.storage.eventSync.getLatestProcessedBlock(scheduledChannelId);
+        if (watermark !== undefined && log.blockNumber < watermark) {
+            this.logger.debug("Dropping streamed event below the watermark", {
+                ...LoggerUtils.getContractLogMetadata(log),
+                watermark
+            });
+            return Promise.resolve();
+        }
+        return this.scheduleLog(log, scheduledChannelId);
+    }
+
     scheduleLog(
         log: Log,
         scheduledChannelId: ChannelId = this.channelId
     ): Promise<void> {
-        const eventKey = `${String(log.address).toLowerCase()}:${log.transactionHash}:${log.index}`;
+        // a reorg removed this log; its effects are not undone
+        if (log.removed) {
+            this.logger.warn(
+                "Ignoring removed contract event",
+                LoggerUtils.getContractLogMetadata(log)
+            );
+            return Promise.resolve();
+        }
+        // the block hash keeps a log re-mined in another block after a reorg
+        // apart from the log it replaces
+        const eventKey = `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
 
@@ -173,6 +214,49 @@ export default class EventSyncService {
         this.eventPromises.set(eventKey, promise);
         this.eventBlockNumbers.set(eventKey, log.blockNumber);
         return promise;
+    }
+
+    /**
+     * Re-read this channel's subscribed logs from one RPC node whose socket
+     * reopened, from the completed-block watermark (or `fromBlock` before
+     * one exists) up to that node's head, and schedule each log.
+     * scheduleStreamedLog deduplicates the logs another stream delivered. Never throws:
+     * a failed read is logged, and the node's next reconnect catches up again.
+     */
+    async catchUpLogs(
+        node: Provider,
+        channelId: ChannelId,
+        fromBlock: BlockNumber
+    ): Promise<void> {
+        const watermark =
+            this.storage.eventSync.getLatestProcessedBlock(channelId);
+        const catchUpFrom = watermark ?? fromBlock;
+        try {
+            const toBlock = await node.getBlockNumber();
+            if (toBlock < catchUpFrom) return;
+            const logs = await node.getLogs({
+                ...this.getSubscriptionFilter(channelId),
+                fromBlock: catchUpFrom,
+                toBlock
+            });
+            this.logger.info("Contract event catch-up read", {
+                channelId,
+                fromBlock: catchUpFrom,
+                toBlock,
+                logCount: logs.length
+            });
+            for (const log of logs) {
+                DetachedPromises.collect(
+                    this.scheduleStreamedLog(log, channelId)
+                );
+            }
+        } catch (error) {
+            this.logger.warn("Contract event catch-up read failed", {
+                channelId,
+                fromBlock: catchUpFrom,
+                error
+            });
+        }
     }
 
     async tryRecoverBlockCalldataAndScheduleValidation(

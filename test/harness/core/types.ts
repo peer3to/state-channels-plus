@@ -153,6 +153,13 @@ export type HarnessOptions = {
      * reachable.
      */
     executorCallGasLimitByPeer?: Record<number, number>;
+    /**
+     * WebSocket proxies in front of the test node for the listed peers (peer
+     * index -> proxy count). Such a peer's PROVIDER_URLS lists its proxies in
+     * order, so a test can cut one of its RPC nodes without touching the
+     * node. Read them with `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesByPeer?: Record<number, number>;
 };
 
 export type TestPeer<
