@@ -25,6 +25,14 @@ export class StateQueryActions<
         private logger: Logger
     ) {}
 
+    /** The newest inbound message block hash a peer holds. */
+    public async getLatestInboundMessageHash(peerIndex: number) {
+        return this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getLatestInboundMessageHash()
+            .request();
+    }
+
     /**
      * Get the latest state machine state hash for a peer - ONLY if it exists in storage
      */

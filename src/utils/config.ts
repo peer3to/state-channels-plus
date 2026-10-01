@@ -2,6 +2,9 @@ import peer3Config from "../../peer3.config";
 
 export type Config = {
     PROVIDER_URL: string;
+    // RPC nodes in priority order. The first one sends transactions while it
+    // is connected. Unset or empty means the single node PROVIDER_URL.
+    PROVIDER_URLS?: string[];
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -45,6 +48,7 @@ export type Config = {
 
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
+    PROVIDER_URLS: [],
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

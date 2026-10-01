@@ -11,6 +11,11 @@ import { hexlify, zeroPadValue } from "ethers";
 
 // mirrors LOG_RECOVERY_ATTEMPTS in EventSyncService
 const LOG_RECOVERY_ATTEMPTS = 3;
+/** The handlers a catch-up of the channel's subscribed logs can dispatch. */
+const CATCH_UP_HANDLERS = [
+    "onChannelOpened",
+    "onInboundMessagesProcessed"
+] as const;
 
 describe("EventSyncService", function () {
     it("drops subscription callbacks while stop is still draining scheduled work", async () => {
@@ -374,6 +379,198 @@ describe("EventSyncService", function () {
                 keepTasksHeld: true
             });
             await restoreEvents(false);
+        });
+    });
+
+    describe("scheduleLog deduplication", function () {
+        it("dispatches a log a second stream delivers again only once", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("duplicate")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(0);
+        });
+
+        it("dispatches a log re-mined in another block after a reorg as a new event", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("reorged")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(1);
+        });
+
+        it("ignores a log a reorg removed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("removed")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(0);
+        });
+    });
+
+    describe("scheduleStreamedLog", function () {
+        it("drops a lagging node's log below the watermark", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            // a later block completes, so the watermark passes the opening
+            // block and that block's dedup keys are pruned
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeStreamedLogBelowWatermark()
+                .request();
+
+            // premise - the opening log is below the watermark
+            expect(probe.watermark).to.be.greaterThan(probe.logBlockNumber);
+            expect(probe.handlerCalls).to.equal(0);
+        });
+    });
+
+    describe("scheduleStreamedLog at the watermark", function () {
+        it("dispatches a never-seen log in the watermark block", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("reorgedAtWatermark")
+                .request();
+
+            // premise - the log's block is the completed watermark itself
+            expect(probe.watermark).to.equal(probe.logBlockNumber);
+            expect(probe.handlerCalls).to.equal(1);
+        });
+    });
+
+    describe("catchUpLogs", function () {
+        it("schedules the log this peer's subscription lost", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const lagging = 2;
+            const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const inboundHead = await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request();
+            // premise - the delivery really was lost
+            await dropped.waitUntilDropped();
+            await dropped.release();
+            expect(
+                await h
+                    .control(h.getPeer(lagging))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).not.to.equal(inboundHead);
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(lagging);
+            const callsBefore = h.event.getEventCallCounts(
+                lagging,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(lagging))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await waitFor(
+                () =>
+                    h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS) >
+                    callsBefore
+            );
+            await h.event.settleContractEvents(lagging);
+            expect(
+                h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS)
+            ).to.equal(callsBefore + 1);
+            expect(
+                await h
+                    .control(h.getPeer(lagging))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).to.equal(inboundHead);
+        });
+
+        it("does not dispatch the channel's opening logs again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+
+            // the watermark is the opening block, so the read includes its
+            // ChannelOpened and genesis inbound logs
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(1))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
+        });
+
+        it("does not dispatch a log this peer already processed again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(1))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
         });
     });
 

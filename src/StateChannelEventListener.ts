@@ -1,16 +1,25 @@
+import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import RpcNodeProvider, {
+    getReconnectDelayMs,
+    NodeSocketSubscriptions
+} from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import { ChannelId } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
+import { DetachedPromises, Logger, sleep } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { Filter, Log } from "ethers";
+import { Log, WebSocketProvider } from "ethers";
 
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
+    /** Every node socket the channel is subscribed on, with its callback. */
+    private readonly subscribedSockets = new NodeSocketSubscriptions();
     private currentChannelKey?: ChannelKey;
-    private filter?: Filter;
     private listener?: (log: Log) => void;
+    /** Stops each node from handing its later sockets to the listener. */
+    private unwatchNodes: (() => void)[] = [];
     private generation = 0;
     private disposed = false;
 
@@ -22,6 +31,11 @@ class StateChannelEventListener {
         this.logger = logger.child({ component: "EventListener" });
     }
 
+    /**
+     * Subscribe the channel's logs on every RPC node. Every node's stream
+     * feeds scheduleStreamedLog, which deduplicates them. A node socket that opens
+     * later is subscribed too, and its missed logs are caught up.
+     */
     async setChannelId(channelId: ChannelId): Promise<void> {
         if (this.disposed) return;
         const channelKey = toChannelKey(channelId);
@@ -33,18 +47,61 @@ class StateChannelEventListener {
         const filter = this.eventSyncService.getSubscriptionFilter(channelId);
         const listener = (log: Log) => {
             if (this.disposed || generation !== this.generation) return;
-            this.logger.info("On-chain event received", {
-                blockNumber: log.blockNumber,
-                logIndex: log.index,
-                transactionHash: log.transactionHash
-            });
+            this.logger.debug(
+                "On-chain event streamed",
+                LoggerUtils.getContractLogMetadata(log)
+            );
             DetachedPromises.collect(
-                this.eventSyncService.scheduleLog(log, channelId)
+                this.eventSyncService.scheduleStreamedLog(log, channelId)
             );
         };
-        this.filter = filter;
         this.listener = listener;
-        await this.getProvider().on(filter, listener);
+        const provider = this.getProvider();
+        // where a catch-up starts while no event has completed a block yet
+        const subscribedAtBlock = await provider.getBlockNumber();
+        if (this.disposed || generation !== this.generation) return;
+        const subscriptions: Promise<unknown>[] = [];
+        this.unwatchNodes = provider.nodes.map((node) =>
+            node.watchSockets((socket, reopened) => {
+                if (this.disposed || generation !== this.generation) return;
+                if (!reopened) {
+                    subscriptions.push(
+                        this.subscribedSockets.add(socket, filter, listener)
+                    );
+                    return;
+                }
+                // Hold this socket's live logs until its catch-up scheduled
+                // the logs it read. Otherwise a newer live log can complete
+                // first, move the watermark past a missed block, and the
+                // catch-up drops that block's logs as below the watermark.
+                const held: Log[] = [];
+                let catchingUp = true;
+                const socketListener = (log: Log) => {
+                    if (catchingUp) held.push(log);
+                    else listener(log);
+                };
+                // subscribe first, then read up to the head: a log after the
+                // read arrives on the new subscription
+                DetachedPromises.collect(
+                    this.subscribedSockets
+                        .add(socket, filter, socketListener)
+                        .then(() =>
+                            this.catchUpUntilRead(
+                                node,
+                                socket,
+                                channelId,
+                                subscribedAtBlock,
+                                generation
+                            )
+                        )
+                        .finally(() => {
+                            catchingUp = false;
+                            for (const log of held.splice(0)) listener(log);
+                        })
+                );
+            })
+        );
+        await Promise.all(subscriptions);
     }
 
     async clearChannelId(): Promise<void> {
@@ -72,17 +129,46 @@ class StateChannelEventListener {
         }
     }
 
-    private async removeListener(): Promise<void> {
-        if (this.filter && this.listener) {
-            await this.getProvider().off(this.filter, this.listener);
+    /**
+     * Run the catch-up on a reopened socket until it read up to the head,
+     * retrying a failed window with the reconnect backoff while the socket
+     * stays open and the subscription is current.
+     */
+    private async catchUpUntilRead(
+        node: RpcNodeProvider,
+        socket: WebSocketProvider,
+        channelId: ChannelId,
+        subscribedAtBlock: number,
+        generation: number
+    ): Promise<void> {
+        // a retry reads again only from the window that failed
+        let resumeFrom: number | undefined;
+        for (let failedAttempts = 0; ; failedAttempts++) {
+            if (this.disposed || generation !== this.generation) return;
+            if (socket.destroyed) return;
+            resumeFrom = await this.eventSyncService.catchUpLogs(
+                node,
+                channelId,
+                subscribedAtBlock,
+                resumeFrom
+            );
+            if (resumeFrom === undefined) return;
+            await sleep(getReconnectDelayMs(failedAttempts));
         }
-        this.filter = undefined;
-        this.listener = undefined;
     }
 
-    private getProvider() {
+    private async removeListener(): Promise<void> {
+        for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
+        this.listener = undefined;
+        await this.subscribedSockets.clear();
+    }
+
+    private getProvider(): MultiRpcProvider {
         const provider = this.stateChannelManagerContract.runner?.provider;
-        if (!provider) throw new Error("Event listener requires a provider");
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error(
+                "Event listener requires the runtime's RPC node provider"
+            );
         return provider;
     }
 }

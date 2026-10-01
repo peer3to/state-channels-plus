@@ -31,7 +31,15 @@ import {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
+import {
+    BytesLike,
+    Filter,
+    Log,
+    Provider,
+    Result,
+    hexlify,
+    zeroPadValue
+} from "ethers";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
@@ -70,6 +78,49 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
 const LOG_RECOVERY_ATTEMPTS = 3;
 // one span already covers the whole window the calldata can be in
 const CALLDATA_RECOVERY_ATTEMPTS = 1;
+
+/** Most blocks one eth_getLogs read spans; hosted endpoints reject wider reads. */
+export const MAX_LOG_SPAN = 1000;
+
+/** The window whose eth_getLogs read failed, and why. */
+export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
+
+/**
+ * Read `filter`'s logs over [fromBlock, toBlock] in ascending windows of at
+ * most `maxSpan` blocks, and hand each window's logs to `onPage` before the
+ * next window is read. Stops at the first window whose read fails and
+ * answers where it starts, so a retry reads only from there; `undefined`
+ * once every window was read. The single log reader of the event sync: the
+ * reconnect catch-up and the recovery queries both page through it.
+ */
+export async function readLogPages(
+    provider: Provider,
+    filter: Filter,
+    fromBlock: BlockNumber,
+    toBlock: BlockNumber,
+    onPage: (logs: Log[]) => void | Promise<void>,
+    maxSpan: number = MAX_LOG_SPAN
+): Promise<LogPageReadFailure | undefined> {
+    for (
+        let windowFrom = fromBlock;
+        windowFrom <= toBlock;
+        windowFrom += maxSpan
+    ) {
+        const windowTo = Math.min(windowFrom + maxSpan - 1, toBlock);
+        let logs: Log[];
+        try {
+            logs = await provider.getLogs({
+                ...filter,
+                fromBlock: windowFrom,
+                toBlock: windowTo
+            });
+        } catch (error) {
+            return { failedFrom: windowFrom, error };
+        }
+        await onPage(logs);
+    }
+    return undefined;
+}
 
 export type PinnedChainMembership = {
     blockNumber: number;
@@ -132,13 +183,50 @@ export default class EventSyncService {
         );
     }
 
+    /**
+     * Schedule a log one RPC node's stream (live or catch-up) delivered. A
+     * log below the completed-block watermark is dropped: its block is fully
+     * processed and its dedup key may already be pruned, so a lagging node
+     * would otherwise dispatch it again. Recovery queries still use
+     * scheduleLog: they deliberately re-read blocks below the watermark.
+     */
+    scheduleStreamedLog(
+        log: Log,
+        scheduledChannelId: ChannelId = this.channelId
+    ): Promise<void> {
+        const watermark =
+            this.storage.eventSync.getLatestProcessedBlock(scheduledChannelId);
+        if (watermark !== undefined && log.blockNumber < watermark) {
+            this.logger.debug("Dropping streamed event below the watermark", {
+                ...LoggerUtils.getContractLogMetadata(log),
+                watermark
+            });
+            return Promise.resolve();
+        }
+        return this.scheduleLog(log, scheduledChannelId);
+    }
+
     scheduleLog(
         log: Log,
         scheduledChannelId: ChannelId = this.channelId
     ): Promise<void> {
-        const eventKey = `${String(log.address).toLowerCase()}:${log.transactionHash}:${log.index}`;
+        // a reorg removed this log; its effects are not undone
+        if (log.removed) {
+            this.logger.warn(
+                "Ignoring removed contract event",
+                LoggerUtils.getContractLogMetadata(log)
+            );
+            return Promise.resolve();
+        }
+        // the block hash keeps a log re-mined in another block after a reorg
+        // apart from the log it replaces
+        const eventKey = `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
+        this.logger.info(
+            "On-chain event received",
+            LoggerUtils.getContractLogMetadata(log)
+        );
 
         const channelKey = toChannelKey(scheduledChannelId);
         const states = this.getBlockStates(channelKey);
@@ -158,9 +246,7 @@ export default class EventSyncService {
             .catch((error) => {
                 state.failed = true;
                 this.logger.error("Contract event pipeline failed", {
-                    blockNumber: log.blockNumber,
-                    logIndex: log.index,
-                    transactionHash: log.transactionHash,
+                    ...LoggerUtils.getContractLogMetadata(log),
                     error
                 });
                 throw error;
@@ -173,6 +259,66 @@ export default class EventSyncService {
         this.eventPromises.set(eventKey, promise);
         this.eventBlockNumbers.set(eventKey, log.blockNumber);
         return promise;
+    }
+
+    /**
+     * Re-read this channel's subscribed logs from one RPC node whose socket
+     * reopened, from the completed-block watermark (or `fromBlock` before
+     * one exists) up to that node's head, page by page, and schedule each
+     * page's logs before reading the next. scheduleStreamedLog deduplicates
+     * the logs another stream delivered. Never throws: answers `undefined`
+     * once caught up, or the block a retry resumes from (`resumeFrom` of the
+     * next call) when a read failed.
+     */
+    async catchUpLogs(
+        node: Provider,
+        channelId: ChannelId,
+        fromBlock: BlockNumber,
+        resumeFrom?: BlockNumber
+    ): Promise<BlockNumber | undefined> {
+        const watermark =
+            this.storage.eventSync.getLatestProcessedBlock(channelId);
+        const catchUpFrom = resumeFrom ?? watermark ?? fromBlock;
+        let toBlock: BlockNumber;
+        try {
+            toBlock = await node.getBlockNumber();
+        } catch (error) {
+            this.logger.warn("Contract event catch-up read failed", {
+                channelId,
+                fromBlock: catchUpFrom,
+                error
+            });
+            return catchUpFrom;
+        }
+        if (toBlock < catchUpFrom) return undefined;
+        const failure = await readLogPages(
+            node,
+            this.getSubscriptionFilter(channelId),
+            catchUpFrom,
+            toBlock,
+            (logs) => {
+                for (const log of logs) {
+                    DetachedPromises.collect(
+                        this.scheduleStreamedLog(log, channelId)
+                    );
+                }
+            }
+        );
+        if (failure) {
+            this.logger.warn("Contract event catch-up read failed", {
+                channelId,
+                fromBlock: failure.failedFrom,
+                toBlock,
+                error: failure.error
+            });
+            return failure.failedFrom;
+        }
+        this.logger.info("Contract event catch-up read", {
+            channelId,
+            fromBlock: catchUpFrom,
+            toBlock
+        });
+        return undefined;
     }
 
     async tryRecoverBlockCalldataAndScheduleValidation(
@@ -475,31 +621,35 @@ export default class EventSyncService {
             );
             const fromBlock = Math.min(cursor ?? fallback, fallback);
             try {
-                const logs = await this.getProvider().getLogs({
-                    ...this.buildLogFilter(
+                const failure = await readLogPages(
+                    this.getProvider(),
+                    this.buildLogFilter(
                         recovery.eventNames,
                         recovery.channelId,
                         recovery.indexedTopics
                     ),
                     fromBlock,
-                    toBlock: recovery.toBlock
-                });
-                const missingLogs = isMissingLog
-                    ? logs.filter((log) =>
-                          this.isLogMissing(log, isMissingLog, held)
-                      )
-                    : logs;
-                scheduledLogCount += missingLogs.length;
-                const dispatched = missingLogs.map((log) =>
-                    this.scheduleLog(log, recovery.channelId)
+                    recovery.toBlock,
+                    async (logs) => {
+                        const missingLogs = isMissingLog
+                            ? logs.filter((log) =>
+                                  this.isLogMissing(log, isMissingLog, held)
+                              )
+                            : logs;
+                        scheduledLogCount += missingLogs.length;
+                        const dispatched = missingLogs.map((log) =>
+                            this.scheduleLog(log, recovery.channelId)
+                        );
+                        if (recovery.dispatch === "awaited") {
+                            await Promise.all(dispatched);
+                        } else {
+                            dispatched.forEach((eventPromise) =>
+                                DetachedPromises.collect(eventPromise)
+                            );
+                        }
+                    }
                 );
-                if (recovery.dispatch === "awaited") {
-                    await Promise.all(dispatched);
-                } else {
-                    dispatched.forEach((eventPromise) =>
-                        DetachedPromises.collect(eventPromise)
-                    );
-                }
+                if (failure) throw failure.error;
             } catch (error) {
                 this.logger.warn("Contract event recovery query failed", {
                     channelId: recovery.channelId,
