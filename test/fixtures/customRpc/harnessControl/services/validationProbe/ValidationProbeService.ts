@@ -4,6 +4,7 @@ import ValidationProbeRpcMethods from "./ValidationProbeRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
+import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -18,7 +19,7 @@ import { Codec, Mutex, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ethers, id, Log } from "ethers";
+import { ethers, id, Log, type WebSocketProvider } from "ethers";
 
 /** The bound of the wait for logs a catch-up scheduled; the drain is local. */
 const CATCH_UP_DRAIN_TIMEOUT_MS = 30_000;
@@ -70,7 +71,8 @@ export type InboundLogRedelivery =
     // the re-mined log, streamed once its block is the completed watermark
     | "reorgedAtWatermark";
 
-export type InboundLogRedeliveryProbe = {
+/** One log delivered again through the scheduler, and what it caused. */
+export type StreamedLogDeliveryProbe = {
     handlerCalls: number;
     logBlockNumber: number;
     /** The completed-block watermark when the log was delivered. */
@@ -349,7 +351,7 @@ export class ValidationProbeService extends ANetworkRpcService<
      */
     public async probeInboundLogRedelivery(
         redelivery: InboundLogRedelivery
-    ): Promise<InboundLogRedeliveryProbe> {
+    ): Promise<StreamedLogDeliveryProbe> {
         const sm = this.sm;
         if (redelivery === "reorgedAtWatermark")
             await sm.eventSyncService.waitForScheduled(
@@ -413,13 +415,80 @@ export class ValidationProbeService extends ANetworkRpcService<
         const provider = sm.stateChannelManagerContract.runner?.provider;
         if (!(provider instanceof MultiRpcProvider))
             throw new Error("Expected the runtime RPC node provider");
-        const read = await sm.eventSyncService.catchUpLogs(
+        const resumeFrom = await sm.eventSyncService.catchUpLogs(
             provider.nodes[0],
             sm.channelId,
             0
         );
         await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
-        return read;
+        return resumeFrom === undefined;
+    }
+
+    /**
+     * Run one reconnect catch-up for this peer's channel through a separate
+     * RPC node at `nodeUrl`, and wait for the logs it scheduled. Answers
+     * whether it caught up.
+     */
+    public async runCatchUpThroughNode(nodeUrl: string): Promise<boolean> {
+        const sm = this.sm;
+        const node = new RpcNodeProvider(nodeUrl, sm.logger);
+        try {
+            if (await node.firstAttempt)
+                throw new Error("Expected the catch-up node to connect");
+            const resumeFrom = await sm.eventSyncService.catchUpLogs(
+                node,
+                sm.channelId,
+                0
+            );
+            await sm.eventSyncService.waitForScheduled(
+                CATCH_UP_DRAIN_TIMEOUT_MS
+            );
+            return resumeFrom === undefined;
+        } finally {
+            node.destroy();
+        }
+    }
+
+    /** The channel's completed-block watermark, or null before one exists. */
+    public getEventWatermark(): number | null {
+        return (
+            this.sm.storage.eventSync.getLatestProcessedBlock(
+                this.sm.channelId
+            ) ?? null
+        );
+    }
+
+    /**
+     * Listeners of the channel's subscription filter on each RPC node's open
+     * socket, in node order; null for a node with no open socket.
+     */
+    public async getChannelSubscriptionCounts(): Promise<(number | null)[]> {
+        const sm = this.sm;
+        const provider = sm.stateChannelManagerContract.runner?.provider;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the runtime RPC node provider");
+        const filter = sm.eventSyncService.getSubscriptionFilter(sm.channelId);
+        return Promise.all(
+            provider.nodes.map((node) => {
+                let socket: WebSocketProvider | undefined;
+                node.watchSockets((open) => {
+                    socket = open;
+                })();
+                return socket ? socket.listenerCount(filter) : null;
+            })
+        );
+    }
+
+    /** Clear the channel's event listener, as a failed open attempt does. */
+    public async clearChannelListener(): Promise<boolean> {
+        await this.sm.stateChannelEventListener.clearChannelId();
+        return true;
+    }
+
+    /** Select the channel on the event listener again. */
+    public async restoreChannelListener(): Promise<boolean> {
+        await this.sm.stateChannelEventListener.setChannelId(this.sm.channelId);
+        return true;
     }
 
     /**
@@ -427,11 +496,7 @@ export class ValidationProbeService extends ANetworkRpcService<
      * node's stream would, once every scheduled log has completed. Record-only:
      * the handler records a call instead of opening the channel twice.
      */
-    public async probeStreamedLogBelowWatermark(): Promise<{
-        handlerCalls: number;
-        logBlockNumber: number;
-        watermark: number | null;
-    }> {
+    public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {
         const sm = this.sm;
         await sm.eventSyncService.waitForScheduled(CATCH_UP_DRAIN_TIMEOUT_MS);
         const contract = sm.stateChannelManagerContract;

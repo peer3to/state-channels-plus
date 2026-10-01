@@ -1,12 +1,17 @@
 // @spec-test-coverage-ignore: shared abort assertions exercised by StateManagerAbort and P2PManager tests
 import { clientRootFor, inlineHostFor } from "./RuntimeRootObservation";
+import Clock from "@/Clock";
 import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import { Status } from "@/types";
+import { sleep } from "@/utils";
 import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationControl";
 import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { type WebSocketProvider } from "ethers";
+
+/** Longer than the first reconnect delay of a node that still reconnects. */
+const RECONNECT_ABSENCE_WINDOW_MS = 1_000;
 
 export async function assertAbortClosesRuntime(worker: boolean): Promise<void> {
     const harness = MathTestSession.getHarness();
@@ -148,4 +153,55 @@ export async function assertProviderShutdownOrder(): Promise<void> {
         await Promise.all(sockets.map((socket) => socket.listenerCount()))
     ).to.deep.equal(sockets.map(() => 0));
     await peer.p2pInstance.dispose();
+}
+
+/**
+ * A runtime whose provider the process-wide Clock reads through is disposed:
+ * the provider stays open for the Clock, its nodes never reconnect, and the
+ * Clock destroys it once a new provider replaces it.
+ */
+export async function assertClockOwnedProviderReleasedOnDispose(): Promise<void> {
+    const h = MathTestSession.getHarness();
+    const proxied = 2;
+    await h.lifecycle.start(3, 0, {
+        configOverrides: {
+            RUN_SDK_IN_THREAD: false,
+            VM_DEDICATED_THREAD: false
+        },
+        rpcNodeProxiesByPeer: { [proxied]: 1 }
+    });
+    const [proxy] = h.getRpcNodeProxies(proxied);
+    const providerOf = (peerIndex: number) => {
+        const provider = inlineHostFor(
+            h.getPeer(peerIndex).p2pInstance
+        ).hostRpc.requireManager().stateManager.stateChannelManagerContract
+            .runner!.provider!;
+        if (!(provider instanceof MultiRpcProvider))
+            throw new Error("Expected the host RPC node provider");
+        return provider;
+    };
+    const provider = providerOf(proxied);
+    const replacement = providerOf(0);
+    // this runtime's provider is now the one the Clock reads through
+    await Clock.init(provider);
+
+    await h.getPeer(proxied).p2pInstance.dispose();
+
+    expect(provider.destroyed).to.equal(false);
+    const [node] = provider.nodes;
+    const chainIdReads = proxy.forwardedCount("eth_chainId");
+    proxy.cut();
+    await waitFor(() => !node.isConnected);
+    proxy.restore();
+    // time is the input: the first reconnect would come within 250 ms
+    await sleep(RECONNECT_ABSENCE_WINDOW_MS);
+    expect(node.isConnected).to.equal(false);
+    expect(proxy.forwardedCount("eth_chainId")).to.equal(chainIdReads);
+
+    await Clock.init(replacement);
+
+    expect(provider.destroyed).to.equal(true);
+    expect(provider.nodes.map((rpcNode) => rpcNode.destroyed)).to.deep.equal(
+        provider.nodes.map(() => true)
+    );
 }

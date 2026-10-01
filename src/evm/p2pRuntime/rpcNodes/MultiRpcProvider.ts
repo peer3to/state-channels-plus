@@ -96,7 +96,8 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
 
     /**
      * See {@link RpcNodeProvider.stopReconnecting}; applies to every node and
-     * rejects the requests waiting for a node to connect.
+     * rejects the requests waiting for a node to connect. Requests in flight
+     * on an open socket still get their answers.
      */
     stopReconnecting(): void {
         this.reconnects = false;

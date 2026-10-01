@@ -5,10 +5,13 @@ import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
 import { createRuntimeChainContext } from "@/evm/p2pRuntime/RuntimeChainContext";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
+import { readLogPages } from "@/stateManager/eventSync/EventSyncService";
 import { sleep } from "@/utils";
 import { config } from "@/utils/config";
 import { createLogger } from "@/utils/logging";
-import type { Logger } from "@/utils/logging/Logger";
+import type { LogEntry, Logger } from "@/utils/logging/Logger";
+import { LogStore } from "@/utils/logging/logStore";
+import { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
@@ -672,5 +675,321 @@ export async function assertTransactionWaitResolvesAfterReconnect(): Promise<voi
         await waitFor(() => received.includes(later.blockNumber));
         const receipt = await waited;
         expect(receipt?.hash).to.equal(sent.hash);
+    });
+}
+
+/** A logger whose entries the test reads back. */
+function recordingLogger(level: "debug" | "warn"): {
+    logger: Logger;
+    entries: () => LogEntry[];
+} {
+    const store = new LogStore(1024 * 1024, true);
+    const logger = new NodeLogger(
+        {},
+        {},
+        level,
+        store,
+        { attachErrorListener: false },
+        new Set(),
+        true
+    );
+    return { logger, entries: () => store.getAllLogs() };
+}
+
+/** Collects the unhandled rejections raised while `use` runs. */
+async function recordUnhandledRejections(
+    use: () => Promise<void>
+): Promise<unknown[]> {
+    const rejections: unknown[] = [];
+    const record = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+        await use();
+        // rejections surface on a later turn of the event loop
+        await sleep(ABSENCE_WINDOW_MS);
+    } finally {
+        process.off("unhandledRejection", record);
+    }
+    return rejections;
+}
+
+export async function assertDestroyDuringPendingAttemptStaysQuiet(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const proxy = await RpcNodeProxy.start(node._getConnection().url);
+        // the socket opens, but the attempt's network request never answers
+        proxy.blackhole();
+        const { logger, entries } = recordingLogger("debug");
+        const rpcNode = new RpcNodeProvider(proxy.url, logger);
+        try {
+            const rejections = await recordUnhandledRejections(async () => {
+                await waitFor(() => proxy.forwardedCount("eth_chainId") > 0);
+                rpcNode.destroy();
+                const loggedAtDestroy = entries().length;
+                logger.dispose({ cascadeChildren: true });
+                // the pending attempt now fails at once
+                proxy.cut();
+
+                expect(await rpcNode.firstAttempt).to.be.instanceOf(Error);
+                expect(entries().length).to.equal(loggedAtDestroy);
+            });
+
+            expect(rejections).to.deep.equal([]);
+        } finally {
+            rpcNode.destroy();
+            await proxy.close();
+        }
+    });
+}
+
+export async function assertHeartbeatErrorAnswerKeepsNode(): Promise<void> {
+    await withProxiedNodes(
+        1,
+        async ({ proxies: [proxy], nodes: [rpcNode] }) => {
+            // its network detection has read the chain id already
+            await rpcNode.getNetwork();
+            const chainIdReads = proxy.forwardedCount("eth_chainId");
+            const heartbeats = proxy.forwardedCount("eth_blockNumber");
+            proxy.failNextRequest("eth_blockNumber");
+
+            // time is the input: one heartbeat period, then its answer
+            await waitFor(
+                () => proxy.forwardedCount("eth_blockNumber") > heartbeats
+            );
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(rpcNode.isConnected).to.equal(true);
+            expect(proxy.forwardedCount("eth_chainId")).to.equal(chainIdReads);
+        }
+    );
+}
+
+export async function assertFirstNodeErrorAnswerIsFinal(): Promise<void> {
+    await withProxiedNodes(2, async ({ node, proxies, nodes, logger }) => {
+        const provider = new MultiRpcProvider(nodes, logger);
+        const funded = (await node.getSigner(0)).address;
+        proxies[0].failNextRequest("eth_getBalance");
+
+        const error = await provider.getBalance(funded).then(
+            () => undefined,
+            (failure: unknown) => failure
+        );
+
+        expect(error).to.be.instanceOf(Error);
+        expect(String(error)).to.include("request failed");
+        expect(proxies[1].forwardedMethods).not.to.include("eth_getBalance");
+    });
+}
+
+export async function assertOneWarningPerOutageOfEveryNode(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const nodeUrl = node._getConnection().url;
+        const proxies = await Promise.all([
+            RpcNodeProxy.start(nodeUrl),
+            RpcNodeProxy.start(nodeUrl)
+        ]);
+        const { logger, entries } = recordingLogger("warn");
+        const nodes = proxies.map(
+            (proxy) => new RpcNodeProvider(proxy.url, logger)
+        );
+        const provider = new MultiRpcProvider(nodes, logger);
+        const outageWarnings = () =>
+            entries().filter((entry) =>
+                entry.message.startsWith("Every RPC node is disconnected")
+            ).length;
+        try {
+            await Promise.all(nodes.map((rpcNode) => rpcNode.firstAttempt));
+            await cutAndWaitForDrop(proxies[0], nodes[0]);
+            expect(outageWarnings()).to.equal(0);
+
+            await cutAndWaitForDrop(proxies[1], nodes[1]);
+            expect(outageWarnings()).to.equal(1);
+            // still down: reconnect attempts fail without another warning
+            await sleep(ABSENCE_WINDOW_MS);
+            expect(outageWarnings()).to.equal(1);
+
+            proxies[0].restore();
+            await waitFor(() => nodes[0].isConnected);
+            await cutAndWaitForDrop(proxies[0], nodes[0]);
+            expect(outageWarnings()).to.equal(2);
+        } finally {
+            provider.destroy();
+            await Promise.all(proxies.map((proxy) => proxy.close()));
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertMalformedEndpointRejectsStartupQuietly(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failure = await createRuntimeChainContext(
+                {
+                    ...config,
+                    PROVIDER_URLS: [
+                        "ws://127.0.0.1:99999/v2?key=secret-key",
+                        reachable.url
+                    ]
+                },
+                Wallet.createRandom().privateKey,
+                logger
+            ).then(
+                () => undefined,
+                (error: unknown) => error
+            );
+
+            if (!(failure instanceof Error))
+                throw new Error("Expected startup to fail");
+            expect(failure.message).not.to.include("secret");
+            // the list is rejected before any node opens
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertInvalidSecretOpensNoNode(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failure = await createRuntimeChainContext(
+                { ...config, PROVIDER_URLS: [reachable.url] },
+                "not a valid mnemonic phrase",
+                logger
+            ).then(
+                () => undefined,
+                (error: unknown) => error
+            );
+            // time is the input: long enough for a node to connect
+            await sleep(ABSENCE_WINDOW_MS);
+
+            expect(failure).to.be.instanceOf(Error);
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}
+
+/** Blocks the paged log reads below span; a small span keeps the chain short. */
+const TEST_LOG_SPAN = 10;
+
+/**
+ * A private node with more blocks than three log windows, behind a proxy
+ * that rejects any eth_getLogs wider than one window.
+ */
+async function withSpanLimitedNode(
+    use: (context: {
+        proxy: RpcNodeProxy;
+        rpcNode: RpcNodeProvider;
+        head: number;
+    }) => Promise<void>
+): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        // node-wide mining is safe here: the test owns this node
+        await node.send("hardhat_mine", ["0x23"]);
+        const proxy = await RpcNodeProxy.start(node._getConnection().url);
+        proxy.rejectLogSpansAbove(TEST_LOG_SPAN);
+        const logger = quietLogger();
+        const rpcNode = new RpcNodeProvider(proxy.url, logger);
+        try {
+            await rpcNode.firstAttempt;
+            // read uncached: the startup poll cached the height before mining
+            const head = Number(await node.send("eth_blockNumber", []));
+            await use({ proxy, rpcNode, head });
+        } finally {
+            rpcNode.destroy();
+            await proxy.close();
+            logger.dispose();
+        }
+    });
+}
+
+export async function assertLogPagesReadInAscendingWindows(): Promise<void> {
+    await withSpanLimitedNode(async ({ proxy, rpcNode, head }) => {
+        // premise - one read over the whole range is rejected
+        const unpaged = await readLogPages(
+            rpcNode,
+            {},
+            0,
+            head,
+            () => undefined,
+            head + 1
+        );
+        expect(unpaged?.failedFrom).to.equal(0);
+        const readsBefore = proxy.forwardedCount("eth_getLogs");
+        const readsAtEachPage: number[] = [];
+
+        const failure = await readLogPages(
+            rpcNode,
+            {},
+            0,
+            head,
+            () => {
+                readsAtEachPage.push(
+                    proxy.forwardedCount("eth_getLogs") - readsBefore
+                );
+            },
+            TEST_LOG_SPAN
+        );
+
+        expect(failure).to.equal(undefined);
+        const expected: [number, number][] = [];
+        for (let from = 0; from <= head; from += TEST_LOG_SPAN)
+            expected.push([from, Math.min(from + TEST_LOG_SPAN - 1, head)]);
+        expect(proxy.forwardedLogWindows().slice(1)).to.deep.equal(expected);
+        // each window is handed over before the next one is read
+        expect(readsAtEachPage).to.deep.equal(
+            expected.map((_, index) => index + 1)
+        );
+    });
+}
+
+export async function assertFailedLogPageAnsweredForRetry(): Promise<void> {
+    await withSpanLimitedNode(async ({ proxy, rpcNode, head }) => {
+        let pages = 0;
+        const failure = await readLogPages(
+            rpcNode,
+            {},
+            0,
+            head,
+            () => {
+                pages += 1;
+                // the window after this one fails
+                if (pages === 1) proxy.failNextRequest("eth_getLogs");
+            },
+            TEST_LOG_SPAN
+        );
+
+        expect(failure?.failedFrom).to.equal(TEST_LOG_SPAN);
+        expect(pages).to.equal(1);
+        const readsBeforeRetry = proxy.forwardedLogWindows().length;
+        // past ethers' request cache, which still holds the failed read
+        await sleep(ETHERS_REQUEST_CACHE_MS);
+
+        const retried = await readLogPages(
+            rpcNode,
+            {},
+            failure!.failedFrom,
+            head,
+            () => undefined,
+            TEST_LOG_SPAN
+        );
+
+        expect(retried).to.equal(undefined);
+        // the retry starts at the failed window, never before it
+        expect(
+            Math.min(
+                ...proxy
+                    .forwardedLogWindows()
+                    .slice(readsBeforeRetry)
+                    .map(([from]) => from)
+            )
+        ).to.equal(TEST_LOG_SPAN);
     });
 }

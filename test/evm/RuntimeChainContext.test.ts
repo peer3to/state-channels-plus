@@ -76,6 +76,44 @@ describe("RuntimeChainContext", () => {
         ).to.throw("requires a ws:// or wss:// WebSocket provider URL");
     });
 
+    it("rejects an endpoint with a fragment, naming it by scheme and host only", () => {
+        let failure: unknown;
+        try {
+            resolveProviderUrls({
+                PROVIDER_URL: "ws://localhost:8545",
+                PROVIDER_URLS: ["wss://rpc.example/v2/secret-path#x"]
+            });
+        } catch (error) {
+            failure = error;
+        }
+
+        if (!(failure instanceof Error))
+            throw new Error("Expected a rejection");
+        expect(failure.message).to.include(
+            "cannot open the WebSocket provider URL wss://rpc.example"
+        );
+        expect(failure.message).not.to.include("secret");
+    });
+
+    it("rejects an endpoint with an out-of-range port without its secret", () => {
+        let failure: unknown;
+        try {
+            resolveProviderUrls({
+                PROVIDER_URL: "ws://localhost:8545",
+                PROVIDER_URLS: ["ws://rpc.example:99999?key=secret-key"]
+            });
+        } catch (error) {
+            failure = error;
+        }
+
+        if (!(failure instanceof Error))
+            throw new Error("Expected a rejection");
+        expect(failure.message).to.include(
+            "cannot open the WebSocket provider URL"
+        );
+        expect(failure.message).not.to.include("secret");
+    });
+
     it("destroys the host provider and reports the original startup error", async () => {
         await assertRuntimeStartupFailure();
     });

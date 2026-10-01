@@ -9,7 +9,7 @@ import { DetachedPromises, Logger, sleep } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { Filter, Log, WebSocketProvider } from "ethers";
+import { Log, WebSocketProvider } from "ethers";
 
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
@@ -17,7 +17,6 @@ class StateChannelEventListener {
     /** Every node socket the channel is subscribed on, with its callback. */
     private readonly subscribedSockets = new NodeSocketSubscriptions();
     private currentChannelKey?: ChannelKey;
-    private filter?: Filter;
     private listener?: (log: Log) => void;
     /** Stops each node from handing its later sockets to the listener. */
     private unwatchNodes: (() => void)[] = [];
@@ -56,7 +55,6 @@ class StateChannelEventListener {
                 this.eventSyncService.scheduleStreamedLog(log, channelId)
             );
         };
-        this.filter = filter;
         this.listener = listener;
         const provider = this.getProvider();
         // where a catch-up starts while no event has completed a block yet
@@ -132,9 +130,9 @@ class StateChannelEventListener {
     }
 
     /**
-     * Run the catch-up on a reopened socket until one read succeeded, retrying
-     * with the reconnect backoff while the socket stays open and the
-     * subscription is current.
+     * Run the catch-up on a reopened socket until it read up to the head,
+     * retrying a failed window with the reconnect backoff while the socket
+     * stays open and the subscription is current.
      */
     private async catchUpUntilRead(
         node: RpcNodeProvider,
@@ -143,22 +141,24 @@ class StateChannelEventListener {
         subscribedAtBlock: number,
         generation: number
     ): Promise<void> {
+        // a retry reads again only from the window that failed
+        let resumeFrom: number | undefined;
         for (let failedAttempts = 0; ; failedAttempts++) {
             if (this.disposed || generation !== this.generation) return;
             if (socket.destroyed) return;
-            const read = await this.eventSyncService.catchUpLogs(
+            resumeFrom = await this.eventSyncService.catchUpLogs(
                 node,
                 channelId,
-                subscribedAtBlock
+                subscribedAtBlock,
+                resumeFrom
             );
-            if (read) return;
+            if (resumeFrom === undefined) return;
             await sleep(getReconnectDelayMs(failedAttempts));
         }
     }
 
     private async removeListener(): Promise<void> {
         for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
-        this.filter = undefined;
         this.listener = undefined;
         await this.subscribedSockets.clear();
     }
