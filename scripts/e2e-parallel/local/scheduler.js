@@ -17,6 +17,7 @@ const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
 const {
     admissionCost,
+    budgetHoldReason,
     holdReason,
     requestCostBudget
 } = require("../shared/scheduling");
@@ -91,7 +92,7 @@ async function runScheduler({
             logging.hold({
                 seq,
                 total: tasks.length,
-                reason: `${reason} (cost budget; predicted cost does not fit)`
+                reason: budgetHoldReason(reason)
             }),
         onResult: ({ assignment, attempt, code, parsed }) => {
             if (code !== 0) {

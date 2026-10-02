@@ -31,6 +31,9 @@ const DEFAULT_SLOTS = 1;
 // One admission attempt per tick; CPU load is a ~1min average so it can only
 // react between launches — pacing one test per tick lets it settle.
 const SCHEDULER_TICK_MS = 1000;
+// Shortest interval a CPU reading is taken over; a check sooner than this
+// keeps the last reading. placeholder — calibrate from run-metrics.json
+const MIN_CPU_SAMPLE_MS = 250;
 
 // Each sample scans the whole process table (`ps -axo` / `/proc`): the first
 // comes after TASK_COST_FIRST_SAMPLE_MS and the gap doubles up to one per
@@ -98,6 +101,7 @@ module.exports = {
     DEFAULT_STREAM_CHILD_OUTPUT,
     DEFAULT_SLOTS,
     SCHEDULER_TICK_MS,
+    MIN_CPU_SAMPLE_MS,
     TASK_COST_FIRST_SAMPLE_MS,
     TASK_COST_SAMPLE_MS,
     PROC_CLOCK_TICKS_PER_SECOND,

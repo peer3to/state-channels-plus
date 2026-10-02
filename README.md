@@ -234,12 +234,15 @@ may admit more tests than before.
 
 With `--schedule cost` the runner uses them: browser-only and longest tests
 start first, and a busy worker is handed only a test whose predicted CPU and
-memory still fit beside everything it runs. A test whose cores and memory are
-measured or overridden starts without waiting for the scheduler tick. The
-`--workers` cap still applies, and so does `--target-load`: machine CPU at or
-above `min(--target-load, 0.95)` holds new tests. Hold counts in
+memory still fit beside everything it runs. After starting a test whose cores
+and memory are measured or overridden, and after any test finishes, a worker
+requests its next test at once instead of waiting for the scheduler tick; after
+starting an unknown-cost test it waits a tick so that test's usage shows first.
+The `--workers` cap still applies, and so does `--target-load`: machine CPU at
+or above `min(--target-load, 0.95)` holds new tests. Hold counts in
 `run-metrics.json` include tests a worker was refused because they did not fit
-its budget.
+its budget; a distributed run also logs each refusal in that worker's
+infrastructure log and totals them in its summary line.
 
 ```shell
 yarn test:parallel --schedule cost --workers 30
@@ -248,15 +251,17 @@ yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
 yarn test:parallel:distributed --cost-cache-read-only  # CI: read, never write
 ```
 
-A test's cost comes from, first match wins: an override, this checkout's cache,
-the committed snapshot `scripts/e2e-parallel/test-costs.snapshot.json`, the
-average of finished tests from the same file, then one default (30 s, 1 core,
-2 GB). Every executed attempt is measured; an attempt that starved is stored
+Each of a test's duration, cores and memory comes from, first match wins: an
+override, this run's measurement, this checkout's cache, the committed snapshot
+`scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
+from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
+cores or memory (from an older worker) leaves those to the later sources. Every executed attempt is measured; an attempt that starved is stored
 with 50% more cores and memory, so the next run admits it as more expensive,
 and a clean retry in the same run replaces that sample.
 
 `yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
-rounded and sorted so the diff shows only what changed. Commit a refreshed
+rounded and sorted so the diff shows only what changed; it stops without
+writing if either file cannot be read. Commit a refreshed
 snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
 and stays stateless.
 
@@ -265,7 +270,7 @@ To correct a test's cost by hand, add it to
 `runner|file|full title`, e.g.
 `{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
 are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
-at startup. The defaults are placeholders in
+before anything is built, in either schedule. The defaults are placeholders in
 `scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.
 

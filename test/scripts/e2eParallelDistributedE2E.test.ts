@@ -751,13 +751,21 @@ describe("distributed parallel runner", function () {
             expect(worker.processScanCount).to.be.greaterThan(0);
             expect(worker.processScanMs).to.be.a("number").at.least(0);
             expect(worker).not.to.have.property("measurementReason");
-            // Handed only what it could start, the worker never buffers.
+            const workerLog = fs.readFileSync(
+                path.join(logDir, "infra", "cost-worker", "worker.ansi"),
+                "utf8"
+            );
+            // Handed only what it could start, the worker never buffers; the
+            // orchestrator logs each budget refusal there and totals them.
+            expect(workerLog).not.to.include("buffer 1");
+            expect(workerLog).to.include(
+                "holding — cpu (cost budget; predicted cost does not fit)"
+            );
             expect(
-                fs.readFileSync(
-                    path.join(logDir, "infra", "cost-worker", "worker.ansi"),
-                    "utf8"
+                result.workers.some((line: string) =>
+                    line.includes("budget holds cpu")
                 )
-            ).not.to.include("buffer 1");
+            ).to.equal(true);
             const cache = JSON.parse(fs.readFileSync(costCachePath, "utf8"));
             expect(Object.keys(cache.tasks)).to.have.members([
                 "hardhat|test/cost.test.js|cost fixture first",

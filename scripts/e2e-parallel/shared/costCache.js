@@ -22,7 +22,8 @@ const object = (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value);
 const reasons = new Set(MEASUREMENT_REASONS);
 
-// Cost of a task nothing has measured: not known, so it waits for a tick.
+// Cost of a task nothing has measured: not known, so the request after its
+// start waits for a tick.
 function defaultCost() {
     return { ...DEFAULT_TASK_COST, known: false };
 }
@@ -44,7 +45,9 @@ function validEntry(entry) {
     );
 }
 
-function readCache(cachePath, onDenied) {
+// Every failure but a missing file goes to `onError`; the caller decides
+// whether to start cold, skip the write, or stop.
+function readCache(cachePath, onError) {
     try {
         const data = JSON.parse(fs.readFileSync(cachePath, "utf8"));
         if (
@@ -57,13 +60,16 @@ function readCache(cachePath, onDenied) {
         return data.tasks;
     } catch (error) {
         if (error.code === "ENOENT") return {};
+        onError(error);
+        return {};
+    }
+}
+
+function startCold(cachePath) {
+    return (error) =>
         console.warn(
             `Unable to read cost cache ${cachePath}; starting cold: ${error.message}`
         );
-        if (error instanceof SyntaxError) return {};
-        onDenied(error);
-        return {};
-    }
 }
 
 // A broken overrides file fails the run, so a stale entry gets fixed rather
@@ -74,7 +80,9 @@ function readOverrides(overridesPath) {
         text = fs.readFileSync(overridesPath, "utf8");
     } catch (error) {
         if (error.code === "ENOENT") return {};
-        throw error;
+        throw new Error(
+            `Unable to read cost overrides ${overridesPath}: ${error.message}`
+        );
     }
     let overrides;
     try {
@@ -140,12 +148,10 @@ class CostCache {
         // CI reads the costs and never writes them, so it stays stateless.
         this.readOnly = readOnly;
         // commit() re-reads the file and refuses to replace one it cannot read.
-        this.tasks = readCache(this.cachePath, () => {});
+        this.tasks = readCache(this.cachePath, startCold(this.cachePath));
         // Committed costs for the tests this checkout has not measured yet.
-        this.snapshot = readCache(
-            path.resolve(this.projectRoot, snapshotPath),
-            () => {}
-        );
+        const snapshotFile = path.resolve(this.projectRoot, snapshotPath);
+        this.snapshot = readCache(snapshotFile, startCold(snapshotFile));
         this.overrides = readOverrides(
             path.resolve(this.projectRoot, overridesPath)
         );
@@ -285,27 +291,34 @@ class CostCache {
         return mean.durationMs === null ? null : mean;
     }
 
+    // Each value falls back on its own: a measurement without cores or memory
+    // (an older worker) still lets the snapshot or a sibling supply them.
     resolve(task) {
         const key = this.key(task);
-        const measured =
-            this.pending.get(key)?.sample ??
-            this.tasks[key] ??
-            this.snapshot[key];
-        const entry = measured ?? this.siblingMean(task);
+        const layers = [
+            this.pending.get(key)?.sample,
+            this.tasks[key],
+            this.snapshot[key]
+        ];
+        const measured = (field) =>
+            layers.map((layer) => layer?.[field]).find(numeric);
+        const sibling = this.siblingMean(task);
         const fallback = defaultCost();
         const override = this.overrides[key] ?? {};
-        const cores = override.cores ?? entry?.avgCores ?? fallback.cores;
-        const rssGb = override.rssGb ?? entry?.peakRssGb ?? fallback.rssGb;
+        const value = (overridden, field) =>
+            overridden ?? measured(field) ?? sibling?.[field];
+        const cores = value(override.cores, "avgCores");
+        const rssGb = value(override.rssGb, "peakRssGb");
         return {
             durationMs:
-                override.durationMs ?? entry?.durationMs ?? fallback.durationMs,
-            cores,
-            rssGb,
+                value(override.durationMs, "durationMs") ?? fallback.durationMs,
+            cores: cores ?? fallback.cores,
+            rssGb: rssGb ?? fallback.rssGb,
             // Measured or overridden cores and memory, not a default or a
-            // sibling's: a worker may start it without waiting for a tick.
+            // sibling's: starting it needs no tick before the next request.
             known:
-                (override.cores !== undefined || numeric(measured?.avgCores)) &&
-                (override.rssGb !== undefined || numeric(measured?.peakRssGb))
+                (override.cores ?? measured("avgCores")) !== undefined &&
+                (override.rssGb ?? measured("peakRssGb")) !== undefined
         };
     }
 
@@ -317,7 +330,9 @@ class CostCache {
         // have committed since this one started.
         let readDenied = null;
         const tasks = readCache(this.cachePath, (error) => {
-            readDenied = error;
+            // A corrupt file is replaced; one we may not read is kept.
+            startCold(this.cachePath)(error);
+            if (!(error instanceof SyntaxError)) readDenied = error;
         });
         if (readDenied) {
             console.warn(
@@ -326,12 +341,19 @@ class CostCache {
             return;
         }
         for (const [key, { sample, at }] of this.pending) {
-            // The snapshot seeds a test this checkout has not measured yet.
-            const old = tasks[key] ?? this.snapshot[key] ?? null;
+            // The snapshot seeds what this checkout has not measured yet,
+            // value by value as resolve() reads them.
+            const cached = tasks[key];
+            const seeded = this.snapshot[key];
             const entry = Object.fromEntries(
                 SAMPLE_FIELDS.map((field) => [
                     field,
-                    EWMA(old?.[field], sample[field])
+                    EWMA(
+                        numeric(cached?.[field])
+                            ? cached[field]
+                            : seeded?.[field],
+                        sample[field]
+                    )
                 ])
             );
             entry.measurementReason = [
@@ -341,7 +363,7 @@ class CostCache {
                 ? (sample.measurementReason ??
                   "legacy-measurements-unavailable")
                 : null;
-            entry.samples = (old?.samples ?? 0) + 1;
+            entry.samples = ((cached ?? seeded)?.samples ?? 0) + 1;
             entry.lastSeenAt = at;
             tasks[key] = entry;
         }
@@ -370,13 +392,16 @@ function refreshSnapshot({
     snapshotPath = DEFAULT_COST_SNAPSHOT_PATH
 } = {}) {
     const root = path.resolve(projectRoot);
-    const refuse = (error) => {
-        throw error;
-    };
+    // Anything unreadable stops the refresh: a broken snapshot must not be
+    // rewritten as if it were empty.
+    const strict = (file) =>
+        readCache(file, (error) => {
+            throw new Error(`Cannot refresh from ${file}: ${error.message}`);
+        });
     const target = path.resolve(root, snapshotPath);
     const tasks = {
-        ...readCache(target, refuse),
-        ...readCache(path.resolve(root, cachePath), refuse)
+        ...strict(target),
+        ...strict(path.resolve(root, cachePath))
     };
     const round = (value, places) =>
         value === null ? null : Number(value.toFixed(places));
@@ -400,4 +425,4 @@ function refreshSnapshot({
     return Object.keys(sorted).length;
 }
 
-module.exports = { CostCache, defaultCost, refreshSnapshot };
+module.exports = { CostCache, defaultCost, readOverrides, refreshSnapshot };

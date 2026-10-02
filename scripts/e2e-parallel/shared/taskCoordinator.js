@@ -161,7 +161,6 @@ class TaskCoordinator {
         this.schedule = options.schedule ?? "fifo";
         this.now = options.now ?? Date.now;
         this.costCache = options.costCache;
-        this.workerLabel = options.workerLabel ?? ((id) => id);
         this.speculative = options.speculative === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
@@ -183,10 +182,12 @@ class TaskCoordinator {
         else this.workers.set(workerId, { idle: false, canRun });
     }
 
+    // lean: no capacity held for a large queued task; reserve room for it if pool runs show large tests landing last
     /**
      * Under cost, a worker that runs something sends its free `costBudget`
-     * and is handed only a task that fits it, or nothing while one is queued
-     * that does not: another worker with room takes that one.
+     * and is handed only a task that fits it, or nothing while none queued
+     * does. A task that fits no busy worker waits for one with that much free,
+     * or for an idle one, which takes the head of the queue whatever its cost.
      */
     requestTask(workerId, { costBudget } = {}) {
         this.registerWorker(workerId);
@@ -312,7 +313,6 @@ class TaskCoordinator {
                 costSample(attempt, result.parsed),
                 {
                     disposition: result.disposition,
-                    server: this.workerLabel(workerId),
                     starveCount: result.parsed?.starveCount ?? 0
                 }
             );

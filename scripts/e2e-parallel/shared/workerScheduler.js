@@ -82,11 +82,7 @@ class WorkerScheduler {
         // A known cost is already counted against the budget, so the next
         // request need not wait a tick for the CPU sample to catch up.
         if (this.options.schedule === "cost" && assignment.task?.cost?.known)
-            setImmediate(() =>
-                this.requestWhenAvailable().catch((error) =>
-                    this.requestFailed(error)
-                )
-            );
+            this.requestSoon();
         else this.scheduleRetry();
         if (this.options.prefetch) this.prefetchAssignment();
     }
@@ -115,7 +111,9 @@ class WorkerScheduler {
         this.updateConcurrency();
         this.runningAssignments.delete(assignment);
         this.running--;
-        this.scheduleRetry();
+        // Under cost a finished task frees budget a queued one may fit now.
+        if (this.options.schedule === "cost") this.requestSoon();
+        else this.scheduleRetry();
     }
 
     stop() {
@@ -157,6 +155,15 @@ class WorkerScheduler {
             this.requestPending = false;
         }
         this.scheduleRetry();
+    }
+
+    // A request that starts nothing schedules the usual retry itself.
+    requestSoon() {
+        setImmediate(() =>
+            this.requestWhenAvailable().catch((error) =>
+                this.requestFailed(error)
+            )
+        );
     }
 
     scheduleRetry() {

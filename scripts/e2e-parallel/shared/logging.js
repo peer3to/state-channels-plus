@@ -365,13 +365,12 @@ function admission({
 }
 
 // Orange: scheduler declined to admit this tick.
-function hold({ seq, total, reason, buffered }) {
-    console.log(
-        colorize(
-            "orange",
-            `[${seq}/${total}] holding — ${reason}${buffered === undefined ? "" : ` · buffer ${buffered}`}`
-        )
-    );
+function holdLine({ seq, total, reason, buffered }) {
+    return `[${seq}/${total}] holding — ${reason}${buffered === undefined ? "" : ` · buffer ${buffered}`}`;
+}
+
+function hold(options) {
+    console.log(colorize("orange", holdLine(options)));
 }
 
 // Light yellow: a starved task gets its single clean retry.
@@ -850,6 +849,7 @@ module.exports = {
     dryRun,
     admission,
     hold,
+    holdLine,
     starvationRetry,
     infrastructureRetry,
     appendRunnerFailureMarker,

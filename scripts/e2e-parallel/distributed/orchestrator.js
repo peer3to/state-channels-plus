@@ -31,6 +31,7 @@ const {
     HOLD_REASONS
 } = require("../shared/constants");
 const { CostCache } = require("../shared/costCache");
+const { budgetHoldReason } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { fromWireCostBudget, toWireTask } = require("./taskWire");
@@ -622,8 +623,22 @@ async function runDistributed(options) {
     const coordinator = new TaskCoordinator(options.tasks, {
         schedule: options.schedule,
         costCache,
-        workerLabel: (id) => workerLabelById.get(id) || id,
         speculative: true,
+        // A busy worker refused for its budget logs nothing itself: record
+        // the hold in its infrastructure log as it happens.
+        onBudgetHold({ workerId, seq, reason }) {
+            fs.appendFileSync(
+                logStore.infrastructurePath(
+                    workerId,
+                    workerLabelById.get(workerId)
+                ),
+                `${logging.holdLine({
+                    seq,
+                    total: options.tasks.length,
+                    reason: budgetHoldReason(reason)
+                })}\n`
+            );
+        },
         onWorkAvailable(workerId) {
             const worker = workers.get(workerId);
             worker?.peer

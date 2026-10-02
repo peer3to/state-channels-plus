@@ -68,6 +68,12 @@ const MEASURED_TASK = {
     runner: "hardhat"
 };
 
+// A clock a second further on at every CPU reading, so each one is taken.
+function steadyClock() {
+    let at = 0;
+    return () => (at += 1000);
+}
+
 describe("distributed worker scheduler", function () {
     it("accepts default FIFO and rejects invalid scheduling flags", function () {
         expect(parseCliArgs(["node", "runner"])).to.include({
@@ -434,6 +440,7 @@ describe("distributed worker scheduler", function () {
                 memBoundGb: 10,
                 sampleOptions: {
                     platform: "linux",
+                    now: steadyClock(),
                     cpuCount: () => 4,
                     procRoot: root,
                     readFile: (file: string) => {
@@ -492,6 +499,7 @@ describe("distributed worker scheduler", function () {
                 memBoundGb: 10,
                 sampleOptions: {
                     platform: "linux",
+                    now: steadyClock(),
                     cpuCount: () => 4,
                     procRoot: root,
                     readFile: (file: string) => {
@@ -534,24 +542,117 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("meters overlapping process-table scans once", async function () {
-        const slowScan = () =>
+    it("meters overlapping process-table scans once and counts a failed one", async function () {
+        const slowScan = (fails: boolean) =>
             new TaskProcessSampler(100, {
+                warn: () => {},
                 execFile: async () => {
-                    await new Promise((resolve) => setTimeout(resolve, 100));
+                    await new Promise((resolve) => setTimeout(resolve, 300));
+                    if (fails) throw new Error("ps unavailable");
                     return {
                         stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
                     };
                 }
             });
         const before = processScanStats();
-        await Promise.all([slowScan().sample(), slowScan().sample()]);
+        await Promise.all([slowScan(false).sample(), slowScan(true).sample()]);
         const after = processScanStats();
         expect(after.processScanCount - before.processScanCount).to.equal(2);
-        // Two 100 ms scans side by side are 100 ms of scanning, not 200.
+        // Two 300 ms scans side by side are 300 ms of scanning, not 600;
+        // the ceiling leaves room for event-loop lag under load.
         expect(after.processScanMs - before.processScanMs)
-            .to.be.at.least(90)
-            .and.below(180);
+            .to.be.at.least(270)
+            .and.below(540);
+    });
+
+    it("keeps the last CPU reading for a check sooner than the shortest interval", async function () {
+        let clock = 0;
+        let stat = "cpu 0 0 0 1000 0 0 0 0 0 0\n";
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 1,
+            memBoundGb: 10,
+            sampleOptions: {
+                platform: "linux",
+                now: () => clock,
+                cpuCount: () => 4,
+                readFile: (file: string) => {
+                    if (file === "/proc/stat") return stat;
+                    const error = new Error("ENOENT") as NodeJS.ErrnoException;
+                    error.code = "ENOENT";
+                    throw error;
+                }
+            }
+        });
+        // Fully busy since the first reading.
+        stat = "cpu 1000 0 0 1000 0 0 0 0 0 0\n";
+        clock = 100;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(0);
+        expect(resources.stats().cpuSampleCount).to.equal(0);
+        clock = 400;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(1);
+        expect(resources.stats().cpuSampleCount).to.equal(1);
+    });
+
+    it("requests at once when a cost task finishes, and only under cost", async function () {
+        const run = async (schedule: string) => {
+            const queue = ["first", "second"].map((id) => ({
+                id,
+                // Unknown costs: only the finish can trigger the next request.
+                task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
+            }));
+            const starts: string[] = [];
+            const scheduler = new WorkerScheduler({
+                schedule,
+                concurrencyCap: 1,
+                retryMs: 60000,
+                canRun: async (running: number) => running === 0,
+                requestTask: async () => queue.shift() ?? null,
+                runTask: async (assignment: { id: string }) => {
+                    starts.push(assignment.id);
+                }
+            });
+            try {
+                await scheduler.requestWhenAvailable();
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                return starts;
+            } finally {
+                scheduler.stop();
+            }
+        };
+        expect(await run("cost")).to.deep.equal(["first", "second"]);
+        expect(await run("fifo")).to.deep.equal(["first"]);
+    });
+
+    it("starts nothing from an immediate request that lands after stop", async function () {
+        let requests = 0;
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs: 60000,
+            canRun: async () => true,
+            requestTask: async () => {
+                requests++;
+                return {
+                    id: `task-${requests}`,
+                    task: { cost: { cores: 0.1, rssGb: 0.1, known: true } }
+                };
+            },
+            runTask: async () => pending
+        });
+        await scheduler.requestWhenAvailable();
+        scheduler.stop();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(requests).to.equal(1);
+        expect(scheduler.running).to.equal(1);
+        release();
     });
 
     it("meters process-table scans for the run metrics", async function () {
@@ -580,6 +681,7 @@ describe("distributed worker scheduler", function () {
                 memBoundGb: 0.1,
                 sampleOptions: {
                     platform: "linux",
+                    now: steadyClock(),
                     cpuCount: () => 4,
                     procRoot: root,
                     readFile: (file: string) => {
@@ -783,6 +885,7 @@ describe("distributed worker scheduler", function () {
                 memBoundGb: 1,
                 sampleOptions: {
                     platform: "linux",
+                    now: steadyClock(),
                     cpuCount: () => 4,
                     procRoot: root,
                     readFile: (file: string) => {
@@ -1057,6 +1160,78 @@ describe("distributed worker scheduler", function () {
             memory: null,
             cpu: null
         });
+    });
+
+    it("reads but never writes the cost cache in read-only runs", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
+        const costCachePath = path.join(root, "test-costs.json");
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            allows: async () => true,
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10
+            })
+        };
+        try {
+            const local = await runScheduler({
+                tasks: [
+                    {
+                        label: "local",
+                        logName: "local",
+                        runner: "forge",
+                        args: []
+                    }
+                ],
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir: root,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate,
+                costCachePath,
+                costCacheReadOnly: true,
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: unknown,
+                    label: string
+                ) => ({ code: 0, label, stdout: "", stderr: "", durationMs: 5 })
+            });
+            expect(local.completed).to.equal(1);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
+            const distributed = await runAgainstProtocolWorkers(
+                [
+                    {
+                        name: "read-only-peer",
+                        distributedProtocol: 15,
+                        attemptResult: {
+                            durationMs: 100,
+                            peakRssGb: 0.5,
+                            avgCores: 0.25
+                        }
+                    }
+                ],
+                {
+                    tasks: [MEASURED_TASK],
+                    run: { costCachePath, costCacheReadOnly: true }
+                }
+            );
+            expect(distributed.failure).to.equal(null);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("writes distributed finalizing samples and skips aborted commits", async function () {

@@ -52,6 +52,11 @@ function requestCostBudget(schedule, resourceGate, activeAssignments) {
     );
 }
 
+// The hold reason for a request the coordinator refused for its cost budget.
+function budgetHoldReason(reason) {
+    return `${reason} (cost budget; predicted cost does not fit)`;
+}
+
 function holdReason(options) {
     const { running, concurrencyCap, resourceGate, memBoundGb, targetLoad } =
         options;
@@ -69,6 +74,7 @@ function holdReason(options) {
 
 module.exports = {
     admissionCost,
+    budgetHoldReason,
     buildSlotEnv,
     costBudgetShortfall,
     holdReason,

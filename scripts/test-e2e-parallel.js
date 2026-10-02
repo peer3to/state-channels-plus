@@ -23,6 +23,7 @@ const {
     compiledTestTreeAvailable,
     refreshCompiledTestTree
 } = require("./e2e-parallel/shared/compiledTree");
+const { readOverrides } = require("./e2e-parallel/shared/costCache");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
 const {
     discoverForgeTasks
@@ -219,6 +220,8 @@ async function main(options = {}) {
         console.log(getHelpText());
         return;
     }
+    // A broken overrides file fails the run before anything is built.
+    readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
 
     // ---- discover tasks ----
     // The Mocha, Foundry and browser tiers are discovered independently and

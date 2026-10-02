@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -24,7 +25,26 @@ const sample = {
     peakRssGb: 0.5,
     avgCores: 0.3
 };
-const metadata = { disposition: "complete", server: "worker", starveCount: 0 };
+const metadata = { disposition: "complete", starveCount: 0 };
+const SCRIPTS = path.resolve(__dirname, "../../scripts");
+const snapshotEntry = (durationMs: number, avgCores: number | null) => ({
+    durationMs,
+    avgCores,
+    peakRssGb: avgCores === null ? null : 1,
+    measurementReason:
+        avgCores === null ? "legacy-measurements-unavailable" : null,
+    samples: 3,
+    lastSeenAt: "2026-10-01T00:00:00.000Z"
+});
+function writeSnapshot(root: string, tasks: Record<string, unknown>) {
+    const snapshotPath = path.join(
+        root,
+        "scripts/e2e-parallel/test-costs.snapshot.json"
+    );
+    fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+    fs.writeFileSync(snapshotPath, JSON.stringify({ version: 2, tasks }));
+    return snapshotPath;
+}
 
 describe("task cost cache", function () {
     it("merges measurements by EWMA and resolves overrides and finished siblings", function () {
@@ -614,6 +634,123 @@ describe("task cost cache", function () {
         }
     });
 
+    it("prefers this checkout's cache over the snapshot when resolving and seeding", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-precedence-"));
+        try {
+            const key = new CostCache({ projectRoot: root }).key(example);
+            writeSnapshot(root, { [key]: snapshotEntry(1000, 0.5) });
+            fs.mkdirSync(path.join(root, ".cache"));
+            fs.writeFileSync(
+                path.join(root, ".cache/test-costs.json"),
+                JSON.stringify({
+                    version: 2,
+                    tasks: {
+                        [key]: { ...snapshotEntry(500, 0.25), samples: 7 }
+                    }
+                })
+            );
+            const cache = new CostCache({ projectRoot: root });
+            expect(cache.resolve(example)).to.include({
+                durationMs: 500,
+                cores: 0.25
+            });
+            cache.record(example, { ...sample, durationMs: 1500 }, metadata);
+            cache.commit();
+            expect(
+                JSON.parse(
+                    fs.readFileSync(
+                        path.join(root, ".cache/test-costs.json"),
+                        "utf8"
+                    )
+                ).tasks[key]
+            ).to.include({ durationMs: 800, samples: 8 });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("falls back value by value past a measurement without cores or memory", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-by-field-"));
+        const unmeasured = {
+            ...sample,
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "process-sampling-unavailable"
+        };
+        const sibling = { ...example, label: "sibling", fullTitle: "sibling" };
+        try {
+            const key = new CostCache({ projectRoot: root }).key(example);
+            writeSnapshot(root, { [key]: snapshotEntry(1000, 0.5) });
+            // This checkout measured it only on an older worker.
+            fs.mkdirSync(path.join(root, ".cache"));
+            fs.writeFileSync(
+                path.join(root, ".cache/test-costs.json"),
+                JSON.stringify({
+                    version: 2,
+                    tasks: { [key]: snapshotEntry(900, null) }
+                })
+            );
+            let cache = new CostCache({ projectRoot: root });
+            cache.record(example, unmeasured, metadata);
+            // The duration is this run's; cores and memory are the snapshot's.
+            expect(cache.resolve(example)).to.deep.equal({
+                durationMs: 100,
+                cores: 0.5,
+                rssGb: 1,
+                known: true
+            });
+            cache.commit();
+            expect(
+                JSON.parse(
+                    fs.readFileSync(
+                        path.join(root, ".cache/test-costs.json"),
+                        "utf8"
+                    )
+                ).tasks[key]
+            ).to.include({ avgCores: 0.5, peakRssGb: 1 });
+            // With no measured cores anywhere, a sibling's come before the default.
+            cache = new CostCache({ projectRoot: root });
+            cache.record(sibling, { ...sample, avgCores: 0.75 }, metadata);
+            cache.record(
+                { ...example, label: "legacy", fullTitle: "legacy" },
+                unmeasured,
+                metadata
+            );
+            expect(
+                cache.resolve({
+                    ...example,
+                    label: "legacy",
+                    fullTitle: "legacy"
+                })
+            ).to.include({ cores: 0.75, known: false });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rewrites a cache from an earlier format as format 2", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-v1-"));
+        const warn = console.warn;
+        console.warn = () => {};
+        try {
+            const cachePath = path.join(root, ".cache/test-costs.json");
+            fs.mkdirSync(path.dirname(cachePath));
+            fs.writeFileSync(
+                cachePath,
+                JSON.stringify({ version: 1, tasks: { old: { samples: 0 } } })
+            );
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.commit();
+            const written = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+            expect(written.version).to.equal(2);
+            expect(written.tasks).to.have.keys(cache.key(example));
+        } finally {
+            console.warn = warn;
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("never writes the cache in read-only mode", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-read-only-"));
         try {
@@ -678,6 +815,105 @@ describe("task cost cache", function () {
                 new CostCache({ projectRoot: root, cachePath: "missing.json" })
                     .snapshot
             ).to.have.keys("a", "b", "c");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("stops a snapshot refresh on an unreadable snapshot or cache", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-refresh-bad-")
+        );
+        try {
+            const snapshotPath = writeSnapshot(root, {
+                kept: snapshotEntry(1000, 0.5)
+            });
+            const cachePath = path.join(root, ".cache/test-costs.json");
+            fs.mkdirSync(path.dirname(cachePath));
+            fs.writeFileSync(
+                cachePath,
+                JSON.stringify({
+                    version: 2,
+                    tasks: { b: snapshotEntry(5, 1) }
+                })
+            );
+            const good = fs.readFileSync(snapshotPath, "utf8");
+            const broken = `${good.slice(0, -1)},}`;
+            fs.writeFileSync(snapshotPath, broken);
+            expect(() => refreshSnapshot({ projectRoot: root })).to.throw(
+                `Cannot refresh from ${snapshotPath}`
+            );
+            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(broken);
+            fs.writeFileSync(snapshotPath, good);
+            fs.writeFileSync(
+                cachePath,
+                JSON.stringify({ version: 1, tasks: {} })
+            );
+            expect(() => refreshSnapshot({ projectRoot: root })).to.throw(
+                "Invalid cost cache schema"
+            );
+            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(good);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("refreshes the snapshot from the command line and rejects a bad argument", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-refresh-cli-")
+        );
+        const script = path.join(SCRIPTS, "e2e-parallel/snapshotTestCosts.js");
+        try {
+            fs.writeFileSync(
+                path.join(root, "costs.json"),
+                JSON.stringify({
+                    version: 2,
+                    tasks: { a: snapshotEntry(5, 1) }
+                })
+            );
+            const ok = spawnSync(
+                process.execPath,
+                [script, "--cost-cache", "costs.json"],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(ok.status).to.equal(0);
+            expect(ok.stdout).to.include("Wrote 1 task costs");
+            const missing = spawnSync(
+                process.execPath,
+                [script, "--cost-cache"],
+                {
+                    cwd: root,
+                    encoding: "utf8"
+                }
+            );
+            expect(missing.status).to.equal(1);
+            expect(missing.stderr).to.include("--cost-cache requires a path");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("fails a runner invocation on broken overrides before building anything", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-early-"));
+        try {
+            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
+                recursive: true
+            });
+            fs.writeFileSync(
+                path.join(
+                    root,
+                    "scripts/e2e-parallel/test-costs.overrides.json"
+                ),
+                "{"
+            );
+            const run = spawnSync(
+                process.execPath,
+                [path.join(SCRIPTS, "test-e2e-parallel.js")],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(run.status).to.equal(1);
+            expect(run.stderr).to.include("Invalid cost overrides");
+            expect(run.stdout).not.to.include("Building");
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

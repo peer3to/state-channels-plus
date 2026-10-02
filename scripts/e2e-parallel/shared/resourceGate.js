@@ -8,7 +8,8 @@ const {
     PER_TEST_MEM_GB,
     PROC_CLOCK_TICKS_PER_SECOND,
     COST_CPU_BUDGET,
-    COST_CPU_VALVE
+    COST_CPU_VALVE,
+    MIN_CPU_SAMPLE_MS
 } = require("./constants");
 const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
 const { costBudgetShortfall } = require("./scheduling");
@@ -165,10 +166,10 @@ async function collectProcessTrees(rootPids, options = {}) {
                 ? readProcProcesses(options)
                 : readPsProcesses(options)
         ).finally(() => {
+            processScans.count++;
             if (--processScans.active === 0)
                 processScans.ms += performance.now() - processScans.busySince;
         });
-        processScans.count++;
         const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
         const rootSet = new Set(roots);
         const trees = new Map(roots.map((root) => [root, []]));
@@ -326,6 +327,43 @@ class ResourceGate {
 
     async sample() {
         const snapshot = readCpuSnapshot(this.sampleOptions);
+        // Counters read over a near-zero interval are noise (coarse ones read
+        // 0%), so a check right after the last reading keeps that reading.
+        if (snapshot.at - this.lastCpuSnapshot.at >= MIN_CPU_SAMPLE_MS)
+            this.sampleCpu(snapshot);
+
+        const testPids = this.testPids();
+        const infraPids = this.infraPids();
+        const samples = await rssByProcessTree(
+            [...testPids, ...infraPids],
+            this.sampleOptions
+        );
+        let testGb = 0;
+        if (samples) {
+            testGb = testPids.reduce(
+                (sum, pid) => sum + (samples.get(pid) || 0),
+                0
+            );
+            const infraGb = infraPids.reduce(
+                (sum, pid) => sum + (samples.get(pid) || 0),
+                0
+            );
+            this.occupiedGb = testGb + infraGb;
+        } else {
+            this.occupiedGb = systemOccupiedGb();
+        }
+        this.peakOccupiedGb = Math.max(this.peakOccupiedGb, this.occupiedGb);
+        if (samples && testPids.length) {
+            this.memSampleSum += testGb / testPids.length;
+            this.memSampleCount++;
+            this.avgPerTestGb = Math.max(
+                0.25,
+                this.memSampleSum / this.memSampleCount
+            );
+        }
+    }
+
+    sampleCpu(snapshot) {
         const delta = cpuDelta(this.lastCpuSnapshot, snapshot);
         this.lastCpuSnapshot = snapshot;
         this.cpuSource = snapshot.source;
@@ -360,36 +398,6 @@ class ResourceGate {
         if (delta.throttledMs !== undefined) {
             this.throttledMs += Math.max(0, delta.throttledMs);
             this.nrThrottled += Math.max(0, delta.nrThrottled);
-        }
-
-        const testPids = this.testPids();
-        const infraPids = this.infraPids();
-        const samples = await rssByProcessTree(
-            [...testPids, ...infraPids],
-            this.sampleOptions
-        );
-        let testGb = 0;
-        if (samples) {
-            testGb = testPids.reduce(
-                (sum, pid) => sum + (samples.get(pid) || 0),
-                0
-            );
-            const infraGb = infraPids.reduce(
-                (sum, pid) => sum + (samples.get(pid) || 0),
-                0
-            );
-            this.occupiedGb = testGb + infraGb;
-        } else {
-            this.occupiedGb = systemOccupiedGb();
-        }
-        this.peakOccupiedGb = Math.max(this.peakOccupiedGb, this.occupiedGb);
-        if (samples && testPids.length) {
-            this.memSampleSum += testGb / testPids.length;
-            this.memSampleCount++;
-            this.avgPerTestGb = Math.max(
-                0.25,
-                this.memSampleSum / this.memSampleCount
-            );
         }
     }
 
