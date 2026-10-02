@@ -169,12 +169,13 @@ class WorkerScheduler {
     // A request that starts nothing schedules the usual retry itself. While an
     // unknown-cost start settles, the pending tick makes the request instead.
     requestSoon() {
-        if (this.settling) return this.scheduleRetry();
-        setImmediate(() =>
+        setImmediate(() => {
+            // Checked when it runs: an unknown-cost start may have begun since.
+            if (this.settling) return this.scheduleRetry();
             this.requestWhenAvailable().catch((error) =>
                 this.requestFailed(error)
-            )
-        );
+            );
+        });
     }
 
     restartRetry() {

@@ -622,6 +622,48 @@ describe("distributed worker scheduler", function () {
         expect(resources.stats().cpuSampleCount).to.equal(2);
     });
 
+    it("keeps a finish's queued request from starting a task while an unknown-cost start settles", async function () {
+        const retryMs = 1000;
+        const startedAt = new Map<string, number>();
+        const forever = new Promise<void>(() => {});
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "known", task: cost(true) },
+            { id: "unknown", task: cost(false) },
+            { id: "next", task: cost(true) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => {
+                const next = queue.shift() ?? null;
+                // "unknown" arrives on the same timer tick that "known"
+                // finishes on, after that finish queued its request.
+                if (next?.id === "unknown")
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                return next;
+            },
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "known") return forever;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            expect(
+                startedAt.get("next")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
     it("requests at once again once an unknown-cost start's tick has passed", async function () {
         const retryMs = 1000;
         const startedAt = new Map<string, number>();
@@ -808,6 +850,44 @@ describe("distributed worker scheduler", function () {
         const after = processScanStats();
         expect(after.processScanCount - before.processScanCount).to.equal(2);
         expect(after.processScanMs).to.be.at.least(before.processScanMs);
+    });
+
+    it("holds a busy worker while CPU readings yield no utilization, and says so", async function () {
+        let clock = 0;
+        let stat = "cpu 0 0 0 1000 0 0 0 0 0 0\n";
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            sampleOptions: {
+                platform: "linux",
+                now: () => clock,
+                cpuCount: () => 4,
+                readFile: (file: string) => {
+                    if (file === "/proc/stat") return stat;
+                    const error = new Error("ENOENT") as NodeJS.ErrnoException;
+                    error.code = "ENOENT";
+                    throw error;
+                }
+            }
+        });
+        // Counters that have not moved give no utilization at all.
+        clock = 400;
+        expect(await resources.allows(1, 4)).to.equal(false);
+        expect(
+            holdReason({
+                schedule: "fifo",
+                running: 1,
+                concurrencyCap: 4,
+                resourceGate: resources,
+                memBoundGb: 10,
+                targetLoad: 0.8
+            })
+        ).to.equal("cpu (awaiting first CPU reading)");
+        stat = "cpu 100 0 0 1900 0 0 0 0 0 0\n";
+        clock = 800;
+        expect(await resources.allows(1, 4)).to.equal(true);
     });
 
     it("logs the fifo hold reason the gate counted", async function () {

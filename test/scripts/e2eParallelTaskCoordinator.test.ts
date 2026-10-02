@@ -186,6 +186,40 @@ describe("distributed task coordinator", function () {
         }
     });
 
+    it("leaves the cost cache alone when a redundant speculative copy succeeds", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-redundant-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const only = {
+                ...task("only"),
+                runner: "hardhat",
+                fullTitle: "only",
+                args: ["test", "--no-compile", "test/unit/a.test.ts"]
+            };
+            const coordinator = new TaskCoordinator([only], {
+                speculative: true,
+                costCache: cache
+            });
+            const first = coordinator.requestTask("a");
+            const copy = coordinator.requestTask("b");
+            const result = (attemptId: string, durationMs: number) => ({
+                attemptId,
+                code: 0,
+                durationMs,
+                stdout: "",
+                stderr: ""
+            });
+            coordinator.completeAttempt("a", result(first.attemptId, 100));
+            expect(
+                coordinator.completeAttempt("b", result(copy.attemptId, 999))
+                    .accepted
+            ).to.equal(false);
+            expect(cache.resolve(only).durationMs).to.equal(100);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("keeps a task's first assignment when a speculative copy is handed out", function () {
         let clock = 0;
         const only = task("only");

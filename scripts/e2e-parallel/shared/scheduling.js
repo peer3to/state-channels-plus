@@ -62,6 +62,8 @@ function holdReason(options) {
         options;
     if (running >= concurrencyCap)
         return `cap (running ${running}/${concurrencyCap})`;
+    if (resourceGate.cpuMeasured === false)
+        return "cpu (awaiting first CPU reading)";
     if (options.schedule === "cost") {
         return `${resourceGate.lastHoldReason ?? "unknown"} (cost budget; owned ${resourceGate.occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB, cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%/${(resourceGate.costCpuValve * 100).toFixed(0)}%)`;
     }

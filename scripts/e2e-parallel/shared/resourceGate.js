@@ -301,6 +301,8 @@ class ResourceGate {
         // hypervisor steal included) so a core occupied by anything counts
         // as occupied. What this cgroup itself consumed is kept beside it.
         this.cpuUtil = 0;
+        // False until a reading yields a utilization; cpuUtil is 0 till then.
+        this.cpuMeasured = false;
         this.peakCpu = 0;
         this.cpuSamples = [];
         this.containerCpuUtil = undefined;
@@ -369,7 +371,10 @@ class ResourceGate {
         this.cpuSource = snapshot.source;
         this.cpuCores = snapshot.cores;
         const machineUtil = delta.hostCpuUtil ?? delta.cpuUtil;
-        if (machineUtil !== undefined) this.cpuUtil = machineUtil;
+        if (machineUtil !== undefined) {
+            this.cpuUtil = machineUtil;
+            this.cpuMeasured = true;
+        }
         this.peakCpu = Math.max(this.peakCpu, this.cpuUtil);
         this.cpuSamples.push(this.cpuUtil);
         if (snapshot.source === "cgroup" && delta.cpuUtil !== undefined) {
@@ -411,7 +416,7 @@ class ResourceGate {
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
         // Until the first CPU reading a busy worker cannot see the load.
-        if (!this.cpuSamples.length) return this.hold("cpu");
+        if (!this.cpuMeasured) return this.hold("cpu");
         // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
             const shortfall = costBudgetShortfall(
