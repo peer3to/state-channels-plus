@@ -622,6 +622,44 @@ describe("distributed worker scheduler", function () {
         expect(resources.stats().cpuSampleCount).to.equal(2);
     });
 
+    it("requests at once again once an unknown-cost start's tick has passed", async function () {
+        const retryMs = 1000;
+        const startedAt = new Map<string, number>();
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "unknown", task: cost(false) },
+            { id: "known", task: cost(true) },
+            { id: "next", task: cost(true) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                return new Promise<void>(() => {});
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            // "known" waited out the tick; "next" follows it at once rather
+            // than a tick later.
+            expect(
+                startedAt.get("known")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+            expect(
+                startedAt.get("next")! - startedAt.get("known")!
+            ).to.be.below(retryMs / 2);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
     it("lets another task's finish wait out an unknown-cost start's tick", async function () {
         const retryMs = 300;
         const startedAt = new Map<string, number>();
