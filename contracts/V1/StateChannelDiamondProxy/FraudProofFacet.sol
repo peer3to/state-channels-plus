@@ -346,14 +346,14 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        MessageBlock storage persistedBlock =
-            inboundMessageBlockMap[fraudProofVerificationContext.channelId][messageBlockHash];
-        if (persistedBlock.timestamp != 0 || persistedBlock.messages.length != 0) {
-            return _invalid();
-        }
-
-        StateSnapshot memory onChainSnapshot = _getStateSnapshot(fraudProofVerificationContext.channelId);
-        if (onChainSnapshot.snapshotData.latestInboundMessageBlockHash == messageBlockHash) {
+        // at or below the snapshot's inbound head the block may be pruned history -> revert, never slash the prover
+        uint256 snapshotHeight =
+            stateSnapshots[fraudProofVerificationContext.channelId].snapshotData.latestInboundMessageBlockHeight;
+        uint256 forgedHeight = proof.forgedInboundMessageBlock.blockHeight;
+        require(forgedHeight > snapshotHeight, RaceConditionBlockHeightTooOld(snapshotHeight, forgedHeight));
+        if (
+            !_isUncommittedInboundMessageBlock(fraudProofVerificationContext.channelId, proof.forgedInboundMessageBlock)
+        ) {
             return _invalid();
         }
 

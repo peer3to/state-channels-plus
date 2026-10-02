@@ -174,6 +174,15 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         );
     }
 
+    /** Run the real forged-inbound detector over a block's carried inbound blocks. */
+    public async detectForgedInboundMessageBlock(
+        encodedBlockConfirmation: string
+    ): Promise<{ encodedForgedInboundMessageBlock: string } | null> {
+        return this.service.detectForgedInboundMessageBlock(
+            encodedBlockConfirmation
+        );
+    }
+
     public async runBlockIngest(
         encodedBlockConfirmation: string,
         options?: BlockProbeOptions

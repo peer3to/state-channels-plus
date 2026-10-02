@@ -6,6 +6,7 @@ import P2pEventHooks from "@/P2pEventHooks";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import {
     DebugProxy,
     DetachedPromises,
@@ -253,6 +254,13 @@ class DisputeManager {
                     RaceConditionDisputeTimeoutWindowCreatedTooEarly: () => {
                         this.logger.info(
                             "dispute no-op: existing window predates timeout deadline",
+                            { forkId, channelId: this.channelId }
+                        );
+                    },
+                    // the snapshot passed a stored forged-inbound proof's height -> the next dispute filters it out
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            "dispute no-op: fraud proof below the snapshot's inbound head",
                             { forkId, channelId: this.channelId }
                         );
                     },
@@ -552,6 +560,12 @@ class DisputeManager {
                             `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
                             { disputeMeta }
                         );
+                    },
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            `killDispute no-op: forged inbound block below the snapshot's inbound head for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
                     }
                 }
             });
@@ -650,10 +664,24 @@ class DisputeManager {
                 this.storage.fraudProofs.getFraudProofForParticipant(
                     participant
                 );
-            if (fraudProof) {
-                fraudProofsToApply.push(fraudProof);
-                onChainSlashes.add(participant);
-            }
+            if (!fraudProof) continue;
+            // a forged-inbound proof the chain no longer judges reverts the whole multicall -> leave it out
+            if (
+                Number(fraudProof.proofType) ===
+                    toSolidityFraudProofType(
+                        FraudProofType.ForgedInboundMessageBlock
+                    ) &&
+                !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
+                    this.channelId,
+                    Codec.decode(
+                        fraudProof.encodedProof,
+                        FraudProofType.ForgedInboundMessageBlock
+                    ).forgedInboundMessageBlock
+                ))
+            )
+                continue;
+            fraudProofsToApply.push(fraudProof);
+            onChainSlashes.add(participant);
         }
 
         // timeout

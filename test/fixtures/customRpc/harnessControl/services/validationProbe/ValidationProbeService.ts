@@ -916,6 +916,25 @@ export class ValidationProbeService extends ANetworkRpcService<
         }
     }
 
+    public async detectForgedInboundMessageBlock(
+        encodedBlockConfirmation: string
+    ): Promise<{ encodedForgedInboundMessageBlock: string } | null> {
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
+        const forged =
+            await this.sm.validationService.detectForgedInboundMessageBlock(
+                block
+            );
+        if (!forged) return null;
+        return {
+            encodedForgedInboundMessageBlock: Codec.encode(
+                forged,
+                Type.MessageBlock
+            ) as string
+        };
+    }
+
     /**
      * White-box: run the whole onBlockConfirmation pipeline (assembly, hash
      * compare, VM restore) under the same record-only side-effect wrappers as

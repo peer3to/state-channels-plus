@@ -2,11 +2,12 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
 import * as factory from "@test/factory";
 
 import { normalizeRealConfirmations } from "@test/fixtures/ConfirmationNormalizationFixture";
 import { probeWrongLeaderInsertion } from "@test/fixtures/MathInsertionFixture";
+import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
 import {
     assertSpectatingFraud,
     assertObserverHook
@@ -217,6 +218,76 @@ describe("Unit: ValidationService", function () {
     it("observer blockForkIsDisputed keeps the spectator reaction without submitting a dispute", async function () {
         await assertObserverHook("blockForkIsDisputed");
     });
+    describe("detectForgedInboundMessageBlock", function () {
+        // the spectator synced after the prune -> it never stored the top-up, so only the chain answers
+        it("genuine inbound pruned by a same-fork snapshot, absent locally -> not flagged", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
+            const spectator = await h.join.addSpectatorWait();
+            const prunedHash = hash(
+                Codec.encode(prunedInbound, Type.MessageBlock)
+            );
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getInboundMessageBlock(prunedHash)
+                    .request()
+            ).to.equal(null);
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(0).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: 1
+                    },
+                    messageBlocks: [prunedInbound]
+                }
+            );
+
+            const forged = await h
+                .control(spectator)
+                .validation.detectForgedInboundMessageBlock(encoded)
+                .request();
+
+            expect(forged).to.equal(null);
+        });
+
+        it("fabricated inbound one above the snapshot's inbound head -> flagged", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, snapshotInboundHeight, forkId } =
+                await stagePrunedGenuineInbound();
+            const spectator = await h.join.addSpectatorWait();
+            const fabricated = factory.messageBlock({
+                previousBlockHash: hash(
+                    Codec.encode(prunedInbound, Type.MessageBlock)
+                ),
+                blockHeight: BigInt(snapshotInboundHeight + 1)
+            });
+            const encoded = await factory.buildAndEncodeBlock(
+                h.getPeer(0).signer,
+                {
+                    header: {
+                        channelId: h.channelId,
+                        forkId,
+                        transactionCnt: 1
+                    },
+                    messageBlocks: [fabricated]
+                }
+            );
+
+            const forged = await h
+                .control(spectator)
+                .validation.detectForgedInboundMessageBlock(encoded)
+                .request();
+
+            expect(forged, "fabricated block flagged").to.not.equal(null);
+            expect(hash(forged!.encodedForgedInboundMessageBlock)).to.equal(
+                hash(Codec.encode(fabricated, Type.MessageBlock))
+            );
+        });
+    });
+
     describe("isChannelOpen", function () {
         it("open fork (non-zero) → true", async function () {
             const h = TestSession.getHarness();

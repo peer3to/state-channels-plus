@@ -26,18 +26,18 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | `milestone-skip`    | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
 | `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
 | `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
-| `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
+| `pruned-inbound`    | fixed          | high              | —          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
 | `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
 | `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
-- **Unauthenticated on-chain paths (ranks 1–3):** any chain account can use them.
+- **Unauthenticated on-chain paths (ranks 1–2):** any chain account can use them; the rank-3 item of this class is fixed.
 - **Peer-assisted signing paths (ranks 4–5):** the attacker must be the sync responder that the victim selected.
 - **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
 
-The fixed item has no rank. All 7 protocol inputs are retained here, including the fixed claim.
+Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
 <a id="milestone-skip"></a>
 
@@ -69,7 +69,7 @@ Source identity: `csf_623195021241d901f52c336c`; rule `zero-verdict`; occurrence
 
 **Current evidence and path.** The zero-sentinel equality is unchanged. Any chain caller can submit a committed honest dispute during its kill period, choose a proof handler that returns zero for invalid evidence, and declare participant zero. The success branch delegates to killDispute, which slashes the real disputer and removes its commitment.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–35](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L35); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:118–128](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L118-L128); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–35](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L35); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:118–128](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L118-L128); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:533–561](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L533-L561).
 
 **Boundary:** any chain account, with no credential, through the routed `applyDisputeFraudProofs` entrypoint. The caller needs only the public contents of a committed dispute. Ranking class: unauthenticated on-chain path.
 
@@ -115,30 +115,29 @@ Planned permutations, with no mapped test yet: [`INV-ENFFP-1-BGVZN4.T1.P12`](../
 
 <a id="pruned-inbound"></a>
 
-## 4. Pruned genuine inbound history can falsely slash honest authors
+## 4. Pruned genuine inbound history could falsely slash honest authors
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 3 · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw).
+
+Fix status: resolved.
 
 Source identity: `csf_f664a2f1629d842430826ec3`; rule `pruned-inbound`; occurrence `occ_60d59b4ec6fb0b8576e03989`.
 
-**Current evidence and path.** The forged-inbound handler still equates absence from the live map with forgery. Normal snapshot adoption deletes the consumed inbound head and its ancestors. After a later head is adopted, a retained honest signed block containing an earlier genuine head can satisfy the false-fraud verdict.
+**Evidence and path.** The forged-inbound handler equated absence from the live map with forgery. Normal snapshot adoption deleted the consumed inbound head and its ancestors. After a later head was adopted, a retained honest signed block containing an earlier genuine head satisfied the false-fraud verdict, and the honest author was slashed.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:330–362](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L330-L362); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:196–205](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L196-L205).
+**Locations (fixed code):** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:349–360](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L349-L360); [contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol:325–333](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L325-L333); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:195–204](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L195-L204).
 
-**Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one retained honest signed block that includes the earlier inbound head. Ranking class: unauthenticated on-chain path.
+**Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed was one retained honest signed block that included the earlier inbound head. Ranking class: unauthenticated on-chain path.
 
-**Counterevidence and limits.** The current snapshot head is exempt. The attack needs an older pruned head and an author who remains eligible; proof of inclusion and signature authenticity still apply.
+**Counterevidence and limits.** The current snapshot head was exempt. The attack needed an older pruned head and an author who remained eligible; proof of inclusion and signature authenticity still applied.
 
-**Proof gaps.** Static only; construct the two successive legitimate inbound heads in a future regression test.
+**Fix.** A forged-inbound proof is judged only above the on-chain snapshot's inbound head S. At or below S the handler reverts `RaceConditionBlockHeightTooOld(S, height)` instead of returning an invalid verdict, so neither the honest author nor a prover who lost a race to a snapshot is slashed. Inbound linkage puts every carried block one above its pre-state's inbound height, and state on the current fork is never below the on-chain snapshot, so an honest proof never needs a height at or below S; pruning removes exactly that canonical range. The height rule also covers the old head exemption. The handler and the SDK detector share one predicate, `_isUncommittedInboundMessageBlock`, which the detector reads through the routed view `isUncommittedInboundMessageBlock` (replacing `hasInboundMessageBlock`). Dispute construction leaves out a stored forged-inbound proof the chain no longer judges, and `dispute()` and `killDispute` treat a racing `RaceConditionBlockHeightTooOld` as a no-op. Verifying the rule exposed that `reduce` read a pruned snapshot head's inbound height as 0, which would have lowered S on a fork switch; `reduce` now takes that height from the snapshot.
 
-**Fix handoff (proposed, not implemented):** Preserve authenticated historical inclusion evidence or constrain proofs with an authenticated history/finality rule. Absence from prunable storage must not prove forgery. Preserve the preconditions and limits above. Required regression work:
+**Residual risk.** An author who invents an inbound block at or below S is no longer punishable through this proof type. Linkage confines such a block to history at or below the adopted snapshot or to a superseded fork.
 
-- After advancing from genuine inbound A to B and pruning A, a forgery proof using A must not slash its author.
-- Keep rejection of genuinely uncommitted inbound blocks with authenticated evidence.
+**Regression evidence:** [`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14), [`INV-ENFFP-1-BGVZN4.T1.P16`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16) and [`INV-ENFFP-1-BGVZN4.T1.P17`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p17), mapped in the [FraudProofFacetPrunedInbound](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacetPrunedInbound.t.sol.md) and [E2E-PrunedInboundFraudProof](../verification/tests/test/e2e/E2E-PrunedInboundFraudProof.test.ts.md) reports. Each regression failed with the fix reverted.
 
-Planned permutation, with no mapped test yet: [`INV-ENFFP-1-BGVZN4.T1.P14`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p14). It is a regression obligation, not evidence of a passing test. The fix change maps the exact test.
-
-**Specification / implementation owners:** [fraud-slashing requirements and planned tests](../specification/enforcement/fraud-slashing.md); [FraudProofFacet source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md). The relevant obligation is that only proven misconduct can slash an honest participant; no new protocol meaning is selected here.
+**Specification / implementation owners:** [fraud-slashing requirements and planned tests](../specification/enforcement/fraud-slashing.md); [FraudProofFacet source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md) decision 4.
 
 <a id="open-deadline"></a>
 

@@ -15,6 +15,7 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
+import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import {
     disputeAndKillSharingHeldRead,
@@ -494,6 +495,50 @@ describe("Unit: DisputeManager", function () {
 
             expect(r.fraudProofCount).to.equal(1);
             expect(r.offenderSlashed).to.equal(true);
+        });
+
+        // the proof lost the race to a snapshot -> on chain it would revert the whole multicall
+        it("stored forged-inbound proof whose inbound block a snapshot pruned → constructDispute leaves it out, author not marked slashed", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId, carrier } =
+                await stagePrunedGenuineInbound();
+            const observer = h.getPeer(1);
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.carrierHash)!;
+                    const inbound = block.messageBlocks.find(
+                        (mb) => Number(mb.blockHeight) === args.inboundHeight
+                    )!;
+                    sm.fraudProofService.createForgedInboundMessageBlockProof(
+                        block,
+                        inbound
+                    );
+                    const stored =
+                        sm.storage.fraudProofs.getFraudProofForParticipant(
+                            block.author
+                        ) !== undefined;
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        stored,
+                        fraudProofCount: fraudProofsToApply.length,
+                        authorMarkedSlashed:
+                            dispute.input.onChainSlashes.includes(block.author)
+                    };
+                },
+                {
+                    forkId,
+                    carrierHash: carrier.hash,
+                    inboundHeight: Number(prunedInbound.blockHeight)
+                },
+                { timeoutMs: 10_000 }
+            );
+
+            expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(0);
+            expect(r.authorMarkedSlashed).to.equal(false);
         });
 
         it("latest block final by everyone → postedAuditingData false", async function () {

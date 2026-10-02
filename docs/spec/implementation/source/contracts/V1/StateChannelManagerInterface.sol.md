@@ -29,13 +29,13 @@ Its declarations are grouped by owner: `// implemented by StateChannelManagerPro
 ([#L16](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L16)) then one
 `// routed to <Facet>` block per facet — UtilityFacet
 ([#L42](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L42)), DisputeManagerFacet
-([#L156](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L156)),
-DisputeVerificationFacet ([#L165](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L165)),
-FraudProofFacet ([#L199](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L199)),
-DisputeFraudProofFacet ([#L208](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L208)),
-StateSnapshotFacet ([#L223](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L223)),
-JoinChannelFacet ([#L238](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L238)) and
-StateProofFacet ([#L252](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L252)).
+([#L160](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L160)),
+DisputeVerificationFacet ([#L169](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L169)),
+FraudProofFacet ([#L203](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L203)),
+DisputeFraudProofFacet ([#L212](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L212)),
+StateSnapshotFacet ([#L227](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L227)),
+JoinChannelFacet ([#L242](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L242)) and
+StateProofFacet ([#L256](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L256)).
 It inherits `StateChannelManagerEvents`, so a consumer bound to this type also decodes every event
 the diamond emits.
 
@@ -72,7 +72,7 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
    `isGenesisSnapshotWithoutTimeCheck`/`isSnapshotNewer` moved from `view` to `pure`. This is not
    cosmetic: mutability is what decides whether ethers sends an `eth_call` or a transaction, so a
    `nonpayable` declaration of a read-only facet function costs the caller a transaction and returns
-   no value ([#L148](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L148)).
+   no value ([#L152](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L152)).
    Parameter and return names were also aligned with the facets in the same pass; they are ABI-neutral.
 4. **Declarations are grouped by their owning facet.** The comment blocks mirror the proxy's routing
    table, which is what makes an accidental divergence visible in review
