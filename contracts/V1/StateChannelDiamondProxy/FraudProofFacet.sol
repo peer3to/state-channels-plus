@@ -126,7 +126,6 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return _valid(signer);
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousStateSnapshot))) return _invalid();
             if (previousStateSnapshot.snapshotData.stateMachineStateHash != keccak256(previousStateStateMachineState)) {
@@ -146,6 +145,9 @@ contract FraudProofFacet is StateChannelCommon {
                 return _invalid();
             }
         }
+
+        // fork verdict only after the snapshot is bound to the signed block -> unlinked evidence never slashes
+        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return _valid(signer);
 
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
             .executeStateTransition(

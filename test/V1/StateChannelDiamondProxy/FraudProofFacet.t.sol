@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 
-import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
+import {TimeoutCalldataPostedStaging} from "../harness/TimeoutCalldataPostedStaging.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
+import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {
     RaceConditionDisputeKillPeriodNotExpired,
     RaceConditionDisputeWindowNotOpen,
@@ -11,6 +12,7 @@ import {
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
+import {DisputeInvalidBlockInStateProofApplyFraudProof} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import "../../../contracts/V1/types/FraudProofTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
@@ -35,7 +37,7 @@ contract WrongGenesisHarness is FraudProofFacet, DisputeWindowSeeding {
 }
 
 // test naming: testFuzz_<targetFunction>_<property>
-contract FraudProofFacetTest is DiamondHarness {
+contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
     StateChannelManagerInterface internal diamond;
 
     uint256 internal constant AUTHOR_PK = 0xA11CE;
@@ -43,6 +45,12 @@ contract FraudProofFacetTest is DiamondHarness {
     bytes32 internal constant FORK_ID = keccak256("fork");
     // non-zero so a deadline is never just the timestamp it was measured from
     uint256 internal constant HARNESS_EVIDENCE_TIME = 10;
+    // the honest channel: AUTHOR_PK signs the honest blocks, PEER_PK disputes, CHALLENGER_PK and
+    // OUTSIDER submit forged proofs
+    bytes32 internal constant HONEST_CHANNEL_ID = keccak256("honest-channel");
+    uint256 internal constant PEER_PK = 0xB0B;
+    uint256 internal constant CHALLENGER_PK = 0xC4A1;
+    address internal constant OUTSIDER = address(0x0B5E);
 
     function setUp() public {
         diamond = deployDiamond();
@@ -239,6 +247,260 @@ contract FraudProofFacetTest is DiamondHarness {
             abi.encodeWithSelector(RaceConditionGenesisTimestampNotAvailable.selector, channelId, originForkId, forkId)
         );
         harness.runFraudProof(fraudProof, FraudProofVerificationContext({channelId: channelId}));
+    }
+
+    // ---- invalid-transition proofs must bind the previous snapshot before judging it ----
+
+    /// An open channel of AUTHOR_PK, PEER_PK and CHALLENGER_PK, and the base its first block
+    /// builds on: the genesis snapshot, its state and the snapshot's hash.
+    function _openHonestChannel() internal returns (PostedBlockBase memory genesisBase) {
+        uint256[] memory pks = new uint256[](3);
+        pks[0] = AUTHOR_PK;
+        pks[1] = PEER_PK;
+        pks[2] = CHALLENGER_PK;
+        _openChannel(HONEST_CHANNEL_ID, pks);
+
+        MathState memory state;
+        state.participants = new address[](3);
+        state.balances = new uint256[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            state.participants[i] = vm.addr(pks[i]);
+        }
+        StateSnapshot memory genesis = diamond.getStateSnapshot(HONEST_CHANNEL_ID);
+        assertEq(genesis.snapshotData.stateMachineStateHash, keccak256(abi.encode(state)), "staged genesis state");
+        genesisBase = PostedBlockBase(genesis, abi.encode(state), keccak256(abi.encode(genesis)));
+    }
+
+    /// `add(1)` by `pk` on `base` at `transactionCnt`, with the snapshot hash the handler recomputes,
+    /// so the block is honest; returns the base the next block builds on.
+    function _honestBlock(uint256 pk, PostedBlockBase memory base, uint256 transactionCnt)
+        internal
+        returns (SignedBlock memory signedBlock, PostedBlockBase memory nextBase)
+    {
+        Block memory honestBlock;
+        honestBlock.transaction.header.channelId = HONEST_CHANNEL_ID;
+        honestBlock.transaction.header.forkId = base.latestStateSnapshot.forkId;
+        honestBlock.transaction.header.participant = vm.addr(pk);
+        honestBlock.transaction.header.transactionCnt = transactionCnt;
+        honestBlock.transaction.header.timestamp = block.timestamp;
+        honestBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        honestBlock.previousBlockHash = base.previousBlockHash;
+        (StateSnapshot memory next, bytes memory nextState) =
+            _fundedReplay(diamond, HONEST_CHANNEL_ID, base, honestBlock.transaction);
+        next.snapshotData.originForkId = base.latestStateSnapshot.forkId;
+        honestBlock.stateSnapshotHash = keccak256(abi.encode(next));
+
+        bytes memory encodedBlock = abi.encode(honestBlock);
+        signedBlock = SignedBlock({encodedBlock: encodedBlock, signature: _sign(pk, encodedBlock)});
+        nextBase = PostedBlockBase(next, nextState, keccak256(encodedBlock));
+    }
+
+    function _invalidTransitionProof(
+        SignedBlock memory invalidBlock,
+        bytes memory encodedPreviousBlock,
+        StateSnapshot memory previousSnapshot,
+        bytes memory previousState
+    ) internal pure returns (FraudProof memory) {
+        BlockInvalidStateTransitionProof memory proof;
+        proof.invalidBlock = invalidBlock;
+        proof.previousBlock.encodedBlock = encodedPreviousBlock;
+        proof.previousBlockStateSnapshot = previousSnapshot;
+        proof.previousStateStateMachineState = previousState;
+        return FraudProof({
+            proofType: FraudProofType.BlockInvalidStateTransition,
+            participant: vm.addr(AUTHOR_PK),
+            encodedProof: abi.encode(proof)
+        });
+    }
+
+    function _applyAs(address submitter, FraudProof memory fraudProof) internal returns (bool ok) {
+        FraudProof[] memory proofs = new FraudProof[](1);
+        proofs[0] = fraudProof;
+        vm.prank(submitter);
+        (ok,) = address(diamond).call(
+            abi.encodeCall(
+                diamond.applyFraudProofs, (proofs, FraudProofVerificationContext({channelId: HONEST_CHANNEL_ID}))
+            )
+        );
+    }
+
+    function _isSlashed(uint256 pk) internal view returns (bool) {
+        return diamond.isParticipantSlashedOnChain(HONEST_CHANNEL_ID, vm.addr(pk));
+    }
+
+    function _assertNobodySlashed() internal view {
+        assertFalse(_isSlashed(AUTHOR_PK), "honest signer slashed");
+        assertFalse(_isSlashed(PEER_PK), "peer slashed");
+        assertFalse(_isSlashed(CHALLENGER_PK), "challenger slashed");
+    }
+
+    // the staged blocks are honest: their genuine predecessors slash nobody
+    function test_applyFraudProofs_linkedHonestBlocksKeepSigner() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        (SignedBlock memory laterBlock,) = _honestBlock(PEER_PK, firstBase, 1);
+
+        assertTrue(
+            _applyAs(
+                vm.addr(CHALLENGER_PK),
+                _invalidTransitionProof(firstBlock, "", genesisBase.latestStateSnapshot, genesisBase.encodedLatestState)
+            )
+        );
+        FraudProof memory laterProof = _invalidTransitionProof(
+            laterBlock, firstBlock.encodedBlock, firstBase.latestStateSnapshot, firstBase.encodedLatestState
+        );
+        laterProof.participant = vm.addr(PEER_PK);
+        assertTrue(_applyAs(OUTSIDER, laterProof));
+        assertFalse(_isSlashed(AUTHOR_PK), "honest first-block signer slashed");
+        assertFalse(_isSlashed(PEER_PK), "honest later-block signer slashed");
+        assertTrue(_isSlashed(CHALLENGER_PK), "false proof slashes its participant submitter");
+    }
+
+    // any snapshot that is not the first block's predecessor, on any fork -> signer never slashed
+    function testFuzz_applyFraudProofs_unlinkedSnapshotNeverSlashesHonestFirstBlockSigner(
+        StateSnapshot memory forgedSnapshot,
+        bytes memory forgedState
+    ) public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock,) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+
+        assertTrue(_applyAs(OUTSIDER, _invalidTransitionProof(firstBlock, "", forgedSnapshot, forgedState)));
+        _assertNobodySlashed();
+    }
+
+    // any snapshot and any predecessor bytes that are not the later block's real ones -> signer never slashed
+    function testFuzz_applyFraudProofs_unlinkedSnapshotNeverSlashesHonestLaterBlockSigner(
+        StateSnapshot memory forgedSnapshot,
+        bytes memory forgedState,
+        bytes memory forgedPreviousBlock,
+        bool keepRealPreviousBlock
+    ) public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(PEER_PK, genesisBase, 0);
+        (SignedBlock memory laterBlock,) = _honestBlock(AUTHOR_PK, firstBase, 1);
+
+        bytes memory previousBlock = keepRealPreviousBlock ? firstBlock.encodedBlock : forgedPreviousBlock;
+        _applyAs(OUTSIDER, _invalidTransitionProof(laterBlock, previousBlock, forgedSnapshot, forgedState));
+        _assertNobodySlashed();
+    }
+
+    // a participant submitting the unlinked proof pays for it, the honest signer does not
+    function test_applyFraudProofs_unlinkedOtherForkSnapshotSlashesParticipantSubmitter() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock,) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        StateSnapshot memory otherForkSnapshot = genesisBase.latestStateSnapshot;
+        otherForkSnapshot.forkId = keccak256("other-fork");
+
+        assertTrue(
+            _applyAs(
+                vm.addr(CHALLENGER_PK),
+                _invalidTransitionProof(firstBlock, "", otherForkSnapshot, genesisBase.encodedLatestState)
+            )
+        );
+        assertFalse(_isSlashed(AUTHOR_PK), "honest signer slashed");
+        assertTrue(_isSlashed(CHALLENGER_PK), "participant submitter slashed");
+    }
+
+    // a genuinely linked predecessor with a wrong resulting snapshot is still fraud
+    function test_applyFraudProofs_linkedInvalidTransitionSlashesSigner() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        Block memory fraudBlock;
+        fraudBlock.transaction.header.channelId = HONEST_CHANNEL_ID;
+        fraudBlock.transaction.header.forkId = genesisBase.latestStateSnapshot.forkId;
+        fraudBlock.transaction.header.participant = vm.addr(AUTHOR_PK);
+        fraudBlock.transaction.header.timestamp = block.timestamp;
+        fraudBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        fraudBlock.previousBlockHash = genesisBase.previousBlockHash;
+        fraudBlock.stateSnapshotHash = keccak256("not-the-replayed-snapshot");
+        bytes memory encodedBlock = abi.encode(fraudBlock);
+        SignedBlock memory signedBlock =
+            SignedBlock({encodedBlock: encodedBlock, signature: _sign(AUTHOR_PK, encodedBlock)});
+
+        assertTrue(
+            _applyAs(
+                OUTSIDER,
+                _invalidTransitionProof(
+                    signedBlock, "", genesisBase.latestStateSnapshot, genesisBase.encodedLatestState
+                )
+            )
+        );
+        assertTrue(_isSlashed(AUTHOR_PK), "invalid transition not slashed");
+    }
+
+    // a signer that links its block to a snapshot of another fork is still slashed
+    function test_applyFraudProofs_linkedOtherForkSnapshotSlashesSigner() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory honestFirstBlock,) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        Block memory crossForkBlock = abi.decode(honestFirstBlock.encodedBlock, (Block));
+        crossForkBlock.transaction.header.forkId = keccak256("other-fork");
+        bytes memory encodedBlock = abi.encode(crossForkBlock);
+        SignedBlock memory signedBlock =
+            SignedBlock({encodedBlock: encodedBlock, signature: _sign(AUTHOR_PK, encodedBlock)});
+
+        assertTrue(
+            _applyAs(
+                OUTSIDER,
+                _invalidTransitionProof(
+                    signedBlock, "", genesisBase.latestStateSnapshot, genesisBase.encodedLatestState
+                )
+            )
+        );
+        assertTrue(_isSlashed(AUTHOR_PK), "cross-fork link not slashed");
+    }
+
+    /// A committed timeout dispute by PEER_PK whose state proof holds the honest first block, and
+    /// the dispute proof that wraps an invalid-transition proof of that block on `forgedSnapshot`.
+    function _nestedUnlinkedProof(StateSnapshot memory forgedSnapshot, bytes memory forgedState)
+        internal
+        returns (Dispute memory dispute, DisputeFraudProof[] memory proofs)
+    {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock,) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        StateProof memory stateProof;
+        stateProof.signedBlocks = new SignedBlock[](1);
+        stateProof.signedBlocks[0] = firstBlock;
+        dispute = _uploadTimeoutDispute(
+            diamond, HONEST_CHANNEL_ID, genesisBase.latestStateSnapshot.forkId, stateProof, vm.addr(PEER_PK), PEER_PK
+        );
+
+        DisputeInvalidBlockInStateProofApplyFraudProof memory nested;
+        nested.fraudProof = _invalidTransitionProof(firstBlock, "", forgedSnapshot, forgedState);
+        nested.blockIndexInUnfinalizedPartOfStateProof = 0;
+        proofs = new DisputeFraudProof[](1);
+        proofs[0] = DisputeFraudProof({
+            proofType: DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            participant: vm.addr(PEER_PK),
+            dispute: dispute,
+            encodedProof: abi.encode(nested)
+        });
+    }
+
+    // the unlinked proof nested in a dispute proof never kills the honest dispute
+    function testFuzz_applyDisputeFraudProofs_nestedUnlinkedSnapshotNeverKillsHonestDispute(
+        StateSnapshot memory forgedSnapshot,
+        bytes memory forgedState
+    ) public {
+        (Dispute memory dispute, DisputeFraudProof[] memory proofs) = _nestedUnlinkedProof(forgedSnapshot, forgedState);
+
+        vm.prank(OUTSIDER);
+        (bool ok,) = address(diamond).call(abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs)));
+        assertTrue(ok, "an outsider's false proof is a no-op, not a revert");
+        assertTrue(_isDisputeCommitted(diamond, dispute), "honest dispute killed");
+        _assertNobodySlashed();
+    }
+
+    // a participant submitting the nested unlinked proof pays for it, the honest dispute stands
+    function test_applyDisputeFraudProofs_nestedUnlinkedOtherForkSnapshotSlashesParticipantSubmitter() public {
+        StateSnapshot memory otherForkSnapshot;
+        otherForkSnapshot.forkId = keccak256("other-fork");
+        (Dispute memory dispute, DisputeFraudProof[] memory proofs) = _nestedUnlinkedProof(otherForkSnapshot, "");
+
+        vm.prank(vm.addr(CHALLENGER_PK));
+        diamond.applyDisputeFraudProofs(proofs);
+        assertTrue(_isDisputeCommitted(diamond, dispute), "honest dispute killed");
+        assertFalse(_isSlashed(PEER_PK), "honest disputer slashed");
+        assertFalse(_isSlashed(AUTHOR_PK), "honest signer slashed");
+        assertTrue(_isSlashed(CHALLENGER_PK), "participant submitter slashed");
     }
 
     function _sort3(uint256 x, uint256 y, uint256 z) internal pure returns (uint256, uint256, uint256) {
