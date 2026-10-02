@@ -6,7 +6,7 @@
 
 ## Result and handoff
 
-**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 5 confirmed and 2 not actionable because their exact paths are fixed.** Among the five confirmed findings, the original scan ratings are four high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
 
 The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
 
@@ -25,7 +25,7 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | ------------------- | -------------- | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `milestone-skip`    | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
 | `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
-| `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
+| `unbound-snapshot`  | not_actionable | high              | —          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
 | `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
@@ -33,11 +33,11 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
-- **Unauthenticated on-chain paths (ranks 1–3):** any chain account can use them.
+- **Unauthenticated on-chain paths (ranks 1 and 3):** any chain account can use them.
 - **Peer-assisted signing paths (ranks 4–5):** the attacker must be the sync responder that the victim selected.
 - **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
 
-The fixed item has no rank. All 7 protocol inputs are retained here, including the fixed claim.
+The fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
 <a id="milestone-skip"></a>
 
@@ -90,28 +90,23 @@ Planned permutation, with no mapped test yet: [`REQ-DIS-3-C4KYSF.T1.P22`](../spe
 
 ## 3. Unlinked previous-state input can falsely slash an honest signer
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 2 · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v).
+**Verdict:** `not_actionable` · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v).
 
 Source identity: `csf_dc2174473e0ce47f18083689`; rule `unbound-snapshot`; occurrence `occ_a309c1b71540c059223ff617`.
 
-**Current evidence and path.** The early fork mismatch still returns a valid signer verdict before binding the supplied previous snapshot to the signed block. An external caller holding an honest signed block can supply a different-fork previous snapshot and target its eligible signer through the routed applyFraudProofs entrypoint.
+**Current evidence and path.** The exact path is fixed. The invalid-transition handler binds the supplied previous snapshot to the signed block's predecessor first, and only then compares its fork with the block's fork ([FraudProofFacet.sol:150](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150)). An unlinked snapshot is an invalid proof that slashes only an eligible submitter. The replay also rebuilds the snapshot as clients do: it carries `originForkId` forward from the previous snapshot and keeps a first block at the genesis height 0 ([FraudProofFacet.sol:194–203](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L194-L203)). An honest block with its genuine predecessor data is therefore never judged fraud.
 
 **Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:109–150](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L109-L150); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:11–27](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L27).
 
-**Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one honest signed block, which every channel peer and spectator receives. Ranking class: unauthenticated on-chain path.
+**Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one honest signed block, which every channel peer and spectator receives. Ranking class: unauthenticated on-chain path; it has no rank because the path is fixed.
 
-**Counterevidence and limits.** The channel check and signer recovery remain, but neither authenticates the caller-supplied previous snapshot. Target eligibility is required.
+**Counterevidence and limits.** The previous snapshot is now authenticated through the hashes the signer committed to: the block's `previousBlockHash` and, for a later block, the previous block's `stateSnapshotHash`. Target eligibility is still required.
 
-**Proof gaps.** Static only; no asset-transfer claim.
+**Proof gaps.** No asset-transfer claim. Foundry and live-channel E2E regressions run the fixed path.
 
-**Fix handoff (proposed, not implemented):** Bind the previous snapshot to the signed block's predecessor before interpreting its fields. Unlinked evidence must be rejected, not treated as participant fraud. Preserve the preconditions and limits above. Required regression work:
+**Next step:** no new fix for this exact claim. [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v) records the resolution. Regression permutations: [`INV-ENFFP-1-BGVZN4.T1.P12`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p12), [`INV-ENFFP-1-BGVZN4.T1.P13`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p13), [`INV-ENFFP-1-BGVZN4.T1.P15`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p15) and [`INV-ENFFP-1-BGVZN4.T1.P16`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16).
 
-- An honest block plus arbitrary previous snapshot/fork must never slash its signer.
-- Cover genesis and non-genesis predecessor binding and the nested dispute proof route.
-
-Regression permutations: [`INV-ENFFP-1-BGVZN4.T1.P12`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p12), [`INV-ENFFP-1-BGVZN4.T1.P13`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p13) and [`INV-ENFFP-1-BGVZN4.T1.P15`](../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p15), mapped to their exact tests by the fix change.
-
-**Fix status (2026-10-02):** resolved. The invalid-transition handler checks the previous snapshot's fork only after binding it to the signed block. See [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v).
+**Fix status (2026-10-02):** resolved.
 
 **Specification / implementation owners:** [fraud-slashing requirements and planned tests](../specification/enforcement/fraud-slashing.md); [FraudProofFacet source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md). The relevant obligation is that only proven misconduct can slash an honest participant; no new protocol meaning is selected here.
 

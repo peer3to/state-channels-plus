@@ -1,4 +1,5 @@
 import {
+    assertGenuinePredecessorProofsKeepHonestSigners,
     assertOutsiderUnlinkedSnapshotSlashesNobody,
     assertParticipantUnlinkedSnapshotSlashesSubmitter
 } from "@test/fixtures/UnlinkedPreviousSnapshotStaging";
@@ -15,6 +16,12 @@ describe("E2E: unlinked previous snapshot in an invalid-transition proof", funct
 
     it("participant forging the predecessor of an honest later block slashes only the submitter", async function () {
         await assertParticipantUnlinkedSnapshotSlashesSubmitter(
+            TestSession.getHarness()
+        );
+    });
+
+    it("genuine predecessor proofs against honest first and later blocks slash only a participant submitter", async function () {
+        await assertGenuinePredecessorProofsKeepHonestSigners(
             TestSession.getHarness()
         );
     });

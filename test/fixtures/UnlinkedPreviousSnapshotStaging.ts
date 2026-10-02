@@ -1,6 +1,7 @@
-// @spec-test-coverage-ignore: shared unlinked-previous-snapshot staging exercised by mapped E2E declarations
+// @spec-test-coverage-ignore: shared invalid-transition proof staging exercised by mapped E2E declarations
 
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { hash, hexString } from "@test/factory";
@@ -17,31 +18,53 @@ async function startChannelWithTwoBlocks(h: MathPeerTestHarness) {
 }
 
 /**
- * Invalid-transition proof against the real signed block at `height` and its
- * real predecessor block, with a previous snapshot that is the peer's own
- * snapshot moved to another fork and a made-up state; nothing links that
- * snapshot to the block.
+ * Invalid-transition proof against the honest signed block at `height`, built
+ * from peer 0's stored data: the real predecessor block, the snapshot it
+ * commits to (the genesis snapshot at height 0) and that snapshot's state.
+ * `forged` moves the snapshot to another fork and swaps in a made-up state, so
+ * nothing links it to the block.
  */
-async function unlinkedPreviousSnapshotProof(
+async function invalidTransitionProof(
     h: MathPeerTestHarness,
-    height: number
+    height: number,
+    forged: boolean
 ) {
+    const forkId = h.activeForkId!;
     const observer = h.control(h.getPeer(0));
     const bundle = await observer.query
-        .getBlockByHeight(h.activeForkId!, height)
+        .getBlockByHeight(forkId, height)
         .request();
     expect(bundle, `block ${height} stored`).to.not.equal(null);
     const previous =
         height === 0
             ? null
             : await observer.query
-                  .getBlockByHeight(h.activeForkId!, height - 1)
+                  .getBlockByHeight(forkId, height - 1)
                   .request();
-    const { encodedSnapshot } = await observer.query
-        .getLocalStateSnapshotStruct()
+    const previousSnapshotHash = previous
+        ? (previous.stateSnapshotHash as Hash)
+        : await observer.query.getGenesisSnapshotHash(forkId).request();
+    const stored = await observer.query
+        .getStateSnapshotStructByHash(previousSnapshotHash!)
         .request();
-    const forgedSnapshot = Codec.decode(encodedSnapshot, Type.StateSnapshot);
-    forgedSnapshot.forkId = hash();
+    expect(
+        stored,
+        `predecessor snapshot of block ${height} stored`
+    ).to.not.equal(null);
+    const previousSnapshot = Codec.decode(
+        stored!.encodedSnapshot,
+        Type.StateSnapshot
+    );
+    const previousState = await observer.query
+        .getStateMachineState(
+            previousSnapshot.snapshotData.stateMachineStateHash as Hash
+        )
+        .request();
+    expect(
+        previousState,
+        `predecessor state of block ${height} stored`
+    ).to.not.equal(null);
+    if (forged) previousSnapshot.forkId = hash();
 
     return {
         author: bundle!.author,
@@ -62,8 +85,10 @@ async function unlinkedPreviousSnapshotProof(
                               Type.SignedBlock
                           )
                         : { encodedBlock: "0x", signature: "0x" },
-                    previousBlockStateSnapshot: forgedSnapshot,
-                    previousStateStateMachineState: hexString(64)
+                    previousBlockStateSnapshot: previousSnapshot,
+                    previousStateStateMachineState: forged
+                        ? hexString(64)
+                        : previousState!
                 },
                 FraudProofType.BlockInvalidStateTransition
             )
@@ -82,18 +107,37 @@ async function applyFraudProof(
     await tx.wait();
 }
 
+async function outsiderManager(h: MathPeerTestHarness) {
+    return connectStateChannelManager(
+        await h.getPeer(0).p2pInstance.stateChannelManagerContract.getAddress(),
+        h.signerFor(slotAccountIndex(h.peers.length))
+    );
+}
+
+/** A participant that did not author `author`'s block submits the proof; only it is slashed. */
+async function assertParticipantSubmitterSlashed(
+    h: MathPeerTestHarness,
+    author: string,
+    fraudProof: FraudProofStruct
+) {
+    const submitter = h.peers.find((peer) => peer.address !== author)!;
+    h.contextApi.markMaliciousPeer({ maliciousPeerIndex: submitter.index });
+    await applyFraudProof(
+        h,
+        submitter.p2pInstance.stateChannelManagerContract,
+        fraudProof
+    );
+    await h.assert.dispute.slashedOnChainExactly([submitter.address]);
+}
+
 /** An outsider forges both blocks' predecessors; nobody is slashed. */
 export async function assertOutsiderUnlinkedSnapshotSlashesNobody(
     h: MathPeerTestHarness
 ): Promise<void> {
     await startChannelWithTwoBlocks(h);
-    const outsider = connectStateChannelManager(
-        await h.getPeer(0).p2pInstance.stateChannelManagerContract.getAddress(),
-        h.signerFor(slotAccountIndex(h.peers.length))
-    );
-
+    const outsider = await outsiderManager(h);
     for (const height of [0, 1]) {
-        const { fraudProof } = await unlinkedPreviousSnapshotProof(h, height);
+        const { fraudProof } = await invalidTransitionProof(h, height, true);
         await applyFraudProof(h, outsider, fraudProof);
     }
     await h.assert.dispute.slashedOnChainExactly([]);
@@ -104,16 +148,25 @@ export async function assertParticipantUnlinkedSnapshotSlashesSubmitter(
     h: MathPeerTestHarness
 ): Promise<void> {
     await startChannelWithTwoBlocks(h);
-    const { author, fraudProof } = await unlinkedPreviousSnapshotProof(h, 1);
-    const submitter = h.peers.find(
-        (peer) => peer.address.toLowerCase() !== author.toLowerCase()
-    )!;
+    const { author, fraudProof } = await invalidTransitionProof(h, 1, true);
+    await assertParticipantSubmitterSlashed(h, author, fraudProof);
+}
 
-    h.contextApi.markMaliciousPeer({ maliciousPeerIndex: submitter.index });
-    await applyFraudProof(
-        h,
-        submitter.p2pInstance.stateChannelManagerContract,
-        fraudProof
-    );
-    await h.assert.dispute.slashedOnChainExactly([submitter.address]);
+/**
+ * Proofs from the genuine stored predecessors of both honest blocks: an
+ * outsider's slash nobody, a participant's slash only the submitter.
+ */
+export async function assertGenuinePredecessorProofsKeepHonestSigners(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await startChannelWithTwoBlocks(h);
+    const outsider = await outsiderManager(h);
+    for (const height of [0, 1]) {
+        const { fraudProof } = await invalidTransitionProof(h, height, false);
+        await applyFraudProof(h, outsider, fraudProof);
+    }
+    await h.assert.dispute.slashedOnChainExactly([]);
+
+    const { author, fraudProof } = await invalidTransitionProof(h, 1, false);
+    await assertParticipantSubmitterSlashed(h, author, fraudProof);
 }

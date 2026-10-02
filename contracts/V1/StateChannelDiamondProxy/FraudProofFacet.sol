@@ -193,12 +193,12 @@ contract FraudProofFacet is StateChannelCommon {
 
         newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
         newSnapshotData.participants = _getStateMachineParticipants(encodedModifiedState);
-        newSnapshotData.originForkId = previousStateSnapshot.forkId;
 
         StateSnapshot memory newStateSnapshot = StateSnapshot({
             snapshotData: newSnapshotData,
             forkId: previousStateSnapshot.forkId,
-            blockHeight: previousStateSnapshot.blockHeight + 1,
+            // a first block's snapshot keeps the genesis height 0, as clients build it
+            blockHeight: fraudBlock.transaction.header.transactionCnt == 0 ? 0 : previousStateSnapshot.blockHeight + 1,
             timestamp: fraudBlock.transaction.header.timestamp
         });
         if (fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))) {

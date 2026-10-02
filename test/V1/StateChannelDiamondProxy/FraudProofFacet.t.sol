@@ -287,7 +287,14 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         honestBlock.previousBlockHash = base.previousBlockHash;
         (StateSnapshot memory next, bytes memory nextState) =
             _fundedReplay(diamond, HONEST_CHANNEL_ID, base, honestBlock.transaction);
-        next.snapshotData.originForkId = base.latestStateSnapshot.forkId;
+        assertTrue(keccak256(nextState) != keccak256(base.encodedLatestState), "staged transition applied");
+        assertEq(
+            next.snapshotData.originForkId,
+            base.latestStateSnapshot.snapshotData.originForkId,
+            "replay keeps the parent fork as origin"
+        );
+        // clients number a block's snapshot by the block's height, so a first block keeps height 0
+        next.blockHeight = transactionCnt;
         honestBlock.stateSnapshotHash = keccak256(abi.encode(next));
 
         bytes memory encodedBlock = abi.encode(honestBlock);
@@ -308,7 +315,7 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         proof.previousStateStateMachineState = previousState;
         return FraudProof({
             proofType: FraudProofType.BlockInvalidStateTransition,
-            participant: vm.addr(AUTHOR_PK),
+            participant: abi.decode(invalidBlock.encodedBlock, (Block)).transaction.header.participant,
             encodedProof: abi.encode(proof)
         });
     }
@@ -349,7 +356,6 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         FraudProof memory laterProof = _invalidTransitionProof(
             laterBlock, firstBlock.encodedBlock, firstBase.latestStateSnapshot, firstBase.encodedLatestState
         );
-        laterProof.participant = vm.addr(PEER_PK);
         assertTrue(_applyAs(OUTSIDER, laterProof));
         assertFalse(_isSlashed(AUTHOR_PK), "honest first-block signer slashed");
         assertFalse(_isSlashed(PEER_PK), "honest later-block signer slashed");
@@ -368,19 +374,68 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         _assertNobodySlashed();
     }
 
-    // any snapshot and any predecessor bytes that are not the later block's real ones -> signer never slashed
+    // any snapshot with the real predecessor, or any decodable predecessor that is not the real one
+    // -> an invalid proof that executes and never slashes the signer
     function testFuzz_applyFraudProofs_unlinkedSnapshotNeverSlashesHonestLaterBlockSigner(
         StateSnapshot memory forgedSnapshot,
         bytes memory forgedState,
-        bytes memory forgedPreviousBlock,
+        TransactionHeader memory forgedHeader,
+        bytes memory forgedBody,
+        bytes32 forgedStateSnapshotHash,
+        bytes32 forgedPreviousBlockHash,
         bool keepRealPreviousBlock
     ) public {
+        Block memory forgedPreviousBlock;
+        forgedPreviousBlock.transaction.header = forgedHeader;
+        forgedPreviousBlock.transaction.body.data = forgedBody;
+        forgedPreviousBlock.stateSnapshotHash = forgedStateSnapshotHash;
+        forgedPreviousBlock.previousBlockHash = forgedPreviousBlockHash;
         PostedBlockBase memory genesisBase = _openHonestChannel();
-        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(PEER_PK, genesisBase, 0);
-        (SignedBlock memory laterBlock,) = _honestBlock(AUTHOR_PK, firstBase, 1);
+        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        (SignedBlock memory laterBlock,) = _honestBlock(PEER_PK, firstBase, 1);
 
-        bytes memory previousBlock = keepRealPreviousBlock ? firstBlock.encodedBlock : forgedPreviousBlock;
-        _applyAs(OUTSIDER, _invalidTransitionProof(laterBlock, previousBlock, forgedSnapshot, forgedState));
+        bytes memory previousBlock = keepRealPreviousBlock ? firstBlock.encodedBlock : abi.encode(forgedPreviousBlock);
+        assertTrue(_applyAs(OUTSIDER, _invalidTransitionProof(laterBlock, previousBlock, forgedSnapshot, forgedState)));
+        _assertNobodySlashed();
+    }
+
+    // a decodable predecessor that is not the later block's real one -> a participant submitter pays for it
+    function test_applyFraudProofs_wrongPredecessorSlashesParticipantSubmitter() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        (SignedBlock memory laterBlock,) = _honestBlock(PEER_PK, firstBase, 1);
+        Block memory wrongPredecessor = abi.decode(firstBlock.encodedBlock, (Block));
+        wrongPredecessor.transaction.header.timestamp += 1;
+
+        assertTrue(
+            _applyAs(
+                vm.addr(CHALLENGER_PK),
+                _invalidTransitionProof(
+                    laterBlock,
+                    abi.encode(wrongPredecessor),
+                    firstBase.latestStateSnapshot,
+                    firstBase.encodedLatestState
+                )
+            )
+        );
+        assertFalse(_isSlashed(PEER_PK), "honest signer slashed");
+        assertTrue(_isSlashed(CHALLENGER_PK), "participant submitter slashed");
+    }
+
+    // predecessor bytes that do not decode as a block revert the whole call -> nobody is slashed
+    function test_applyFraudProofs_undecodablePredecessorRevertsWithoutSlashing() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (, PostedBlockBase memory firstBase) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        (SignedBlock memory laterBlock,) = _honestBlock(PEER_PK, firstBase, 1);
+
+        assertFalse(
+            _applyAs(
+                vm.addr(CHALLENGER_PK),
+                _invalidTransitionProof(
+                    laterBlock, hex"01", firstBase.latestStateSnapshot, firstBase.encodedLatestState
+                )
+            )
+        );
         _assertNobodySlashed();
     }
 
@@ -446,6 +501,28 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
             )
         );
         assertTrue(_isSlashed(AUTHOR_PK), "cross-fork link not slashed");
+    }
+
+    // a later block whose real predecessor links to a snapshot of another fork is still slashed
+    function test_applyFraudProofs_linkedOtherForkLaterBlockSlashesSigner() public {
+        PostedBlockBase memory genesisBase = _openHonestChannel();
+        (SignedBlock memory firstBlock, PostedBlockBase memory firstBase) = _honestBlock(AUTHOR_PK, genesisBase, 0);
+        (SignedBlock memory honestLaterBlock,) = _honestBlock(PEER_PK, firstBase, 1);
+        Block memory crossForkBlock = abi.decode(honestLaterBlock.encodedBlock, (Block));
+        crossForkBlock.transaction.header.forkId = keccak256("other-fork");
+        bytes memory encodedBlock = abi.encode(crossForkBlock);
+        SignedBlock memory signedBlock =
+            SignedBlock({encodedBlock: encodedBlock, signature: _sign(PEER_PK, encodedBlock)});
+
+        assertTrue(
+            _applyAs(
+                OUTSIDER,
+                _invalidTransitionProof(
+                    signedBlock, firstBlock.encodedBlock, firstBase.latestStateSnapshot, firstBase.encodedLatestState
+                )
+            )
+        );
+        assertTrue(_isSlashed(PEER_PK), "cross-fork link not slashed");
     }
 
     /// A committed timeout dispute by PEER_PK whose state proof holds the honest first block, and

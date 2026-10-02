@@ -877,7 +877,6 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         StateSnapshot memory resultingSnapshot;
         resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
         resultingSnapshot.snapshotData.participants = participants;
-        resultingSnapshot.snapshotData.originForkId = FORK_ID;
         resultingSnapshot.blockHeight = 1;
         resultingSnapshot.timestamp = 1;
 
