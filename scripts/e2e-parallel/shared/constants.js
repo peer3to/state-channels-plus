@@ -58,10 +58,10 @@ const DEFAULT_TASK_COST = { durationMs: 30000, cores: 1, rssGb: 2 };
 const STARVED_COST_FACTOR = 1.5;
 // Why a task's peakRssGb/avgCores are null: the sampler found no process tree,
 // or the attempt came from a worker that predates the measurements.
-const MEASUREMENT_REASONS = [
+const MEASUREMENT_REASONS = Object.freeze([
     "process-sampling-unavailable",
     "legacy-measurements-unavailable"
-];
+]);
 // Admission and process-scan statistics a worker reports beside its resource
 // statistics; concurrencyWallMs is the denominator for processScanMs.
 const CONCURRENCY_STAT_FIELDS = [
@@ -71,7 +71,7 @@ const CONCURRENCY_STAT_FIELDS = [
     "processScanCount",
     "processScanMs"
 ];
-const HOLD_REASONS = ["cap", "memory", "cpu"];
+const HOLD_REASONS = Object.freeze(["cap", "memory", "cpu"]);
 const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";
 const DEFAULT_COST_OVERRIDES_PATH =
     "scripts/e2e-parallel/test-costs.overrides.json";

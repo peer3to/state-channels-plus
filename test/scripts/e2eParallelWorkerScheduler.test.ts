@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { runAgainstProtocolWorkers } from "../fixtures/distributed/protocolWorker";
+import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import { fork } from "child_process";
 import fs from "fs";
@@ -556,7 +557,15 @@ describe("distributed worker scheduler", function () {
                 }
             });
         const before = processScanStats();
-        await Promise.all([slowScan(false).sample(), slowScan(true).sample()]);
+        const scans = Promise.all([
+            slowScan(false).sample(),
+            slowScan(true).sample()
+        ]);
+        // Time already spent scanning counts while the scans still run.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const during = processScanStats();
+        expect(during.processScanMs - before.processScanMs).to.be.at.least(100);
+        await scans;
         const after = processScanStats();
         expect(after.processScanCount - before.processScanCount).to.equal(2);
         // Two 300 ms scans side by side are 300 ms of scanning, not 600;
@@ -566,7 +575,7 @@ describe("distributed worker scheduler", function () {
             .and.below(540);
     });
 
-    it("keeps the last CPU reading for a check sooner than the shortest interval", async function () {
+    it("holds a busy worker until its first CPU reading and keeps a reading for sooner checks", async function () {
         let clock = 0;
         let stat = "cpu 0 0 0 1000 0 0 0 0 0 0\n";
         const resources = new ResourceGate({
@@ -586,16 +595,73 @@ describe("distributed worker scheduler", function () {
                 }
             }
         });
-        // Fully busy since the first reading.
-        stat = "cpu 1000 0 0 1000 0 0 0 0 0 0\n";
+        const fits = {
+            schedule: "cost",
+            runningCost: { cores: 0.1, rssGb: 0.1 },
+            nextCost: { cores: 0.1, rssGb: 0.1 }
+        };
+        // No reading yet: only an idle worker admits.
         clock = 100;
-        await resources.sample();
-        expect(resources.cpuUtil).to.equal(0);
-        expect(resources.stats().cpuSampleCount).to.equal(0);
+        expect(await resources.allows(1, 4, fits)).to.equal(false);
+        expect(resources.lastHoldReason).to.equal("cpu");
+        expect(await resources.allows(0, 4, fits)).to.equal(true);
+        // Half busy over the first full interval.
+        stat = "cpu 500 0 0 1500 0 0 0 0 0 0\n";
         clock = 400;
         await resources.sample();
-        expect(resources.cpuUtil).to.equal(1);
+        expect(resources.cpuUtil).to.equal(0.5);
+        // Fully busy, but checked too soon: the last reading stands.
+        stat = "cpu 1500 0 0 1500 0 0 0 0 0 0\n";
+        clock = 450;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(0.5);
         expect(resources.stats().cpuSampleCount).to.equal(1);
+        clock = 700;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(1);
+        expect(resources.stats().cpuSampleCount).to.equal(2);
+    });
+
+    it("gives a cost task started by a finish a full tick before the next start", async function () {
+        const retryMs = 300;
+        const startedAt = new Map<string, number>();
+        let firstDone = false;
+        const queue = ["first", "second", "third"].map((id) => ({
+            id,
+            task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
+        }));
+        const forever = new Promise<void>(() => {});
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            // Nothing beside "first" until it finishes.
+            canRun: async (running: number) => running === 0 || firstDone,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "first") return forever;
+                // Finishes late in the first tick, as the timer runs.
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                firstDone = true;
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("third"), 10000, 10);
+            expect([...startedAt.keys()]).to.deep.equal([
+                "first",
+                "second",
+                "third"
+            ]);
+            // Timers never fire early; an old tick left running would start
+            // "third" about 50 ms after "second".
+            expect(
+                startedAt.get("third")! - startedAt.get("second")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
     });
 
     it("requests at once when a cost task finishes, and only under cost", async function () {
@@ -1190,10 +1256,37 @@ describe("distributed worker scheduler", function () {
     it("reads but never writes the cost cache in read-only runs", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
         const costCachePath = path.join(root, "test-costs.json");
+        const entry = (durationMs: number) => ({
+            durationMs,
+            avgCores: 0.1,
+            peakRssGb: 0.1,
+            measurementReason: null,
+            samples: 1,
+            lastSeenAt: "2026-10-01T00:00:00.000Z"
+        });
+        // Cached durations put "long" first; unread, discovery order would.
+        const seeded = JSON.stringify({
+            version: 2,
+            tasks: {
+                "forge||light": entry(100),
+                "forge||long": entry(1000),
+                "hardhat||light": entry(100),
+                "hardhat||long": entry(1000)
+            }
+        });
+        fs.writeFileSync(costCachePath, seeded);
+        const tasks = (runner: string) =>
+            ["light", "long"].map((label) => ({
+                label,
+                logName: label,
+                runner,
+                args: []
+            }));
+        const starts: string[] = [];
         const resourceGate = {
             cpuUtil: 0,
             occupiedGb: 0,
-            allows: async () => true,
+            allows: async (running: number) => running === 0,
             stats: () => ({
                 peakCpu: 0,
                 avgCpu: 0,
@@ -1206,14 +1299,7 @@ describe("distributed worker scheduler", function () {
         };
         try {
             const local = await runScheduler({
-                tasks: [
-                    {
-                        label: "local",
-                        logName: "local",
-                        runner: "forge",
-                        args: []
-                    }
-                ],
+                tasks: tasks("forge"),
                 slots: [],
                 slotCount: 0,
                 concurrencyCap: 1,
@@ -1224,6 +1310,7 @@ describe("distributed worker scheduler", function () {
                 infraPids: () => [],
                 tickMs: 1,
                 resourceGate,
+                schedule: "cost",
                 costCachePath,
                 costCacheReadOnly: true,
                 runTaskImpl: async (
@@ -1231,10 +1318,20 @@ describe("distributed worker scheduler", function () {
                     _args: string[],
                     _env: unknown,
                     label: string
-                ) => ({ code: 0, label, stdout: "", stderr: "", durationMs: 5 })
+                ) => {
+                    starts.push(label);
+                    return {
+                        code: 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 5
+                    };
+                }
             });
-            expect(local.completed).to.equal(1);
-            expect(fs.existsSync(costCachePath)).to.equal(false);
+            expect(local.completed).to.equal(2);
+            expect(starts).to.deep.equal(["long", "light"]);
+            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
             const distributed = await runAgainstProtocolWorkers(
                 [
                     {
@@ -1248,12 +1345,20 @@ describe("distributed worker scheduler", function () {
                     }
                 ],
                 {
-                    tasks: [MEASURED_TASK],
-                    run: { costCachePath, costCacheReadOnly: true }
+                    tasks: tasks("hardhat"),
+                    run: {
+                        schedule: "cost",
+                        costCachePath,
+                        costCacheReadOnly: true
+                    }
                 }
             );
             expect(distributed.failure).to.equal(null);
-            expect(fs.existsSync(costCachePath)).to.equal(false);
+            expect(distributed.workers[0].labels).to.deep.equal([
+                "long",
+                "light"
+            ]);
+            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

@@ -853,6 +853,11 @@ describe("task cost cache", function () {
                 "Invalid cost cache schema"
             );
             expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(good);
+            // A mistyped cache path is not an empty cache.
+            expect(() =>
+                refreshSnapshot({ projectRoot: root, cachePath: "typo.json" })
+            ).to.throw("no such file");
+            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(good);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

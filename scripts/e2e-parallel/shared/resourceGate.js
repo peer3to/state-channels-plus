@@ -410,6 +410,8 @@ class ResourceGate {
         this.lastHoldReason = null;
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
+        // Until the first CPU reading a busy worker cannot see the load.
+        if (!this.cpuSamples.length) return this.hold("cpu");
         // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
             const shortfall = costBudgetShortfall(
@@ -494,7 +496,11 @@ function average(values) {
 function processScanStats() {
     return {
         processScanCount: processScans.count,
-        processScanMs: processScans.ms
+        processScanMs:
+            processScans.ms +
+            (processScans.active
+                ? performance.now() - processScans.busySince
+                : 0)
     };
 }
 

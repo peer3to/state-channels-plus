@@ -83,6 +83,9 @@ class WorkerScheduler {
         // request need not wait a tick for the CPU sample to catch up.
         if (this.options.schedule === "cost" && assignment.task?.cost?.known)
             this.requestSoon();
+        // An unknown-cost start gets a full tick, not what is left of an
+        // earlier one, so its usage shows before the next admission.
+        else if (this.options.schedule === "cost") this.restartRetry();
         else this.scheduleRetry();
         if (this.options.prefetch) this.prefetchAssignment();
     }
@@ -164,6 +167,12 @@ class WorkerScheduler {
                 this.requestFailed(error)
             )
         );
+    }
+
+    restartRetry() {
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+        this.scheduleRetry();
     }
 
     scheduleRetry() {

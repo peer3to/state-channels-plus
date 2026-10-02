@@ -255,13 +255,13 @@ Each of a test's duration, cores and memory comes from, first match wins: an
 override, this run's measurement, this checkout's cache, the committed snapshot
 `scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
 from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
-cores or memory (from an older worker) leaves those to the later sources. Every executed attempt is measured; an attempt that starved is stored
+cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled is not); an attempt that starved is stored
 with 50% more cores and memory, so the next run admits it as more expensive,
 and a clean retry in the same run replaces that sample.
 
 `yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
 rounded and sorted so the diff shows only what changed; it stops without
-writing if either file cannot be read. Commit a refreshed
+writing if the cache is missing or either file cannot be read. Commit a refreshed
 snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
 and stays stateless.
 

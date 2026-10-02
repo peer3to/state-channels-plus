@@ -129,8 +129,10 @@ function executed(attempt, metadata) {
     );
 }
 
-// Every executed attempt is a sample; the run keeps its last one, so a clean
-// retry replaces the inflated sample of the attempt that starved.
+// Every attempt whose result the run keeps is a sample, starved ones
+// included; the run keeps its last one, so a clean retry replaces the
+// inflated sample of the attempt that starved. A speculative copy that
+// finishes after its task settled never reaches the cache.
 function isCostSample(attempt, metadata) {
     return executed(attempt, metadata) && numeric(attempt.durationMs);
 }
@@ -399,10 +401,11 @@ function refreshSnapshot({
             throw new Error(`Cannot refresh from ${file}: ${error.message}`);
         });
     const target = path.resolve(root, snapshotPath);
-    const tasks = {
-        ...strict(target),
-        ...strict(path.resolve(root, cachePath))
-    };
+    const cacheFile = path.resolve(root, cachePath);
+    // The snapshot may not exist yet; the cache it is refreshed from must.
+    if (!fs.existsSync(cacheFile))
+        throw new Error(`Cannot refresh from ${cacheFile}: no such file`);
+    const tasks = { ...strict(target), ...strict(cacheFile) };
     const round = (value, places) =>
         value === null ? null : Number(value.toFixed(places));
     const sorted = Object.fromEntries(

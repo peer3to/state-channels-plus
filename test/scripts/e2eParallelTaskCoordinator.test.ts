@@ -186,6 +186,20 @@ describe("distributed task coordinator", function () {
         }
     });
 
+    it("keeps a task's first assignment when a speculative copy is handed out", function () {
+        let clock = 0;
+        const only = task("only");
+        const coordinator = new TaskCoordinator([only], {
+            speculative: true,
+            now: () => ++clock
+        });
+        const first = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+        expect(copy.speculative).to.equal(true);
+        expect(copy.assignedAt).to.be.greaterThan(first.assignedAt);
+        expect(only).to.have.property("firstAssignedAt", first.assignedAt);
+    });
+
     it("hands a busy cost worker the best task its budget fits and the long one to a worker with room", function () {
         const coordinator = new TaskCoordinator(
             [
