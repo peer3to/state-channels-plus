@@ -3,6 +3,7 @@ import * as factory from "@test/factory";
 import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: Pruned inbound fraud proof", function () {
@@ -83,6 +84,10 @@ describe("E2E: Pruned inbound fraud proof", function () {
             count: 2,
             waitForFinalization: true
         });
+        // the fork switch waits for the reduce challenge period -> post once it expired on chain
+        await waitFor(() =>
+            h.channelManager.isReduceChallengePeriodExpired(h.channelId, forkId)
+        );
         await h.transition.postSnapshotWait({ peerIndex: honest[0].index });
         const adopted = await h.channelManager.getStateSnapshot(h.channelId);
         const honestForkId = await h
