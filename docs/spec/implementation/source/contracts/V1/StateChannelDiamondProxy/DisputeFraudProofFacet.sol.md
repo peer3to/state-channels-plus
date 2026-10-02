@@ -45,6 +45,45 @@ Dispute-fraud targets use the same bounded current eligibility as ordinary fraud
    equal to the declared participant
    ([#L28-L29](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L28-L29)),
    so a zero target never kills; when the call returns, an eligible submitter is slashed.
+4. **A listed slash set that is a subset reverts with both sets.**
+   `_handleDisputeOnChainSlashesNotSubset` returns the disputer as the offender the moment one
+   listed slash is absent from the chain's record; reaching the end means the proof was wrong and
+   the call reverts with `RaceConditionOnChainSlashes(channelId, disputeSlashes, onChainSlashes)`
+   ([#L388](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L388)).
+   Slash-set contents are time-dependent, so the client classifying this race needs to know which
+   slashes the two sides held, not how many: the arrays are already in memory at the revert, and
+   the sets can differ while their counts agree. The site is a plain `revert`, so nothing is
+   evaluated before the loop has proven the subset relation.
+5. **Milestone finality is judged against the dispute's historic threshold set.**
+   `_getHistoricThresholdSet` ([#L802](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L802)) reads the chain snapshot participants plus the joiners at
+   or below the dispute's inbound anchor, minus `input.onChainSlashes` only. Its name sets it apart from the live
+   `_canParticipateInDisputesNow` eligibility read. The disputer commits the slash list, so construction and every
+   later proof read the same set; over-listing stays provable through `DisputeOnChainSlashesNotSubset`, and an unlisted
+   slash only makes the threshold stricter. The participant half comes only from chain data, never from the
+   dispute's own latest state, and cannot move while a proof can land: adoption targets only the latest undisputed
+   fork and a disputed fork advances only by reduction ([StateSnapshotFacet.sol.md](StateSnapshotFacet.sol.md)).
+6. **The inbound-anchor families stay as defence in depth.** Upload admits only a dispute anchored exactly at the
+   chain's inbound head ([DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md)), so
+   `DisputeInboundHashNotInChain` ([#L128](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L128)) and `DisputeInboundAnchorBehindLatestState`
+   ([#L257](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L257)) are unreachable for committed disputes. Their handlers are kept unchanged.
+7. **A timeout refutation replays only from the dispute's latest state.**
+   `_validateTimeoutCalldataPostedProof` checks, before the replay
+   ([#L653-L665](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L653-L665)), that the proof's latest state snapshot is the one the dispute's
+   latest proved block commits to (or the fork's genesis snapshot) with
+   `_isSnapshotLinkedToLatestBlock`, that the snapshot's `stateMachineStateHash` equals the hash of
+   the machine state the replay starts from, and that the posted block's `previousBlockHash` is the
+   hash of the latest proved block's signed bytes, `keccak256(encodedBlock)` (or of that genesis
+   snapshot at genesis). The signed bytes are the block identity, as in the state proof's chain
+   linkage and the client's `Block.hash`; hashing the re-encoded fields would reject an honest
+   block built on a non-canonical but accepted encoding. The calldata-posted grace check compares
+   the same signed-bytes hash. The blamed author signs
+   and posts the block itself, so without these links it could post a block built on a made-up
+   pre-state, name that pre-state in the proof, replay it successfully, and refute an honest timeout
+   dispute, which slashes the honest disputer. A proof that fails a link returns `false`, so the
+   submitter is slashed like any failed refutation. The same predicate backs the auditor's
+   `validateTimeoutCalldataPostedProof` preflight, so an honest auditor never submits such a proof.
+   The posted block's author signature is still not verified here
+   ([`FIND-TIMEOUT-2-J7S0TS`](../../../../../audit/open-findings.md#find-timeout-2-j7s0ts)).
 
 ## Inputs, outputs, state, and side effects
 
