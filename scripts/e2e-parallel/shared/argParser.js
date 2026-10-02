@@ -29,6 +29,7 @@ Options:
                                   Allow clearing an explicit dir outside logs/
       --schedule fifo|cost      Task selection policy (default fifo)
       --cost-cache <path>       Task cost cache path (default .cache/test-costs.json)
+      --cost-cache-read-only    Read task costs but never write them (CI)
       --keep-infra-logs          Keep infrastructure logs even when all tests pass
       --source-tests             Run the TypeScript sources under ts-node instead of the compiled dist tree
       --skip-build               Reuse the existing dist tree instead of rebuilding it first
@@ -72,6 +73,7 @@ function parseCliArgs(argv) {
     const options = {
         logDir: DEFAULT_LOG_DIR,
         costCachePath: DEFAULT_COST_CACHE_PATH,
+        costCacheReadOnly: false,
         schedule: "fifo",
         // Explicit --logDir → that exact dir is used (and cleared);
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
@@ -155,6 +157,10 @@ function parseCliArgs(argv) {
             )
                 throw new Error("--cost-cache requires a nonempty path");
             options.costCachePath = value;
+            continue;
+        }
+        if (arg === "--cost-cache-read-only") {
+            options.costCacheReadOnly = true;
             continue;
         }
 

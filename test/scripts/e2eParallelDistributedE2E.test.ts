@@ -842,7 +842,7 @@ describe("distributed parallel runner", function () {
                         label: "test:cost.test.js:first",
                         logName: "cost__first",
                         runner: "hardhat",
-                        cost: { cores: -1, rssGb: 0, heavy: false },
+                        cost: { cores: -1, rssGb: 0, known: false },
                         args: [
                             "test",
                             "--no-compile",

@@ -515,7 +515,7 @@ function formatWorkerDispositions(workerStates) {
         .join("; ");
 }
 
-function formatWorkerSummary(worker, completed) {
+function formatWorkerSummary(worker, completed, budgetHolds) {
     const profile = worker.executionProfile || {};
     const slots = profile.slots ?? worker.capabilities.slots;
     const workers = profile.workers ?? worker.capabilities.workers;
@@ -533,7 +533,11 @@ function formatWorkerSummary(worker, completed) {
     return (
         `${workerName(worker)} (${capacity}) · ${completed} tests · ` +
         `cpu avg ${(stats.avgCpu * 100).toFixed(0)}% / peak ${(stats.peakCpu * 100).toFixed(0)}%${logging.formatCpuPressure(stats.avgCpuPressure, stats.peakCpuPressure)}${logging.formatCpuDetail(stats)} · ` +
-        `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB`
+        `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB` +
+        // Refusals the coordinator made for this worker's cost budget.
+        (budgetHolds
+            ? ` · budget holds cpu ${budgetHolds.cpu} / memory ${budgetHolds.memory}`
+            : "")
     );
 }
 
@@ -543,7 +547,8 @@ async function runDistributed(options) {
     const costCache = new CostCache({
         projectRoot: options.projectRoot,
         cachePath: options.costCachePath,
-        overridesPath: options.costOverridesPath
+        overridesPath: options.costOverridesPath,
+        readOnly: options.costCacheReadOnly
     });
     const keys = derivePoolKeys(options.poolSecret);
     console.log(
@@ -1306,7 +1311,11 @@ async function runDistributed(options) {
         await completed;
         usedWorkers = [...leasedWorkers.values()];
         workerLabels = usedWorkers.map((worker) =>
-            formatWorkerSummary(worker, completedByWorker.get(worker.id) || 0)
+            formatWorkerSummary(
+                worker,
+                completedByWorker.get(worker.id) || 0,
+                coordinator.budgetHolds.get(worker.id)
+            )
         );
     } finally {
         clearTimeout(discoveryTimeout);

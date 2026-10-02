@@ -79,7 +79,15 @@ class WorkerScheduler {
         this.running++;
         this.peakConcurrency = Math.max(this.peakConcurrency, this.running);
         this.run(assignment);
-        this.scheduleRetry();
+        // A known cost is already counted against the budget, so the next
+        // request need not wait a tick for the CPU sample to catch up.
+        if (this.options.schedule === "cost" && assignment.task?.cost?.known)
+            setImmediate(() =>
+                this.requestWhenAvailable().catch((error) =>
+                    this.requestFailed(error)
+                )
+            );
+        else this.scheduleRetry();
         if (this.options.prefetch) this.prefetchAssignment();
     }
 

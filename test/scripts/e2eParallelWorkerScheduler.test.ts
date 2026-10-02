@@ -72,8 +72,13 @@ describe("distributed worker scheduler", function () {
     it("accepts default FIFO and rejects invalid scheduling flags", function () {
         expect(parseCliArgs(["node", "runner"])).to.include({
             schedule: "fifo",
-            costCachePath: ".cache/test-costs.json"
+            costCachePath: ".cache/test-costs.json",
+            costCacheReadOnly: false
         });
+        expect(
+            parseCliArgs(["node", "runner", "--cost-cache-read-only"])
+                .costCacheReadOnly
+        ).to.equal(true);
         expect(
             parseCliArgs([
                 "node",
@@ -135,7 +140,7 @@ describe("distributed worker scheduler", function () {
                 durationMs: 123,
                 cores: 0.3,
                 rssGb: 0.5,
-                heavy: false,
+                known: false,
                 samples: 10
             }
         };
@@ -165,29 +170,29 @@ describe("distributed worker scheduler", function () {
         expect(wire.cost).to.deep.equal({
             cores: 0.3,
             rssGb: 0.5,
-            heavy: false
+            known: false
         });
         expect(fromWireTask(wire, root).cost).to.deep.equal(wire.cost);
         expect(
             fromWireTask(
-                { ...wire, cost: { cores: 0, rssGb: 0, heavy: true } },
+                { ...wire, cost: { cores: 0, rssGb: 0, known: true } },
                 root
-            ).cost.heavy
+            ).cost.known
         ).to.equal(true);
         for (const cost of [
             null,
             [],
-            { cores: -1, rssGb: 0, heavy: false },
-            { cores: NaN, rssGb: 0, heavy: false },
-            { cores: Infinity, rssGb: 0, heavy: false },
-            { cores: "1", rssGb: 0, heavy: false },
-            { cores: 0, rssGb: -1, heavy: false },
-            { cores: 0, rssGb: NaN, heavy: false },
-            { cores: 0, rssGb: Infinity, heavy: false },
-            { cores: 0, rssGb: "1", heavy: false },
-            { cores: 0, rssGb: 0, heavy: 0 },
+            { cores: -1, rssGb: 0, known: false },
+            { cores: NaN, rssGb: 0, known: false },
+            { cores: Infinity, rssGb: 0, known: false },
+            { cores: "1", rssGb: 0, known: false },
+            { cores: 0, rssGb: -1, known: false },
+            { cores: 0, rssGb: NaN, known: false },
+            { cores: 0, rssGb: Infinity, known: false },
+            { cores: 0, rssGb: "1", known: false },
+            { cores: 0, rssGb: 0, known: 0 },
             { cores: 0, rssGb: 0 },
-            { cores: 0, rssGb: 0, heavy: false, durationMs: 100 }
+            { cores: 0, rssGb: 0, known: false, durationMs: 100 }
         ]) {
             expect(() => fromWireTask({ ...wire, cost }, root)).to.throw(
                 "Invalid wire task cost"
@@ -204,7 +209,7 @@ describe("distributed worker scheduler", function () {
             { cores: 1 },
             { cores: NaN, rssGb: 1 },
             { cores: 1, rssGb: "1" },
-            { cores: 1, rssGb: 1, heavy: false }
+            { cores: 1, rssGb: 1, known: false }
         ]) {
             expect(() => fromWireCostBudget(budget)).to.throw(
                 "Invalid wire cost budget"
@@ -351,6 +356,39 @@ describe("distributed worker scheduler", function () {
         }
     });
 
+    it("requests the next cost task at once after starting a known-cost one", async function () {
+        const run = async (known: boolean) => {
+            const queue = ["first", "second"].map((id) => ({
+                id,
+                task: { cost: { cores: 0.1, rssGb: 0.1, known } }
+            }));
+            let release!: () => void;
+            const pending = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            const scheduler = new WorkerScheduler({
+                schedule: "cost",
+                concurrencyCap: 4,
+                // Far longer than the test waits: only an immediate request
+                // can start the second task.
+                retryMs: 60000,
+                canRun: async () => true,
+                requestTask: async () => queue.shift() ?? null,
+                runTask: async () => pending
+            });
+            try {
+                await scheduler.requestWhenAvailable();
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                return scheduler.running;
+            } finally {
+                scheduler.stop();
+                release();
+            }
+        };
+        expect(await run(true)).to.equal(2);
+        expect(await run(false)).to.equal(1);
+    });
+
     it("does not prefetch under cost", async function () {
         const queue = [{ id: "first" }, { id: "second" }];
         let requests = 0;
@@ -494,6 +532,26 @@ describe("distributed worker scheduler", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("meters overlapping process-table scans once", async function () {
+        const slowScan = () =>
+            new TaskProcessSampler(100, {
+                execFile: async () => {
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                    return {
+                        stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
+                    };
+                }
+            });
+        const before = processScanStats();
+        await Promise.all([slowScan().sample(), slowScan().sample()]);
+        const after = processScanStats();
+        expect(after.processScanCount - before.processScanCount).to.equal(2);
+        // Two 100 ms scans side by side are 100 ms of scanning, not 200.
+        expect(after.processScanMs - before.processScanMs)
+            .to.be.at.least(90)
+            .and.below(180);
     });
 
     it("meters process-table scans for the run metrics", async function () {
@@ -743,7 +801,7 @@ describe("distributed worker scheduler", function () {
                 await resources.allows(1, 4, {
                     schedule: "cost",
                     runningCost: { cores: 0.1, rssGb: 0.5 },
-                    nextCost: { cores: 0.1, rssGb: 0.5, heavy: false }
+                    nextCost: { cores: 0.1, rssGb: 0.5 }
                 })
             ).to.equal(false);
             expect(resources.lastHoldReason).to.equal("memory");

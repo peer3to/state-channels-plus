@@ -3,59 +3,44 @@ const fs = require("fs");
 const path = require("path");
 const {
     COST_EWMA_ALPHA,
-    HEAVY_STARVE_RUNS,
-    HEAVY_EL_MS,
-    HEAVY_CORES,
-    HEAVY_RSS_GB,
-    COLD_COSTS,
+    DEFAULT_TASK_COST,
+    STARVED_COST_FACTOR,
     MEASUREMENT_REASONS,
     DEFAULT_COST_CACHE_PATH,
-    DEFAULT_COST_OVERRIDES_PATH
+    DEFAULT_COST_OVERRIDES_PATH,
+    DEFAULT_COST_SNAPSHOT_PATH
 } = require("./constants");
 const { writeJsonAtomic } = require("./logging");
-const { normalizeTaskRunner, requiresBrowser } = require("./taskRunners");
+const { normalizeTaskRunner } = require("./taskRunners");
 
-const SAMPLE_FIELDS = ["durationMs", "avgCores", "peakRssGb", "peakElMs"];
+// 2: one default cost, no heavy tier or starvation history.
+const CACHE_VERSION = 2;
+const SAMPLE_FIELDS = ["durationMs", "avgCores", "peakRssGb"];
+const OVERRIDE_FIELDS = ["durationMs", "cores", "rssGb"];
 const numeric = (value) => Number.isFinite(value) && value >= 0;
 const object = (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value);
 const reasons = new Set(MEASUREMENT_REASONS);
 
-function coldCost(task) {
-    if (requiresBrowser(task)) return { ...COLD_COSTS.heavy };
-    if (normalizeTaskRunner(task.runner) === "hardhat" && task.isE2E)
-        return { ...COLD_COSTS.medium };
-    return { ...COLD_COSTS.light };
+// Cost of a task nothing has measured: not known, so it waits for a tick.
+function defaultCost() {
+    return { ...DEFAULT_TASK_COST, known: false };
 }
 
 function validEntry(entry) {
     return (
         object(entry) &&
-        ["durationMs", "peakRssGb", "avgCores"].every(
+        numeric(entry.durationMs) &&
+        ["peakRssGb", "avgCores"].every(
             (field) => entry[field] === null || numeric(entry[field])
         ) &&
-        numeric(entry.peakElMs) &&
         Number.isInteger(entry.samples) &&
-        entry.samples >= 0 &&
+        entry.samples >= 1 &&
         typeof entry.lastSeenAt === "string" &&
         (entry.measurementReason == null ||
             reasons.has(entry.measurementReason)) &&
-        (![entry.durationMs, entry.peakRssGb, entry.avgCores].includes(null) ||
-            reasons.has(entry.measurementReason)) &&
-        Array.isArray(entry.starvations) &&
-        entry.starvations.every(
-            (event) =>
-                object(event) &&
-                typeof event.server === "string" &&
-                typeof event.at === "string"
-        ) &&
-        Array.isArray(entry.recentRuns) &&
-        entry.recentRuns.every(
-            (run) =>
-                object(run) &&
-                typeof run.at === "string" &&
-                typeof run.starved === "boolean"
-        )
+        (![entry.peakRssGb, entry.avgCores].includes(null) ||
+            reasons.has(entry.measurementReason))
     );
 }
 
@@ -64,7 +49,7 @@ function readCache(cachePath, onDenied) {
         const data = JSON.parse(fs.readFileSync(cachePath, "utf8"));
         if (
             !object(data) ||
-            data.version !== 1 ||
+            data.version !== CACHE_VERSION ||
             !object(data.tasks) ||
             !Object.values(data.tasks).every(validEntry)
         )
@@ -81,33 +66,39 @@ function readCache(cachePath, onDenied) {
     }
 }
 
-// A broken overrides file must not fail a run: it is ignored, loudly.
+// A broken overrides file fails the run, so a stale entry gets fixed rather
+// than silently ignored.
 function readOverrides(overridesPath) {
-    let overrides;
+    let text;
     try {
-        overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8"));
+        text = fs.readFileSync(overridesPath, "utf8");
     } catch (error) {
         if (error.code === "ENOENT") return {};
-        console.warn(
-            `Unable to read cost overrides ${overridesPath}; ignoring them: ${error.message}`
-        );
-        return {};
+        throw error;
     }
-    if (
-        !object(overrides) ||
-        Object.values(overrides).some(
-            (entry) =>
-                !object(entry) ||
-                Object.entries(entry).some(([field, value]) =>
-                    field === "heavy"
-                        ? typeof value !== "boolean"
-                        : !["durationMs", "rssGb", "cores"].includes(field) ||
-                          !numeric(value)
-                )
+    let overrides;
+    try {
+        overrides = JSON.parse(text);
+    } catch (error) {
+        throw new Error(
+            `Invalid cost overrides ${overridesPath}: ${error.message}`
+        );
+    }
+    if (!object(overrides))
+        throw new Error(
+            `Invalid cost overrides ${overridesPath}: not a JSON object`
+        );
+    for (const [key, entry] of Object.entries(overrides)) {
+        if (
+            !object(entry) ||
+            Object.entries(entry).some(
+                ([field, value]) =>
+                    !OVERRIDE_FIELDS.includes(field) || !numeric(value)
+            )
         )
-    ) {
-        console.warn(`Invalid cost overrides ${overridesPath}; ignoring them`);
-        return {};
+            throw new Error(
+                `Invalid cost overrides ${overridesPath}: entry ${JSON.stringify(key)} may hold only non-negative ${OVERRIDE_FIELDS.join(", ")}`
+            );
     }
     return overrides;
 }
@@ -130,26 +121,31 @@ function executed(attempt, metadata) {
     );
 }
 
-// The attempt that finalized the task, unstarved, is the run's one sample.
+// Every executed attempt is a sample; the run keeps its last one, so a clean
+// retry replaces the inflated sample of the attempt that starved.
 function isCostSample(attempt, metadata) {
-    return (
-        executed(attempt, metadata) &&
-        metadata.disposition !== "retry-starvation" &&
-        metadata.starveCount === 0 &&
-        numeric(attempt.durationMs)
-    );
+    return executed(attempt, metadata) && numeric(attempt.durationMs);
 }
 
 class CostCache {
     constructor({
         projectRoot = process.cwd(),
         cachePath = DEFAULT_COST_CACHE_PATH,
-        overridesPath = DEFAULT_COST_OVERRIDES_PATH
+        overridesPath = DEFAULT_COST_OVERRIDES_PATH,
+        snapshotPath = DEFAULT_COST_SNAPSHOT_PATH,
+        readOnly = false
     } = {}) {
         this.projectRoot = path.resolve(projectRoot);
         this.cachePath = path.resolve(this.projectRoot, cachePath);
+        // CI reads the costs and never writes them, so it stays stateless.
+        this.readOnly = readOnly;
         // commit() re-reads the file and refuses to replace one it cannot read.
         this.tasks = readCache(this.cachePath, () => {});
+        // Committed costs for the tests this checkout has not measured yet.
+        this.snapshot = readCache(
+            path.resolve(this.projectRoot, snapshotPath),
+            () => {}
+        );
         this.overrides = readOverrides(
             path.resolve(this.projectRoot, overridesPath)
         );
@@ -216,27 +212,21 @@ class CostCache {
     }
 
     record(task, attempt, metadata) {
-        const key = this.key(task);
-        if (executed(attempt, metadata) && metadata.starveCount > 0) {
-            const pending = this.pendingFor(key);
-            pending.starved = true;
-            pending.at = metadata.at ?? new Date().toISOString();
-            pending.starvations.push({
-                server: metadata.server,
-                at: pending.at
-            });
-            this.touch(task);
-        }
         if (!isCostSample(attempt, metadata)) return;
-        const pending = this.pendingFor(key);
-        const peakRssGb = attempt.peakRssGb ?? null;
-        const avgCores = attempt.avgCores ?? null;
+        const pending = this.pendingFor(this.key(task));
+        const inflate = (value) =>
+            value === null || value === undefined
+                ? null
+                : metadata.starveCount > 0
+                  ? value * STARVED_COST_FACTOR
+                  : value;
+        const peakRssGb = inflate(attempt.peakRssGb);
+        const avgCores = inflate(attempt.avgCores);
         if (pending.sample) this.addToFileSums(task, pending.sample, -1);
         pending.sample = {
             durationMs: attempt.durationMs,
             peakRssGb,
             avgCores,
-            peakElMs: attempt.peakElMs ?? 0,
             measurementReason:
                 attempt.measurementReason ??
                 (peakRssGb === null || avgCores === null
@@ -251,7 +241,7 @@ class CostCache {
     pendingFor(key) {
         let pending = this.pending.get(key);
         if (!pending) {
-            pending = { sample: null, starvations: [], starved: false };
+            pending = { sample: null };
             this.pending.set(key, pending);
         }
         return pending;
@@ -297,42 +287,32 @@ class CostCache {
 
     resolve(task) {
         const key = this.key(task);
-        const pending = this.pending.get(key);
-        const entry =
-            pending?.sample ?? this.tasks[key] ?? this.siblingMean(task);
-        const cold = coldCost(task);
-        const override = this.overrides[key] ?? {};
-        const cost = {
-            durationMs:
-                override.durationMs ?? entry?.durationMs ?? cold.durationMs,
-            cores: override.cores ?? entry?.avgCores ?? cold.cores,
-            rssGb: override.rssGb ?? entry?.peakRssGb ?? cold.rssGb
-        };
-        const starved =
-            pending?.starved ||
-            this.tasks[key]?.recentRuns
-                .slice(-HEAVY_STARVE_RUNS)
-                .some((run) => run.starved);
         const measured =
-            entry ||
-            override.cores !== undefined ||
-            override.rssGb !== undefined;
-        const overThreshold = measured
-            ? (entry?.peakElMs ?? 0) > HEAVY_EL_MS ||
-              cost.cores > HEAVY_CORES ||
-              cost.rssGb > HEAVY_RSS_GB
-            : cold.heavy;
-        // An explicit override `heavy` wins over every computed trigger.
+            this.pending.get(key)?.sample ??
+            this.tasks[key] ??
+            this.snapshot[key];
+        const entry = measured ?? this.siblingMean(task);
+        const fallback = defaultCost();
+        const override = this.overrides[key] ?? {};
+        const cores = override.cores ?? entry?.avgCores ?? fallback.cores;
+        const rssGb = override.rssGb ?? entry?.peakRssGb ?? fallback.rssGb;
         return {
-            ...cost,
-            heavy: override.heavy ?? (!!starved || overThreshold)
+            durationMs:
+                override.durationMs ?? entry?.durationMs ?? fallback.durationMs,
+            cores,
+            rssGb,
+            // Measured or overridden cores and memory, not a default or a
+            // sibling's: a worker may start it without waiting for a tick.
+            known:
+                (override.cores !== undefined || numeric(measured?.avgCores)) &&
+                (override.rssGb !== undefined || numeric(measured?.peakRssGb))
         };
     }
 
     // Persisting is best effort: a cache that cannot be read or written warns
     // and keeps this run's measurements pending, and never fails the run.
     commit({ interrupted = false } = {}) {
-        if (interrupted || !this.pending.size) return;
+        if (interrupted || this.readOnly || !this.pending.size) return;
         // Merge into the file as it is now: another run from this checkout may
         // have committed since this one started.
         let readDenied = null;
@@ -345,50 +325,28 @@ class CostCache {
             );
             return;
         }
-        for (const [key, pending] of this.pending) {
-            const old = tasks[key] ?? null;
-            const sample = pending.sample;
-            const entry = {
-                ...(old || {
-                    durationMs: null,
-                    peakRssGb: null,
-                    avgCores: null,
-                    peakElMs: 0,
-                    samples: 0,
-                    measurementReason: "process-sampling-unavailable",
-                    starvations: [],
-                    recentRuns: []
-                })
-            };
-            if (sample) {
-                // A starvation-only placeholder has nothing to average from.
-                for (const field of SAMPLE_FIELDS)
-                    entry[field] = EWMA(
-                        old?.samples ? old[field] : undefined,
-                        sample[field]
-                    );
-                entry.measurementReason = [
-                    entry.peakRssGb,
-                    entry.avgCores
-                ].includes(null)
-                    ? (sample.measurementReason ??
-                      "legacy-measurements-unavailable")
-                    : null;
-                entry.samples++;
-            }
-            entry.lastSeenAt = pending.at;
-            entry.starvations = [
-                ...entry.starvations,
-                ...pending.starvations
-            ].slice(-HEAVY_STARVE_RUNS);
-            entry.recentRuns = [
-                ...entry.recentRuns,
-                { at: pending.at, starved: pending.starved }
-            ].slice(-HEAVY_STARVE_RUNS);
+        for (const [key, { sample, at }] of this.pending) {
+            // The snapshot seeds a test this checkout has not measured yet.
+            const old = tasks[key] ?? this.snapshot[key] ?? null;
+            const entry = Object.fromEntries(
+                SAMPLE_FIELDS.map((field) => [
+                    field,
+                    EWMA(old?.[field], sample[field])
+                ])
+            );
+            entry.measurementReason = [
+                entry.peakRssGb,
+                entry.avgCores
+            ].includes(null)
+                ? (sample.measurementReason ??
+                  "legacy-measurements-unavailable")
+                : null;
+            entry.samples = (old?.samples ?? 0) + 1;
+            entry.lastSeenAt = at;
             tasks[key] = entry;
         }
         try {
-            writeJsonAtomic(this.cachePath, { version: 1, tasks });
+            writeJsonAtomic(this.cachePath, { version: CACHE_VERSION, tasks });
         } catch (error) {
             console.warn(`Unable to commit cost cache: ${error.message}`);
             return;
@@ -401,4 +359,45 @@ class CostCache {
     }
 }
 
-module.exports = { CostCache, coldCost };
+/**
+ * Merge this checkout's measured costs into the committed snapshot, rounded
+ * and sorted by key so a refresh diffs only what changed. Returns the number
+ * of tasks written.
+ */
+function refreshSnapshot({
+    projectRoot = process.cwd(),
+    cachePath = DEFAULT_COST_CACHE_PATH,
+    snapshotPath = DEFAULT_COST_SNAPSHOT_PATH
+} = {}) {
+    const root = path.resolve(projectRoot);
+    const refuse = (error) => {
+        throw error;
+    };
+    const target = path.resolve(root, snapshotPath);
+    const tasks = {
+        ...readCache(target, refuse),
+        ...readCache(path.resolve(root, cachePath), refuse)
+    };
+    const round = (value, places) =>
+        value === null ? null : Number(value.toFixed(places));
+    const sorted = Object.fromEntries(
+        Object.keys(tasks)
+            .sort()
+            .map((key) => {
+                const entry = tasks[key];
+                return [
+                    key,
+                    {
+                        ...entry,
+                        durationMs: Math.round(entry.durationMs),
+                        avgCores: round(entry.avgCores, 3),
+                        peakRssGb: round(entry.peakRssGb, 3)
+                    }
+                ];
+            })
+    );
+    writeJsonAtomic(target, { version: CACHE_VERSION, tasks: sorted });
+    return Object.keys(sorted).length;
+}
+
+module.exports = { CostCache, defaultCost, refreshSnapshot };

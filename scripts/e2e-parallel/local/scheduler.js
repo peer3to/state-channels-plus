@@ -54,13 +54,15 @@ async function runScheduler({
     projectRoot = process.cwd(),
     schedule = "fifo",
     costCachePath,
+    costCacheReadOnly,
     costOverridesPath
 }) {
     const startedAt = Date.now();
     const costCache = new CostCache({
         projectRoot,
         cachePath: costCachePath,
-        overridesPath: costOverridesPath
+        overridesPath: costOverridesPath,
+        readOnly: costCacheReadOnly
     });
     const taskResources = new TaskResourcePool({
         baseEnv,

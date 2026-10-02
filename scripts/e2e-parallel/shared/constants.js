@@ -46,19 +46,13 @@ const PROC_CLOCK_TICKS_PER_SECOND = 100;
 // Cost scheduling (`--schedule cost`). Every value below is a placeholder —
 // calibrate from run-metrics.json.
 const COST_EWMA_ALPHA = 0.3;
-const HEAVY_STARVE_RUNS = 3;
-const MAX_HEAVY_PER_WORKER = 1;
 const COST_CPU_BUDGET = 1.0;
 const COST_CPU_VALVE = 0.95;
-const HEAVY_EL_MS = 500;
-const HEAVY_CORES = 1.5;
-const HEAVY_RSS_GB = 2.5;
-// Cost of a task with no measurement and no finished sibling, by tier.
-const COLD_COSTS = {
-    light: { durationMs: 5000, cores: 0.3, rssGb: 0.5, heavy: false },
-    medium: { durationMs: 30000, cores: 0.8, rssGb: 1.4, heavy: false },
-    heavy: { durationMs: 120000, cores: 2.0, rssGb: 3.0, heavy: true }
-};
+// Cost of a task with no measurement and no finished sibling.
+const DEFAULT_TASK_COST = { durationMs: 30000, cores: 1, rssGb: 2 };
+// A starved attempt's measured cores and memory are stored this much higher,
+// so the next run admits it as more expensive; a clean retry replaces it.
+const STARVED_COST_FACTOR = 1.5;
 // Why a task's peakRssGb/avgCores are null: the sampler found no process tree,
 // or the attempt came from a worker that predates the measurements.
 const MEASUREMENT_REASONS = [
@@ -78,6 +72,10 @@ const HOLD_REASONS = ["cap", "memory", "cpu"];
 const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";
 const DEFAULT_COST_OVERRIDES_PATH =
     "scripts/e2e-parallel/test-costs.overrides.json";
+// Committed costs, refreshed only by `yarn test:costs:snapshot`; a run reads
+// them for any test its own cache has not measured.
+const DEFAULT_COST_SNAPSHOT_PATH =
+    "scripts/e2e-parallel/test-costs.snapshot.json";
 
 // Admit another test only while avg OS load per core is below this.
 const TARGET_LOAD_PER_CORE = 0.8;
@@ -104,19 +102,16 @@ module.exports = {
     TASK_COST_SAMPLE_MS,
     PROC_CLOCK_TICKS_PER_SECOND,
     COST_EWMA_ALPHA,
-    HEAVY_STARVE_RUNS,
-    MAX_HEAVY_PER_WORKER,
     COST_CPU_BUDGET,
     COST_CPU_VALVE,
-    HEAVY_EL_MS,
-    HEAVY_CORES,
-    HEAVY_RSS_GB,
-    COLD_COSTS,
+    DEFAULT_TASK_COST,
+    STARVED_COST_FACTOR,
     MEASUREMENT_REASONS,
     CONCURRENCY_STAT_FIELDS,
     HOLD_REASONS,
     DEFAULT_COST_CACHE_PATH,
     DEFAULT_COST_OVERRIDES_PATH,
+    DEFAULT_COST_SNAPSHOT_PATH,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     PER_TEST_MEM_GB

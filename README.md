@@ -222,39 +222,51 @@ fails with `All distributed workers were quarantined before running a task`.
 ### Cost-aware scheduling
 
 Both runners measure every test while it runs: peak memory of its process tree,
-average CPU cores, duration and peak event-loop delay. At the end of a run the
-orchestrator (or the local runner) stores them per test in
-`.cache/test-costs.json`, and writes `logs/run-N/run-metrics.json` with how busy
-each worker was and why it held tests back.
+average CPU cores and duration. At the end of a run the orchestrator (or the
+local runner) stores them per test in `.cache/test-costs.json`, and writes
+`logs/run-N/run-metrics.json` with how busy each worker was and why it held
+tests back.
 
 By default (`--schedule fifo`) the measurements are only recorded. On Linux,
 fifo's memory admission now reads running tests' memory from `/proc`, where it
 used to fall back to whole-host memory and a fixed 2 GB per test, so containers
-may admit more tests than before. With
-`--schedule cost` the runner uses them: browser-only and longest tests start
-first, a worker prefers to run at most one heavy test at a time but takes another
-heavy test rather than sitting idle when nothing lighter is left, and a busy
-worker is handed only a test whose predicted CPU and memory still fit beside
-everything it runs. The `--workers` cap still applies, and so does
-`--target-load`: machine CPU at or above `min(--target-load, 0.95)` holds new
-tests. Hold counts in `run-metrics.json` include tests a worker was refused
-because they did not fit its budget.
+may admit more tests than before.
+
+With `--schedule cost` the runner uses them: browser-only and longest tests
+start first, and a busy worker is handed only a test whose predicted CPU and
+memory still fit beside everything it runs. A test whose cores and memory are
+measured or overridden starts without waiting for the scheduler tick. The
+`--workers` cap still applies, and so does `--target-load`: machine CPU at or
+above `min(--target-load, 0.95)` holds new tests. Hold counts in
+`run-metrics.json` include tests a worker was refused because they did not fit
+its budget.
 
 ```shell
 yarn test:parallel --schedule cost --workers 30
 yarn test:parallel:distributed --schedule cost
 yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
+yarn test:parallel:distributed --cost-cache-read-only  # CI: read, never write
 ```
 
-A test without a measurement takes the average of finished tests from the same
-file, or a default for its kind (browser tests count as heavy). To correct a
-test's cost by hand, add it to `scripts/e2e-parallel/test-costs.overrides.json`,
-keyed by `runner|file|full title`, e.g.
-`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "heavy": true } }`; the fields
-are `durationMs`, `cores`, `rssGb` and `heavy`. An invalid entry makes the
-runner ignore the whole file with a warning; check the run's output after editing
-it. The thresholds and defaults are
-placeholders in `scripts/e2e-parallel/shared/constants.js`, to be tuned from
+A test's cost comes from, first match wins: an override, this checkout's cache,
+the committed snapshot `scripts/e2e-parallel/test-costs.snapshot.json`, the
+average of finished tests from the same file, then one default (30 s, 1 core,
+2 GB). Every executed attempt is measured; an attempt that starved is stored
+with 50% more cores and memory, so the next run admits it as more expensive,
+and a clean retry in the same run replaces that sample.
+
+`yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
+rounded and sorted so the diff shows only what changed. Commit a refreshed
+snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
+and stays stateless.
+
+To correct a test's cost by hand, add it to
+`scripts/e2e-parallel/test-costs.overrides.json`, keyed by
+`runner|file|full title`, e.g.
+`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
+are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
+at startup. The defaults are placeholders in
+`scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.
 
 ### Distributed parallel tests

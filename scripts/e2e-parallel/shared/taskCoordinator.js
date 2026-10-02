@@ -1,6 +1,6 @@
 const logging = require("./logging");
-const { coldCost } = require("./costCache");
-const { MAX_HEAVY_PER_WORKER, MEASUREMENT_REASONS } = require("./constants");
+const { MEASUREMENT_REASONS } = require("./constants");
+const { defaultCost } = require("./costCache");
 const { costBudgetShortfall } = require("./scheduling");
 const { requiresBrowser } = require("./taskRunners");
 
@@ -202,7 +202,7 @@ class TaskCoordinator {
                 entry.task.cost =
                     this.costCache?.resolve(entry.task) ??
                     entry.task.cost ??
-                    coldCost(entry.task);
+                    defaultCost();
                 entry.costRevision = revision;
             }
             const eligible = this.queue.filter((entry) =>
@@ -212,9 +212,7 @@ class TaskCoordinator {
                 fitsCostBudget(entry.task, costBudget)
             );
             if (eligible.length && !fitting.length) {
-                const blocked = rankByCost(
-                    this.preferLight(workerId, eligible)
-                )[0];
+                const blocked = rankByCost(eligible)[0];
                 this.recordBudgetHold(
                     workerId,
                     blocked,
@@ -222,7 +220,7 @@ class TaskCoordinator {
                 );
                 return null;
             }
-            const candidates = rankByCost(this.preferLight(workerId, fitting));
+            const candidates = rankByCost(fitting);
             index = candidates.length ? this.queue.indexOf(candidates[0]) : -1;
         } else {
             index = this.queue.findIndex((entry) => worker.canRun(entry.task));
@@ -291,11 +289,7 @@ class TaskCoordinator {
                 !workerTaskIds.has(assignment.taskId) &&
                 !this.replications.has(`${assignment.taskId}:${workerId}`)
         );
-        const candidate = (
-            this.schedule === "cost"
-                ? this.preferLight(workerId, eligible)
-                : eligible
-        ).sort((a, b) => {
+        const candidate = eligible.sort((a, b) => {
             if (this.schedule !== "cost") return b.seq - a.seq;
             const remainingA = a.task.cost.durationMs - (now - a.assignedAt);
             const remainingB = b.task.cost.durationMs - (now - b.assignedAt);
@@ -305,20 +299,6 @@ class TaskCoordinator {
         return candidate
             ? { task: candidate.task, seq: candidate.seq, speculative: true }
             : null;
-    }
-
-    /**
-     * At its heavy limit a worker gets a light candidate while one exists, and
-     * a heavy one otherwise: it is never left idle while work is queued.
-     */
-    preferLight(workerId, candidates) {
-        const heavyRunning = [...this.assignments.values()].filter(
-            (assignment) =>
-                assignment.workerId === workerId && assignment.task.cost?.heavy
-        ).length;
-        if (heavyRunning < MAX_HEAVY_PER_WORKER) return candidates;
-        const light = candidates.filter((entry) => !entry.task.cost?.heavy);
-        return light.length ? light : candidates;
     }
 
     completeAttempt(workerId, attempt) {

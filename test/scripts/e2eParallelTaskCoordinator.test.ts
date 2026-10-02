@@ -5,7 +5,6 @@ import os from "os";
 import path from "path";
 
 const { CostCache } = require("../../scripts/e2e-parallel/shared/costCache.js");
-const logging = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     TaskCoordinator,
     reduceAttemptOutput,
@@ -33,8 +32,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100000,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -43,8 +41,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -53,8 +50,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],
@@ -76,8 +72,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -85,8 +80,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],
@@ -141,20 +135,64 @@ describe("distributed task coordinator", function () {
         }
     });
 
+    it("re-resolves a starved cost retry at its inflated cost", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
+        try {
+            const coordinator = new TaskCoordinator(
+                [
+                    {
+                        ...task("starves"),
+                        runner: "hardhat",
+                        fullTitle: "starves",
+                        args: ["test", "--no-compile", "test/unit/a.test.ts"]
+                    }
+                ],
+                {
+                    schedule: "cost",
+                    costCache: new CostCache({ projectRoot: root })
+                }
+            );
+            const first = coordinator.requestTask("worker");
+            expect(first.task.cost.known).to.equal(false);
+            expect(
+                coordinator.completeAttempt("worker", {
+                    attemptId: first.attemptId,
+                    code: 0,
+                    durationMs: 1000,
+                    stdout: "",
+                    stderr: "",
+                    reduced: {
+                        ...reduceAttemptOutput(),
+                        starveCount: 1,
+                        peakRssGb: 1,
+                        avgCores: 2
+                    }
+                }).disposition
+            ).to.equal("retry-starvation");
+            expect(coordinator.requestTask("worker").task.cost).to.deep.equal({
+                durationMs: 1000,
+                cores: 3,
+                rssGb: 1.5,
+                known: true
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("hands a busy cost worker the best task its budget fits and the long one to a worker with room", function () {
         const coordinator = new TaskCoordinator(
             [
                 {
                     ...task("long"),
-                    cost: { durationMs: 1000, cores: 2, rssGb: 1, heavy: false }
+                    cost: { durationMs: 1000, cores: 2, rssGb: 1 }
                 },
                 {
                     ...task("short"),
                     cost: {
                         durationMs: 100,
                         cores: 0.5,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],
@@ -175,7 +213,7 @@ describe("distributed task coordinator", function () {
             [
                 {
                     ...task("big"),
-                    cost: { durationMs: 100, cores: 2, rssGb: 1, heavy: false }
+                    cost: { durationMs: 100, cores: 2, rssGb: 1 }
                 }
             ],
             {
@@ -223,8 +261,7 @@ describe("distributed task coordinator", function () {
                         cost: {
                             durationMs: 100,
                             cores: 2,
-                            rssGb: 1,
-                            heavy: false
+                            rssGb: 1
                         }
                     }
                 ],
@@ -243,57 +280,6 @@ describe("distributed task coordinator", function () {
         ).to.equal(true);
     });
 
-    it("holds a starved cost retry back as heavy at the worker's heavy limit", function () {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
-        const light = (label: string) => ({
-            ...task(label),
-            runner: "hardhat",
-            fullTitle: label,
-            args: ["test", "--no-compile", "test/unit/a.test.ts"]
-        });
-        try {
-            const coordinator = new TaskCoordinator(
-                [
-                    {
-                        ...task("gate"),
-                        runner: "browser",
-                        args: ["--script", "test/browser/run-gate.mjs"]
-                    },
-                    light("starves"),
-                    light("plain")
-                ],
-                {
-                    schedule: "cost",
-                    costCache: new CostCache({ projectRoot: root })
-                }
-            );
-            expect(coordinator.requestTask("worker").task.label).to.equal(
-                "gate"
-            );
-            const starved = coordinator.requestTask("worker");
-            expect(starved.task.label).to.equal("starves");
-            expect(
-                coordinator.completeAttempt("worker", {
-                    attemptId: starved.attemptId,
-                    code: 0,
-                    stdout: "",
-                    stderr: "",
-                    reduced: {
-                        oomCount: 0,
-                        starveCount: 1,
-                        timing: logging.parseTimings("")
-                    }
-                }).disposition
-            ).to.equal("retry-starvation");
-            // The gate is still running, so the worker is at its heavy limit.
-            expect(coordinator.requestTask("worker").task.label).to.equal(
-                "plain"
-            );
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true });
-        }
-    });
-
     it("retains canRun filtering during cost priority retries", function () {
         const coordinator = new TaskCoordinator(
             [
@@ -303,8 +289,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 1000,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -312,8 +297,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 10,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -321,8 +305,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],
@@ -353,65 +336,6 @@ describe("distributed task coordinator", function () {
         expect(coordinator.requestTask("new").task.label).to.equal("browser");
     });
 
-    it("separates heavy assignments without idling a heavy-only queue", function () {
-        const coordinator = new TaskCoordinator(
-            [
-                {
-                    ...task("light"),
-                    cost: {
-                        durationMs: 10,
-                        cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
-                    }
-                },
-                {
-                    ...task("heavy-long"),
-                    cost: { durationMs: 100, cores: 2, rssGb: 3, heavy: true }
-                },
-                {
-                    ...task("heavy-short"),
-                    cost: { durationMs: 50, cores: 2, rssGb: 3, heavy: true }
-                }
-            ],
-            { schedule: "cost" }
-        );
-        expect(coordinator.requestTask("worker").task.label).to.equal(
-            "heavy-long"
-        );
-        expect(coordinator.requestTask("worker").task.label).to.equal("light");
-        expect(coordinator.requestTask("worker").task.label).to.equal(
-            "heavy-short"
-        );
-    });
-
-    it("gives a speculative copy to a worker at its heavy limit only as a light task when one is eligible", function () {
-        const task = (label: string, durationMs: number, heavy: boolean) => ({
-            label,
-            args: [],
-            cost: {
-                durationMs,
-                heavy,
-                cores: heavy ? 2 : 0.3,
-                rssGb: heavy ? 3 : 0.5
-            }
-        });
-        const coordinator = new TaskCoordinator(
-            [
-                task("H1", 30000, true),
-                task("H2", 20000, true),
-                task("L", 5000, false)
-            ],
-            { schedule: "cost", speculative: true, now: () => 0 }
-        );
-        expect(coordinator.requestTask("a").task.label).to.equal("H1");
-        expect(coordinator.requestTask("b").task.label).to.equal("H2");
-        expect(coordinator.requestTask("b").task.label).to.equal("L");
-        const copy = coordinator.requestTask("a");
-        expect(copy.speculative).to.equal(true);
-        expect(copy.task.label).to.equal("L");
-    });
-
     it("ranks speculative copies by remaining duration and discovery ties", function () {
         let now = 0;
         const coordinator = new TaskCoordinator(
@@ -421,8 +345,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 5000,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -430,8 +353,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 10000,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],
@@ -454,8 +376,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 },
                 {
@@ -463,8 +384,7 @@ describe("distributed task coordinator", function () {
                     cost: {
                         durationMs: 100,
                         cores: 0.3,
-                        rssGb: 0.5,
-                        heavy: false
+                        rssGb: 0.5
                     }
                 }
             ],

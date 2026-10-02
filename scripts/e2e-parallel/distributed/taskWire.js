@@ -22,7 +22,7 @@ function toWireTask(
                   cost: {
                       cores: task.cost.cores,
                       rssGb: task.cost.rssGb,
-                      heavy: task.cost.heavy
+                      known: task.cost.known
                   }
               }
             : {}),
@@ -47,12 +47,12 @@ function fromWireTask(task, projectRoot) {
             Array.isArray(cost) ||
             Object.keys(cost).length !== 3 ||
             !Object.keys(cost).every((field) =>
-                ["cores", "rssGb", "heavy"].includes(field)
+                ["cores", "rssGb", "known"].includes(field)
             ) ||
             !["cores", "rssGb"].every(
                 (field) => Number.isFinite(cost[field]) && cost[field] >= 0
             ) ||
-            typeof cost.heavy !== "boolean"
+            typeof cost.known !== "boolean"
         )
             throw new Error("Invalid wire task cost");
     }

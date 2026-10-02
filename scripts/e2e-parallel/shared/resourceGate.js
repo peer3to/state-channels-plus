@@ -16,7 +16,8 @@ const { costBudgetShortfall } = require("./scheduling");
 const execFileAsync = promisify(execFile);
 let warnedAboutPs = false;
 // lean: one process-wide scan meter; per-gate meters if a process ever hosts several workers
-const processScans = { count: 0, ms: 0 };
+// ms is wall time with at least one scan running, so overlapping scans count once.
+const processScans = { count: 0, ms: 0, active: 0, busySince: 0 };
 
 function cpuTimes() {
     return osTimes();
@@ -157,14 +158,17 @@ async function collectProcessTrees(rootPids, options = {}) {
     if (!roots.length) return new Map();
     const platform =
         options.platform ?? (options.execFile ? "ps" : process.platform);
-    const scanStartedAt = performance.now();
+    if (processScans.active++ === 0) processScans.busySince = performance.now();
     try {
-        const processes =
+        const processes = await (
             platform === "linux"
-                ? await readProcProcesses(options)
-                : await readPsProcesses(options);
+                ? readProcProcesses(options)
+                : readPsProcesses(options)
+        ).finally(() => {
+            if (--processScans.active === 0)
+                processScans.ms += performance.now() - processScans.busySince;
+        });
         processScans.count++;
-        processScans.ms += performance.now() - scanStartedAt;
         const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
         const rootSet = new Set(roots);
         const trees = new Map(roots.map((root) => [root, []]));
