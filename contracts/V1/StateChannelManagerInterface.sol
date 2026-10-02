@@ -99,7 +99,11 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         virtual
         returns (bool found, bytes32 blockCalldataCommitment);
 
-    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool);
+    function isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
+        public
+        view
+        virtual
+        returns (bool);
 
     function getWindowCommitments(bytes32 channelId, bytes32 forkId)
         public

@@ -299,7 +299,7 @@ returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 
 ### 6.1 Time validation
 
-[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L485); the
+[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L484); the
 protocol time model is specified in [../protocol/time.md](../../../../specification/protocol-model/time.md).
 `previousTimestamp` is the predecessor block's _relevant_ timestamp for this
 author (block timestamp if the author signed the predecessor, otherwise
@@ -339,7 +339,8 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
    hash-and-height chain from the previous snapshot's inbound tip
    (`findBrokenInboundMessageChainBlock`); break → invalid state transition.
 3. **Forged inbound blocks.** Each carried inbound block must exist locally or
-   on-chain (`hasInboundMessageBlock`); a fabricated one →
+   not be shown uncommitted by the chain (`isUncommittedInboundMessageBlock`: above the
+   snapshot's inbound head and not stored); a fabricated one →
    `forgedInboundMessageBlockDetected` (dedicated fraud proof). See
    [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md).
 4. **Transition.** `applyTransaction` → `diamondStateMachine.stateTransition(tx)`

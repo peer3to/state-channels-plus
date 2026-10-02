@@ -6,6 +6,7 @@ import P2pEventHooks from "@/P2pEventHooks";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import {
     DebugProxy,
     DetachedPromises,
@@ -105,6 +106,7 @@ class DisputeManager {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
+        let retryWithoutStaleProof = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetryDelaySeconds: number | undefined;
         let postedTimeout: TimeoutStruct | undefined;
@@ -256,6 +258,14 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
+                    // the snapshot passed a stored forged-inbound proof's height -> rebuild once without it
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            "dispute retry: fraud proof below the snapshot's inbound head",
+                            { forkId, channelId: this.channelId }
+                        );
+                        retryWithoutStaleProof = true;
+                    },
                     RaceConditionDisputeEvidencePeriodExpired: (
                         customError
                     ) => {
@@ -332,6 +342,12 @@ class DisputeManager {
             );
             if (changed) await this.dispute(forkId);
         }
+        if (
+            retryWithoutStaleProof &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        )
+            await this.dispute(forkId);
     }
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
@@ -552,6 +568,12 @@ class DisputeManager {
                             `killDispute no-op: unexpected block calldata posted for dispute ${formattedHash}`,
                             { disputeMeta }
                         );
+                    },
+                    RaceConditionBlockHeightTooOld: () => {
+                        this.logger.info(
+                            `killDispute no-op: forged inbound block below the snapshot's inbound head for dispute ${formattedHash}`,
+                            { disputeMeta }
+                        );
                     }
                 }
             });
@@ -646,13 +668,27 @@ class DisputeManager {
 
         const fraudProofsToApply: FraudProofStruct[] = [];
         for (const participant of participantsNotSlashedOnChain) {
-            const fraudProof =
-                this.storage.fraudProofs.getFraudProofForParticipant(
-                    participant
-                );
-            if (fraudProof) {
+            for (const fraudProof of this.storage.fraudProofs.getFraudProofsForParticipant(
+                participant
+            )) {
+                // a forged-inbound proof the chain no longer judges reverts the whole multicall -> try the next proof
+                if (
+                    Number(fraudProof.proofType) ===
+                        toSolidityFraudProofType(
+                            FraudProofType.ForgedInboundMessageBlock
+                        ) &&
+                    !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
+                        this.channelId,
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.ForgedInboundMessageBlock
+                        ).forgedInboundMessageBlock
+                    ))
+                )
+                    continue;
                 fraudProofsToApply.push(fraudProof);
                 onChainSlashes.add(participant);
+                break;
             }
         }
 

@@ -107,7 +107,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getMaxChannelParticipants.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
-        _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isUncommittedInboundMessageBlock.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getWindowCommitments.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getDisputeWindowCreationTimestamp.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getReducedResult.selector, _utilityFacet);

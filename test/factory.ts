@@ -316,6 +316,24 @@ export function fraudProof(
     return { ...defaultFraudProof, ...overrides };
 }
 
+/** a ForgedInboundMessageBlock proof against `author` over `inbound` carried by `invalidBlock` */
+export function forgedInboundFraudProof(
+    invalidBlock: SignedBlockStruct,
+    author: Address,
+    inbound: MessageBlockStruct
+): FraudProofStruct {
+    return {
+        proofType: toSolidityFraudProofType(
+            FraudProofType.ForgedInboundMessageBlock
+        ),
+        participant: author,
+        encodedProof: Codec.encode(
+            { invalidBlock, forgedInboundMessageBlock: inbound },
+            FraudProofType.ForgedInboundMessageBlock
+        )
+    };
+}
+
 export function disputeFraudProof(
     dispute: DisputeStruct,
     overrides: Partial<DisputeFraudProofStruct> = {}

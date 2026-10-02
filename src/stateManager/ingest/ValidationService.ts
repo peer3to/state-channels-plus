@@ -251,7 +251,8 @@ export default class ValidationService {
 
     /**
      * Did the author invent an inbound message block? A carried inbound block
-     * is legitimate only if we already store it locally or the chain has it.
+     * is legitimate if we already store it locally or the chain cannot show it
+     * was never committed (stored, or at/below the snapshot's pruned inbound head).
      */
     public async detectForgedInboundMessageBlock(
         block: Block
@@ -271,17 +272,15 @@ export default class ValidationService {
                 continue;
             }
 
-            const existsOnChain =
-                await this.stateChannelManagerContract.hasInboundMessageBlock(
+            const isUncommitted =
+                await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
                     this.stateManager.channelId,
-                    inboundBlockHash
+                    inboundBlock
                 );
 
-            if (existsOnChain) {
-                continue;
+            if (isUncommitted) {
+                return inboundBlock;
             }
-
-            return inboundBlock;
         }
 
         return undefined;

@@ -28,17 +28,20 @@ index for construction-time lookup.
    leaves the stored proof and its participant index untouched, so a re-store under a differing
    `participant` can never displace the original entry or strand a stale index entry
    ([#L18](../../../../../../src/storage/FraudProofStorage.ts#L18)).
-2. **First-proof-per-participant lookup.** `getFraudProofForParticipant` returns one proof (set
-   iteration order) — sufficient because any single valid proof slashes ([#L38](../../../../../../src/storage/FraudProofStorage.ts#L38)).
+2. **Every proof per participant, in insertion order.** `getFraudProofsForParticipant` returns all
+   proofs stored against a participant ([#L45](../../../../../../src/storage/FraudProofStorage.ts#L45)).
+   One proof is not enough: a forged-inbound proof can go stale once a snapshot passes its height,
+   and dispute construction then needs the next proof the chain still judges
+   ([DisputeManager](../disputeManager/DisputeManager.ts.md) decision 13).
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                  |
-| ------------ | ----------------------------------------- |
-| Inputs       | Fraud proofs.                             |
-| Outputs      | Proof by hash; one proof per participant. |
-| Owned state  | `fraudProofs`, `participantToProofs`.     |
-| Side effects | None.                                     |
+| Aspect       | Contents                                   |
+| ------------ | ------------------------------------------ |
+| Inputs       | Fraud proofs.                              |
+| Outputs      | Proof by hash; all proofs per participant. |
+| Owned state  | `fraudProofs`, `participantToProofs`.      |
+| Side effects | None.                                      |
 
 ## Linked requirements
 
@@ -81,9 +84,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                                | Obligation      | Public entry and setup                                  | Oracle and forbidden effects                                                                                                                                      | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-fraud-proof-storage-1-xjahws"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS` | Store and index | Store proofs incl. repeats and multiple per participant | Round trips exact; repeats idempotent; index returns a stored proof for exactly the indexed participants; index survives a re-store under a differing participant | <a id="unit-test-fraud-proof-storage-1-xjahws.p1"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P1` — store/read by hash; <a id="unit-test-fraud-proof-storage-1-xjahws.p2"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P2` — repeat idempotent; <a id="unit-test-fraud-proof-storage-1-xjahws.p3"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P3` — multiple proofs one participant; <a id="unit-test-fraud-proof-storage-1-xjahws.p4"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P4` — unindexed participant absent; <a id="unit-test-fraud-proof-storage-1-xjahws.p5"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P5` — index consistency on hash collision with a differing participant |
+| Unit test ID                                                                                | Obligation      | Public entry and setup                                  | Oracle and forbidden effects                                                                                                                                                               | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="unit-test-fraud-proof-storage-1-xjahws"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS` | Store and index | Store proofs incl. repeats and multiple per participant | Round trips exact; repeats idempotent; index returns every stored proof, in insertion order, for exactly the indexed participants; index survives a re-store under a differing participant | <a id="unit-test-fraud-proof-storage-1-xjahws.p1"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P1` — store/read by hash; <a id="unit-test-fraud-proof-storage-1-xjahws.p2"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P2` — repeat idempotent; <a id="unit-test-fraud-proof-storage-1-xjahws.p3"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P3` — multiple proofs one participant; <a id="unit-test-fraud-proof-storage-1-xjahws.p4"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P4` — unindexed participant absent; <a id="unit-test-fraud-proof-storage-1-xjahws.p5"></a>`UNIT-TEST-FRAUD-PROOF-STORAGE-1-XJAHWS.P5` — index consistency on hash collision with a differing participant |
 
 ## Related source reports
 
