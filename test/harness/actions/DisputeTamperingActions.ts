@@ -31,7 +31,12 @@ import {
     DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { BytesLike, Signer, ZeroAddress } from "ethers";
+import {
+    BytesLike,
+    ContractTransactionReceipt,
+    Signer,
+    ZeroAddress
+} from "ethers";
 
 export type DisputeTamper = (
     dispute: DisputeStruct,
@@ -350,12 +355,15 @@ export class DisputeTamperingActions<
         buildProof: (ctx: {
             dispute: DisputeStruct;
             genesisSnapshot: StateSnapshot;
-        }) => DisputeFraudStruct
-    ): Promise<void> {
+        }) => DisputeFraudStruct,
+        // default: the disputer submits against its own dispute, naming itself
+        options: { participant?: string; submitter?: Signer } = {}
+    ): Promise<ContractTransactionReceipt> {
         const peer = this.harness.getPeer(disputerIndex);
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: disputerIndex
-        });
+        if (!options.submitter)
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: disputerIndex
+            });
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
         const genesisResult = await this.harness
@@ -373,15 +381,15 @@ export class DisputeTamperingActions<
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
             proofType: toSolidityDisputeFraudProofType(proofType),
-            participant: dispute.input.disputer,
+            participant: options.participant ?? dispute.input.disputer,
             dispute,
             encodedProof: Codec.encode(proofStruct, proofType)
         };
-        const tx =
-            await peer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
-                [forged]
-            );
-        await tx.wait();
+        const channelManager = options.submitter
+            ? this.harness.channelManager.connect(options.submitter)
+            : peer.p2pInstance.stateChannelManagerContract;
+        const tx = await channelManager.applyDisputeFraudProofs([forged]);
+        return (await tx.wait())!;
     }
 
     /**
