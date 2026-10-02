@@ -655,6 +655,65 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
     }
 
+    function test_applyDisputeFraudProofs_validNonzeroVerdict_killsDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("valid-verdict"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 0);
+        address[] memory slashed =
+            harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP);
+        assertEq(slashed.length, 1);
+        assertEq(slashed[0], dispute.input.disputer);
+    }
+
+    // an outsider names target zero on an invalid proof -> the handler's zero
+    // verdict must not count as a match against an honest dispute
+    function test_applyDisputeFraudProofs_zeroTargetOnHonestDispute_doesNotKill() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyValidDispute(keccak256("zero-target"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        proofs[0].participant = address(0);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+        assertEq(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length, 0);
+    }
+
+    // every proof type, any encoded payload: a zero target never kills an honest
+    // dispute or records a slash, whether the handler returns or reverts
+    function testFuzz_applyDisputeFraudProofs_zeroTargetNeverKills(uint8 proofTypeIndex, bytes memory encodedProof)
+        public
+    {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyValidDispute(keccak256("zero-target-fuzz"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0].dispute = dispute;
+        // out-of-range enum values are not ABI-representable
+        proofs[0].proofType = DisputeFraudProofType(bound(proofTypeIndex, 0, uint8(type(DisputeFraudProofType).max)));
+        proofs[0].encodedProof = encodedProof;
+        proofs[0].participant = address(0);
+        vm.prank(address(0xBEEF));
+        try harness.applyDisputeFraudProofs(proofs) {} catch {}
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+        assertEq(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length, 0);
+    }
+
     function test_killDispute_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-kill"), address(0xA1));
@@ -915,7 +974,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256(stateProof.signedBlocks[0].encodedBlock));
     }
 
-    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+    function _structurallyValidDispute(bytes32 forkId, address disputer)
         internal
         pure
         returns (Dispute memory dispute)
@@ -925,6 +984,14 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         dispute.input.disputer = disputer;
         dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
         dispute.input.stateProof.signedBlocks[0] = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
+    }
+
+    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute = _structurallyValidDispute(forkId, disputer);
         dispute.input.stateProof.signedBlocks[0].signature = hex"00";
     }
 

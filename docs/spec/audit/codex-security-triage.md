@@ -82,7 +82,9 @@ Source identity: `csf_623195021241d901f52c336c`; rule `zero-verdict`; occurrence
 - Submit every invalid dispute proof type with zero target and verify no honest commitment or slash state changes.
 - Retain positive tests for valid nonzero fraud verdicts.
 
-Planned permutation, with no mapped test yet: [`REQ-DIS-3-C4KYSF.T1.P22`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p22). It is a regression obligation, not evidence of a passing test. The fix change maps the exact test.
+Regression permutation: [`REQ-DIS-3-C4KYSF.T1.P22`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p22), mapped to its exact test by the fix change.
+
+**Fix status (2026-10-02):** resolved. `applyDisputeFraudProofs` rejects the zero verdict as a kill target. See [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e).
 
 **Specification / implementation owners:** [fraud-slashing requirements and planned tests](../specification/enforcement/fraud-slashing.md); [DisputeFraudProofFacet source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md). The relevant obligation is that only proven misconduct can slash an honest participant; no new protocol meaning is selected here.
 
