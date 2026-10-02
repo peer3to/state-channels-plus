@@ -8,7 +8,7 @@ const { fromWireTask } = require("./taskWire");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
-const { holdReason } = require("../shared/scheduling");
+const { admissionCost, holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const { reduceAttemptOutput } = require("../shared/taskCoordinator");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -205,24 +205,10 @@ async function start(config) {
         prefetch: true,
         canRun: async (running, assignment, activeAssignments) => {
             const schedule = scheduler.options.schedule;
-            const runningCost =
-                schedule === "cost"
-                    ? [...activeAssignments].reduce(
-                          (sum, active) => ({
-                              cores: sum.cores + active.task.cost.cores,
-                              rssGb: sum.rssGb + active.task.cost.rssGb
-                          }),
-                          { cores: 0, rssGb: 0 }
-                      )
-                    : undefined;
             const allowed = await resources.allows(
                 running,
                 config.concurrencyCap,
-                {
-                    schedule,
-                    runningCost,
-                    nextCost: assignment?.task.cost ?? { cores: 0, rssGb: 0 }
-                }
+                admissionCost(schedule, assignment, activeAssignments)
             );
             if (!allowed) {
                 const reason = holdReason({
@@ -244,16 +230,16 @@ async function start(config) {
         },
         requestTask: async () => {
             const assignment = await request("TASK_REQUEST");
-            if (assignment) {
-                const task = fromWireTask(assignment.task, config.projectRoot);
-                scheduler.options.schedule = Object.hasOwn(task, "cost")
-                    ? "cost"
-                    : "fifo";
-            }
-            return assignment;
+            if (!assignment) return assignment;
+            const task = fromWireTask(assignment.task, config.projectRoot);
+            // The orchestrator sends a cost only under --schedule cost.
+            scheduler.options.schedule = Object.hasOwn(task, "cost")
+                ? "cost"
+                : "fifo";
+            return { ...assignment, task };
         },
         runTask: async (assignment) => {
-            const task = fromWireTask(assignment.task, config.projectRoot);
+            const { task } = assignment;
             // Forge brings its own EVM and a browser gate starts its own node:
             // no warm slot, no funded partition.
             const execution = taskResources.acquire(task);

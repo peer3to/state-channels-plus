@@ -26,6 +26,11 @@ const {
 } = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
 const { manifestForDistributedProtocol } = require("./runtimeBundle");
+const {
+    CONCURRENCY_STAT_FIELDS,
+    HOLD_REASONS
+} = require("../shared/constants");
+const { CostCache } = require("../shared/costCache");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { toWireTask } = require("./taskWire");
@@ -271,13 +276,8 @@ function validateWorkerStats(stats) {
     ) {
         throw new Error("Worker returned invalid resource statistics");
     }
-    const concurrencyFields = [
-        "meanConcurrency",
-        "peakConcurrency",
-        "concurrencyWallMs"
-    ];
     if (
-        concurrencyFields.some(
+        CONCURRENCY_STAT_FIELDS.some(
             (field) =>
                 Object.hasOwn(stats, field) &&
                 (!Number.isFinite(stats[field]) || stats[field] < 0)
@@ -286,7 +286,7 @@ function validateWorkerStats(stats) {
             !Number.isInteger(stats.peakConcurrency)) ||
         (Object.hasOwn(stats, "holdCounts") &&
             (!stats.holdCounts ||
-                ["cap", "memory", "cpu"].some(
+                HOLD_REASONS.some(
                     (field) =>
                         !Number.isInteger(stats.holdCounts[field]) ||
                         stats.holdCounts[field] < 0
@@ -538,7 +538,6 @@ function formatWorkerSummary(worker, completed) {
 async function runDistributed(options) {
     options = { schedule: "fifo", ...options };
     const startedAt = Date.now();
-    const { CostCache } = require("../shared/costCache");
     const costCache = new CostCache({
         projectRoot: options.projectRoot,
         cachePath: options.costCachePath,

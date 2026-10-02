@@ -171,10 +171,8 @@ describe("task cost cache", function () {
     });
 
     it("keeps the previous cache when an atomic write is denied", function () {
-        if (process.getuid?.() === 0) {
-            this.test!.title += " (root bypasses directory permissions)";
-            this.skip();
-        }
+        // root bypasses directory permissions, so the denial cannot happen
+        if (process.getuid?.() === 0) this.skip();
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cost-write-denied-")
         );
@@ -188,9 +186,7 @@ describe("task cost cache", function () {
             );
             cache.record(example, { ...sample, durationMs: 200 }, metadata);
             fs.chmodSync(directory, 0o500);
-            expect(() => cache.commit()).to.throw(
-                "Unable to commit cost cache"
-            );
+            expect(() => cache.commit()).not.to.throw();
             expect(
                 fs.readFileSync(path.join(directory, "test-costs.json"))
             ).to.deep.equal(original);
@@ -339,6 +335,86 @@ describe("task cost cache", function () {
         }
     });
 
+    it("keeps stored measurements through a run that could not measure", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-unmeasured-"));
+        try {
+            let cache = new CostCache({ projectRoot: root });
+            cache.record(
+                example,
+                { ...sample, peakRssGb: 3.2, avgCores: 1 },
+                metadata
+            );
+            cache.commit();
+            cache = new CostCache({ projectRoot: root });
+            cache.record(
+                example,
+                {
+                    ...sample,
+                    peakRssGb: null,
+                    avgCores: null,
+                    measurementReason: "legacy-measurements-unavailable"
+                },
+                metadata
+            );
+            cache.commit();
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example)
+            ).to.include({ rssGb: 3.2, cores: 1, heavy: true });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("judges heavy on override measurements unless heavy is overridden", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-override-heavy-")
+        );
+        try {
+            const key = new CostCache({ projectRoot: root }).key(example);
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test/test-costs.overrides.json"),
+                JSON.stringify({ [key]: { rssGb: 4, cores: 3 } })
+            );
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example)
+            ).to.include({ rssGb: 4, cores: 3, heavy: true });
+            fs.writeFileSync(
+                path.join(root, "test/test-costs.overrides.json"),
+                JSON.stringify({ [key]: { rssGb: 4, heavy: false } })
+            );
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example).heavy
+            ).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("changes a task's revision only when its source file gains a sample", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-revision-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const other = {
+                ...example,
+                args: ["test", "--no-compile", "test/unit/other.test.ts"]
+            };
+            const sibling = { ...example, label: "two", fullTitle: "two" };
+            const before = cache.revision(example);
+            cache.record(other, sample, metadata);
+            expect(cache.revision(example)).to.equal(before);
+            cache.record(sibling, { ...sample, durationMs: 300 }, metadata);
+            const after = cache.revision(example);
+            expect(after).not.to.equal(before);
+            expect(cache.resolve(example).durationMs).to.equal(300);
+            cache.record(sibling, { ...sample, durationMs: 500 }, metadata);
+            expect(cache.revision(example)).not.to.equal(after);
+            expect(cache.resolve(example).durationMs).to.equal(500);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("persists starvation-only outcomes without numeric samples", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cost-starvation-only-")
@@ -383,8 +459,9 @@ describe("task cost cache", function () {
         }
     });
 
-    it("rejects malformed overrides and cache dimensions", function () {
+    it("ignores malformed overrides and cache dimensions", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-invalid-"));
+        const other = { ...example, label: "other", fullTitle: "other" };
         try {
             const cache = new CostCache({ projectRoot: root });
             cache.record(example, sample, metadata);
@@ -414,18 +491,23 @@ describe("task cost cache", function () {
                 { durationMs: null },
                 { unknown: 1 }
             ]) {
+                // One invalid entry discards the whole file, valid ones included.
                 fs.writeFileSync(
                     overridesPath,
-                    JSON.stringify({ [cache.key(example)]: entry })
+                    JSON.stringify({
+                        [cache.key(example)]: entry,
+                        [cache.key(other)]: { durationMs: 777 }
+                    })
                 );
-                expect(() => new CostCache({ projectRoot: root })).to.throw(
-                    "Invalid cost overrides"
-                );
+                expect(
+                    new CostCache({ projectRoot: root }).resolve(other)
+                        .durationMs
+                ).to.equal(5000);
             }
             fs.writeFileSync(overridesPath, "");
-            expect(() => new CostCache({ projectRoot: root })).to.throw(
-                "Unable to read cost overrides"
-            );
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example).durationMs
+            ).to.equal(5000);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

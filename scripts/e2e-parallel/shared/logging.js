@@ -2,7 +2,11 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { DEFAULT_LOG_DIR } = require("./constants");
+const {
+    CONCURRENCY_STAT_FIELDS,
+    DEFAULT_LOG_DIR,
+    HOLD_REASONS
+} = require("./constants");
 
 function formatDurationMs(durationMs) {
     return `${(durationMs / 1000).toFixed(2)}s`;
@@ -392,7 +396,7 @@ function infrastructureRetry({ seq, total, label, reason, worker }) {
 // " (on server-3, server-7)" for a task's starved attempts; empty for a
 // purely local run, where the only worker is the local machine.
 function formatStarvedOn(task, workerLabel) {
-    const names = (task.starvedOn || []).map((id) =>
+    const names = (task.starvations || []).map(({ server: id }) =>
         workerLabel ? workerLabel(id) : id
     );
     if (!names.length || names.every((name) => name === "local")) return "";
@@ -726,26 +730,30 @@ function markLogAsError(logDir, logName) {
     }
 }
 
-function writeRunMetrics(logDir, metrics) {
-    fs.mkdirSync(logDir, { recursive: true });
+/** Write `value` as JSON through a temporary file, so readers never see a torn file. */
+function writeJsonAtomic(file, value) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = path.join(
-        logDir,
-        `.run-metrics-${crypto.randomUUID()}.tmp`
+        path.dirname(file),
+        `.${path.basename(file)}-${crypto.randomUUID()}.tmp`
     );
     try {
-        fs.writeFileSync(temporary, `${JSON.stringify(metrics, null, 2)}\n`, {
+        fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
             flag: "wx"
         });
-        fs.renameSync(temporary, path.join(logDir, "run-metrics.json"));
+        fs.renameSync(temporary, file);
     } catch (error) {
-        try {
-            fs.rmSync(temporary, { force: true });
-        } catch (cleanupError) {
-            throw new Error(
-                `Unable to write run metrics: ${error.message}; temporary cleanup: ${cleanupError.message}`
-            );
-        }
-        throw new Error(`Unable to write run metrics: ${error.message}`);
+        fs.rmSync(temporary, { force: true });
+        throw error;
+    }
+}
+
+// Metrics are diagnostics: a failed write warns and never fails the run.
+function writeRunMetrics(logDir, metrics) {
+    try {
+        writeJsonAtomic(path.join(logDir, "run-metrics.json"), metrics);
+    } catch (error) {
+        console.warn(`Unable to write run metrics: ${error.message}`);
     }
 }
 
@@ -762,24 +770,25 @@ function buildRunMetrics({
         sumDurationMs,
         workers: workers.map(({ id, label, stats, legacyAdmission }) => {
             const missing =
-                [
-                    "meanConcurrency",
-                    "peakConcurrency",
-                    "concurrencyWallMs"
-                ].some((field) => stats?.[field] === undefined) ||
-                !stats?.holdCounts;
+                CONCURRENCY_STAT_FIELDS.some(
+                    (field) => stats?.[field] === undefined
+                ) || !stats?.holdCounts;
             return {
                 id,
                 label,
                 legacyAdmission,
-                meanConcurrency: stats?.meanConcurrency ?? null,
-                peakConcurrency: stats?.peakConcurrency ?? null,
-                concurrencyWallMs: stats?.concurrencyWallMs ?? null,
-                holdCounts: {
-                    cap: stats?.holdCounts?.cap ?? null,
-                    memory: stats?.holdCounts?.memory ?? null,
-                    cpu: stats?.holdCounts?.cpu ?? null
-                },
+                ...Object.fromEntries(
+                    CONCURRENCY_STAT_FIELDS.map((field) => [
+                        field,
+                        stats?.[field] ?? null
+                    ])
+                ),
+                holdCounts: Object.fromEntries(
+                    HOLD_REASONS.map((reason) => [
+                        reason,
+                        stats?.holdCounts?.[reason] ?? null
+                    ])
+                ),
                 ...(missing
                     ? { measurementReason: "legacy-worker-stats-unavailable" }
                     : {})
@@ -815,6 +824,7 @@ function buildRunMetrics({
 }
 
 module.exports = {
+    writeJsonAtomic,
     writeRunMetrics,
     buildRunMetrics,
     formatCpuDetail,

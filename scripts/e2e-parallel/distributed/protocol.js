@@ -1,5 +1,5 @@
 const { EventEmitter } = require("events");
-const { TASK_RUNNERS, normalizeTaskRunner } = require("../shared/taskRunners");
+const { TASK_RUNNERS, runnersNeededByTask } = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
@@ -12,24 +12,11 @@ const DISTRIBUTED_PROTOCOL_VERSION = 15;
 const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 13;
 // What each accepted worker protocol can execute. The orchestrator schedules a
 // task only on a worker whose protocol lists the task's runner.
+const ALL_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
     [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
-    [
-        15,
-        new Set([
-            TASK_RUNNERS.HARDHAT,
-            TASK_RUNNERS.FORGE,
-            TASK_RUNNERS.BROWSER
-        ])
-    ],
-    [
-        14,
-        new Set([
-            TASK_RUNNERS.HARDHAT,
-            TASK_RUNNERS.FORGE,
-            TASK_RUNNERS.BROWSER
-        ])
-    ]
+    [14, ALL_RUNNERS],
+    [15, ALL_RUNNERS]
 ]);
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const REVIEW_KINDS = new Set([
@@ -383,11 +370,6 @@ function runnersForDistributedProtocol(version) {
         return null;
     }
     return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
-}
-
-/** Every runner a task needs: its own, plus what its test file declares. */
-function runnersNeededByTask(task) {
-    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
 }
 
 /** Whether a worker whose protocol lists `runners` can execute `task`. */

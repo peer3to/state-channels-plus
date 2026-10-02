@@ -1,8 +1,6 @@
 class WorkerScheduler {
     constructor(options) {
         this.options = { schedule: "fifo", ...options };
-        if (!["fifo", "cost"].includes(this.options.schedule))
-            throw new Error("Invalid worker schedule");
         this.running = 0;
         this.runningAssignments = new Set();
         this.concurrencyStartedAt = Date.now();
@@ -36,23 +34,14 @@ class WorkerScheduler {
         this.requestPending = true;
         let assignment;
         try {
+            // fifo asks before fetching a task; cost asks only to record a cap
+            // hold here, and judges the fetched task's own cost below.
+            const fifo = this.options.schedule === "fifo";
             if (
-                this.options.schedule === "cost" &&
-                this.running >= this.options.concurrencyCap
-            ) {
-                await this.options.canRun(
-                    this.running,
-                    this.bufferedAssignment,
-                    this.runningAssignments
-                );
-                this.scheduleRetry();
-                return;
-            }
-            if (
-                this.options.schedule === "fifo" &&
+                (fifo || this.running >= this.options.concurrencyCap) &&
                 !(await this.options.canRun(
                     this.running,
-                    null,
+                    fifo ? null : this.bufferedAssignment,
                     this.runningAssignments
                 ))
             ) {

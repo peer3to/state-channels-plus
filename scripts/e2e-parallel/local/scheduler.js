@@ -14,7 +14,7 @@ const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
-const { holdReason } = require("../shared/scheduling");
+const { admissionCost, holdReason } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const logging = require("../shared/logging");
 
@@ -111,21 +111,11 @@ async function runScheduler({
         canRun: async (running, assignment, activeAssignments) => {
             if (schedule === "fifo" && coordinator.queue.length === 0)
                 return false;
-            const runningCost =
-                schedule === "cost"
-                    ? [...activeAssignments].reduce(
-                          (sum, active) => ({
-                              cores: sum.cores + active.task.cost.cores,
-                              rssGb: sum.rssGb + active.task.cost.rssGb
-                          }),
-                          { cores: 0, rssGb: 0 }
-                      )
-                    : undefined;
-            const allowed = await resources.allows(running, concurrencyCap, {
-                schedule,
-                runningCost,
-                nextCost: assignment?.task.cost ?? { cores: 0, rssGb: 0 }
-            });
+            const allowed = await resources.allows(
+                running,
+                concurrencyCap,
+                admissionCost(schedule, assignment, activeAssignments)
+            );
             if (!allowed && coordinator.finish().pending) {
                 const next = assignment ?? coordinator.queue[0];
                 const reason = holdReason({

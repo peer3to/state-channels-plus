@@ -1,59 +1,31 @@
 /* eslint-disable no-console */
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const {
     COST_EWMA_ALPHA,
     HEAVY_STARVE_RUNS,
     HEAVY_EL_MS,
     HEAVY_CORES,
     HEAVY_RSS_GB,
-    COLD_LIGHT_DURATION_MS,
-    COLD_MEDIUM_DURATION_MS,
-    COLD_HEAVY_DURATION_MS,
-    COLD_LIGHT_CORES,
-    COLD_MEDIUM_CORES,
-    COLD_HEAVY_CORES,
-    COLD_LIGHT_RSS_GB,
-    COLD_MEDIUM_RSS_GB,
-    COLD_HEAVY_RSS_GB,
+    COLD_COSTS,
+    MEASUREMENT_REASONS,
     DEFAULT_COST_CACHE_PATH,
     DEFAULT_COST_OVERRIDES_PATH
 } = require("./constants");
-const { normalizeTaskRunner } = require("./taskRunners");
+const { writeJsonAtomic } = require("./logging");
+const { normalizeTaskRunner, requiresBrowser } = require("./taskRunners");
 
+const SAMPLE_FIELDS = ["durationMs", "avgCores", "peakRssGb", "peakElMs"];
 const numeric = (value) => Number.isFinite(value) && value >= 0;
 const object = (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value);
-const reasons = new Set([
-    "process-sampling-unavailable",
-    "legacy-measurements-unavailable"
-]);
+const reasons = new Set(MEASUREMENT_REASONS);
 
 function coldCost(task) {
-    const runner = normalizeTaskRunner(task.runner);
-    const browserHeavy =
-        runner === "browser" || task.requires?.includes("browser");
-    if (browserHeavy)
-        return {
-            durationMs: COLD_HEAVY_DURATION_MS,
-            cores: COLD_HEAVY_CORES,
-            rssGb: COLD_HEAVY_RSS_GB,
-            heavy: true
-        };
-    if (runner === "hardhat" && task.isE2E)
-        return {
-            durationMs: COLD_MEDIUM_DURATION_MS,
-            cores: COLD_MEDIUM_CORES,
-            rssGb: COLD_MEDIUM_RSS_GB,
-            heavy: false
-        };
-    return {
-        durationMs: COLD_LIGHT_DURATION_MS,
-        cores: COLD_LIGHT_CORES,
-        rssGb: COLD_LIGHT_RSS_GB,
-        heavy: false
-    };
+    if (requiresBrowser(task)) return { ...COLD_COSTS.heavy };
+    if (normalizeTaskRunner(task.runner) === "hardhat" && task.isE2E)
+        return { ...COLD_COSTS.medium };
+    return { ...COLD_COSTS.light };
 }
 
 function validEntry(entry) {
@@ -109,15 +81,17 @@ function readCache(cachePath, onDenied) {
     }
 }
 
+// A broken overrides file must not fail a run: it is ignored, loudly.
 function readOverrides(overridesPath) {
     let overrides;
     try {
         overrides = JSON.parse(fs.readFileSync(overridesPath, "utf8"));
     } catch (error) {
         if (error.code === "ENOENT") return {};
-        throw new Error(
-            `Unable to read cost overrides ${overridesPath}: ${error.message}`
+        console.warn(
+            `Unable to read cost overrides ${overridesPath}; ignoring them: ${error.message}`
         );
+        return {};
     }
     if (
         !object(overrides) ||
@@ -131,13 +105,16 @@ function readOverrides(overridesPath) {
                           !numeric(value)
                 )
         )
-    )
-        throw new Error(`Invalid cost overrides ${overridesPath}`);
+    ) {
+        console.warn(`Invalid cost overrides ${overridesPath}; ignoring them`);
+        return {};
+    }
     return overrides;
 }
 
+// An unmeasured run (null) keeps what earlier runs measured.
 function EWMA(previous, next) {
-    if (next === null) return null;
+    if (next === null || next === undefined) return previous ?? null;
     if (previous === null || previous === undefined) return next;
     return previous + COST_EWMA_ALPHA * (next - previous);
 }
@@ -153,24 +130,13 @@ function executed(attempt, metadata) {
     );
 }
 
+// The attempt that finalized the task, unstarved, is the run's one sample (D11).
 function isCostSample(attempt, metadata) {
-    const usage = attempt.reduced ?? attempt;
     return (
         executed(attempt, metadata) &&
         metadata.disposition !== "retry-starvation" &&
         metadata.starveCount === 0 &&
-        numeric(attempt.durationMs) &&
-        numeric(usage.timing?.maxEventLoopDelayMs ?? attempt.peakElMs ?? 0) &&
-        Object.hasOwn(usage, "peakRssGb") ===
-            Object.hasOwn(usage, "avgCores") &&
-        ["peakRssGb", "avgCores"].every(
-            (field) =>
-                usage[field] === undefined ||
-                usage[field] === null ||
-                numeric(usage[field])
-        ) &&
-        (usage.measurementReason == null ||
-            reasons.has(usage.measurementReason))
+        numeric(attempt.durationMs)
     );
 }
 
@@ -190,9 +156,20 @@ class CostCache {
             path.resolve(this.projectRoot, overridesPath)
         );
         this.pending = new Map();
+        // Running sums of this run's samples per source file (`runner|file|`),
+        // so a sibling mean costs the same however many tasks are pending.
+        this.fileSums = new Map();
+        // Per source file: bumped whenever a resolve() in that file may change.
+        this.fileRevisions = new Map();
+        // Bumped by commit(), which changes every resolve().
+        this.generation = 0;
+        // Task object -> its cache key; keys cost two path operations each.
+        this.keys = new WeakMap();
     }
 
     key(task) {
+        const known = this.keys.get(task);
+        if (known) return known;
         const runner = normalizeTaskRunner(task.runner);
         let file = task.sourceFile;
         if (runner === "browser") {
@@ -216,124 +193,149 @@ class CostCache {
             relative.endsWith(".js")
         )
             relative = `${relative.slice(5, -3)}.ts`;
-        return `${runner}|${relative}|${task.fullTitle ?? task.label}`;
+        const key = `${runner}|${relative}|${task.fullTitle ?? task.label}`;
+        this.keys.set(task, key);
+        return key;
+    }
+
+    /** Changes whenever resolve(task) may return something different. */
+    revision(task) {
+        return `${this.generation}:${this.fileRevisions.get(filePrefix(this.key(task))) ?? 0}`;
     }
 
     record(task, attempt, metadata) {
         const key = this.key(task);
-        if (
-            executed(attempt, metadata) &&
-            Number.isInteger(metadata.starveCount) &&
-            metadata.starveCount > 0
-        ) {
-            const pending = this.pending.get(key) || {
-                sample: null,
-                starvations: [],
-                starved: false
-            };
+        if (executed(attempt, metadata) && metadata.starveCount > 0) {
+            const pending = this.pendingFor(key);
             pending.starved = true;
             pending.at = metadata.at ?? new Date().toISOString();
             pending.starvations.push({
                 server: metadata.server,
                 at: pending.at
             });
-            this.pending.set(key, pending);
+            this.touch(key);
         }
         if (!isCostSample(attempt, metadata)) return;
-        const pending = this.pending.get(key) || {
-            sample: null,
-            starvations: [],
-            starved: false
-        };
-        const usage = attempt.reduced ?? attempt;
-        const peakRssGb = usage.peakRssGb ?? null;
-        const avgCores = usage.avgCores ?? null;
+        const pending = this.pendingFor(key);
+        const peakRssGb = attempt.peakRssGb ?? null;
+        const avgCores = attempt.avgCores ?? null;
+        if (pending.sample) this.addToFileSums(key, pending.sample, -1);
         pending.sample = {
             durationMs: attempt.durationMs,
             peakRssGb,
             avgCores,
-            peakElMs:
-                usage.timing?.maxEventLoopDelayMs ?? attempt.peakElMs ?? 0,
+            peakElMs: attempt.peakElMs ?? 0,
             measurementReason:
-                usage.measurementReason ??
+                attempt.measurementReason ??
                 (peakRssGb === null || avgCores === null
                     ? "legacy-measurements-unavailable"
                     : null)
         };
+        this.addToFileSums(key, pending.sample, 1);
         pending.at = metadata.at ?? new Date().toISOString();
-        this.pending.set(key, pending);
+        this.touch(key);
+    }
+
+    pendingFor(key) {
+        let pending = this.pending.get(key);
+        if (!pending) {
+            pending = { sample: null, starvations: [], starved: false };
+            this.pending.set(key, pending);
+        }
+        return pending;
+    }
+
+    touch(key) {
+        const prefix = filePrefix(key);
+        this.fileRevisions.set(
+            prefix,
+            (this.fileRevisions.get(prefix) ?? 0) + 1
+        );
+    }
+
+    addToFileSums(key, sample, sign) {
+        const prefix = filePrefix(key);
+        let sums = this.fileSums.get(prefix);
+        if (!sums) {
+            sums = Object.fromEntries(
+                SAMPLE_FIELDS.map((field) => [field, { sum: 0, count: 0 }])
+            );
+            this.fileSums.set(prefix, sums);
+        }
+        for (const field of SAMPLE_FIELDS) {
+            if (!numeric(sample[field])) continue;
+            sums[field].sum += sign * sample[field];
+            sums[field].count += sign;
+        }
     }
 
     siblingMean(task) {
         const key = this.key(task);
-        const prefix = key.slice(0, key.lastIndexOf("|") + 1);
-        const samples = [...this.pending]
-            .filter(
-                ([other, entry]) =>
-                    other !== key && other.startsWith(prefix) && entry.sample
-            )
-            .map(([, entry]) => entry.sample);
-        if (!samples.length) return null;
-        return Object.fromEntries(
-            ["durationMs", "avgCores", "peakRssGb", "peakElMs"].map((field) => {
-                const values = samples
-                    .map((sample) => sample[field])
-                    .filter(numeric);
+        const sums = this.fileSums.get(filePrefix(key));
+        if (!sums) return null;
+        const own = this.pending.get(key)?.sample;
+        const mean = Object.fromEntries(
+            SAMPLE_FIELDS.map((field) => {
+                const ownValue = own && numeric(own[field]) ? own[field] : null;
+                const count = sums[field].count - (ownValue === null ? 0 : 1);
                 return [
                     field,
-                    values.length
-                        ? values.reduce((sum, value) => sum + value, 0) /
-                          values.length
+                    count > 0
+                        ? (sums[field].sum - (ownValue ?? 0)) / count
                         : null
                 ];
             })
         );
+        return mean.durationMs === null ? null : mean;
     }
 
     resolve(task) {
         const key = this.key(task);
-        const sibling = this.siblingMean(task);
+        const pending = this.pending.get(key);
         const entry =
-            this.pending.get(key)?.sample ??
-            (Object.hasOwn(this.tasks, key) ? this.tasks[key] : null) ??
-            sibling;
+            pending?.sample ?? this.tasks[key] ?? this.siblingMean(task);
         const cold = coldCost(task);
+        const override = this.overrides[key] ?? {};
+        const cost = {
+            durationMs:
+                override.durationMs ?? entry?.durationMs ?? cold.durationMs,
+            cores: override.cores ?? entry?.avgCores ?? cold.cores,
+            rssGb: override.rssGb ?? entry?.peakRssGb ?? cold.rssGb
+        };
         const starved =
-            this.pending.get(key)?.starved ||
+            pending?.starved ||
             this.tasks[key]?.recentRuns
                 .slice(-HEAVY_STARVE_RUNS)
                 .some((run) => run.starved);
-        const computed = {
-            durationMs: entry?.durationMs ?? cold.durationMs,
-            cores: entry?.avgCores ?? cold.cores,
-            rssGb: entry?.peakRssGb ?? cold.rssGb,
-            heavy:
-                !!starved ||
-                (entry
-                    ? entry.peakElMs > HEAVY_EL_MS ||
-                      (entry.avgCores ?? cold.cores) > HEAVY_CORES ||
-                      (entry.peakRssGb ?? cold.rssGb) > HEAVY_RSS_GB
-                    : cold.heavy)
+        const measured =
+            entry ||
+            override.cores !== undefined ||
+            override.rssGb !== undefined;
+        const overThreshold = measured
+            ? (entry?.peakElMs ?? 0) > HEAVY_EL_MS ||
+              cost.cores > HEAVY_CORES ||
+              cost.rssGb > HEAVY_RSS_GB
+            : cold.heavy;
+        // An explicit override `heavy` wins over every computed trigger (D9).
+        return {
+            ...cost,
+            heavy: override.heavy ?? (!!starved || overThreshold)
         };
-        const override = Object.hasOwn(this.overrides, key)
-            ? this.overrides[key]
-            : {};
-        const resolved = { ...computed, ...override };
-        const heavyOverride = override.heavy;
-        resolved.heavy = heavyOverride ?? computed.heavy;
-        return resolved;
     }
 
+    // Persisting is best effort: a cache that cannot be read or written warns
+    // and keeps this run's measurements pending, and never fails the run.
     commit({ interrupted = false } = {}) {
-        if (interrupted) return;
-        if (!this.pending.size) return;
-        if (this.readDenied)
-            throw new Error(
-                `Cannot commit cost cache after denied read: ${this.readDenied.message}`
+        if (interrupted || !this.pending.size) return;
+        if (this.readDenied) {
+            console.warn(
+                `Not committing cost cache ${this.cachePath}: it could not be read (${this.readDenied.message})`
             );
+            return;
+        }
         const tasks = { ...this.tasks };
         for (const [key, pending] of this.pending) {
-            const old = Object.hasOwn(tasks, key) ? tasks[key] : null;
+            const old = tasks[key] ?? null;
             const sample = pending.sample;
             const entry = {
                 ...(old || {
@@ -348,14 +350,15 @@ class CostCache {
                 })
             };
             if (sample) {
-                for (const field of [
-                    "durationMs",
-                    "peakRssGb",
-                    "avgCores",
-                    "peakElMs"
-                ])
+                for (const field of SAMPLE_FIELDS)
                     entry[field] = EWMA(old?.[field], sample[field]);
-                entry.measurementReason = sample.measurementReason;
+                entry.measurementReason = [
+                    entry.peakRssGb,
+                    entry.avgCores
+                ].includes(null)
+                    ? (sample.measurementReason ??
+                      "legacy-measurements-unavailable")
+                    : null;
                 entry.samples++;
             }
             entry.lastSeenAt = pending.at;
@@ -364,38 +367,24 @@ class CostCache {
                 ...entry.recentRuns,
                 { at: pending.at, starved: pending.starved }
             ].slice(-HEAVY_STARVE_RUNS);
-            Object.defineProperty(tasks, key, {
-                value: entry,
-                enumerable: true,
-                configurable: true,
-                writable: true
-            });
+            tasks[key] = entry;
         }
-        const temporary = path.join(
-            path.dirname(this.cachePath),
-            `.test-costs-${crypto.randomUUID()}.tmp`
-        );
         try {
-            fs.mkdirSync(path.dirname(this.cachePath), { recursive: true });
-            fs.writeFileSync(
-                temporary,
-                `${JSON.stringify({ version: 1, tasks }, null, 2)}\n`,
-                { flag: "wx" }
-            );
-            fs.renameSync(temporary, this.cachePath);
+            writeJsonAtomic(this.cachePath, { version: 1, tasks });
         } catch (error) {
-            try {
-                fs.rmSync(temporary, { force: true });
-            } catch (cleanupError) {
-                throw new Error(
-                    `Unable to commit cost cache: ${error.message}; temporary cleanup: ${cleanupError.message}`
-                );
-            }
-            throw new Error(`Unable to commit cost cache: ${error.message}`);
+            console.warn(`Unable to commit cost cache: ${error.message}`);
+            return;
         }
         this.tasks = tasks;
         this.pending.clear();
+        this.fileSums.clear();
+        this.fileRevisions.clear();
+        this.generation++;
     }
+}
+
+function filePrefix(key) {
+    return key.slice(0, key.lastIndexOf("|") + 1);
 }
 
 module.exports = { CostCache, coldCost };

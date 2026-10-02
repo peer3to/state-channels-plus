@@ -1,8 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
-import {
-    createLocalDhtNetwork,
-    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-} from "../fixtures/distributed/testTransport";
+import { runAgainstProtocolWorkers } from "../fixtures/distributed/protocolWorker";
 import { expect } from "chai";
 import { fork } from "child_process";
 import fs from "fs";
@@ -10,20 +7,8 @@ import os from "os";
 import path from "path";
 
 const {
-    derivePoolKeys,
-    authenticateServer
-} = require("../../scripts/e2e-parallel/distributed/authentication.js");
-const {
-    runDistributed,
     validateWorkerStats
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
-const {
-    createPool
-} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
-const {
-    ProtocolPeer,
-    waitForMessage
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
     DEFAULTS: SERVER_DEFAULTS,
     parseServerArgs
@@ -69,6 +54,14 @@ const {
 const {
     WorkerScheduler
 } = require("../../scripts/e2e-parallel/shared/workerScheduler.js");
+
+// One hardhat task whose cost-cache key is "hardhat||measured".
+const MEASURED_TASK = {
+    label: "measured",
+    logName: "measured",
+    args: [],
+    runner: "hardhat"
+};
 
 describe("distributed worker scheduler", function () {
     it("accepts default FIFO and rejects invalid scheduling flags", function () {
@@ -344,26 +337,6 @@ describe("distributed worker scheduler", function () {
             ).to.equal(false);
             expect(resources.occupiedGb).to.equal(3);
             expect(resources.lastHoldReason).to.equal("memory");
-            for (const cost of [
-                { cores: -1, rssGb: 0 },
-                { cores: 0, rssGb: NaN },
-                { cores: 0, rssGb: 0, heavy: "false" }
-            ]) {
-                let error: unknown;
-                try {
-                    await resources.allows(1, 4, {
-                        schedule: "cost",
-                        runningCost: { cores: 0, rssGb: 0 },
-                        nextCost: cost
-                    });
-                } catch (caught) {
-                    error = caught;
-                }
-                expect(error).to.be.instanceOf(Error);
-                expect((error as Error).message).to.equal(
-                    "Invalid admission cost"
-                );
-            }
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -390,16 +363,6 @@ describe("distributed worker scheduler", function () {
     });
 
     it("persists all supplied worker hold counters", async function () {
-        const network = await createLocalDhtNetwork();
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "worker-metrics-"));
-        const poolSecret = `worker-metrics-${process.pid}`;
-        const keys = derivePoolKeys(poolSecret);
-        const worker = await createPool({
-            announceTopics: [keys.workerTopic],
-            lookupTopics: [],
-            dht: network.createNode(),
-            refreshIntervalMs: 25
-        });
         const stats = {
             peakCpu: 0.5,
             avgCpu: 0.25,
@@ -422,129 +385,38 @@ describe("distributed worker scheduler", function () {
         expect(() =>
             validateWorkerStats({ ...stats, meanConcurrency: NaN })
         ).to.throw("admission statistics");
-        let rejectPeer!: (error: Error) => void;
-        const peerFailure = new Promise<never>((_resolve, reject) => {
-            rejectPeer = reject;
-        });
-        worker.onConnection(
-            async (stream: unknown, info: { publicKey: Buffer }) => {
-                const peer = new ProtocolPeer(stream);
-                try {
-                    await authenticateServer(
-                        peer,
-                        keys.authKey,
-                        { local: worker.publicKey, remote: info.publicKey },
-                        TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-                    );
-                    await peer.send("SERVER_READY", {
-                        name: "metrics-peer",
-                        capabilities: {
-                            distributedProtocol: 14,
-                            memoryGb: 10,
-                            workers: 1,
-                            slots: 0,
-                            heartbeatTimeoutMs: 60000
-                        }
-                    });
-                    await waitForMessage(peer, "LEASE_REQUEST");
-                    await peer.send("LEASE_GRANTED", { capabilities: {} });
-                    await waitForMessage(peer, "WORKSPACE_OFFER");
-                    await peer.send(
-                        "WORKSPACE_NEED",
-                        {},
-                        Buffer.from(
-                            JSON.stringify({ changed: [], deleted: [] })
-                        )
-                    );
-                    await waitForMessage(peer, "BUNDLE_END");
-                    await peer.send("PREPARED");
-                    await waitForMessage(peer, "RUN_CONFIG");
-                    await peer.send("TASK_REQUEST", { requestId: 1 });
-                    const message = await waitForMessage(
-                        peer,
-                        "TASK_ASSIGNMENT"
-                    );
-                    const completion = waitForMessage(peer, "RUN_COMPLETE");
-                    await peer.send("ATTEMPT_RESULT", {
-                        requestId: 2,
-                        assignment: message.header.assignment,
-                        logTransferred: false,
-                        result: {
-                            code: 0,
-                            label: "measured",
-                            durationMs: 100,
-                            peakRssGb: 0.5,
-                            avgCores: 0.25
-                        }
-                    });
-                    await completion;
-                    await peer.send("WORKER_STATS", { stats });
-                    await peer.send("LEASE_CLEAN");
-                } catch (error) {
-                    rejectPeer(error as Error);
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "metrics-peer",
+                    distributedProtocol: 14,
+                    attemptResult: {
+                        durationMs: 100,
+                        peakRssGb: 0.5,
+                        avgCores: 0.25
+                    },
+                    workerStats: stats
                 }
-            }
+            ],
+            { tasks: [MEASURED_TASK] }
         );
-        const manifest = {
-            version: 3,
-            packageManager: "pnpm",
-            distributedProtocol: 15,
-            workspaceId: "a".repeat(64),
-            sourceDigest: "b".repeat(64),
-            rootProjectPath: ".",
-            repositories: [],
-            files: [],
-            fileCount: 0,
-            expandedBytes: 0
-        };
-        Object.defineProperty(manifest, "localWorkspaceRoot", { value: root });
-        try {
-            await Promise.race([
-                runDistributed({
-                    tasks: [
-                        {
-                            label: "measured",
-                            logName: "measured",
-                            args: [],
-                            runner: "hardhat"
-                        }
-                    ],
-                    projectRoot: root,
-                    archivePath: path.join(root, "source.tgz"),
-                    manifest,
-                    logDir: root,
-                    poolSecret,
-                    discoveryTimeoutMs: 3000,
-                    discoveryRefreshMs: 25,
-                    baseEnv: {},
-                    dht: network.createNode()
-                }),
-                peerFailure
-            ]);
-            const metrics = JSON.parse(
-                fs.readFileSync(path.join(root, "run-metrics.json"), "utf8")
-            );
-            expect(metrics.workers).to.have.length(1);
-            expect(metrics.workers[0].holdCounts).to.deep.equal({
-                cap: 2,
-                memory: 3,
-                cpu: 4
-            });
-            expect(metrics.workers[0]).to.include({
-                meanConcurrency: 1,
-                peakConcurrency: 1,
-                concurrencyWallMs: 100,
-                legacyAdmission: true
-            });
-            expect(metrics.tasks[0]).to.include({
-                peakRssGb: 0.5,
-                avgCores: 0.25
-            });
-        } finally {
-            await worker.close();
-            await network.close();
-            fs.rmSync(root, { recursive: true, force: true });
-        }
+        expect(run.failure).to.equal(null);
+        expect(run.metrics.workers).to.have.length(1);
+        expect(run.metrics.workers[0].holdCounts).to.deep.equal({
+            cap: 2,
+            memory: 3,
+            cpu: 4
+        });
+        expect(run.metrics.workers[0]).to.include({
+            meanConcurrency: 1,
+            peakConcurrency: 1,
+            concurrencyWallMs: 100,
+            legacyAdmission: true
+        });
+        expect(run.metrics.tasks[0]).to.include({
+            peakRssGb: 0.5,
+            avgCores: 0.25
+        });
     });
 
     it("writes local finalizing samples to the cache", async function () {
@@ -603,341 +475,120 @@ describe("distributed worker scheduler", function () {
     });
 
     it("keeps protocol fourteen on legacy admission with cost selection", async function () {
-        const network = await createLocalDhtNetwork();
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "legacy-cost-selection-")
-        );
-        const poolSecret = `legacy-cost-${process.pid}`;
-        const keys = derivePoolKeys(poolSecret);
-        const worker = await createPool({
-            announceTopics: [keys.workerTopic],
-            lookupTopics: [],
-            dht: network.createNode(),
-            refreshIntervalMs: 25
-        });
-        fs.writeFileSync(
-            path.join(root, "overrides.json"),
-            JSON.stringify({
-                "hardhat||light": { durationMs: 100 },
-                "hardhat||long": { durationMs: 1000 }
-            })
-        );
-        const labels: string[] = [];
-        const wireCosts: unknown[] = [];
-        let rejectPeer!: (error: Error) => void;
-        const peerFailure = new Promise<never>((_resolve, reject) => {
-            rejectPeer = reject;
-        });
-        worker.onConnection(
-            async (stream: unknown, info: { publicKey: Buffer }) => {
-                const peer = new ProtocolPeer(stream);
-                try {
-                    await authenticateServer(
-                        peer,
-                        keys.authKey,
-                        { local: worker.publicKey, remote: info.publicKey },
-                        TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-                    );
-                    await peer.send("SERVER_READY", {
-                        name: "legacy-peer",
-                        capabilities: {
-                            distributedProtocol: 14,
-                            memoryGb: 10,
-                            workers: 1,
-                            slots: 0,
-                            heartbeatTimeoutMs: 60000
-                        }
-                    });
-                    await waitForMessage(peer, "LEASE_REQUEST");
-                    await peer.send("LEASE_GRANTED", { capabilities: {} });
-                    await waitForMessage(peer, "WORKSPACE_OFFER");
-                    await peer.send(
-                        "WORKSPACE_NEED",
-                        {},
-                        Buffer.from(
-                            JSON.stringify({ changed: [], deleted: [] })
-                        )
-                    );
-                    await waitForMessage(peer, "BUNDLE_END");
-                    await peer.send("PREPARED");
-                    await waitForMessage(peer, "RUN_CONFIG");
-                    let completion: Promise<unknown> | undefined;
-                    for (let index = 0; index < 2; index++) {
-                        const next = waitForMessage(peer, "TASK_ASSIGNMENT");
-                        await peer.send("TASK_REQUEST", {
-                            requestId: index + 1
-                        });
-                        const message = await next;
-                        labels.push(message.header.assignment.task.label);
-                        wireCosts.push(message.header.assignment.task.cost);
-                        if (index === 1)
-                            completion = waitForMessage(peer, "RUN_COMPLETE");
-                        await peer.send("ATTEMPT_RESULT", {
-                            assignment: message.header.assignment,
-                            logTransferred: false,
-                            result: {
-                                code: 0,
-                                label: message.header.assignment.task.label,
-                                durationMs: 100,
-                                peakRssGb: 0.5,
-                                avgCores: 0.25
-                            }
-                        });
+        const cli = parseCliArgs(["node", "runner", "--schedule", "cost"]);
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "legacy-peer",
+                    distributedProtocol: 14,
+                    attemptResult: {
+                        durationMs: 100,
+                        peakRssGb: 0.5,
+                        avgCores: 0.25
+                    },
+                    workerStats: {
+                        peakCpu: 0.5,
+                        avgCpu: 0.25,
+                        cpuSampleCount: 2,
+                        peakOccupiedGb: 1,
+                        avgPerTestGb: 0.5,
+                        memorySampleCount: 2,
+                        memBoundGb: 10
                     }
-                    await completion;
-                    await peer.send("WORKER_STATS", {
-                        stats: {
-                            peakCpu: 0.5,
-                            avgCpu: 0.25,
-                            cpuSampleCount: 2,
-                            peakOccupiedGb: 1,
-                            avgPerTestGb: 0.5,
-                            memorySampleCount: 2,
-                            memBoundGb: 10
-                        }
-                    });
-                    await peer.send("LEASE_CLEAN");
-                } catch (error) {
-                    rejectPeer(error as Error);
+                }
+            ],
+            {
+                tasks: [
+                    {
+                        label: "light",
+                        logName: "light",
+                        runner: "hardhat",
+                        args: []
+                    },
+                    {
+                        label: "long",
+                        logName: "long",
+                        runner: "hardhat",
+                        args: []
+                    }
+                ],
+                files: {
+                    "overrides.json": JSON.stringify({
+                        "hardhat||light": { durationMs: 100 },
+                        "hardhat||long": { durationMs: 1000 }
+                    })
+                },
+                run: {
+                    schedule: cli.schedule,
+                    costOverridesPath: "overrides.json"
                 }
             }
         );
-        const manifest = {
-            version: 3,
-            packageManager: "pnpm",
-            distributedProtocol: 15,
-            workspaceId: "a".repeat(64),
-            sourceDigest: "b".repeat(64),
-            rootProjectPath: ".",
-            repositories: [],
-            files: [],
-            fileCount: 0,
-            expandedBytes: 0
-        };
-        Object.defineProperty(manifest, "localWorkspaceRoot", { value: root });
-        try {
-            const cli = parseCliArgs(["node", "runner", "--schedule", "cost"]);
-            await Promise.race([
-                runDistributed({
-                    tasks: [
-                        {
-                            label: "light",
-                            logName: "light",
-                            runner: "hardhat",
-                            args: []
-                        },
-                        {
-                            label: "long",
-                            logName: "long",
-                            runner: "hardhat",
-                            args: []
-                        }
-                    ],
-                    schedule: cli.schedule,
-                    costOverridesPath: "overrides.json",
-                    projectRoot: root,
-                    archivePath: path.join(root, "source.tgz"),
-                    manifest,
-                    logDir: root,
-                    poolSecret,
-                    discoveryTimeoutMs: 3000,
-                    discoveryRefreshMs: 25,
-                    baseEnv: {},
-                    dht: network.createNode()
-                }),
-                peerFailure
-            ]);
-            expect(labels).to.deep.equal(["long", "light"]);
-            expect(wireCosts).to.deep.equal([undefined, undefined]);
-            const metrics = JSON.parse(
-                fs.readFileSync(path.join(root, "run-metrics.json"), "utf8")
-            );
-            expect(metrics.workers).to.have.length(1);
-            expect(metrics.workers[0]).to.include({
-                legacyAdmission: true,
-                meanConcurrency: null,
-                peakConcurrency: null,
-                concurrencyWallMs: null,
-                measurementReason: "legacy-worker-stats-unavailable"
-            });
-            expect(metrics.workers[0].holdCounts).to.deep.equal({
-                cap: null,
-                memory: null,
-                cpu: null
-            });
-        } finally {
-            await worker.close();
-            await network.close();
-            fs.rmSync(root, { recursive: true, force: true });
-        }
+        expect(run.failure).to.equal(null);
+        expect(run.workers[0].labels).to.deep.equal(["long", "light"]);
+        expect(run.workers[0].costs).to.deep.equal([undefined, undefined]);
+        expect(run.metrics.workers).to.have.length(1);
+        expect(run.metrics.workers[0]).to.include({
+            legacyAdmission: true,
+            meanConcurrency: null,
+            peakConcurrency: null,
+            concurrencyWallMs: null,
+            measurementReason: "legacy-worker-stats-unavailable"
+        });
+        expect(run.metrics.workers[0].holdCounts).to.deep.equal({
+            cap: null,
+            memory: null,
+            cpu: null
+        });
     });
 
     it("writes distributed finalizing samples and skips aborted commits", async function () {
-        const network = await createLocalDhtNetwork();
-        const root = fs.mkdtempSync(
+        const cacheDir = fs.mkdtempSync(
             path.join(os.tmpdir(), "distributed-cost-cache-")
         );
-        const poolSecret = `cost-cache-${process.pid}`;
-        const keys = derivePoolKeys(poolSecret);
-        const worker = await createPool({
-            announceTopics: [keys.workerTopic],
-            lookupTopics: [],
-            dht: network.createNode(),
-            refreshIntervalMs: 25
-        });
-        let interrupt = false;
-        const controller = new AbortController();
-        let rejectPeer!: (error: Error) => void;
-        const peerFailure = new Promise<never>((_resolve, reject) => {
-            rejectPeer = reject;
-        });
-        worker.onConnection(
-            async (stream: unknown, info: { publicKey: Buffer }) => {
-                const peer = new ProtocolPeer(stream);
-                try {
-                    await authenticateServer(
-                        peer,
-                        keys.authKey,
-                        { local: worker.publicKey, remote: info.publicKey },
-                        TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-                    );
-                    await peer.send("SERVER_READY", {
-                        name: "cache-peer",
-                        capabilities: {
-                            distributedProtocol: 15,
-                            memoryGb: 10,
-                            workers: 1,
-                            slots: 0,
-                            heartbeatTimeoutMs: 60000
-                        }
-                    });
-                    await waitForMessage(peer, "LEASE_REQUEST");
-                    await peer.send("LEASE_GRANTED", { capabilities: {} });
-                    await waitForMessage(peer, "WORKSPACE_OFFER");
-                    await peer.send(
-                        "WORKSPACE_NEED",
-                        {},
-                        Buffer.from(
-                            JSON.stringify({ changed: [], deleted: [] })
-                        )
-                    );
-                    await waitForMessage(peer, "BUNDLE_END");
-                    await peer.send("PREPARED");
-                    await waitForMessage(peer, "RUN_CONFIG");
-                    await peer.send("TASK_REQUEST", { requestId: 1 });
-                    const message = await waitForMessage(
-                        peer,
-                        "TASK_ASSIGNMENT"
-                    );
-                    const completion = waitForMessage(peer, "RUN_COMPLETE");
-                    await peer.send("ATTEMPT_RESULT", {
-                        requestId: 2,
-                        assignment: message.header.assignment,
-                        logTransferred: false,
-                        result: {
-                            code: 0,
-                            label: "measured",
-                            durationMs: interrupt ? 200 : 100,
-                            peakRssGb: 0.5,
-                            avgCores: 0.25
-                        }
-                    });
-                    await completion;
-                    if (interrupt) controller.abort();
-                    await peer.send("WORKER_STATS", {
-                        stats: {
-                            peakCpu: 0.5,
-                            avgCpu: 0.25,
-                            cpuSampleCount: 2,
-                            peakOccupiedGb: 1,
-                            avgPerTestGb: 0.5,
-                            memorySampleCount: 2,
-                            memBoundGb: 10
-                        }
-                    });
-                    await peer.send("LEASE_CLEAN");
-                } catch (error) {
-                    rejectPeer(error as Error);
-                }
-            }
-        );
-        const manifest = {
-            version: 3,
-            packageManager: "pnpm",
+        const costCachePath = path.join(cacheDir, "test-costs.json");
+        const peer = (durationMs: number, afterRunComplete?: () => void) => ({
+            name: "cache-peer",
             distributedProtocol: 15,
-            workspaceId: "a".repeat(64),
-            sourceDigest: "b".repeat(64),
-            rootProjectPath: ".",
-            repositories: [],
-            files: [],
-            fileCount: 0,
-            expandedBytes: 0
-        };
-        Object.defineProperty(manifest, "localWorkspaceRoot", { value: root });
+            attemptResult: { durationMs, peakRssGb: 0.5, avgCores: 0.25 },
+            workerStats: {
+                peakCpu: 0.5,
+                avgCpu: 0.25,
+                cpuSampleCount: 2,
+                peakOccupiedGb: 1,
+                avgPerTestGb: 0.5,
+                memorySampleCount: 2,
+                memBoundGb: 10
+            },
+            afterRunComplete
+        });
         try {
-            await Promise.race([
-                runDistributed({
-                    tasks: [
-                        {
-                            label: "measured",
-                            logName: "measured",
-                            args: [],
-                            runner: "hardhat"
-                        }
-                    ],
-                    projectRoot: root,
-                    archivePath: path.join(root, "source.tgz"),
-                    manifest,
-                    logDir: root,
-                    poolSecret,
-                    discoveryTimeoutMs: 3000,
-                    discoveryRefreshMs: 25,
-                    baseEnv: {},
-                    dht: network.createNode()
-                }),
-                peerFailure
-            ]);
-            const cachePath = path.join(root, ".cache/test-costs.json");
-            const original = fs.readFileSync(cachePath);
-            const entry = JSON.parse(original.toString()).tasks[
-                "hardhat||measured"
-            ];
-            expect(entry).to.include({
+            const first = await runAgainstProtocolWorkers([peer(100)], {
+                tasks: [MEASURED_TASK],
+                run: { costCachePath }
+            });
+            expect(first.failure).to.equal(null);
+            const original = fs.readFileSync(costCachePath);
+            expect(
+                JSON.parse(original.toString()).tasks["hardhat||measured"]
+            ).to.include({
                 samples: 1,
                 durationMs: 100,
                 avgCores: 0.25,
                 peakRssGb: 0.5
             });
-            interrupt = true;
-            await Promise.race([
-                runDistributed({
-                    tasks: [
-                        {
-                            label: "measured",
-                            logName: "measured",
-                            args: [],
-                            runner: "hardhat"
-                        }
-                    ],
-                    projectRoot: root,
-                    archivePath: path.join(root, "source.tgz"),
-                    manifest,
-                    logDir: root,
-                    poolSecret,
-                    discoveryTimeoutMs: 3000,
-                    discoveryRefreshMs: 25,
-                    baseEnv: {},
-                    signal: controller.signal,
-                    dht: network.createNode()
-                }),
-                peerFailure
-            ]);
+            const controller = new AbortController();
+            await runAgainstProtocolWorkers(
+                [peer(200, () => controller.abort())],
+                {
+                    tasks: [MEASURED_TASK],
+                    run: { costCachePath, signal: controller.signal }
+                }
+            );
             expect(controller.signal.aborted).to.equal(true);
-            expect(fs.readFileSync(cachePath)).to.deep.equal(original);
+            expect(fs.readFileSync(costCachePath)).to.deep.equal(original);
         } finally {
-            await worker.close();
-            await network.close();
-            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(cacheDir, { recursive: true, force: true });
         }
     });
 
@@ -1008,17 +659,43 @@ describe("distributed worker scheduler", function () {
                 avgCores: null,
                 measurementReason: "process-sampling-unavailable"
             });
-            fs.writeFileSync(path.join(root, "101", "status"), "malformed");
-            expect(
-                await processTreeUsage([100], {
-                    platform: "linux",
-                    procRoot: root,
-                    warn: () => {}
-                })
-            ).to.equal(null);
+            // A kernel thread or exiting process has no VmRSS: it holds no
+            // user memory and must not void the whole scan.
+            fs.writeFileSync(
+                path.join(root, "101", "status"),
+                "Name:\tkthread\n"
+            );
+            const usage = await processTreeUsage([100], {
+                platform: "linux",
+                procRoot: root
+            });
+            expect(usage?.get(100)?.rssGb).to.equal(1 / 1024);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("skips a sample tick while a slow process scan is still running", async function () {
+        let scans = 0;
+        const sampler = new TaskProcessSampler(100, {
+            execFile: async () => {
+                scans++;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                return {
+                    stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
+                };
+            }
+        });
+        const first = sampler.sample();
+        expect(sampler.sample()).to.equal(first);
+        expect(sampler.sample()).to.equal(first);
+        await first;
+        await sampler.sample();
+        expect(scans).to.equal(2);
+        expect(sampler.result(1000)).to.include({
+            avgCores: 1,
+            peakRssGb: 2 / 1024
+        });
     });
 
     it("parses fractional and day-prefixed ps CPU times", async function () {

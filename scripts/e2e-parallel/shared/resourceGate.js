@@ -77,6 +77,8 @@ async function readProcProcesses({ procRoot = "/proc" } = {}) {
                 (Number(fields[11]) + Number(fields[12])) /
                 PROC_CLOCK_TICKS_PER_SECOND;
             const start = Number(fields[19]);
+            // Kernel threads, zombies and exiting processes have no VmRSS:
+            // they hold no user memory, so they count as zero.
             const rss = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status);
             if (
                 stat.lastIndexOf(")") < 0 ||
@@ -85,8 +87,7 @@ async function readProcProcesses({ procRoot = "/proc" } = {}) {
                 !Number.isFinite(cpuSeconds) ||
                 cpuSeconds < 0 ||
                 !Number.isFinite(start) ||
-                start < 0 ||
-                (!rss && fields[0] !== "Z")
+                start < 0
             ) {
                 throw new Error(`Invalid process data for ${name}`);
             }
@@ -227,10 +228,15 @@ class TaskProcessSampler {
         this.cpuByIdentity = new Map();
         this.peakRssGb = null;
         this.inFlight = Promise.resolve();
+        this.sampling = false;
     }
 
+    // A tick that arrives while a scan is still running is skipped, so a slow
+    // process table never builds a backlog that finish() must wait out.
     sample() {
-        this.inFlight = this.inFlight.then(async () => {
+        if (this.sampling) return this.inFlight;
+        this.sampling = true;
+        this.inFlight = (async () => {
             const trees = await collectProcessTrees(
                 [this.rootPid],
                 this.options
@@ -254,6 +260,8 @@ class TaskProcessSampler {
                     )
                 );
             }
+        })().finally(() => {
+            this.sampling = false;
         });
         return this.inFlight;
     }
@@ -406,22 +414,8 @@ class ResourceGate {
         this.lastHoldReason = null;
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
-        if (!["fifo", "cost"].includes(schedule))
-            throw new Error("Invalid admission schedule");
+        // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
-            if (
-                [runningCost, nextCost].some(
-                    (cost) =>
-                        !cost ||
-                        !["cores", "rssGb"].every(
-                            (field) =>
-                                Number.isFinite(cost[field]) && cost[field] >= 0
-                        ) ||
-                        (Object.hasOwn(cost, "heavy") &&
-                            typeof cost.heavy !== "boolean")
-                )
-            )
-                throw new Error("Invalid admission cost");
             if (
                 runningCost.cores + nextCost.cores >
                 this.cpuCores * COST_CPU_BUDGET

@@ -1,6 +1,7 @@
 const logging = require("./logging");
 const { coldCost } = require("./costCache");
-const { MAX_HEAVY_PER_WORKER } = require("./constants");
+const { MAX_HEAVY_PER_WORKER, MEASUREMENT_REASONS } = require("./constants");
+const { requiresBrowser } = require("./taskRunners");
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -24,10 +25,7 @@ function resourceMeasurements(metadata) {
         ) ||
         (reason !== undefined &&
             reason !== null &&
-            ![
-                "process-sampling-unavailable",
-                "legacy-measurements-unavailable"
-            ].includes(reason))
+            !MEASUREMENT_REASONS.includes(reason))
     ) {
         throw new Error("Worker returned invalid resource measurements");
     }
@@ -45,6 +43,19 @@ function resourceMeasurements(metadata) {
             (fields.some((field) => metadata[field] === null)
                 ? "process-sampling-unavailable"
                 : null)
+    };
+}
+
+/**
+ * One attempt with its measurements normalized: a worker attempt carries them in
+ * `reduced`, a local one beside its raw output, whose event-loop peak exists
+ * only in the parsed timing.
+ */
+function costSample(attempt, parsed) {
+    return {
+        ...attempt,
+        ...resourceMeasurements(attempt.reduced ?? attempt),
+        peakElMs: parsed?.timing?.maxEventLoopDelayMs ?? attempt.peakElMs ?? 0
     };
 }
 
@@ -133,8 +144,6 @@ class TaskCoordinator {
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
         this.schedule = options.schedule ?? "fifo";
-        if (!["fifo", "cost"].includes(this.schedule))
-            throw new Error("Invalid task schedule");
         this.now = options.now ?? Date.now;
         this.costCache = options.costCache;
         this.workerLabel = options.workerLabel ?? ((id) => id);
@@ -159,23 +168,21 @@ class TaskCoordinator {
         const worker = this.workers.get(workerId);
         let index;
         if (this.schedule === "cost") {
+            // A queued task's cost changes only when its source file gains a
+            // sample, so re-resolve on the cache's revision, not per request.
             for (const entry of this.queue) {
+                const revision = this.costCache?.revision(entry.task) ?? 0;
+                if (entry.task.cost && entry.costRevision === revision)
+                    continue;
                 entry.task.cost =
                     this.costCache?.resolve(entry.task) ??
                     entry.task.cost ??
                     coldCost(entry.task);
+                entry.costRevision = revision;
             }
-            const eligible = this.queue
-                .filter((entry) => worker.canRun(entry.task))
-                .map((entry) => {
-                    const task = entry.task;
-                    const tier =
-                        task.runner === "browser" ||
-                        task.requires?.includes("browser")
-                            ? 0
-                            : 1;
-                    return { ...entry, tier };
-                });
+            const eligible = this.queue.filter((entry) =>
+                worker.canRun(entry.task)
+            );
             const atHeavyLimit =
                 [...this.assignments.values()].filter(
                     (assignment) =>
@@ -185,14 +192,15 @@ class TaskCoordinator {
             const nonHeavy = eligible.filter((entry) => !entry.task.cost.heavy);
             const candidates =
                 atHeavyLimit && nonHeavy.length ? nonHeavy : eligible;
+            // Browser-only tasks first (D13), then longest predicted, then
+            // discovery order.
+            const tier = (entry) => (requiresBrowser(entry.task) ? 0 : 1);
             candidates.sort((a, b) => {
                 const durationOrder =
                     b.task.cost.durationMs - a.task.cost.durationMs;
-                return a.tier - b.tier || durationOrder || a.seq - b.seq;
+                return tier(a) - tier(b) || durationOrder || a.seq - b.seq;
             });
-            index = this.queue.findIndex(
-                (entry) => entry.seq === candidates[0]?.seq
-            );
+            index = candidates.length ? this.queue.indexOf(candidates[0]) : -1;
         } else {
             index = this.queue.findIndex((entry) => worker.canRun(entry.task));
         }
@@ -256,13 +264,9 @@ class TaskCoordinator {
             this.settledSpeculativeAssignments.get(String(attempt.attemptId));
         const result = this.completeAttemptResult(workerId, attempt);
         if (result.accepted && assignment) {
-            // A local attempt carries raw output, not `reduced`: its event-loop
-            // peak exists only in the parsed timing, so hand it to the cache.
-            const peakElMs =
-                result.parsed?.timing?.maxEventLoopDelayMs ?? attempt.peakElMs;
             this.costCache?.record(
                 assignment.task,
-                { ...attempt, peakElMs },
+                costSample(attempt, result.parsed),
                 {
                     disposition: result.disposition,
                     server: this.workerLabel(workerId),
@@ -293,10 +297,6 @@ class TaskCoordinator {
         const parsed = reduceAttempt(assignment.task, attempt);
         // which worker each starved attempt ran on, in attempt order
         if (parsed.starveCount > 0) {
-            assignment.task.starvedOn = [
-                ...(assignment.task.starvedOn || []),
-                workerId
-            ];
             assignment.task.starvations = [
                 ...(assignment.task.starvations || []),
                 { server: workerId, at: new Date().toISOString() }
@@ -481,11 +481,7 @@ class TaskCoordinator {
     }
 
     finalize(assignment, attempt, code, parsed) {
-        assignment.task.finalAttempt = {
-            ...attempt,
-            ...resourceMeasurements(attempt.reduced ?? attempt),
-            peakElMs: parsed.timing.maxEventLoopDelayMs
-        };
+        assignment.task.finalAttempt = costSample(attempt, parsed);
         this.completedTaskIds.add(assignment.taskId);
         for (const [attemptId, other] of this.assignments) {
             if (other.taskId === assignment.taskId) {
@@ -529,11 +525,7 @@ class TaskCoordinator {
         if (parsed.starveCount > 0) {
             return { accepted: false, reason: "redundant-starvation" };
         }
-        assignment.task.finalAttempt = {
-            ...attempt,
-            ...resourceMeasurements(attempt.reduced ?? attempt),
-            peakElMs: parsed.timing.maxEventLoopDelayMs
-        };
+        assignment.task.finalAttempt = costSample(attempt, parsed);
         this.failedTaskIds.add(assignment.taskId);
         this.failed.push(assignment.task);
         const result = {
