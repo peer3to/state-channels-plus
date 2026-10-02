@@ -182,7 +182,7 @@ class TaskCoordinator {
         else this.workers.set(workerId, { idle: false, canRun });
     }
 
-    // lean: no capacity held for a large queued task; reserve room for it if pool runs show large tests landing last
+    // lean: no capacity held for a large queued task; reserve room for it if run-metrics assignedAtMs shows the largest tests assigned last
     /**
      * Under cost, a worker that runs something sends its free `costBudget`
      * and is handed only a task that fits it, or nothing while none queued
@@ -242,6 +242,8 @@ class TaskCoordinator {
             assignedAt: this.now(),
             workerId
         };
+        // When the task first got a worker; run metrics report it.
+        queued.task.firstAssignedAt ??= assignment.assignedAt;
         this.replications.add(`${assignment.taskId}:${workerId}`);
         this.attemptedTaskIds.add(assignment.taskId);
         this.assignments.set(assignment.attemptId, assignment);

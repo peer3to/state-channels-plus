@@ -255,6 +255,7 @@ async function runScheduler({
             }
         ],
         makespanMs: Date.now() - startedAt,
+        startedAt,
         sumDurationMs: coordinator.sumDurationMs
     });
     logging.writeRunMetrics(logDir, metrics);

@@ -137,6 +137,7 @@ describe("distributed task coordinator", function () {
 
     it("re-resolves a starved cost retry at its inflated cost", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
+        let clock = 0;
         try {
             const coordinator = new TaskCoordinator(
                 [
@@ -149,7 +150,8 @@ describe("distributed task coordinator", function () {
                 ],
                 {
                     schedule: "cost",
-                    costCache: new CostCache({ projectRoot: root })
+                    costCache: new CostCache({ projectRoot: root }),
+                    now: () => ++clock
                 }
             );
             const first = coordinator.requestTask("worker");
@@ -169,12 +171,16 @@ describe("distributed task coordinator", function () {
                     }
                 }).disposition
             ).to.equal("retry-starvation");
-            expect(coordinator.requestTask("worker").task.cost).to.deep.equal({
+            const retry = coordinator.requestTask("worker");
+            expect(retry.task.cost).to.deep.equal({
                 durationMs: 1000,
                 cores: 3,
                 rssGb: 1.5,
                 known: true
             });
+            // Run metrics keep the first assignment, not the retry's.
+            expect(retry.assignedAt).to.be.greaterThan(first.assignedAt);
+            expect(retry.task.firstAssignedAt).to.equal(first.assignedAt);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

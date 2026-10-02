@@ -34,6 +34,7 @@ const {
     readCpuSnapshot
 } = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
 const {
+    buildRunMetrics,
     getErrorLogPath,
     cleanupNonErrorLogs,
     writeRunMetrics
@@ -860,6 +861,12 @@ describe("distributed worker scheduler", function () {
             );
             expect(metrics.workers[0].peakConcurrency).to.equal(1);
             expect(metrics.workers[0].holdCounts.cpu).to.be.at.least(1);
+            // The refused test was assigned only once the first finished.
+            const [first, second] = metrics.tasks.map(
+                (task: { assignedAtMs: number }) => task.assignedAtMs
+            );
+            expect(first).to.be.at.least(0);
+            expect(second - first).to.be.at.least(40);
         } finally {
             console.log = originalConsoleLog;
             fs.rmSync(logDir, { recursive: true, force: true });
@@ -870,6 +877,24 @@ describe("distributed worker scheduler", function () {
                 line.includes("holding — cpu (cost budget; predicted cost")
             )
         ).to.equal(true);
+    });
+
+    it("reports each task's first assignment from the run's start, or null", function () {
+        const metrics = buildRunMetrics({
+            tasks: [
+                { label: "assigned", firstAssignedAt: 1500 },
+                { label: "never" }
+            ],
+            workers: [],
+            makespanMs: 2000,
+            sumDurationMs: 0,
+            startedAt: 1000
+        });
+        expect(
+            metrics.tasks.map(
+                (task: { assignedAtMs: number | null }) => task.assignedAtMs
+            )
+        ).to.deep.equal([500, null]);
     });
 
     it("holds predicted memory even when CPU budget fits", async function () {

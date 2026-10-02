@@ -224,8 +224,8 @@ fails with `All distributed workers were quarantined before running a task`.
 Both runners measure every test while it runs: peak memory of its process tree,
 average CPU cores and duration. At the end of a run the orchestrator (or the
 local runner) stores them per test in `.cache/test-costs.json`, and writes
-`logs/run-N/run-metrics.json` with how busy each worker was and why it held
-tests back.
+`logs/run-N/run-metrics.json` with how busy each worker was, why it held tests
+back and when each test was first assigned.
 
 By default (`--schedule fifo`) the measurements are only recorded. On Linux,
 fifo's memory admission now reads running tests' memory from `/proc`, where it

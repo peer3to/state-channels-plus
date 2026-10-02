@@ -1352,6 +1352,7 @@ async function runDistributed(options) {
                 options.schedule !== "cost" || worker.distributedProtocol < 15
         })),
         makespanMs: Date.now() - startedAt,
+        startedAt,
         sumDurationMs: state.sumDurationMs,
         workerLabel: (id) => workerLabelById.get(id) || id
     });

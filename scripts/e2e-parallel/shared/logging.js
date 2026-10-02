@@ -761,6 +761,7 @@ function buildRunMetrics({
     workers,
     makespanMs,
     sumDurationMs,
+    startedAt,
     workerLabel = (id) => id
 }) {
     return {
@@ -817,7 +818,13 @@ function buildRunMetrics({
             measurementReason: task.finalAttempt
                 ? task.finalAttempt.measurementReason
                 : "legacy-measurements-unavailable",
-            peakElMs: task.finalAttempt?.peakElMs ?? 0
+            peakElMs: task.finalAttempt?.peakElMs ?? 0,
+            // ms from the run's start to the task's first assignment; null
+            // when no worker ever took it.
+            assignedAtMs:
+                task.firstAssignedAt === undefined
+                    ? null
+                    : task.firstAssignedAt - startedAt
         }))
     };
 }
