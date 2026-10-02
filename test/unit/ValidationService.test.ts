@@ -223,7 +223,8 @@ describe("Unit: ValidationService", function () {
         it("genuine inbound pruned by a same-fork snapshot, absent locally -> not flagged", async function () {
             const h = TestSession.getHarness();
             const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const prunedHash = hash(
                 Codec.encode(prunedInbound, Type.MessageBlock)
             );
@@ -257,7 +258,8 @@ describe("Unit: ValidationService", function () {
             const h = TestSession.getHarness();
             const { prunedInbound, snapshotInboundHeight, forkId } =
                 await stagePrunedGenuineInbound();
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const fabricated = factory.messageBlock({
                 previousBlockHash: hash(
                     Codec.encode(prunedInbound, Type.MessageBlock)

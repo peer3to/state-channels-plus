@@ -1174,8 +1174,8 @@ export class ValidationProbeService extends ANetworkRpcService<
         run: RecordedValidationRun,
         result: BlockValidationResult
     ): BlockValidationProbe {
-        const fraudProof =
-            this.sm.storage.fraudProofs.getFraudProofForParticipant(
+        const [fraudProof] =
+            this.sm.storage.fraudProofs.getFraudProofsForParticipant(
                 run.block.signerAddress
             );
         return {

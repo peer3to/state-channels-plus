@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: genuine inbound consumed and pruned by a same-fork snapshot, shared by the unit and E2E declarations
-import type { Address, ForkId } from "@/types/types";
+import type { ForkId } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
+import * as factory from "@test/factory";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
@@ -46,7 +47,7 @@ export async function stagePrunedGenuineInbound() {
 }
 
 /** the honest signed block that consumed the inbound block `inboundHash` */
-async function findCarrier(forkId: ForkId, inboundHash: string) {
+export async function findCarrier(forkId: ForkId, inboundHash: string) {
     const h = TestSession.getHarness();
     const observer = h.getPeer(1);
     const latest = await h
@@ -69,10 +70,59 @@ async function findCarrier(forkId: ForkId, inboundHash: string) {
         if (carries) {
             return {
                 signedBlock,
-                author: bundle!.author as Address,
+                author: bundle!.author,
                 hash: bundle!.hash
             };
         }
     }
     throw new Error("no honest block carried the pruned inbound block");
+}
+
+/** the next writer authors a block carrying a fabricated inbound block one above the pruned head; another peer ingests it and stores the forged-inbound proof */
+export async function storeForgedInboundProofAboveHead(
+    prunedInbound: MessageBlockStruct
+) {
+    const h = TestSession.getHarness();
+    const forkId = h.activeForkId!;
+    const writer = await h.query.getNextPeerToWrite();
+    const observer = h.peers.find((peer) => peer.index !== writer.index)!;
+    const latest = await h
+        .control(observer)
+        .query.getLatestBlockBundle(forkId)
+        .request();
+    const height = await h
+        .control(observer)
+        .query.getNextBlockHeight(forkId)
+        .request();
+    const timestamp = latest!.timestamp + 1;
+    const call = await h
+        .getPeer(writer.index)
+        .p2pInstance.p2pContractInstance.add.populateTransaction(1);
+    const fabricated = factory.messageBlock({
+        previousBlockHash: hash(Codec.encode(prunedInbound, Type.MessageBlock)),
+        blockHeight: BigInt(prunedInbound.blockHeight) + 1n,
+        timestamp: BigInt(timestamp)
+    });
+    const encoded = await factory.buildAndEncodeBlock(
+        h.getPeer(writer.index).signer,
+        {
+            header: {
+                channelId: h.channelId,
+                forkId,
+                transactionCnt: height,
+                timestamp
+            },
+            transaction: factory.transaction({
+                body: { encodedData: call.data, data: call.data }
+            }),
+            previousBlockHash: latest!.hash,
+            messageBlocks: [fabricated]
+        }
+    );
+    const probe = await h
+        .control(observer)
+        .validation.runBlockIngest(encoded)
+        .request();
+    expect(probe.firedHooks).to.include("forgedInboundMessageBlockDetected");
+    return { author: writer.address, observer };
 }

@@ -106,6 +106,7 @@ class DisputeManager {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
+        let retryWithoutStaleProof = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetryDelaySeconds: number | undefined;
         let postedTimeout: TimeoutStruct | undefined;
@@ -257,12 +258,13 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
-                    // the snapshot passed a stored forged-inbound proof's height -> the next dispute filters it out
+                    // the snapshot passed a stored forged-inbound proof's height -> rebuild once without it
                     RaceConditionBlockHeightTooOld: () => {
                         this.logger.info(
-                            "dispute no-op: fraud proof below the snapshot's inbound head",
+                            "dispute retry: fraud proof below the snapshot's inbound head",
                             { forkId, channelId: this.channelId }
                         );
+                        retryWithoutStaleProof = true;
                     },
                     RaceConditionDisputeEvidencePeriodExpired: (
                         customError
@@ -340,6 +342,12 @@ class DisputeManager {
             );
             if (changed) await this.dispute(forkId);
         }
+        if (
+            retryWithoutStaleProof &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        )
+            await this.dispute(forkId);
     }
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
@@ -660,28 +668,28 @@ class DisputeManager {
 
         const fraudProofsToApply: FraudProofStruct[] = [];
         for (const participant of participantsNotSlashedOnChain) {
-            const fraudProof =
-                this.storage.fraudProofs.getFraudProofForParticipant(
-                    participant
-                );
-            if (!fraudProof) continue;
-            // a forged-inbound proof the chain no longer judges reverts the whole multicall -> leave it out
-            if (
-                Number(fraudProof.proofType) ===
-                    toSolidityFraudProofType(
-                        FraudProofType.ForgedInboundMessageBlock
-                    ) &&
-                !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
-                    this.channelId,
-                    Codec.decode(
-                        fraudProof.encodedProof,
-                        FraudProofType.ForgedInboundMessageBlock
-                    ).forgedInboundMessageBlock
-                ))
-            )
-                continue;
-            fraudProofsToApply.push(fraudProof);
-            onChainSlashes.add(participant);
+            for (const fraudProof of this.storage.fraudProofs.getFraudProofsForParticipant(
+                participant
+            )) {
+                // a forged-inbound proof the chain no longer judges reverts the whole multicall -> try the next proof
+                if (
+                    Number(fraudProof.proofType) ===
+                        toSolidityFraudProofType(
+                            FraudProofType.ForgedInboundMessageBlock
+                        ) &&
+                    !(await this.stateChannelManagerContract.isUncommittedInboundMessageBlock(
+                        this.channelId,
+                        Codec.decode(
+                            fraudProof.encodedProof,
+                            FraudProofType.ForgedInboundMessageBlock
+                        ).forgedInboundMessageBlock
+                    ))
+                )
+                    continue;
+                fraudProofsToApply.push(fraudProof);
+                onChainSlashes.add(participant);
+                break;
+            }
         }
 
         // timeout

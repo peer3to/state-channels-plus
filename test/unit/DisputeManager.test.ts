@@ -1,6 +1,8 @@
 import {
     DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
+    FraudProofType,
+    toSolidityDisputeFraudProofType,
+    toSolidityFraudProofType
 } from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
@@ -15,7 +17,11 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
-import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
+import {
+    findCarrier,
+    stagePrunedGenuineInbound,
+    storeForgedInboundProofAboveHead
+} from "@test/fixtures/PrunedInboundStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import {
     disputeAndKillSharingHeldRead,
@@ -516,9 +522,9 @@ describe("Unit: DisputeManager", function () {
                         inbound
                     );
                     const stored =
-                        sm.storage.fraudProofs.getFraudProofForParticipant(
+                        sm.storage.fraudProofs.getFraudProofsForParticipant(
                             block.author
-                        ) !== undefined;
+                        ).length > 0;
                     const { dispute, fraudProofsToApply } =
                         await sm.disputeManager.constructDispute(args.forkId);
                     return {
@@ -532,11 +538,151 @@ describe("Unit: DisputeManager", function () {
                     forkId,
                     carrierHash: carrier.hash,
                     inboundHeight: Number(prunedInbound.blockHeight)
-                },
-                { timeoutMs: 10_000 }
+                }
             );
 
             expect(r.stored).to.equal(true);
+            expect(r.fraudProofCount).to.equal(0);
+            expect(r.authorMarkedSlashed).to.equal(false);
+        });
+
+        it("stored forged-inbound proof above the pruned head → constructDispute bundles it, author marked slashed", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
+            const { author, observer } =
+                await storeForgedInboundProofAboveHead(prunedInbound);
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        fraudProofCount: fraudProofsToApply.length,
+                        authorMarkedSlashed:
+                            dispute.input.onChainSlashes.includes(args.author)
+                    };
+                },
+                { forkId, author }
+            );
+
+            expect(r.fraudProofCount).to.equal(1);
+            expect(r.authorMarkedSlashed).to.equal(true);
+        });
+
+        // a stale proof stored first must not hide a later valid one
+        it("stale forged-inbound proof stored before a valid proof against the same author → constructDispute applies the valid one", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId, carrier } =
+                await stagePrunedGenuineInbound();
+            const author = h.peers.find((p) => p.address === carrier.author)!;
+            const observer = h.peers.find((p) => p.index !== author.index)!;
+            // premise - the wrong-leader proof needs an author whose turn it is not
+            expect((await h.query.getNextPeerToWrite()).index).to.not.equal(
+                author.index
+            );
+            await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.carrierHash)!;
+                    const inbound = block.messageBlocks.find(
+                        (mb) => Number(mb.blockHeight) === args.inboundHeight
+                    )!;
+                    sm.fraudProofService.createForgedInboundMessageBlockProof(
+                        block,
+                        inbound
+                    );
+                },
+                {
+                    carrierHash: carrier.hash,
+                    inboundHeight: Number(prunedInbound.blockHeight)
+                }
+            );
+            await h.byzantine.storeInvalidTransitionFraudProof(observer.index, {
+                offenderIndex: author.index
+            });
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        storedCount:
+                            sm.storage.fraudProofs.getFraudProofsForParticipant(
+                                args.author
+                            ).length,
+                        appliedTypes: fraudProofsToApply.map((p) =>
+                            String(p.proofType)
+                        ),
+                        authorMarkedSlashed:
+                            dispute.input.onChainSlashes.includes(args.author)
+                    };
+                },
+                { forkId, author: author.address }
+            );
+
+            expect(r.storedCount).to.equal(2);
+            expect(r.appliedTypes).to.deep.equal([
+                String(
+                    toSolidityFraudProofType(
+                        FraudProofType.BlockInvalidStateTransition
+                    )
+                )
+            ]);
+            expect(r.authorMarkedSlashed).to.equal(true);
+        });
+
+        // the chain still holds the cited block above the head -> applying the proof would slash us
+        it("stored forged-inbound proof citing a genuine inbound block still held above the head → constructDispute leaves it out", async function () {
+            const h = TestSession.getHarness();
+            const { forkId } = await stagePrunedGenuineInbound();
+            const observer = h.getPeer(1);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            const topUpHash = await h
+                .control(observer)
+                .query.getLatestInboundMessageHash()
+                .request();
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            const topUp = await findCarrier(forkId, String(topUpHash));
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.carrierHash)!;
+                    const inbound = block.messageBlocks.find(
+                        (mb) =>
+                            Number(mb.blockHeight) ===
+                            Number(
+                                sm.storage.inboundMessages.getMessageBlock(
+                                    args.topUpHash
+                                )!.blockHeight
+                            )
+                    )!;
+                    sm.fraudProofService.createForgedInboundMessageBlockProof(
+                        block,
+                        inbound
+                    );
+                    const { dispute, fraudProofsToApply } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    return {
+                        fraudProofCount: fraudProofsToApply.length,
+                        authorMarkedSlashed:
+                            dispute.input.onChainSlashes.includes(block.author)
+                    };
+                },
+                {
+                    forkId,
+                    carrierHash: topUp.hash,
+                    topUpHash: String(topUpHash)
+                }
+            );
+
             expect(r.fraudProofCount).to.equal(0);
             expect(r.authorMarkedSlashed).to.equal(false);
         });
@@ -1188,6 +1334,51 @@ describe("Unit: DisputeManager", function () {
                 )
             ).to.deep.equal([]);
             await scheduled.restore();
+        });
+
+        it("RaceConditionBlockHeightTooOld on the wait → no rejection, one rebuilt dispute is sent", async function () {
+            const h = TestSession.getHarness();
+            const { prunedInbound, forkId } = await stagePrunedGenuineInbound();
+            const { author, observer } =
+                await storeForgedInboundProofAboveHead(prunedInbound);
+            // a snapshot lands between construction and mining -> the first send reverts once
+            const probe = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                {
+                    failWith: {
+                        customError: "RaceConditionBlockHeightTooOld",
+                        at: "wait",
+                        times: 1
+                    }
+                }
+            );
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                { timeoutMs: h.event.hostExecTimeoutMs() }
+            );
+
+            const submissions = await probe.submissions();
+            expect(r.rejected).to.equal("");
+            expect(submissions).to.have.length(2);
+            expect(submissions[1].fraudProofParticipants).to.deep.equal([
+                author
+            ]);
+            expect(r.disputed).to.equal(true);
+            await probe.restore();
         });
 
         it("RaceConditionDisputeTimeoutCalldataPosted → the refused timeout is dropped and the posted block our marker withheld is stored, with no recheck", async function () {
@@ -2050,6 +2241,7 @@ describe("Unit: DisputeManager", function () {
                 | "RaceConditionOnChainSlashes"
                 | "RaceConditionGenesisTimestampNotAvailable"
                 | "RaceConditionUnexpectedBlockCalldataPosted"
+                | "RaceConditionBlockHeightTooOld"
         ) {
             const h = TestSession.getHarness();
             const { killer } = await h.scenario.stageUnkilledSpamDispute();
@@ -2106,6 +2298,12 @@ describe("Unit: DisputeManager", function () {
         it("RaceConditionUnexpectedBlockCalldataPosted on the apply → consumed, no rejection, no detached error", async function () {
             await expectRaceConditionConsumedOnApply(
                 "RaceConditionUnexpectedBlockCalldataPosted"
+            );
+        });
+
+        it("RaceConditionBlockHeightTooOld on the apply → consumed, no rejection, no detached error", async function () {
+            await expectRaceConditionConsumedOnApply(
+                "RaceConditionBlockHeightTooOld"
             );
         });
 

@@ -23,6 +23,11 @@ inbound block one above the pruned head. It asserts that honest peers initiate a
 dispute, store a `ForgedInboundMessageBlock` fraud proof, and slash the forger on chain, and that
 only the honest peers stay in sync after the dispute resolves.
 
+A third case resolves that dispute, then adopts the reduced fork on chain from an honest peer and
+asserts the adopted snapshot is on the honest peers' new fork with inbound height S. A later
+top-up is consumed and adopted at S+1 with the honest peers in sync, and a forged-inbound proof
+over the original pruned block still reverts `RaceConditionBlockHeightTooOld` naming S+1.
+
 ## Tests and covered test IDs
 
 A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
@@ -30,7 +35,8 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                   | Covers                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Pruned inbound fraud proof > genuine inbound pruned by a snapshot -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances`](../../../../../../test/e2e/E2E-PrunedInboundFraudProof.test.ts#L9) (line 9) | [`INV-ENFFP-1-BGVZN4.T1.P16`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16) |
-| [`E2E: Pruned inbound fraud proof > fabricated inbound above the pruned head -> honest peers dispute, the forger is slashed`](../../../../../../test/e2e/E2E-PrunedInboundFraudProof.test.ts#L47) (line 47)                                        | [`INV-ENFFP-1-BGVZN4.T1.P18`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p18) |
+| Test declaration                                                                                                                                                                                                                                                     | Covers                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [`E2E: Pruned inbound fraud proof > genuine inbound pruned by a snapshot -> forged-inbound proof against its honest author reverts, nobody slashed, channel advances`](../../../../../../test/e2e/E2E-PrunedInboundFraudProof.test.ts#L9) (line 9)                   | [`INV-ENFFP-1-BGVZN4.T1.P16`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16) |
+| [`E2E: Pruned inbound fraud proof > fabricated inbound above the pruned head -> honest peers dispute, the forger is slashed`](../../../../../../test/e2e/E2E-PrunedInboundFraudProof.test.ts#L47) (line 47)                                                          | [`INV-ENFFP-1-BGVZN4.T1.P18`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p18) |
+| [`E2E: Pruned inbound fraud proof > dispute resolved after a prune -> the reduced fork keeps the snapshot inbound height, the next top-up is adopted, the pruned proof stays refused`](../../../../../../test/e2e/E2E-PrunedInboundFraudProof.test.ts#L69) (line 69) | [`REQ-DIS-6-Y92H1M.T1.P17`](../../../../specification/disputes/disputes.md#req-dis-6-y92h1m.t1.p17)              |

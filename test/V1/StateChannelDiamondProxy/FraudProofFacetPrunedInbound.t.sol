@@ -163,6 +163,45 @@ contract FraudProofFacetPrunedInboundTest is DiamondHarness {
         assertEq(output.latestInboundMessageBlockHeight, snapshotHeight, "height kept");
     }
 
+    // the routed view answers the forged-inbound question for each side of S
+    function test_isUncommittedInboundMessageBlock_judgesOnlyAbsentBlocksAboveSnapshotHead() public {
+        MessageBlock memory inboundC = _deposit(ALICE_PK, 3);
+        MessageBlock memory fabricated = _fabricatedInbound(snapshotHeight + 1, keccak256(abi.encode(inboundB)), 1, 99);
+
+        assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundA), "pruned A below S");
+        assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundB), "pruned head B at S");
+        assertFalse(diamond.isUncommittedInboundMessageBlock(CHANNEL, inboundC), "stored C at S + 1");
+        assertTrue(diamond.isUncommittedInboundMessageBlock(CHANNEL, fabricated), "fabricated at S + 1");
+    }
+
+    // the walk stops on a stored block above S -> its own height
+    function test_reduce_storedInboundAboveSnapshotHead_keepsItsHeight() public {
+        MessageBlock memory inboundC = _deposit(ALICE_PK, 3);
+        vm.warp(block.timestamp + 5);
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = _uploadDisputeCarrying(BOB_PK, ALICE_PK, inboundA);
+
+        ReduceOutput memory output = diamond.reduce(disputes);
+
+        assertEq(output.latestInboundMessageBlockHash, keccak256(abi.encode(inboundC)), "head C");
+        assertEq(output.latestInboundMessageBlockHeight, snapshotHeight + 1, "C's height");
+    }
+
+    // an inbound block newer than the window's expiry is stepped over -> the walk ends on the pruned head
+    function test_reduce_inboundAfterWindowExpiry_fallsBackToSnapshotHeight() public {
+        vm.warp(block.timestamp + 5);
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = _uploadDisputeCarrying(BOB_PK, ALICE_PK, inboundA);
+        vm.warp(block.timestamp + diamond.getEvidenceTime() + 1);
+        MessageBlock memory inboundC = _deposit(ALICE_PK, 3);
+        assertEq(diamond.getChannelBalance(CHANNEL).latestInboundMessageBlockHash, keccak256(abi.encode(inboundC)));
+
+        ReduceOutput memory output = diamond.reduce(disputes);
+
+        assertEq(output.latestInboundMessageBlockHash, keccak256(abi.encode(inboundB)), "pruned head B");
+        assertEq(output.latestInboundMessageBlockHeight, snapshotHeight, "S");
+    }
+
     function _expectTooOld(uint256 forgedHeight) internal {
         vm.expectRevert(abi.encodeWithSelector(RaceConditionBlockHeightTooOld.selector, snapshotHeight, forgedHeight));
     }

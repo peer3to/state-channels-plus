@@ -743,9 +743,10 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
 
     /** Solidity proof-type (as string) of the fraud proof stored against a peer. */
     public getFraudProofType(participantAddress: Address): string | null {
-        const fp = this.service.storage.fraudProofs.getFraudProofForParticipant(
-            String(participantAddress)
-        );
+        const [fp] =
+            this.service.storage.fraudProofs.getFraudProofsForParticipant(
+                String(participantAddress)
+            );
         return fp ? String(fp.proofType) : null;
     }
 

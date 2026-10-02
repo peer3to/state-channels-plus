@@ -326,6 +326,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function _isUncommittedInboundMessageBlock(bytes32 channelId, MessageBlock memory messageBlock)
         internal
         view
+        virtual
         returns (bool)
     {
         return messageBlock.blockHeight > stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHeight
