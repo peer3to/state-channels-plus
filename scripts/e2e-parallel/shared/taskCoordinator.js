@@ -183,15 +183,7 @@ class TaskCoordinator {
             const eligible = this.queue.filter((entry) =>
                 worker.canRun(entry.task)
             );
-            const atHeavyLimit =
-                [...this.assignments.values()].filter(
-                    (assignment) =>
-                        assignment.workerId === workerId &&
-                        assignment.task.cost?.heavy
-                ).length >= MAX_HEAVY_PER_WORKER;
-            const nonHeavy = eligible.filter((entry) => !entry.task.cost.heavy);
-            const candidates =
-                atHeavyLimit && nonHeavy.length ? nonHeavy : eligible;
+            const candidates = this.preferLight(workerId, eligible);
             // Browser-only tasks first (D13), then longest predicted, then
             // discovery order.
             const tier = (entry) => (requiresBrowser(entry.task) ? 0 : 1);
@@ -236,26 +228,41 @@ class TaskCoordinator {
         );
         const canRun = this.workers.get(workerId)?.canRun || (() => true);
         const now = this.now();
-        const candidate = active
-            .filter(
-                (assignment) =>
-                    canRun(assignment.task) &&
-                    !this.completedTaskIds.has(assignment.taskId) &&
-                    !workerTaskIds.has(assignment.taskId) &&
-                    !this.replications.has(`${assignment.taskId}:${workerId}`)
-            )
-            .sort((a, b) => {
-                if (this.schedule !== "cost") return b.seq - a.seq;
-                const remainingA =
-                    a.task.cost.durationMs - (now - a.assignedAt);
-                const remainingB =
-                    b.task.cost.durationMs - (now - b.assignedAt);
-                const remainingOrder = remainingB - remainingA;
-                return remainingOrder || a.seq - b.seq;
-            })[0];
+        const eligible = active.filter(
+            (assignment) =>
+                canRun(assignment.task) &&
+                !this.completedTaskIds.has(assignment.taskId) &&
+                !workerTaskIds.has(assignment.taskId) &&
+                !this.replications.has(`${assignment.taskId}:${workerId}`)
+        );
+        const candidate = (
+            this.schedule === "cost"
+                ? this.preferLight(workerId, eligible)
+                : eligible
+        ).sort((a, b) => {
+            if (this.schedule !== "cost") return b.seq - a.seq;
+            const remainingA = a.task.cost.durationMs - (now - a.assignedAt);
+            const remainingB = b.task.cost.durationMs - (now - b.assignedAt);
+            const remainingOrder = remainingB - remainingA;
+            return remainingOrder || a.seq - b.seq;
+        })[0];
         return candidate
             ? { task: candidate.task, seq: candidate.seq, speculative: true }
             : null;
+    }
+
+    /**
+     * At its heavy limit a worker gets a light candidate while one exists, and
+     * a heavy one otherwise: it is never left idle while work is queued.
+     */
+    preferLight(workerId, candidates) {
+        const heavyRunning = [...this.assignments.values()].filter(
+            (assignment) =>
+                assignment.workerId === workerId && assignment.task.cost?.heavy
+        ).length;
+        if (heavyRunning < MAX_HEAVY_PER_WORKER) return candidates;
+        const light = candidates.filter((entry) => !entry.task.cost?.heavy);
+        return light.length ? light : candidates;
     }
 
     completeAttempt(workerId, attempt) {

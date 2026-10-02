@@ -52,9 +52,14 @@ describe("task cost cache", function () {
                 cores: 0.39,
                 rssGb: 0.65
             });
-            fs.mkdirSync(path.join(root, "test"));
+            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
+                recursive: true
+            });
             fs.writeFileSync(
-                path.join(root, "test/test-costs.overrides.json"),
+                path.join(
+                    root,
+                    "scripts/e2e-parallel/test-costs.overrides.json"
+                ),
                 JSON.stringify({
                     [cache.key(example)]: { durationMs: 777, cores: 0.2 }
                 })
@@ -158,9 +163,14 @@ describe("task cost cache", function () {
             let cache = new CostCache({ projectRoot: root });
             cache.record(example, sample, { ...metadata, starveCount: 1 });
             cache.commit();
-            fs.mkdirSync(path.join(root, "test"));
+            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
+                recursive: true
+            });
             fs.writeFileSync(
-                path.join(root, "test/test-costs.overrides.json"),
+                path.join(
+                    root,
+                    "scripts/e2e-parallel/test-costs.overrides.json"
+                ),
                 JSON.stringify({ [cache.key(example)]: { heavy: false } })
             );
             cache = new CostCache({ projectRoot: root });
@@ -371,16 +381,24 @@ describe("task cost cache", function () {
         );
         try {
             const key = new CostCache({ projectRoot: root }).key(example);
-            fs.mkdirSync(path.join(root, "test"));
+            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
+                recursive: true
+            });
             fs.writeFileSync(
-                path.join(root, "test/test-costs.overrides.json"),
+                path.join(
+                    root,
+                    "scripts/e2e-parallel/test-costs.overrides.json"
+                ),
                 JSON.stringify({ [key]: { rssGb: 4, cores: 3 } })
             );
             expect(
                 new CostCache({ projectRoot: root }).resolve(example)
             ).to.include({ rssGb: 4, cores: 3, heavy: true });
             fs.writeFileSync(
-                path.join(root, "test/test-costs.overrides.json"),
+                path.join(
+                    root,
+                    "scripts/e2e-parallel/test-costs.overrides.json"
+                ),
                 JSON.stringify({ [key]: { rssGb: 4, heavy: false } })
             );
             expect(
@@ -410,6 +428,32 @@ describe("task cost cache", function () {
             cache.record(sibling, { ...sample, durationMs: 500 }, metadata);
             expect(cache.revision(example)).not.to.equal(after);
             expect(cache.resolve(example).durationMs).to.equal(500);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("groups siblings by source file even when a title contains a pipe", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-pipe-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const piped = {
+                ...example,
+                label: "suite | expensive",
+                fullTitle: "suite | expensive"
+            };
+            const before = cache.revision(example);
+            cache.record(
+                piped,
+                { ...sample, durationMs: 60000, avgCores: 2, peakRssGb: 3 },
+                metadata
+            );
+            expect(cache.revision(example)).not.to.equal(before);
+            expect(cache.resolve(example)).to.include({
+                durationMs: 60000,
+                cores: 2,
+                rssGb: 3
+            });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -480,10 +524,12 @@ describe("task cost cache", function () {
             expect(
                 new CostCache({ projectRoot: root }).resolve(example).durationMs
             ).to.equal(5000);
-            fs.mkdirSync(path.join(root, "test"));
+            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
+                recursive: true
+            });
             const overridesPath = path.join(
                 root,
-                "test/test-costs.overrides.json"
+                "scripts/e2e-parallel/test-costs.overrides.json"
             );
             for (const entry of [
                 { cores: -1 },

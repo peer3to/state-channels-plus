@@ -46,6 +46,9 @@ const {
     processTreeUsage
 } = require("../../scripts/e2e-parallel/shared/resourceGate.js");
 const {
+    nextSampleDelayMs
+} = require("../../scripts/e2e-parallel/shared/runTask.js");
+const {
     buildSlotEnv
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
 const {
@@ -696,6 +699,13 @@ describe("distributed worker scheduler", function () {
             avgCores: 1,
             peakRssGb: 2 / 1024
         });
+    });
+
+    it("samples a task early and backs off to the steady interval", function () {
+        const delays = [100];
+        for (let index = 0; index < 5; index++)
+            delays.push(nextSampleDelayMs(delays[delays.length - 1]));
+        expect(delays).to.deep.equal([100, 200, 400, 800, 1000, 1000]);
     });
 
     it("parses fractional and day-prefixed ps CPU times", async function () {

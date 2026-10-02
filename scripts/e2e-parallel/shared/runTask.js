@@ -5,7 +5,10 @@ const path = require("path");
 const { killProcessGroup } = require("./processGroup");
 const { threadDump } = require("./threadDump");
 const { TaskProcessSampler } = require("./resourceGate");
-const { TASK_COST_SAMPLE_MS } = require("./constants");
+const {
+    TASK_COST_FIRST_SAMPLE_MS,
+    TASK_COST_SAMPLE_MS
+} = require("./constants");
 
 // A child that goes quiet for this long without exiting gets its threads
 // dumped into its log once, so a silent hang leaves evidence of what every
@@ -46,6 +49,11 @@ function teardownTaskChildren() {
     for (const c of liveTaskChildren) {
         killProcessGroup(c, "SIGTERM");
     }
+}
+
+/** The gap before the next cost sample: doubling up to the steady interval. */
+function nextSampleDelayMs(delayMs) {
+    return Math.min(delayMs * 2, TASK_COST_SAMPLE_MS);
 }
 
 async function runTask(
@@ -107,11 +115,17 @@ async function runTask(
             options.sampleOptions
         );
         sampler.sample();
-        const sampleTimer = setInterval(
-            () => sampler.sample(),
-            TASK_COST_SAMPLE_MS
-        );
-        sampleTimer.unref();
+        let sampleDelayMs = TASK_COST_FIRST_SAMPLE_MS;
+        let sampleTimer;
+        const scheduleSample = () => {
+            sampleTimer = setTimeout(() => {
+                sampler.sample();
+                sampleDelayMs = nextSampleDelayMs(sampleDelayMs);
+                scheduleSample();
+            }, sampleDelayMs);
+            sampleTimer.unref();
+        };
+        scheduleSample();
 
         const terminate = () => {
             killProcessGroup(child, "SIGTERM");
@@ -192,7 +206,7 @@ async function runTask(
             if (settled) return;
             settled = true;
             const durationMs = Date.now() - startedAt;
-            clearInterval(sampleTimer);
+            clearTimeout(sampleTimer);
             await sampler.inFlight;
             child.stdout.off("data", onStdout);
             child.stderr.off("data", onStderr);
@@ -227,6 +241,7 @@ async function runTask(
 }
 
 module.exports = {
+    nextSampleDelayMs,
     liveTaskChildren,
     teardownTaskChildren,
     createFileOutputSink,

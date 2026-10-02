@@ -163,11 +163,21 @@ class CostCache {
         this.fileRevisions = new Map();
         // Bumped by commit(), which changes every resolve().
         this.generation = 0;
-        // Task object -> its cache key; keys cost two path operations each.
+        // Task object -> its cache key and source-file prefix (`runner|file|`);
+        // keys cost two path operations each.
         this.keys = new WeakMap();
     }
 
     key(task) {
+        return this.identify(task).key;
+    }
+
+    // The prefix comes from runner and file only: a title may contain "|".
+    filePrefix(task) {
+        return this.identify(task).prefix;
+    }
+
+    identify(task) {
         const known = this.keys.get(task);
         if (known) return known;
         const runner = normalizeTaskRunner(task.runner);
@@ -193,14 +203,18 @@ class CostCache {
             relative.endsWith(".js")
         )
             relative = `${relative.slice(5, -3)}.ts`;
-        const key = `${runner}|${relative}|${task.fullTitle ?? task.label}`;
-        this.keys.set(task, key);
-        return key;
+        const prefix = `${runner}|${relative}|`;
+        const identity = {
+            key: `${prefix}${task.fullTitle ?? task.label}`,
+            prefix
+        };
+        this.keys.set(task, identity);
+        return identity;
     }
 
     /** Changes whenever resolve(task) may return something different. */
     revision(task) {
-        return `${this.generation}:${this.fileRevisions.get(filePrefix(this.key(task))) ?? 0}`;
+        return `${this.generation}:${this.fileRevisions.get(this.filePrefix(task)) ?? 0}`;
     }
 
     record(task, attempt, metadata) {
@@ -213,13 +227,13 @@ class CostCache {
                 server: metadata.server,
                 at: pending.at
             });
-            this.touch(key);
+            this.touch(task);
         }
         if (!isCostSample(attempt, metadata)) return;
         const pending = this.pendingFor(key);
         const peakRssGb = attempt.peakRssGb ?? null;
         const avgCores = attempt.avgCores ?? null;
-        if (pending.sample) this.addToFileSums(key, pending.sample, -1);
+        if (pending.sample) this.addToFileSums(task, pending.sample, -1);
         pending.sample = {
             durationMs: attempt.durationMs,
             peakRssGb,
@@ -231,9 +245,9 @@ class CostCache {
                     ? "legacy-measurements-unavailable"
                     : null)
         };
-        this.addToFileSums(key, pending.sample, 1);
+        this.addToFileSums(task, pending.sample, 1);
         pending.at = metadata.at ?? new Date().toISOString();
-        this.touch(key);
+        this.touch(task);
     }
 
     pendingFor(key) {
@@ -245,16 +259,16 @@ class CostCache {
         return pending;
     }
 
-    touch(key) {
-        const prefix = filePrefix(key);
+    touch(task) {
+        const prefix = this.filePrefix(task);
         this.fileRevisions.set(
             prefix,
             (this.fileRevisions.get(prefix) ?? 0) + 1
         );
     }
 
-    addToFileSums(key, sample, sign) {
-        const prefix = filePrefix(key);
+    addToFileSums(task, sample, sign) {
+        const prefix = this.filePrefix(task);
         let sums = this.fileSums.get(prefix);
         if (!sums) {
             sums = Object.fromEntries(
@@ -271,7 +285,7 @@ class CostCache {
 
     siblingMean(task) {
         const key = this.key(task);
-        const sums = this.fileSums.get(filePrefix(key));
+        const sums = this.fileSums.get(this.filePrefix(task));
         if (!sums) return null;
         const own = this.pending.get(key)?.sample;
         const mean = Object.fromEntries(
@@ -381,10 +395,6 @@ class CostCache {
         this.fileRevisions.clear();
         this.generation++;
     }
-}
-
-function filePrefix(key) {
-    return key.slice(0, key.lastIndexOf("|") + 1);
 }
 
 module.exports = { CostCache, coldCost };

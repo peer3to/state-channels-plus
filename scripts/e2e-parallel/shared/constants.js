@@ -32,8 +32,12 @@ const DEFAULT_SLOTS = 1;
 // react between launches — pacing one test per tick lets it settle.
 const SCHEDULER_TICK_MS = 1000;
 
-// Each sample scans the whole process table (`ps -axo` / `/proc`), so one per
-// second per running task; a tick still running is skipped, not queued.
+// Each sample scans the whole process table (`ps -axo` / `/proc`): the first
+// comes after TASK_COST_FIRST_SAMPLE_MS and the gap doubles up to one per
+// TASK_COST_SAMPLE_MS, so short tasks are still measured and long ones cost one
+// scan a second. A tick still running is skipped, not queued.
+// placeholder — calibrate from run-metrics.json
+const TASK_COST_FIRST_SAMPLE_MS = 100;
 // placeholder — calibrate from run-metrics.json
 const TASK_COST_SAMPLE_MS = 1000;
 // Linux USER_HZ ABI: process CPU counters are ticks, not milliseconds.
@@ -69,7 +73,8 @@ const CONCURRENCY_STAT_FIELDS = [
 ];
 const HOLD_REASONS = ["cap", "memory", "cpu"];
 const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";
-const DEFAULT_COST_OVERRIDES_PATH = "test/test-costs.overrides.json";
+const DEFAULT_COST_OVERRIDES_PATH =
+    "scripts/e2e-parallel/test-costs.overrides.json";
 
 // Admit another test only while avg OS load per core is below this.
 const TARGET_LOAD_PER_CORE = 0.8;
@@ -92,6 +97,7 @@ module.exports = {
     DEFAULT_STREAM_CHILD_OUTPUT,
     DEFAULT_SLOTS,
     SCHEDULER_TICK_MS,
+    TASK_COST_FIRST_SAMPLE_MS,
     TASK_COST_SAMPLE_MS,
     PROC_CLOCK_TICKS_PER_SECOND,
     COST_EWMA_ALPHA,

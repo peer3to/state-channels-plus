@@ -182,6 +182,33 @@ describe("distributed task coordinator", function () {
         );
     });
 
+    it("gives a speculative copy to a worker at its heavy limit only as a light task when one is eligible", function () {
+        const task = (label: string, durationMs: number, heavy: boolean) => ({
+            label,
+            args: [],
+            cost: {
+                durationMs,
+                heavy,
+                cores: heavy ? 2 : 0.3,
+                rssGb: heavy ? 3 : 0.5
+            }
+        });
+        const coordinator = new TaskCoordinator(
+            [
+                task("H1", 30000, true),
+                task("H2", 20000, true),
+                task("L", 5000, false)
+            ],
+            { schedule: "cost", speculative: true, now: () => 0 }
+        );
+        expect(coordinator.requestTask("a").task.label).to.equal("H1");
+        expect(coordinator.requestTask("b").task.label).to.equal("H2");
+        expect(coordinator.requestTask("b").task.label).to.equal("L");
+        const copy = coordinator.requestTask("a");
+        expect(copy.speculative).to.equal(true);
+        expect(copy.task.label).to.equal("L");
+    });
+
     it("ranks speculative copies by remaining duration and discovery ties", function () {
         let now = 0;
         const coordinator = new TaskCoordinator(
