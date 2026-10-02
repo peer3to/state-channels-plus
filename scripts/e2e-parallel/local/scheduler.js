@@ -7,6 +7,7 @@ const {
 const { TaskResourcePool } = require("../shared/taskResources");
 const {
     cpuTimes,
+    processScanStats,
     rssGbForPids,
     ResourceGate
 } = require("../shared/resourceGate");
@@ -14,7 +15,11 @@ const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
-const { admissionCost, holdReason } = require("../shared/scheduling");
+const {
+    admissionCost,
+    holdReason,
+    requestCostBudget
+} = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const logging = require("../shared/logging");
 
@@ -80,6 +85,12 @@ async function runScheduler({
         schedule,
         costCache,
         onWorkAvailable: () => scheduler?.workAvailable(),
+        onBudgetHold: ({ seq, reason }) =>
+            logging.hold({
+                seq,
+                total: tasks.length,
+                reason: `${reason} (cost budget; predicted cost does not fit)`
+            }),
         onResult: ({ assignment, attempt, code, parsed }) => {
             if (code !== 0) {
                 logging.appendRunnerFailureMarker(
@@ -109,8 +120,7 @@ async function runScheduler({
         concurrencyCap,
         retryMs: tickMs,
         canRun: async (running, assignment, activeAssignments) => {
-            if (schedule === "fifo" && coordinator.queue.length === 0)
-                return false;
+            if (!assignment && coordinator.queue.length === 0) return false;
             const allowed = await resources.allows(
                 running,
                 concurrencyCap,
@@ -134,7 +144,14 @@ async function runScheduler({
             }
             return allowed;
         },
-        requestTask: async () => coordinator.requestTask("local"),
+        requestTask: async () =>
+            coordinator.requestTask("local", {
+                costBudget: requestCostBudget(
+                    schedule,
+                    resources,
+                    scheduler.runningAssignments
+                )
+            }),
         onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
             // Forge brings its own EVM and a browser gate starts its own node:
@@ -226,7 +243,11 @@ async function runScheduler({
             {
                 id: "local",
                 label: "local",
-                stats: { ...resourceStats, ...scheduler.stats() },
+                stats: coordinator.withBudgetHolds("local", {
+                    ...resourceStats,
+                    ...scheduler.stats(),
+                    ...processScanStats()
+                }),
                 legacyAdmission: schedule !== "cost"
             }
         ],

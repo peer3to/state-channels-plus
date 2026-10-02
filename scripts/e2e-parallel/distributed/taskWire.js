@@ -68,4 +68,19 @@ function fromWireTask(task, projectRoot) {
     };
 }
 
-module.exports = { toWireTask, fromWireTask };
+// A cost worker's free budget on TASK_REQUEST. It may be negative: an idle
+// worker always takes a task, however large its predicted cost.
+function fromWireCostBudget(budget) {
+    if (budget === undefined) return undefined;
+    if (
+        !budget ||
+        typeof budget !== "object" ||
+        Array.isArray(budget) ||
+        Object.keys(budget).length !== 2 ||
+        !["cores", "rssGb"].every((field) => Number.isFinite(budget[field]))
+    )
+        throw new Error("Invalid wire cost budget");
+    return budget;
+}
+
+module.exports = { toWireTask, fromWireTask, fromWireCostBudget };

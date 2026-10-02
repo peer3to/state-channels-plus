@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
+import { createRealWorkerWorkspace } from "../fixtures/distributed/realWorkerWorkspace";
 import {
     createLocalDhtNetwork,
     createSocketPair,
@@ -39,8 +40,14 @@ const {
     ProtocolPeer
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
+    buildDeltaBundle
+} = require("../../scripts/e2e-parallel/distributed/runtimeBundle.js");
+const {
     extractRuntimeBundle
 } = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
+const {
+    readCpuSnapshot
+} = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
@@ -649,6 +656,215 @@ describe("distributed parallel runner", function () {
         } finally {
             process.stderr.write = originalStderrWrite;
             console.log = originalConsoleLog;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("runs cost-scheduled tests on a real worker and records its measurements and admission statistics", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-cost-run-"));
+        const originalPath = process.env.PATH;
+        const workspace = await createRealWorkerWorkspace(root, [
+            "first",
+            "second"
+        ]);
+        const costCachePath = path.join(root, "test-costs.json");
+        // The first test leaves half a core free and the second needs one:
+        // the orchestrator must not hand the second over while the first runs.
+        const costOverridesPath = path.join(root, "overrides.json");
+        fs.writeFileSync(
+            costOverridesPath,
+            JSON.stringify({
+                "hardhat|test/cost.test.js|cost fixture first": {
+                    // the cores the worker's gate sees, cgroup included
+                    cores: readCpuSnapshot().cores - 0.5
+                },
+                "hardhat|test/cost.test.js|cost fixture second": { cores: 1 }
+            })
+        );
+        const logDir = path.join(root, "logs");
+        try {
+            process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
+            await pool.startServer("cost-worker");
+
+            const result = await runDistributed({
+                tasks: [
+                    {
+                        label: "test:cost.test.js:first",
+                        args: [
+                            "test",
+                            "--no-compile",
+                            workspace.testFile,
+                            "--grep",
+                            "^cost fixture first$"
+                        ],
+                        logName: "cost__first",
+                        fullTitle: "cost fixture first",
+                        runner: "hardhat",
+                        isE2E: false
+                    },
+                    {
+                        label: "test:cost.test.js:second",
+                        args: [
+                            "test",
+                            "--no-compile",
+                            workspace.testFile,
+                            "--grep",
+                            "^cost fixture second$"
+                        ],
+                        logName: "cost__second",
+                        fullTitle: "cost fixture second",
+                        runner: "hardhat",
+                        isE2E: false
+                    }
+                ],
+                projectRoot: workspace.projectRoot,
+                archivePath: workspace.archivePath,
+                manifest: workspace.manifest,
+                logDir,
+                poolSecret: pool.poolSecret,
+                discoveryTimeoutMs: 5000,
+                discoveryRefreshMs: 25,
+                baseEnv: {},
+                dht: pool.createOrchestratorDht(),
+                schedule: "cost",
+                costCachePath,
+                costOverridesPath,
+                executionProfile: { slots: 0, workers: 2, schedulerTickMs: 50 }
+            });
+
+            expect(result.failed).to.deep.equal([]);
+            expect(result.completed).to.equal(2);
+            const metrics = JSON.parse(
+                fs.readFileSync(path.join(logDir, "run-metrics.json"), "utf8")
+            );
+            expect(metrics.workers).to.have.lengthOf(1);
+            const [worker] = metrics.workers;
+            expect(worker.legacyAdmission).to.equal(false);
+            expect(worker.meanConcurrency).to.be.a("number");
+            expect(worker.peakConcurrency).to.equal(1);
+            expect(worker.holdCounts).to.have.all.keys("cap", "memory", "cpu");
+            expect(worker.holdCounts.cap).to.be.a("number");
+            expect(worker.holdCounts.memory).to.be.a("number");
+            expect(worker.holdCounts.cpu).to.be.at.least(1);
+            expect(worker.processScanCount).to.be.greaterThan(0);
+            expect(worker.processScanMs).to.be.a("number").at.least(0);
+            expect(worker).not.to.have.property("measurementReason");
+            // Handed only what it could start, the worker never buffers.
+            expect(
+                fs.readFileSync(
+                    path.join(logDir, "infra", "cost-worker", "worker.ansi"),
+                    "utf8"
+                )
+            ).not.to.include("buffer 1");
+            const cache = JSON.parse(fs.readFileSync(costCachePath, "utf8"));
+            expect(Object.keys(cache.tasks)).to.have.members([
+                "hardhat|test/cost.test.js|cost fixture first",
+                "hardhat|test/cost.test.js|cost fixture second"
+            ]);
+            for (const entry of Object.values(cache.tasks) as Array<
+                Record<string, unknown>
+            >) {
+                expect(entry.peakRssGb).to.be.a("number").greaterThan(0);
+                expect(entry.avgCores).to.be.a("number").at.least(0);
+                expect(entry.measurementReason).to.equal(null);
+                expect(entry.samples).to.equal(1);
+            }
+        } finally {
+            process.env.PATH = originalPath;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects a malformed wire task cost on a real worker before running the task", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-bad-cost-"));
+        const originalPath = process.env.PATH;
+        const workspace = await createRealWorkerWorkspace(root, ["first"]);
+        try {
+            process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
+            const worker = await pool.startServer("cost-worker");
+            const orchestrator = await pool.startOrchestrator("bad-cost", {
+                executionProfile: { slots: 0, schedulerTickMs: 50 }
+            });
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            const { files, ...wireManifest } = workspace.manifest as {
+                files: unknown[];
+            };
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: wireManifest },
+                Buffer.from(JSON.stringify(files))
+            );
+            const need = JSON.parse(
+                (
+                    await orchestrator.waitFor(worker.name, "WORKSPACE_NEED")
+                ).body!.toString("utf8")
+            );
+            const deltaPath = path.join(root, "delta.tgz");
+            const delta = await buildDeltaBundle(
+                workspace.manifest,
+                need.changed,
+                deltaPath
+            );
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: { ...wireManifest, ...delta }
+            });
+            await orchestrator.send(
+                worker.name,
+                "BUNDLE_CHUNK",
+                { sequence: 0 },
+                fs.readFileSync(deltaPath)
+            );
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: delta.archiveBytes,
+                sha256: delta.archiveSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1
+            });
+            const request = await orchestrator.waitFor(
+                worker.name,
+                "TASK_REQUEST"
+            );
+            const checkpoint = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "TASK_ASSIGNMENT", {
+                requestId: request.header.requestId,
+                assignment: {
+                    attemptId: 1,
+                    seq: 1,
+                    task: {
+                        label: "test:cost.test.js:first",
+                        logName: "cost__first",
+                        runner: "hardhat",
+                        cost: { cores: -1, rssGb: 0, heavy: false },
+                        args: [
+                            "test",
+                            "--no-compile",
+                            { projectPath: "test/cost.test.js" },
+                            "--grep",
+                            "^cost fixture first$"
+                        ]
+                    }
+                }
+            });
+
+            const failure = await orchestrator.waitFor(
+                worker.name,
+                "WORKER_ERROR",
+                { after: checkpoint }
+            );
+            expect(failure.header.message).to.equal("Invalid wire task cost");
+            expect(
+                orchestrator.received(worker.name, "ATTEMPT_RESULT", checkpoint)
+            ).to.equal(false);
+        } finally {
+            process.env.PATH = originalPath;
             await pool.close();
             fs.rmSync(root, { recursive: true, force: true });
         }

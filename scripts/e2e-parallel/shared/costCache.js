@@ -130,7 +130,7 @@ function executed(attempt, metadata) {
     );
 }
 
-// The attempt that finalized the task, unstarved, is the run's one sample (D11).
+// The attempt that finalized the task, unstarved, is the run's one sample.
 function isCostSample(attempt, metadata) {
     return (
         executed(attempt, metadata) &&
@@ -148,10 +148,8 @@ class CostCache {
     } = {}) {
         this.projectRoot = path.resolve(projectRoot);
         this.cachePath = path.resolve(this.projectRoot, cachePath);
-        this.readDenied = null;
-        this.tasks = readCache(this.cachePath, (error) => {
-            this.readDenied = error;
-        });
+        // commit() re-reads the file and refuses to replace one it cannot read.
+        this.tasks = readCache(this.cachePath, () => {});
         this.overrides = readOverrides(
             path.resolve(this.projectRoot, overridesPath)
         );
@@ -284,21 +282,15 @@ class CostCache {
     }
 
     siblingMean(task) {
-        const key = this.key(task);
         const sums = this.fileSums.get(this.filePrefix(task));
         if (!sums) return null;
-        const own = this.pending.get(key)?.sample;
         const mean = Object.fromEntries(
-            SAMPLE_FIELDS.map((field) => {
-                const ownValue = own && numeric(own[field]) ? own[field] : null;
-                const count = sums[field].count - (ownValue === null ? 0 : 1);
-                return [
-                    field,
-                    count > 0
-                        ? (sums[field].sum - (ownValue ?? 0)) / count
-                        : null
-                ];
-            })
+            SAMPLE_FIELDS.map((field) => [
+                field,
+                sums[field].count > 0
+                    ? sums[field].sum / sums[field].count
+                    : null
+            ])
         );
         return mean.durationMs === null ? null : mean;
     }
@@ -330,7 +322,7 @@ class CostCache {
               cost.cores > HEAVY_CORES ||
               cost.rssGb > HEAVY_RSS_GB
             : cold.heavy;
-        // An explicit override `heavy` wins over every computed trigger (D9).
+        // An explicit override `heavy` wins over every computed trigger.
         return {
             ...cost,
             heavy: override.heavy ?? (!!starved || overThreshold)
@@ -341,13 +333,18 @@ class CostCache {
     // and keeps this run's measurements pending, and never fails the run.
     commit({ interrupted = false } = {}) {
         if (interrupted || !this.pending.size) return;
-        if (this.readDenied) {
+        // Merge into the file as it is now: another run from this checkout may
+        // have committed since this one started.
+        let readDenied = null;
+        const tasks = readCache(this.cachePath, (error) => {
+            readDenied = error;
+        });
+        if (readDenied) {
             console.warn(
-                `Not committing cost cache ${this.cachePath}: it could not be read (${this.readDenied.message})`
+                `Not committing cost cache ${this.cachePath}: it could not be read (${readDenied.message})`
             );
             return;
         }
-        const tasks = { ...this.tasks };
         for (const [key, pending] of this.pending) {
             const old = tasks[key] ?? null;
             const sample = pending.sample;
@@ -364,8 +361,12 @@ class CostCache {
                 })
             };
             if (sample) {
+                // A starvation-only placeholder has nothing to average from.
                 for (const field of SAMPLE_FIELDS)
-                    entry[field] = EWMA(old?.[field], sample[field]);
+                    entry[field] = EWMA(
+                        old?.samples ? old[field] : undefined,
+                        sample[field]
+                    );
                 entry.measurementReason = [
                     entry.peakRssGb,
                     entry.avgCores
@@ -376,7 +377,10 @@ class CostCache {
                 entry.samples++;
             }
             entry.lastSeenAt = pending.at;
-            entry.starvations = [...entry.starvations, ...pending.starvations];
+            entry.starvations = [
+                ...entry.starvations,
+                ...pending.starvations
+            ].slice(-HEAVY_STARVE_RUNS);
             entry.recentRuns = [
                 ...entry.recentRuns,
                 { at: pending.at, starved: pending.starved }

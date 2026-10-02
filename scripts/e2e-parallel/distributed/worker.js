@@ -6,9 +6,13 @@ const { TaskResourcePool } = require("../shared/taskResources");
 const { WorkerAttemptSpool } = require("./workerAttemptSpool");
 const { fromWireTask } = require("./taskWire");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
-const { ResourceGate } = require("../shared/resourceGate");
+const { processScanStats, ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
-const { admissionCost, holdReason } = require("../shared/scheduling");
+const {
+    admissionCost,
+    holdReason,
+    requestCostBudget
+} = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const { reduceAttemptOutput } = require("../shared/taskCoordinator");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -220,7 +224,10 @@ async function start(config) {
                     targetLoad: config.targetLoad
                 });
                 logging.hold({
-                    seq: scheduler?.bufferedAssignment?.seq || 1,
+                    seq:
+                        assignment?.seq ??
+                        scheduler.bufferedAssignment?.seq ??
+                        1,
                     total: config.taskCount,
                     reason,
                     buffered: scheduler.bufferedCount
@@ -229,7 +236,15 @@ async function start(config) {
             return allowed;
         },
         requestTask: async () => {
-            const assignment = await request("TASK_REQUEST");
+            const costBudget = requestCostBudget(
+                scheduler.options.schedule,
+                resources,
+                scheduler.runningAssignments
+            );
+            const assignment = await request(
+                "TASK_REQUEST",
+                costBudget ? { costBudget } : {}
+            );
             if (!assignment) return assignment;
             const task = fromWireTask(assignment.task, config.projectRoot);
             // The orchestrator sends a cost only under --schedule cost.
@@ -328,7 +343,11 @@ async function stop(
         completionExitCode = exitCode;
         process.send({
             kind: "WORKER_COMPLETE",
-            stats: { ...resources?.stats(), ...scheduler?.stats() }
+            stats: {
+                ...resources?.stats(),
+                ...scheduler?.stats(),
+                ...processScanStats()
+            }
         });
         return;
     }

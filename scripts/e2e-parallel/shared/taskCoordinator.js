@@ -1,7 +1,22 @@
 const logging = require("./logging");
 const { coldCost } = require("./costCache");
 const { MAX_HEAVY_PER_WORKER, MEASUREMENT_REASONS } = require("./constants");
+const { costBudgetShortfall } = require("./scheduling");
 const { requiresBrowser } = require("./taskRunners");
+
+// Browser-only tasks first, then longest predicted, then discovery order.
+function rankByCost(entries) {
+    const tier = (entry) => (requiresBrowser(entry.task) ? 0 : 1);
+    return entries.sort((a, b) => {
+        const durationOrder = b.task.cost.durationMs - a.task.cost.durationMs;
+        return tier(a) - tier(b) || durationOrder || a.seq - b.seq;
+    });
+}
+
+// No budget: the worker runs nothing, or is not cost-scheduled.
+function fitsCostBudget(task, costBudget) {
+    return !costBudget || costBudgetShortfall(task.cost, costBudget) === null;
+}
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -150,6 +165,11 @@ class TaskCoordinator {
         this.speculative = options.speculative === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
+        // Called when a cost worker is refused a task its budget cannot start.
+        this.onBudgetHold = options.onBudgetHold || (() => {});
+        // Worker id -> requests refused because no queued task fit its cost
+        // budget, by the reason the best-ranked task did not fit.
+        this.budgetHolds = new Map();
     }
 
     /**
@@ -163,7 +183,12 @@ class TaskCoordinator {
         else this.workers.set(workerId, { idle: false, canRun });
     }
 
-    requestTask(workerId) {
+    /**
+     * Under cost, a worker that runs something sends its free `costBudget`
+     * and is handed only a task that fits it, or nothing while one is queued
+     * that does not: another worker with room takes that one.
+     */
+    requestTask(workerId, { costBudget } = {}) {
         this.registerWorker(workerId);
         const worker = this.workers.get(workerId);
         let index;
@@ -183,22 +208,28 @@ class TaskCoordinator {
             const eligible = this.queue.filter((entry) =>
                 worker.canRun(entry.task)
             );
-            const candidates = this.preferLight(workerId, eligible);
-            // Browser-only tasks first (D13), then longest predicted, then
-            // discovery order.
-            const tier = (entry) => (requiresBrowser(entry.task) ? 0 : 1);
-            candidates.sort((a, b) => {
-                const durationOrder =
-                    b.task.cost.durationMs - a.task.cost.durationMs;
-                return tier(a) - tier(b) || durationOrder || a.seq - b.seq;
-            });
+            const fitting = eligible.filter((entry) =>
+                fitsCostBudget(entry.task, costBudget)
+            );
+            if (eligible.length && !fitting.length) {
+                const blocked = rankByCost(
+                    this.preferLight(workerId, eligible)
+                )[0];
+                this.recordBudgetHold(
+                    workerId,
+                    blocked,
+                    costBudgetShortfall(blocked.task.cost, costBudget)
+                );
+                return null;
+            }
+            const candidates = rankByCost(this.preferLight(workerId, fitting));
             index = candidates.length ? this.queue.indexOf(candidates[0]) : -1;
         } else {
             index = this.queue.findIndex((entry) => worker.canRun(entry.task));
         }
         const queued =
             index === -1
-                ? this.speculativeTask(workerId)
+                ? this.speculativeTask(workerId, costBudget)
                 : this.queue.splice(index, 1)[0];
         if (!queued) {
             worker.idle = true;
@@ -218,7 +249,31 @@ class TaskCoordinator {
         return assignment;
     }
 
-    speculativeTask(workerId) {
+    recordBudgetHold(workerId, entry, reason) {
+        const holds = this.budgetHolds.get(workerId) ?? { cpu: 0, memory: 0 };
+        holds[reason]++;
+        this.budgetHolds.set(workerId, holds);
+        this.onBudgetHold({ workerId, seq: entry.seq, reason });
+    }
+
+    /**
+     * A worker's reported statistics with the coordinator's budget refusals
+     * added to its hold counts: both held a test back.
+     */
+    withBudgetHolds(workerId, stats) {
+        const holds = this.budgetHolds.get(workerId);
+        if (!holds || !stats?.holdCounts) return stats;
+        return {
+            ...stats,
+            holdCounts: {
+                ...stats.holdCounts,
+                cpu: stats.holdCounts.cpu + holds.cpu,
+                memory: stats.holdCounts.memory + holds.memory
+            }
+        };
+    }
+
+    speculativeTask(workerId, costBudget) {
         if (!this.speculative) return null;
         const active = [...this.assignments.values()];
         const workerTaskIds = new Set(
@@ -231,6 +286,7 @@ class TaskCoordinator {
         const eligible = active.filter(
             (assignment) =>
                 canRun(assignment.task) &&
+                fitsCostBudget(assignment.task, costBudget) &&
                 !this.completedTaskIds.has(assignment.taskId) &&
                 !workerTaskIds.has(assignment.taskId) &&
                 !this.replications.has(`${assignment.taskId}:${workerId}`)

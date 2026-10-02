@@ -1,6 +1,11 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
+const { CostCache } = require("../../scripts/e2e-parallel/shared/costCache.js");
+const logging = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     TaskCoordinator,
     reduceAttemptOutput,
@@ -89,6 +94,204 @@ describe("distributed task coordinator", function () {
         );
         expect(equal.requestTask("worker").task.label).to.equal("one");
         expect(equal.requestTask("worker").task.label).to.equal("two");
+    });
+
+    it("re-ranks queued cost tasks when a sibling finishes", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-rerank-"));
+        const inFile = (label: string, file: string) => ({
+            ...task(label),
+            runner: "hardhat",
+            fullTitle: label,
+            args: ["test", "--no-compile", file]
+        });
+        try {
+            const other = inFile("other", "test/unit/b.test.ts");
+            const seed = new CostCache({ projectRoot: root });
+            seed.record(
+                other,
+                { code: 0, durationMs: 4000 },
+                { disposition: "complete", server: "seed", starveCount: 0 }
+            );
+            seed.commit();
+            const coordinator = new TaskCoordinator(
+                [
+                    inFile("a1", "test/unit/a.test.ts"),
+                    inFile("a2", "test/unit/a.test.ts"),
+                    other
+                ],
+                {
+                    schedule: "cost",
+                    costCache: new CostCache({ projectRoot: root })
+                }
+            );
+            // Cold 5 s beats the cached 4 s.
+            const first = coordinator.requestTask("worker");
+            expect(first.task.label).to.equal("a1");
+            coordinator.completeAttempt("worker", {
+                attemptId: first.attemptId,
+                code: 0,
+                durationMs: 1000
+            });
+            // a2 now takes its sibling's 1 s.
+            expect(coordinator.requestTask("worker").task.label).to.equal(
+                "other"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("hands a busy cost worker the best task its budget fits and the long one to a worker with room", function () {
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("long"),
+                    cost: { durationMs: 1000, cores: 2, rssGb: 1, heavy: false }
+                },
+                {
+                    ...task("short"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.5,
+                        rssGb: 0.5,
+                        heavy: false
+                    }
+                }
+            ],
+            { schedule: "cost" }
+        );
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 1, rssGb: 4 }
+            }).task.label
+        ).to.equal("short");
+        expect(coordinator.requestTask("idle").task.label).to.equal("long");
+    });
+
+    it("refuses a busy cost worker while nothing queued fits and counts the hold", function () {
+        const holds: Array<{ workerId: string; seq: number; reason: string }> =
+            [];
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("big"),
+                    cost: { durationMs: 100, cores: 2, rssGb: 1, heavy: false }
+                }
+            ],
+            {
+                schedule: "cost",
+                onBudgetHold: (hold: {
+                    workerId: string;
+                    seq: number;
+                    reason: string;
+                }) => holds.push(hold)
+            }
+        );
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 1, rssGb: 4 }
+            })
+        ).to.equal(null);
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 4, rssGb: 0.5 }
+            })
+        ).to.equal(null);
+        expect(holds).to.deep.equal([
+            { workerId: "busy", seq: 1, reason: "cpu" },
+            { workerId: "busy", seq: 1, reason: "memory" }
+        ]);
+        // A refused worker is busy, not idle.
+        expect(coordinator.workers.get("busy").idle).to.equal(false);
+        expect(
+            coordinator.withBudgetHolds("busy", {
+                holdCounts: { cap: 1, memory: 1, cpu: 2 }
+            }).holdCounts
+        ).to.deep.equal({ cap: 1, memory: 2, cpu: 3 });
+        expect(
+            coordinator.withBudgetHolds("other", { holdCounts: { cap: 1 } })
+        ).to.deep.equal({ holdCounts: { cap: 1 } });
+        expect(coordinator.requestTask("idle").task.label).to.equal("big");
+    });
+
+    it("gives a busy cost worker a speculative copy only when it fits its budget", function () {
+        const make = () =>
+            new TaskCoordinator(
+                [
+                    {
+                        ...task("only"),
+                        cost: {
+                            durationMs: 100,
+                            cores: 2,
+                            rssGb: 1,
+                            heavy: false
+                        }
+                    }
+                ],
+                { schedule: "cost", speculative: true, now: () => 0 }
+            );
+        const tight = make();
+        tight.requestTask("first");
+        expect(
+            tight.requestTask("busy", { costBudget: { cores: 1, rssGb: 4 } })
+        ).to.equal(null);
+        const roomy = make();
+        roomy.requestTask("first");
+        expect(
+            roomy.requestTask("busy", { costBudget: { cores: 3, rssGb: 4 } })
+                .speculative
+        ).to.equal(true);
+    });
+
+    it("holds a starved cost retry back as heavy at the worker's heavy limit", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
+        const light = (label: string) => ({
+            ...task(label),
+            runner: "hardhat",
+            fullTitle: label,
+            args: ["test", "--no-compile", "test/unit/a.test.ts"]
+        });
+        try {
+            const coordinator = new TaskCoordinator(
+                [
+                    {
+                        ...task("gate"),
+                        runner: "browser",
+                        args: ["--script", "test/browser/run-gate.mjs"]
+                    },
+                    light("starves"),
+                    light("plain")
+                ],
+                {
+                    schedule: "cost",
+                    costCache: new CostCache({ projectRoot: root })
+                }
+            );
+            expect(coordinator.requestTask("worker").task.label).to.equal(
+                "gate"
+            );
+            const starved = coordinator.requestTask("worker");
+            expect(starved.task.label).to.equal("starves");
+            expect(
+                coordinator.completeAttempt("worker", {
+                    attemptId: starved.attemptId,
+                    code: 0,
+                    stdout: "",
+                    stderr: "",
+                    reduced: {
+                        oomCount: 0,
+                        starveCount: 1,
+                        timing: logging.parseTimings("")
+                    }
+                }).disposition
+            ).to.equal("retry-starvation");
+            // The gate is still running, so the worker is at its heavy limit.
+            expect(coordinator.requestTask("worker").task.label).to.equal(
+                "plain"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("retains canRun filtering during cost priority retries", function () {

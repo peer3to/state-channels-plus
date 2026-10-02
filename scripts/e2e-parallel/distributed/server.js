@@ -1240,7 +1240,10 @@ async function main(options = {}) {
             await connection.peer.send("WORKER_READY");
         } else if (message.kind === "TASK_REQUEST") {
             await connection.peer.send("TASK_REQUEST", {
-                requestId: message.requestId
+                requestId: message.requestId,
+                ...(message.costBudget === undefined
+                    ? {}
+                    : { costBudget: message.costBudget })
             });
         } else if (message.kind === "ATTEMPT_READY") {
             const logTransferred = shouldTransferAttemptEvidence(

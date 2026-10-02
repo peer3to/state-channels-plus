@@ -227,11 +227,18 @@ orchestrator (or the local runner) stores them per test in
 `.cache/test-costs.json`, and writes `logs/run-N/run-metrics.json` with how busy
 each worker was and why it held tests back.
 
-By default (`--schedule fifo`) the measurements are only recorded. With
+By default (`--schedule fifo`) the measurements are only recorded. On Linux,
+fifo's memory admission now reads running tests' memory from `/proc`, where it
+used to fall back to whole-host memory and a fixed 2 GB per test, so containers
+may admit more tests than before. With
 `--schedule cost` the runner uses them: browser-only and longest tests start
-first, a worker runs at most one heavy test at a time, and a worker admits a test
-while the predicted CPU and memory of everything it runs still fit the machine.
-The `--workers` cap still applies.
+first, a worker prefers to run at most one heavy test at a time but takes another
+heavy test rather than sitting idle when nothing lighter is left, and a busy
+worker is handed only a test whose predicted CPU and memory still fit beside
+everything it runs. The `--workers` cap still applies, and so does
+`--target-load`: machine CPU at or above `min(--target-load, 0.95)` holds new
+tests. Hold counts in `run-metrics.json` include tests a worker was refused
+because they did not fit its budget.
 
 ```shell
 yarn test:parallel --schedule cost --workers 30
@@ -244,7 +251,9 @@ file, or a default for its kind (browser tests count as heavy). To correct a
 test's cost by hand, add it to `scripts/e2e-parallel/test-costs.overrides.json`,
 keyed by `runner|file|full title`, e.g.
 `{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "heavy": true } }`; the fields
-are `durationMs`, `cores`, `rssGb` and `heavy`. The thresholds and defaults are
+are `durationMs`, `cores`, `rssGb` and `heavy`. An invalid entry makes the
+runner ignore the whole file with a warning; check the run's output after editing
+it. The thresholds and defaults are
 placeholders in `scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.
 

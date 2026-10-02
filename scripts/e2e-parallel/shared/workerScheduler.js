@@ -34,11 +34,11 @@ class WorkerScheduler {
         this.requestPending = true;
         let assignment;
         try {
-            // fifo asks before fetching a task; cost asks only to record a cap
-            // hold here, and judges the fetched task's own cost below.
+            // Both modes ask before fetching: fifo with no task, cost with
+            // the buffered one, if any. The probe also samples the machine
+            // for the budget a cost request carries.
             const fifo = this.options.schedule === "fifo";
             if (
-                (fifo || this.running >= this.options.concurrencyCap) &&
                 !(await this.options.canRun(
                     this.running,
                     fifo ? null : this.bufferedAssignment,
@@ -55,6 +55,8 @@ class WorkerScheduler {
                 this.scheduleRetry();
                 return;
             }
+            // The coordinator chose a task that fit the budget sent with the
+            // request; the machine may have changed since.
             if (this.options.schedule === "cost") {
                 if (
                     !(await this.options.canRun(
@@ -134,8 +136,8 @@ class WorkerScheduler {
             this.requestPending ||
             this.bufferedAssignment ||
             this.running === 0 ||
-            (this.options.schedule === "cost" &&
-                this.running >= this.options.concurrencyCap)
+            // A cost worker is handed only what it can start now.
+            this.options.schedule === "cost"
         )
             return;
         this.requestPending = true;

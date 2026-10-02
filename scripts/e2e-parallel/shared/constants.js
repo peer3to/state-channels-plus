@@ -65,11 +65,14 @@ const MEASUREMENT_REASONS = [
     "process-sampling-unavailable",
     "legacy-measurements-unavailable"
 ];
-// Admission statistics a worker reports beside its resource statistics.
+// Admission and process-scan statistics a worker reports beside its resource
+// statistics; concurrencyWallMs is the denominator for processScanMs.
 const CONCURRENCY_STAT_FIELDS = [
     "meanConcurrency",
     "peakConcurrency",
-    "concurrencyWallMs"
+    "concurrencyWallMs",
+    "processScanCount",
+    "processScanMs"
 ];
 const HOLD_REASONS = ["cap", "memory", "cpu"];
 const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";

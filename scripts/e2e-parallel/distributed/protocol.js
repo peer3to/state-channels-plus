@@ -124,7 +124,8 @@ const HEADER_FIELDS = {
     BUNDLE_END: ["byteCount", "sha256"],
     RUN_CONFIG: ["baseEnv", "taskCount", "extensions"],
     RUN_PROGRESS: ["completedTasks", "totalTasks"],
-    TASK_REQUEST: ["requestId"],
+    // costBudget: protocol 15, sent only by a worker under --schedule cost
+    TASK_REQUEST: ["requestId", "costBudget"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],
     NO_TASK_AVAILABLE: ["requestId"],
     LOG_CHUNK: [

@@ -33,7 +33,7 @@ const {
 const { CostCache } = require("../shared/costCache");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
-const { toWireTask } = require("./taskWire");
+const { fromWireCostBudget, toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
 const logging = require("../shared/logging");
 
@@ -282,8 +282,10 @@ function validateWorkerStats(stats) {
                 Object.hasOwn(stats, field) &&
                 (!Number.isFinite(stats[field]) || stats[field] < 0)
         ) ||
-        (Object.hasOwn(stats, "peakConcurrency") &&
-            !Number.isInteger(stats.peakConcurrency)) ||
+        ["peakConcurrency", "processScanCount"].some(
+            (field) =>
+                Object.hasOwn(stats, field) && !Number.isInteger(stats[field])
+        ) ||
         (Object.hasOwn(stats, "holdCounts") &&
             (!stats.holdCounts ||
                 HOLD_REASONS.some(
@@ -959,7 +961,9 @@ async function runDistributed(options) {
         } else if (message.kind === "WORKER_READY") {
             workerStatus(worker, "Ready");
         } else if (message.kind === "TASK_REQUEST") {
-            const assignment = coordinator.requestTask(worker.id);
+            const assignment = coordinator.requestTask(worker.id, {
+                costBudget: fromWireCostBudget(message.header.costBudget)
+            });
             if (!assignment) {
                 await worker.peer.send("NO_TASK_AVAILABLE", {
                     requestId: message.header.requestId
@@ -1319,7 +1323,7 @@ async function runDistributed(options) {
         workers: usedWorkers.map((worker) => ({
             id: worker.id,
             label: worker.label,
-            stats: worker.stats,
+            stats: coordinator.withBudgetHolds(worker.id, worker.stats),
             legacyAdmission:
                 options.schedule !== "cost" || worker.distributedProtocol < 15
         })),

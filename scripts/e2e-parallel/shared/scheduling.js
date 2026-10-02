@@ -30,18 +30,47 @@ function admissionCost(schedule, assignment, activeAssignments) {
     };
 }
 
+/**
+ * Which budget `cost` would overrun if started beside what a cost worker
+ * already runs ("cpu" or "memory"), or null when it fits.
+ */
+function costBudgetShortfall(cost, budget) {
+    if (cost.cores > budget.cores) return "cpu";
+    if (cost.rssGb >= budget.rssGb) return "memory";
+    return null;
+}
+
+/**
+ * The free budget a cost worker sends with a task request, so it is handed
+ * only a task it can start. None while it runs nothing: an idle worker always
+ * takes the next task.
+ */
+function requestCostBudget(schedule, resourceGate, activeAssignments) {
+    if (schedule !== "cost" || activeAssignments.size === 0) return undefined;
+    return resourceGate.costBudget(
+        admissionCost(schedule, null, activeAssignments).runningCost
+    );
+}
+
 function holdReason(options) {
     const { running, concurrencyCap, resourceGate, memBoundGb, targetLoad } =
         options;
     if (running >= concurrencyCap)
         return `cap (running ${running}/${concurrencyCap})`;
     if (options.schedule === "cost") {
-        return `${resourceGate.lastHoldReason ?? "unknown"} (cost budget; owned ${resourceGate.occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB, cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%)`;
+        return `${resourceGate.lastHoldReason ?? "unknown"} (cost budget; owned ${resourceGate.occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB, cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%/${(resourceGate.costCpuValve * 100).toFixed(0)}%)`;
     }
-    if (resourceGate.occupiedGb + resourceGate.avgPerTestGb >= memBoundGb) {
+    // The gate decided and counted the reason; this only formats it.
+    if (resourceGate.lastHoldReason === "memory") {
         return `memory (owned ${resourceGate.occupiedGb.toFixed(1)}+${resourceGate.avgPerTestGb.toFixed(1)}≥${memBoundGb.toFixed(1)}GB)`;
     }
     return `cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
 }
 
-module.exports = { admissionCost, buildSlotEnv, holdReason };
+module.exports = {
+    admissionCost,
+    buildSlotEnv,
+    costBudgetShortfall,
+    holdReason,
+    requestCostBudget
+};

@@ -2,6 +2,7 @@ const { execFile } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const path = require("path");
+const { performance } = require("perf_hooks");
 const { promisify } = require("util");
 const {
     PER_TEST_MEM_GB,
@@ -10,9 +11,12 @@ const {
     COST_CPU_VALVE
 } = require("./constants");
 const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
+const { costBudgetShortfall } = require("./scheduling");
 
 const execFileAsync = promisify(execFile);
 let warnedAboutPs = false;
+// lean: one process-wide scan meter; per-gate meters if a process ever hosts several workers
+const processScans = { count: 0, ms: 0 };
 
 function cpuTimes() {
     return osTimes();
@@ -153,11 +157,14 @@ async function collectProcessTrees(rootPids, options = {}) {
     if (!roots.length) return new Map();
     const platform =
         options.platform ?? (options.execFile ? "ps" : process.platform);
+    const scanStartedAt = performance.now();
     try {
         const processes =
             platform === "linux"
                 ? await readProcProcesses(options)
                 : await readPsProcesses(options);
+        processScans.count++;
+        processScans.ms += performance.now() - scanStartedAt;
         const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
         const rootSet = new Set(roots);
         const trees = new Map(roots.map((root) => [root, []]));
@@ -182,29 +189,6 @@ async function collectProcessTrees(rootPids, options = {}) {
         }
         return null;
     }
-}
-
-async function processTreeUsage(pids, options = {}) {
-    const trees = await collectProcessTrees(pids, options);
-    if (
-        !trees ||
-        [...trees.values()].some((entries) =>
-            entries.some((entry) => entry.cpuSeconds === null)
-        )
-    )
-        return null;
-    return new Map(
-        [...trees].map(([pid, entries]) => [
-            pid,
-            {
-                rssGb: entries.reduce((sum, entry) => sum + entry.rssGb, 0),
-                cpuSeconds: entries.reduce(
-                    (sum, entry) => sum + entry.cpuSeconds,
-                    0
-                )
-            }
-        ])
-    );
 }
 
 async function rssByProcessTree(pids, options = {}) {
@@ -416,21 +400,32 @@ class ResourceGate {
         if (running >= concurrencyCap) return this.hold("cap");
         // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
-            if (
-                runningCost.cores + nextCost.cores >
-                this.cpuCores * COST_CPU_BUDGET
-            )
-                return this.hold("cpu");
-            const projectedRssGb =
-                Math.max(this.occupiedGb, runningCost.rssGb) + nextCost.rssGb;
-            if (projectedRssGb >= this.memBoundGb) return this.hold("memory");
-            if (this.cpuUtil >= COST_CPU_VALVE) return this.hold("cpu");
+            const shortfall = costBudgetShortfall(
+                nextCost,
+                this.costBudget(runningCost)
+            );
+            if (shortfall) return this.hold(shortfall);
+            if (this.cpuUtil >= this.costCpuValve) return this.hold("cpu");
             return true;
         }
         if (this.cpuUtil >= this.targetLoad) return this.hold("cpu");
         if (this.occupiedGb + this.avgPerTestGb >= this.memBoundGb)
             return this.hold("memory");
         return true;
+    }
+
+    // The host's --target-load stays a hard ceiling under cost.
+    get costCpuValve() {
+        return Math.min(this.targetLoad, COST_CPU_VALVE);
+    }
+
+    /** What a cost worker can still start beside `runningCost`. */
+    costBudget(runningCost) {
+        return {
+            cores: this.cpuCores * COST_CPU_BUDGET - runningCost.cores,
+            rssGb:
+                this.memBoundGb - Math.max(this.occupiedGb, runningCost.rssGb)
+        };
     }
 
     hold(reason) {
@@ -483,17 +478,25 @@ function average(values) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+/** Time this process spent scanning the process table, and how often. */
+function processScanStats() {
+    return {
+        processScanCount: processScans.count,
+        processScanMs: processScans.ms
+    };
+}
+
 function resetResourceGateWarnings() {
     warnedAboutPs = false;
 }
 
 module.exports = {
     cpuTimes,
+    processScanStats,
     resetResourceGateWarnings,
     ResourceGate,
     rssByPid,
     rssByProcessTree,
-    processTreeUsage,
     TaskProcessSampler,
     rssGbForPids,
     systemOccupiedGb

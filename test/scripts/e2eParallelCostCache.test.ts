@@ -503,6 +503,124 @@ describe("task cost cache", function () {
         }
     });
 
+    it("does not average a starvation-only placeholder into the first sample", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-placeholder-")
+        );
+        const starved = {
+            ...metadata,
+            starveCount: 1,
+            disposition: "retry-starvation"
+        };
+        try {
+            let cache = new CostCache({ projectRoot: root });
+            cache.record(example, { code: 1 }, starved);
+            cache.commit();
+            for (let run = 0; run < 3; run++) {
+                cache = new CostCache({ projectRoot: root });
+                cache.record(example, { ...sample, peakElMs: 600 }, metadata);
+                cache.commit();
+                if (run === 0)
+                    expect(
+                        JSON.parse(
+                            fs.readFileSync(
+                                path.join(root, ".cache/test-costs.json"),
+                                "utf8"
+                            )
+                        ).tasks[cache.key(example)]
+                    ).to.include({ peakElMs: 600, durationMs: 100 });
+            }
+            // The starved run has left the window; the delay alone is heavy.
+            expect(cache.resolve(example).heavy).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("caps the stored starvation history", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starve-cap-"));
+        try {
+            let cache = new CostCache({ projectRoot: root });
+            for (let run = 0; run < 5; run++) {
+                cache = new CostCache({ projectRoot: root });
+                cache.record(
+                    example,
+                    { code: 1 },
+                    {
+                        ...metadata,
+                        starveCount: 1,
+                        disposition: "retry-starvation",
+                        at: `2026-10-0${run + 1}T00:00:00.000Z`
+                    }
+                );
+                cache.commit();
+            }
+            const stored = JSON.parse(
+                fs.readFileSync(
+                    path.join(root, ".cache/test-costs.json"),
+                    "utf8"
+                )
+            ).tasks[cache.key(example)];
+            expect(
+                stored.starvations.map((event: { at: string }) => event.at)
+            ).to.deep.equal([
+                "2026-10-03T00:00:00.000Z",
+                "2026-10-04T00:00:00.000Z",
+                "2026-10-05T00:00:00.000Z"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps another run's commit made after this run started", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-two-runs-"));
+        const other = { ...example, label: "other", fullTitle: "other" };
+        try {
+            const first = new CostCache({ projectRoot: root });
+            const second = new CostCache({ projectRoot: root });
+            first.record(example, sample, metadata);
+            second.record(other, sample, metadata);
+            first.commit();
+            second.commit();
+            const tasks = JSON.parse(
+                fs.readFileSync(
+                    path.join(root, ".cache/test-costs.json"),
+                    "utf8"
+                )
+            ).tasks;
+            expect(tasks).to.have.keys(first.key(example), first.key(other));
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses to replace a cache it could not read", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-unreadable-"));
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = (...values: unknown[]) =>
+            warnings.push(values.join(" "));
+        try {
+            // A directory fails the read with EISDIR, also when run as root.
+            const cachePath = path.join(root, "unreadable");
+            fs.mkdirSync(cachePath);
+            const cache = new CostCache({ projectRoot: root, cachePath });
+            expect(cache.resolve(example)).to.deep.equal(coldCost(example));
+            cache.record(example, sample, metadata);
+            expect(() => cache.commit()).not.to.throw();
+            expect(fs.statSync(cachePath).isDirectory()).to.equal(true);
+            expect(
+                warnings.some((line) =>
+                    line.includes("Not committing cost cache")
+                )
+            ).to.equal(true);
+        } finally {
+            console.warn = originalWarn;
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("ignores malformed overrides and cache dimensions", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-invalid-"));
         const other = { ...example, label: "other", fullTitle: "other" };

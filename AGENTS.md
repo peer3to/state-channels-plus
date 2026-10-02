@@ -70,7 +70,7 @@ tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
 
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
-run only on a protocol 14 worker host whose runner image was built with
+run only on a protocol 14 or newer worker host whose runner image was built with
 `yarn test:parallel:image`. When no such host connects within the discovery
 window, the run skips them with a warning that lists them instead of failing,
 so a green run is not complete until that warning has been checked. A Mocha
