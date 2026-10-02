@@ -170,3 +170,70 @@ export async function assertGenuinePredecessorProofsKeepHonestSigners(
     const { author, fraudProof } = await invalidTransitionProof(h, 1, false);
     await assertParticipantSubmitterSlashed(h, author, fraudProof);
 }
+
+/** Heights of stored blocks that consume an inbound block, and that emit an outbound block. */
+async function messageBlockHeights(h: MathPeerTestHarness) {
+    const forkId = h.activeForkId!;
+    const query = h.control(h.getPeer(0)).query;
+    const latest = await query.getLatestBlockBundle(forkId).request();
+    const inbound: number[] = [];
+    const outbound: number[] = [];
+    let previousOutboundHeight = -1n;
+    for (let height = 0; height <= latest!.height; height++) {
+        const bundle = await query.getBlockByHeight(forkId, height).request();
+        const block = Codec.decode(
+            Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
+                .encodedBlock as string,
+            Type.Block
+        );
+        if (block.messageBlocks.length > 0) inbound.push(height);
+        const stored = await query
+            .getStateSnapshotStructByHash(bundle!.stateSnapshotHash as Hash)
+            .request();
+        const outboundHeight = BigInt(
+            Codec.decode(stored!.encodedSnapshot, Type.StateSnapshot)
+                .snapshotData.latestOutboundMessageBlockHeight
+        );
+        if (
+            previousOutboundHeight >= 0n &&
+            outboundHeight > previousOutboundHeight
+        )
+            outbound.push(height);
+        previousOutboundHeight = outboundHeight;
+    }
+    return { inbound, outbound };
+}
+
+/**
+ * Genuine predecessor proofs against client-built blocks that carry messages:
+ * one consuming a real top-up deposit, one emitting a leave's exit message.
+ * The inbound block's author stays slashable, so an outsider's proof must slash
+ * nobody. The leaver is no longer slashable, so a participant submits the
+ * exit-block proof and only that submitter may be slashed.
+ */
+export async function assertGenuinePredecessorProofsOverMessageBlocksKeepSigners(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await startChannelWithTwoBlocks(h);
+    await h.join.forceInboundJoinWait({ participant: h.getPeer(0).address });
+    await h.transition.advanceState({ count: 3 });
+    const leaverIndex = await h.transition.participantLeaveStateTransition();
+    const { inbound, outbound } = await messageBlockHeights(h);
+    expect(inbound, "a block consumed the deposit").to.not.be.empty;
+    expect(outbound, "a block emitted the exit").to.not.be.empty;
+
+    const outsider = await outsiderManager(h);
+    for (const height of inbound) {
+        const { fraudProof } = await invalidTransitionProof(h, height, false);
+        await applyFraudProof(h, outsider, fraudProof);
+    }
+    await h.assert.dispute.slashedOnChainExactly([]);
+
+    const { author, fraudProof } = await invalidTransitionProof(
+        h,
+        outbound[0],
+        false
+    );
+    expect(author).to.equal(h.getPeer(leaverIndex).address);
+    await assertParticipantSubmitterSlashed(h, author, fraudProof);
+}
