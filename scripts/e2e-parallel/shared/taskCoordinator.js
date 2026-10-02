@@ -182,7 +182,7 @@ class TaskCoordinator {
         else this.workers.set(workerId, { idle: false, canRun });
     }
 
-    // lean: no capacity held for a large queued task; reserve room for it if run-metrics assignedAtMs shows the largest tests assigned last
+    // lean: no capacity held for a large queued task; if run-metrics assignedAtMs shows the largest tests (starved retries included) assigned last, age the refused head: past its predicted duration, stop backfilling busy workers until one fits it
     /**
      * Under cost, a worker that runs something sends its free `costBudget`
      * and is handed only a task that fits it, or nothing while none queued
