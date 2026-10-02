@@ -8,22 +8,23 @@ describe("E2E: dispute validation / zero-target dispute fraud proof", function (
     it("outsider zero-target proof against an honest committed dispute -> no kill, no slash", async function () {
         const h = TestSession.getHarness();
         const outsider = randomWallet();
-        const slashed = await submitZeroTargetProof(h, 1, async () => {
-            await (
-                await h.getPeer(3).p2pInstance.chainSigner.sendTransaction({
-                    to: outsider.address,
-                    value: ethers.parseEther("1")
-                })
-            ).wait();
-            return outsider.connect(h.channelManager.runner!.provider!);
-        });
+        const { slashedBefore, slashed } = await submitZeroTargetProof(
+            h,
+            1,
+            async () => {
+                await (
+                    await h.getPeer(3).p2pInstance.chainSigner.sendTransaction({
+                        to: outsider.address,
+                        value: ethers.parseEther("1")
+                    })
+                ).wait();
+                return outsider.connect(h.channelManager.runner!.provider!);
+            }
+        );
 
-        expect(
-            slashed.some(
-                (a) => a.toLowerCase() === outsider.address.toLowerCase()
-            ),
-            "outsider is not a participant and has nothing to slash"
-        ).to.equal(false);
+        expect(slashed, "outsider proof changes no slash").to.deep.equal(
+            slashedBefore
+        );
     });
 
     it("participant zero-target proof against an honest committed dispute -> submitter slashed, disputer survives", async function () {

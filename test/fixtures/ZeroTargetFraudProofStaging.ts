@@ -1,9 +1,7 @@
 // @spec-test-coverage-ignore: zero-target dispute fraud proof staging shared by mapped e2e tests
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Codec, Type, hash } from "@/utils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 import { ethers, Signer } from "ethers";
@@ -26,36 +24,44 @@ export async function submitZeroTargetProof(
     });
     const dispute = h.getPeer(honestDisputerIndex).eventSpies
         .onInitiatingDispute!.lastCall.args[1] as DisputeStruct;
+    const commitment = hash(Codec.encode(dispute, Type.Dispute));
+    // the proof must reach the guard -> the dispute is committed before it lands
+    expect(
+        await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        )
+    ).to.include(commitment);
+    const slashedBefore = await h.channelManager.getOnChainSlashedParticipants(
+        h.channelId
+    );
 
     // the honest dispute has no header mismatch -> the handler returns zero
-    const proof = {
-        proofType: toSolidityDisputeFraudProofType(
-            DisputeFraudProofType.DisputeStateProofHeaderMismatch
-        ),
-        participant: ethers.ZeroAddress,
-        dispute,
-        encodedProof: "0x"
-    };
-    const submitter = await resolveSubmitter();
-    const receipt = await (
-        await h.channelManager
-            .connect(submitter)
-            .applyDisputeFraudProofs([proof])
-    ).wait();
+    const receipt = await h.tamper.submitForgedFraudProof(
+        honestDisputerIndex,
+        DisputeFraudProofType.DisputeStateProofHeaderMismatch,
+        () => ({ __: false }),
+        { participant: ethers.ZeroAddress, submitter: await resolveSubmitter() }
+    );
 
-    const killed = receipt!.logs
+    const killed = receipt.logs
         .map((log) => h.channelManager.interface.parseLog(log))
         .filter((event) => event?.name === "DisputeKilled");
     expect(killed, "zero-target proof must not kill a dispute").to.have.length(
         0
     );
+    expect(
+        await h.channelManager.getWindowCommitments(
+            h.channelId,
+            dispute.input.forkId
+        ),
+        "dispute stays committed"
+    ).to.include(commitment);
     const slashed = await h.channelManager.getOnChainSlashedParticipants(
         h.channelId
     );
-    const disputerAddress = h.getPeer(honestDisputerIndex).address;
-    expect(
-        slashed.some((a) => a.toLowerCase() === disputerAddress.toLowerCase()),
-        "honest disputer must not be slashed"
-    ).to.equal(false);
-    return slashed;
+    expect(slashed, "honest disputer must not be slashed").to.not.include(
+        h.getPeer(honestDisputerIndex).address
+    );
+    return { slashedBefore, slashed };
 }

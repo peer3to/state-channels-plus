@@ -6,7 +6,7 @@
 
 ## Result and handoff
 
-**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately. One confirmed finding, `zero-verdict`, has since been fixed.
 
 The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
 
@@ -24,7 +24,7 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | Original rule       | Current result | Original severity | Queue rank | Finding / tracking                                                                                                                                                |
 | ------------------- | -------------- | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `milestone-skip`    | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
-| `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
+| `zero-verdict`      | fixed          | high              | —          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
 | `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
@@ -63,28 +63,28 @@ Source identity: `csf_8a972993ab889a6f4a696895`; rule `milestone-skip`; occurren
 
 ## 2. A zero proof target lets outsiders kill honest disputes
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 1 · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e).
+**Verdict:** `confirmed`, since fixed · **Confidence:** high · **Original severity:** high · **confirmed rank:** 1 (before the fix) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e).
 
 Source identity: `csf_623195021241d901f52c336c`; rule `zero-verdict`; occurrence `occ_0fa37f9753be82684d5eaa47`.
 
-**Current evidence and path.** The zero-sentinel equality is unchanged. Any chain caller can submit a committed honest dispute during its kill period, choose a proof handler that returns zero for invalid evidence, and declare participant zero. The success branch delegates to killDispute, which slashes the real disputer and removes its commitment.
+**Evidence and path (at `9dc243769`).** The zero-sentinel equality was unchanged. Any chain caller can submit a committed honest dispute during its kill period, choose a proof handler that returns zero for invalid evidence, and declare participant zero. The success branch delegates to killDispute, which slashes the real disputer and removes its commitment.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–35](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L35); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:118–128](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L118-L128); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–37](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L37); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:119–126](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L119-L126); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
 
 **Boundary:** any chain account, with no credential, through the routed `applyDisputeFraudProofs` entrypoint. The caller needs only the public contents of a committed dispute. Ranking class: unauthenticated on-chain path.
 
-**Counterevidence and limits.** The commitment and kill-period checks constrain the window. The ordinary fraud dispatcher rejects zero, but the dispute dispatcher does not.
+**Counterevidence and limits.** The commitment and kill-period checks constrain the window. The ordinary fraud dispatcher rejected zero, but the dispute dispatcher did not.
 
 **Proof gaps.** Static only; preserve committed-dispute and active kill-period prerequisites.
 
-**Fix handoff (proposed, not implemented):** Reject zero targets and require a nonzero verdict that matches both the proof target and the dispute's disputer before killing. Preserve the preconditions and limits above. Required regression work:
+**Fix handoff (implemented 2026-10-02):** Reject zero targets before killing. The proposed extra comparison with the dispute's disputer is not applied: every handler returns the disputer or zero, and `killDispute` slashes the disputer whatever the verdict. Preserve the preconditions and limits above. Required regression work:
 
 - Submit every invalid dispute proof type with zero target and verify no honest commitment or slash state changes.
 - Retain positive tests for valid nonzero fraud verdicts.
 
 Regression permutation: [`REQ-DIS-3-C4KYSF.T1.P22`](../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p22), mapped to its exact test by the fix change.
 
-**Fix status (2026-10-02):** resolved. `applyDisputeFraudProofs` rejects the zero verdict as a kill target. See [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e).
+**Fix status (2026-10-02):** resolved. `applyDisputeFraudProofs` kills only on a nonzero verdict equal to the declared participant ([DisputeFraudProofFacet.sol:28–29](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L28-L29)). See [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e).
 
 **Specification / implementation owners:** [fraud-slashing requirements and planned tests](../specification/enforcement/fraud-slashing.md); [DisputeFraudProofFacet source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md). The relevant obligation is that only proven misconduct can slash an honest participant; no new protocol meaning is selected here.
 
