@@ -874,38 +874,57 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         MathState memory resultingState = previousState;
         resultingState.number = 1;
         resultingState.currentTurnIndex = 1;
-        StateSnapshot memory resultingSnapshot;
+        // the snapshot the replay builds for a correct-turn first block
+        StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(previousSnapshot), (StateSnapshot));
         resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
-        resultingSnapshot.snapshotData.participants = participants;
-        resultingSnapshot.snapshotData.originForkId = FORK_ID;
-        resultingSnapshot.blockHeight = 1;
+        resultingSnapshot.blockHeight = 0;
         resultingSnapshot.timestamp = 1;
+        bytes32 resultingSnapshotHash = keccak256(abi.encode(resultingSnapshot));
 
-        Block memory wrongTurnBlock;
-        wrongTurnBlock.transaction.header.channelId = CHANNEL_ID;
-        wrongTurnBlock.transaction.header.participant = participants[1];
-        wrongTurnBlock.transaction.header.forkId = FORK_ID;
-        wrongTurnBlock.transaction.header.timestamp = 1;
-        wrongTurnBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
-        wrongTurnBlock.previousBlockHash = keccak256(abi.encode(previousSnapshot));
-        wrongTurnBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
-        bytes memory encodedBlock = abi.encode(wrongTurnBlock);
+        // control: the turn holder's block with this snapshot is honest -> nobody slashed
+        diamond.applyFraudProofs(
+            _addOneProof(1, previousSnapshot, encodedPreviousState, resultingSnapshotHash),
+            FraudProofVerificationContext({channelId: CHANNEL_ID})
+        );
+        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[0]), "turn holder kept standing");
+
+        // the same snapshot signed out of turn -> only the turn guard can slash
+        diamond.applyFraudProofs(
+            _addOneProof(2, previousSnapshot, encodedPreviousState, resultingSnapshotHash),
+            FraudProofVerificationContext({channelId: CHANNEL_ID})
+        );
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]));
+    }
+
+    /// invalid-transition proof over an `add(1)` first block by `authorPk` committing to `resultingSnapshotHash`
+    function _addOneProof(
+        uint256 authorPk,
+        StateSnapshot memory previousSnapshot,
+        bytes memory encodedPreviousState,
+        bytes32 resultingSnapshotHash
+    ) internal pure returns (FraudProof[] memory proofs) {
+        Block memory addBlock;
+        addBlock.transaction.header.channelId = CHANNEL_ID;
+        addBlock.transaction.header.participant = vm.addr(authorPk);
+        addBlock.transaction.header.forkId = FORK_ID;
+        addBlock.transaction.header.timestamp = 1;
+        addBlock.transaction.body.data = abi.encodeCall(MathStateMachine.add, (1));
+        addBlock.previousBlockHash = keccak256(abi.encode(previousSnapshot));
+        addBlock.stateSnapshotHash = resultingSnapshotHash;
+        bytes memory encodedBlock = abi.encode(addBlock);
 
         BlockInvalidStateTransitionProof memory invalidTransition = BlockInvalidStateTransitionProof({
-            invalidBlock: SignedBlock({encodedBlock: encodedBlock, signature: _sign(2, encodedBlock)}),
+            invalidBlock: SignedBlock({encodedBlock: encodedBlock, signature: _sign(authorPk, encodedBlock)}),
             previousBlock: SignedBlock({encodedBlock: "", signature: ""}),
             previousBlockStateSnapshot: previousSnapshot,
             previousStateStateMachineState: encodedPreviousState
         });
-        FraudProof[] memory proofs = new FraudProof[](1);
+        proofs = new FraudProof[](1);
         proofs[0] = FraudProof({
             proofType: FraudProofType.BlockInvalidStateTransition,
             encodedProof: abi.encode(invalidTransition),
-            participant: participants[1]
+            participant: vm.addr(authorPk)
         });
-
-        diamond.applyFraudProofs(proofs, FraudProofVerificationContext({channelId: CHANNEL_ID}));
-        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]));
     }
 
     function _twoBlockStateProof() internal pure returns (StateProof memory stateProof) {

@@ -195,9 +195,9 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         resultingState.currentTurnIndex = 1;
         // Deep copy: a memory struct assignment would alias the previous snapshot's data.
         StateSnapshot memory resultingSnapshot = abi.decode(abi.encode(previousSnapshot), (StateSnapshot));
-        resultingSnapshot.blockHeight = previousSnapshot.blockHeight + 1;
+        // a first block keeps the genesis snapshot height
+        resultingSnapshot.blockHeight = 0;
         resultingSnapshot.timestamp = 1;
-        resultingSnapshot.snapshotData.originForkId = FORK_ID;
         resultingSnapshot.snapshotData.stateMachineStateHash = keccak256(abi.encode(resultingState));
 
         Block memory blk;

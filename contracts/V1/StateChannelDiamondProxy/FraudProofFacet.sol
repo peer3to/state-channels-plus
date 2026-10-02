@@ -126,7 +126,6 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return _valid(signer);
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousStateSnapshot))) return _invalid();
             if (previousStateSnapshot.snapshotData.stateMachineStateHash != keccak256(previousStateStateMachineState)) {
@@ -146,6 +145,9 @@ contract FraudProofFacet is StateChannelCommon {
                 return _invalid();
             }
         }
+
+        // fork verdict only after the snapshot is bound to the signed block -> unlinked evidence never slashes
+        if (previousStateSnapshot.forkId != fraudBlock.transaction.header.forkId) return _valid(signer);
 
         (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
             .executeStateTransition(
@@ -191,12 +193,12 @@ contract FraudProofFacet is StateChannelCommon {
 
         newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
         newSnapshotData.participants = _getStateMachineParticipants(encodedModifiedState);
-        newSnapshotData.originForkId = previousStateSnapshot.forkId;
 
         StateSnapshot memory newStateSnapshot = StateSnapshot({
             snapshotData: newSnapshotData,
             forkId: previousStateSnapshot.forkId,
-            blockHeight: previousStateSnapshot.blockHeight + 1,
+            // a first block's snapshot keeps the genesis height 0, as clients build it
+            blockHeight: fraudBlock.transaction.header.transactionCnt == 0 ? 0 : previousStateSnapshot.blockHeight + 1,
             timestamp: fraudBlock.transaction.header.timestamp
         });
         if (fraudBlock.stateSnapshotHash == keccak256(abi.encode(newStateSnapshot))) {

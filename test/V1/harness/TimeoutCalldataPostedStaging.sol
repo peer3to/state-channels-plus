@@ -90,7 +90,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         postedBlock.transaction.header.timestamp = block.timestamp;
         postedBlock.transaction.body.data = transitionData;
         postedBlock.previousBlockHash = base.previousBlockHash;
-        postedBlock.stateSnapshotHash = _fundedReplaySnapshotHash(diamond, channelId, base, postedBlock.transaction);
+        (StateSnapshot memory replayedSnapshot,) = _fundedReplay(diamond, channelId, base, postedBlock.transaction);
+        postedBlock.stateSnapshotHash = keccak256(abi.encode(replayedSnapshot));
 
         dispute = _uploadTimeoutDispute(
             diamond, channelId, base.latestStateSnapshot.forkId, stateProof, vm.addr(timedOutPk), disputerPk
@@ -141,7 +142,7 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         StateProof memory stateProof,
         address timedOut,
         uint256 disputerPk
-    ) private returns (Dispute memory dispute) {
+    ) internal returns (Dispute memory dispute) {
         ChannelBalance memory inboundHead = diamond.getChannelBalance(channelId);
         dispute.input.channelId = channelId;
         dispute.input.forkId = forkId;
@@ -160,18 +161,19 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         diamond.uploadDispute(confirmation);
     }
 
-    /// The snapshot hash the proof recomputes after a fully funded replay of `transaction` on
-    /// `base`'s state. The replay runs as the diamond itself (its `onlySelf` entry point),
-    /// and every change it makes is rolled back.
-    function _fundedReplaySnapshotHash(
+    /// The snapshot the proof recomputes after a fully funded replay of `transaction` on
+    /// `base`'s state, and that state. The replay runs as the diamond itself (its `onlySelf`
+    /// entry point), and every change it makes is rolled back.
+    function _fundedReplay(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
         PostedBlockBase memory base,
         Transaction memory transaction
-    ) private returns (bytes32) {
+    ) internal returns (StateSnapshot memory next, bytes memory encodedModifiedState) {
         uint256 snapshot = vm.snapshotState();
         vm.prank(address(diamond));
-        (, bytes memory encodedModifiedState, Message[] memory outboundMessages) =
+        Message[] memory outboundMessages;
+        (, encodedModifiedState, outboundMessages) =
             diamond.executeStateTransition(channelId, base.encodedLatestState, transaction);
         assertEq(outboundMessages.length, 0, "the staged transition emits no outbound messages");
         stateMachine.setState(encodedModifiedState);
@@ -179,11 +181,10 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         vm.revertToState(snapshot);
 
         // Deep copy: a memory struct assignment would alias the base snapshot.
-        StateSnapshot memory next = abi.decode(abi.encode(base.latestStateSnapshot), (StateSnapshot));
+        next = abi.decode(abi.encode(base.latestStateSnapshot), (StateSnapshot));
         next.snapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
         next.snapshotData.participants = participants;
         next.blockHeight = base.latestStateSnapshot.blockHeight + 1;
         next.timestamp = transaction.header.timestamp;
-        return keccak256(abi.encode(next));
     }
 }
