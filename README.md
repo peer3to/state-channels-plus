@@ -219,6 +219,35 @@ redialing until the job times out; when some were instead quarantined before
 running a task (for example after repeated workspace preparation errors), it
 fails with `All distributed workers were quarantined before running a task`.
 
+### Cost-aware scheduling
+
+Both runners measure every test while it runs: peak memory of its process tree,
+average CPU cores, duration and peak event-loop delay. At the end of a run the
+orchestrator (or the local runner) stores them per test in
+`.cache/test-costs.json`, and writes `logs/run-N/run-metrics.json` with how busy
+each worker was and why it held tests back.
+
+By default (`--schedule fifo`) the measurements are only recorded. With
+`--schedule cost` the runner uses them: browser-only and longest tests start
+first, a worker runs at most one heavy test at a time, and a worker admits a test
+while the predicted CPU and memory of everything it runs still fit the machine.
+The `--workers` cap still applies.
+
+```shell
+yarn test:parallel --schedule cost --workers 30
+yarn test:parallel:distributed --schedule cost
+yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
+```
+
+A test without a measurement takes the average of finished tests from the same
+file, or a default for its kind (browser tests count as heavy). To correct a
+test's cost by hand, add it to `scripts/e2e-parallel/test-costs.overrides.json`,
+keyed by `runner|file|full title`, e.g.
+`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "heavy": true } }`; the fields
+are `durationMs`, `cores`, `rssGb` and `heavy`. The thresholds and defaults are
+placeholders in `scripts/e2e-parallel/shared/constants.js`, to be tuned from
+`run-metrics.json`. Workers on protocol 13/14 keep the old admission.
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a
