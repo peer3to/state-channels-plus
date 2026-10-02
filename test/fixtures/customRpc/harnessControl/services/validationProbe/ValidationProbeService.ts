@@ -17,6 +17,7 @@ import { Codec, Mutex, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import * as factory from "@test/factory";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, id } from "ethers";
 
 export type ConcurrentCalldataRecoveryProbe = {
@@ -168,6 +169,8 @@ type RecordedValidationRun = {
         calldataRecoveryQueries: number;
         subjectiveWarningCount: number;
         lastHookResult: BlockValidationResult | undefined;
+        // fraud proofs this run stored, deduplicated re-stores included
+        storedFraudProofs: FraudProofStruct[];
     };
     restore: () => void;
 };
@@ -1064,7 +1067,16 @@ export class ValidationProbeService extends ANetworkRpcService<
             abortCalled: false,
             calldataRecoveryQueries: 0,
             subjectiveWarningCount: 0,
-            lastHookResult: undefined
+            lastHookResult: undefined,
+            storedFraudProofs: []
+        };
+
+        const fraudProofs = sm.storage.fraudProofs;
+        const originalStoreFraudProof =
+            fraudProofs.storeFraudProof.bind(fraudProofs);
+        fraudProofs.storeFraudProof = (fraudProof) => {
+            recorded.storedFraudProofs.push(fraudProof);
+            return originalStoreFraudProof(fraudProof);
         };
 
         const logStore = sm.logger["logStore"];
@@ -1157,6 +1169,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             recorded,
             restore: () => {
                 logStore.store = originalStoreLog;
+                fraudProofs.storeFraudProof = originalStoreFraudProof;
                 if (disputeManager && originalDispute) {
                     disputeManager.dispute = originalDispute;
                 }
@@ -1174,10 +1187,10 @@ export class ValidationProbeService extends ANetworkRpcService<
         run: RecordedValidationRun,
         result: BlockValidationResult
     ): BlockValidationProbe {
-        const [fraudProof] =
-            this.sm.storage.fraudProofs.getFraudProofsForParticipant(
-                run.block.signerAddress
-            );
+        // only a proof this run stored counts, not one already held for the signer
+        const fraudProof = run.recorded.storedFraudProofs
+            .filter((proof) => proof.participant === run.block.signerAddress)
+            .at(-1);
         return {
             result,
             resultName: BlockValidationResult[result] ?? `UNKNOWN(${result})`,

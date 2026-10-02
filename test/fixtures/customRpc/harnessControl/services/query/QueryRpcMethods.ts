@@ -741,12 +741,11 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
 
     // ===== Storage assertion reads (test harness) =====
 
-    /** Solidity proof-type (as string) of the fraud proof stored against a peer. */
+    /** Solidity proof-type (as string) of the latest fraud proof stored against a peer. */
     public getFraudProofType(participantAddress: Address): string | null {
-        const [fp] =
-            this.service.storage.fraudProofs.getFraudProofsForParticipant(
-                String(participantAddress)
-            );
+        const fp = this.service.storage.fraudProofs
+            .getFraudProofsForParticipant(String(participantAddress))
+            .at(-1);
         return fp ? String(fp.proofType) : null;
     }
 
