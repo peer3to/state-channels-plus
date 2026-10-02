@@ -622,6 +622,42 @@ describe("distributed worker scheduler", function () {
         expect(resources.stats().cpuSampleCount).to.equal(2);
     });
 
+    it("lets another task's finish wait out an unknown-cost start's tick", async function () {
+        const retryMs = 300;
+        const startedAt = new Map<string, number>();
+        const forever = new Promise<void>(() => {});
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "known", task: cost(true) },
+            { id: "unknown", task: cost(false) },
+            { id: "next", task: cost(false) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "known") return forever;
+                // Finishes while "unknown" is still settling.
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            expect(
+                startedAt.get("next")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
     it("gives a cost task started by a finish a full tick before the next start", async function () {
         const retryMs = 300;
         const startedAt = new Map<string, number>();

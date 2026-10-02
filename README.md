@@ -237,7 +237,8 @@ start first, and a busy worker is handed only a test whose predicted CPU and
 memory still fit beside everything it runs. After starting a test whose cores
 and memory are measured or overridden, and after any test finishes, a worker
 requests its next test at once instead of waiting for the scheduler tick; after
-starting an unknown-cost test it waits a tick so that test's usage shows first.
+starting an unknown-cost test it waits a full tick, even if another test
+finishes meanwhile, so that test's usage shows first.
 The `--workers` cap still applies, and so does `--target-load`: machine CPU at
 or above `min(--target-load, 0.95)` holds new tests. Hold counts in
 `run-metrics.json` include tests a worker was refused because they did not fit
@@ -255,7 +256,7 @@ Each of a test's duration, cores and memory comes from, first match wins: an
 override, this run's measurement, this checkout's cache, the committed snapshot
 `scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
 from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
-cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled is not); an attempt that starved is stored
+cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled only when it fails the test; a redundant copy never); an attempt that starved is stored
 with 50% more cores and memory, so the next run admits it as more expensive,
 and a clean retry in the same run replaces that sample.
 

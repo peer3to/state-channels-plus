@@ -209,7 +209,7 @@ async function rssByProcessTree(pids, options = {}) {
     );
 }
 
-// lean: per-task process-table scan; batch snapshots if sampler overhead dominates
+// lean: per-task process-table scan; batch snapshots if processScanMs exceeds about a quarter of concurrencyWallMs on Linux hosts
 class TaskProcessSampler {
     constructor(rootPid, options = {}) {
         this.rootPid = rootPid;

@@ -132,7 +132,8 @@ function executed(attempt, metadata) {
 // Every attempt whose result the run keeps is a sample, starved ones
 // included; the run keeps its last one, so a clean retry replaces the
 // inflated sample of the attempt that starved. A speculative copy that
-// finishes after its task settled never reaches the cache.
+// finishes after its task settled counts only when it fails the task (a
+// late failure); a redundant copy never reaches the cache.
 function isCostSample(attempt, metadata) {
     return executed(attempt, metadata) && numeric(attempt.durationMs);
 }
