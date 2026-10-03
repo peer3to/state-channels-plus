@@ -29,15 +29,15 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
 | `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
-| `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
+| `sync-genesis-time` | fixed          | high              | —          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
 - **Unauthenticated on-chain paths (ranks 1–3):** any chain account can use them.
-- **Peer-assisted signing paths (ranks 4–5):** the attacker must be the sync responder that the victim selected.
+- **Peer-assisted signing paths (rank 5; rank 4 is fixed):** the attacker must be the sync responder that the victim selected.
 - **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
 
-The fixed item has no rank. All 7 protocol inputs are retained here, including the fixed claim.
+Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
 <a id="milestone-skip"></a>
 
@@ -49,7 +49,7 @@ Source identity: `csf_8a972993ab889a6f4a696895`; rule `milestone-skip`; occurren
 
 **Current evidence and path.** The exact all-skipped replacement is fixed. StateProofFacet now requires the final claimed snapshot to equal the trusted threshold. updateStateSnapshotSameFork separately requires a newer snapshot, so the old bypass cannot satisfy both checks. Empty proofs cannot bypass the nonempty-snapshot and matching-length checks.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol:404–411](../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L404-L411); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:54–75](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L75); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–192](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L192); [test/unit/SpectateService.test.ts:636–697](../../../test/unit/SpectateService.test.ts#L636-L697).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol:404–411](../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L404-L411); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:54–75](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L75); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–192](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L192); [test/unit/SpectateService.test.ts:637–698](../../../test/unit/SpectateService.test.ts#L637-L698).
 
 **Boundary:** any chain account, with no credential, through the routed `updateStateSnapshotSameFork` entrypoint. Ranking class: unauthenticated on-chain path; it has no rank because the path is fixed.
 
@@ -177,9 +177,9 @@ Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence
 
 **Current evidence and path.** The new linked-window check excludes unrelated windows and does not persist the already-adopted prefix. It still skips reduction-input validation for a chain-final window that starts at the current chain fork and has not yet been adopted. persistSyncPayload stores that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor can become the local inbound tip and be signed during block production.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:241–329](../../../src/rpc/network/services/spectate/SpectateService.ts#L241-L329); [src/rpc/network/services/spectate/SpectateService.ts:488–501](../../../src/rpc/network/services/spectate/SpectateService.ts#L488-L501); [src/rpc/network/services/spectate/SpectateService.ts:967–978](../../../src/rpc/network/services/spectate/SpectateService.ts#L967-L978); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
+**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:260–348](../../../src/rpc/network/services/spectate/SpectateService.ts#L260-L348); [src/rpc/network/services/spectate/SpectateService.ts:533–546](../../../src/rpc/network/services/spectate/SpectateService.ts#L533-L546); [src/rpc/network/services/spectate/SpectateService.ts:1012–1023](../../../src/rpc/network/services/spectate/SpectateService.ts#L1012-L1023); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
+**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint was crossed; the victim's node accepted and persisted the payload. Ranking class: peer-assisted signing path; it has no rank because the path is fixed.
 
 **Counterevidence and limits.** Already-adopted prefix windows are now omitted. Nonfinal windows execute reduction. The surviving attack needs a finalized-but-unadopted window, a lagging signing participant, and a fabricated successor that passes chain-shape/balance checks.
 
@@ -198,25 +198,27 @@ Planned permutation, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P11`](../sp
 
 ## 7. Peer sync can replace genesis time and induce a slashable first block
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 4 · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
+
+**Fix status:** resolved.
 
 Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occurrence `occ_0c51cce0dbb06ddacb658c01`.
 
-**Current evidence and path.** The new isSameForkRegression check does not close the timestamp-only case. UtilityFacet.isSnapshotNewer returns true for two different height-zero snapshots when the current one is genesis. Time-blind genesis validation and an empty milestone proof then pass; persistence stores the altered genesis. First-block production hashes that snapshot, while WrongGenesis compares the full on-chain genesis hash.
+**Evidence and path.** The isSameForkRegression check did not close the timestamp-only case. UtilityFacet.isSnapshotNewer returned true for two different height-zero snapshots when the current one was genesis. Time-blind genesis validation and an empty milestone proof then passed; persistence stored the altered genesis. First-block production hashed that snapshot, while WrongGenesis compared the full on-chain genesis hash. A successor-fork genesis had the same gap: its timestamp was never compared with the origin window's kill-period end that WrongGenesis uses.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:332–366](../../../src/rpc/network/services/spectate/SpectateService.ts#L332-L366); [src/rpc/network/services/spectate/SpectateService.ts:1079–1095](../../../src/rpc/network/services/spectate/SpectateService.ts#L1079-L1095); [contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol:268–284](../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L268-L284); [src/rpc/network/services/spectate/SpectateService.ts:979–988](../../../src/rpc/network/services/spectate/SpectateService.ts#L979-L988); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:294–299](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L294-L299).
+**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:351–414](../../../src/rpc/network/services/spectate/SpectateService.ts#L351-L414); [src/rpc/network/services/spectate/SpectateService.ts:1124–1140](../../../src/rpc/network/services/spectate/SpectateService.ts#L1124-L1140); [contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol:268–284](../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L268-L284); [src/rpc/network/services/spectate/SpectateService.ts:1024–1033](../../../src/rpc/network/services/spectate/SpectateService.ts#L1024-L1033); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:294–299](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L294-L299).
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
+**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint was crossed; the victim's node accepted and persisted the payload. Ranking class: peer-assisted signing path; it has no rank because the path is fixed.
 
-**Counterevidence and limits.** An advanced chain snapshot or already-stored block zero blocks the simple case. The victim must sync before its first block, with otherwise correct genesis data. The old report's multicall explanation is obsolete: that helper was removed.
+**Counterevidence and limits.** An advanced chain snapshot or already-stored block zero blocked the simple case. The victim had to sync before its first block, with otherwise correct genesis data. The old report's multicall explanation was obsolete: that helper was removed.
 
-**Proof gaps.** Static only; test a timestamp-only mutation against the new regression helper.
+**Proof gaps.** None left for the claim: the unit and E2E regressions below fail without the fix.
 
-**Fix handoff (proposed, not implemented):** Bind the full genesis snapshot, including timestamp, to authoritative chain state or authenticated reduction history before persistence. Preserve the preconditions and limits above. Required regression work:
+**Fix (implemented):** `applySyncResponse` binds the genesis timestamp before persistence to chain values read in that sync. On the step-1 fork at height zero the full genesis must equal the step-1 chain snapshot. A successor genesis must carry its origin window's kill-period end, read with `isKillPeriodExpired` in the existing finality multicall and accepted only when the chain reports the period expired. A chain snapshot past genesis needs no binding, since WrongGenesis then cannot succeed against that fork's block 0. A mismatch rejects as "genesis timestamp mismatch". No contract changed. The regression work covered:
 
-- Reject same-fork genesis sync with only timestamp changed.
-- Cover empty proofs before block zero and reduced-genesis canonical timestamp.
+- Same-fork genesis sync with only the timestamp changed is rejected.
+- Empty proofs before block zero and the reduced-genesis canonical timestamp.
 
-Planned permutations, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12) and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13). They are regression obligations, not evidence of passing tests. The fix change maps the exact tests.
+Mapped permutations: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12) ([E2E-Spectate report](../verification/tests/test/e2e/E2E-Spectate.test.ts.md)) and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13) ([SpectateService unit report](../verification/tests/test/unit/SpectateService.test.ts.md)).
 
-**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The new regression helper is not a full genesis authentication check.
+**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). Genesis-shaped dispute-window snapshots that sync persists are not timestamp-checked; they are outside this finding's first-block slash path.

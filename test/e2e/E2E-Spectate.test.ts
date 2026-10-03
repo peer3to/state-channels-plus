@@ -1,6 +1,7 @@
-import { Block } from "@/models";
+import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { syncForgedGenesisBeforeFirstBlock } from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -195,6 +196,61 @@ describe("E2E: Spectate Service", function () {
                 peerIndex: 3
             });
             await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+
+        it("byzantine responder serves a timestamp-altered genesis before block zero -> the writer rejects it, never stores it, and its block 0 is not slashable", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, victim, responder, observer, onChainGenesisHash } =
+                await syncForgedGenesisBeforeFirstBlock(h);
+
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(forkId)
+                .request();
+            expect(stored).to.not.equal(null);
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                onChainGenesisHash
+            );
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [victim.index, observer.index]
+            });
+
+            // block 0 links the on-chain genesis -> exactly what WrongGenesis compares
+            const bundle = await h
+                .control(observer)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(block.height).to.equal(0);
+            expect(block.author).to.equal(victim.address);
+            expect(block.previousBlockHash).to.equal(onChainGenesisHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getFraudProofType(victim.address)
+                    .request()
+            ).to.equal(null);
+            await h.assert.dispute.didNotInitiate({
+                peers: [victim.index, observer.index]
+            });
+            expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+                []
+            );
         });
 
         it("spectate atomic persistence and setState", async function () {

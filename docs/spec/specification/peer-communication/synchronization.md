@@ -118,7 +118,14 @@ Ordered verification; any failure aborts the sync with no partial effect:
    verification state.
 5. **Verify the genesis.** The walked-to fork id must equal the payload's genesis identity, the
    genesis must satisfy the genesis-shape rules, and the genesis state hash must match the encoded
-   genesis state.
+   genesis state. The genesis timestamp is not part of that identity, so it is bound separately to
+   chain values the requester read for this sync and that can no longer change. When the step-1
+   anchor is the genesis of the target fork, the full genesis, timestamp included, must equal
+   that anchor. When the target fork is a reduction successor, the timestamp must equal the end of
+   its origin dispute window's kill period, read from the chain together with the chain's own
+   statement that the kill period has expired. When the anchor is already past genesis on the
+   target fork, the chain no longer judges that fork's first block against a genesis, and no
+   timestamp binding applies.
 6. **Short-circuit stale proofs.** If the on-chain snapshot is already at or past the proved
    position on the same fork, there is nothing to adopt; abort without penalty. A proof that does not advance past
    the on-chain snapshot must end at exactly that snapshot, or the proof does not extend from it.
