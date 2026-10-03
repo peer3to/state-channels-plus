@@ -1,28 +1,22 @@
 const { EventEmitter } = require("events");
-const { TASK_RUNNERS, normalizeTaskRunner } = require("../shared/taskRunners");
+const { TASK_RUNNERS, runnersNeededByTask } = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-// The runner protocol this checkout speaks. 14 added the browser tier: the
-// `browser` runner, the worker fork carrying the image's browser environment,
-// and Chromium in the runner image. Hardhat and forge tasks are unchanged.
-const DISTRIBUTED_PROTOCOL_VERSION = 14;
+// The runner protocol this checkout speaks. 15 adds task resource measurements
+// and cost-aware admission; 14 added the browser tier. Older hosts remain leased.
+const DISTRIBUTED_PROTOCOL_VERSION = 15;
 // The oldest worker host protocol the orchestrator still leases. A host
 // between it and the current version runs only the runners it knows, so a pool
 // can upgrade one host at a time.
 const MIN_COMPATIBLE_DISTRIBUTED_PROTOCOL = 13;
 // What each accepted worker protocol can execute. The orchestrator schedules a
 // task only on a worker whose protocol lists the task's runner.
+const ALL_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
     [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
-    [
-        14,
-        new Set([
-            TASK_RUNNERS.HARDHAT,
-            TASK_RUNNERS.FORGE,
-            TASK_RUNNERS.BROWSER
-        ])
-    ]
+    [14, ALL_RUNNERS],
+    [15, ALL_RUNNERS]
 ]);
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const REVIEW_KINDS = new Set([
@@ -130,7 +124,8 @@ const HEADER_FIELDS = {
     BUNDLE_END: ["byteCount", "sha256"],
     RUN_CONFIG: ["baseEnv", "taskCount", "extensions"],
     RUN_PROGRESS: ["completedTasks", "totalTasks"],
-    TASK_REQUEST: ["requestId"],
+    // costBudget: protocol 15, sent only by a worker under --schedule cost
+    TASK_REQUEST: ["requestId", "costBudget"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],
     NO_TASK_AVAILABLE: ["requestId"],
     LOG_CHUNK: [
@@ -376,11 +371,6 @@ function runnersForDistributedProtocol(version) {
         return null;
     }
     return RUNNERS_BY_DISTRIBUTED_PROTOCOL.get(version) ?? null;
-}
-
-/** Every runner a task needs: its own, plus what its test file declares. */
-function runnersNeededByTask(task) {
-    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
 }
 
 /** Whether a worker whose protocol lists `runners` can execute `task`. */

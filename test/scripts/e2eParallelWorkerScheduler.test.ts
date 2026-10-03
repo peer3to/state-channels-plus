@@ -1,13 +1,24 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { runAgainstProtocolWorkers } from "../fixtures/distributed/protocolWorker";
+import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import { fork } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
+const {
+    validateWorkerStats
+} = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     DEFAULTS: SERVER_DEFAULTS,
     parseServerArgs
 } = require("../../scripts/e2e-parallel/distributed/serverArgParser.js");
+const {
+    toWireTask,
+    fromWireCostBudget,
+    fromWireTask
+} = require("../../scripts/e2e-parallel/distributed/taskWire.js");
 const {
     runScheduler
 } = require("../../scripts/e2e-parallel/local/scheduler.js");
@@ -16,20 +27,33 @@ const {
     accountPartitionFor
 } = require("../../scripts/e2e-parallel/shared/accountPartitionPool.js");
 const {
+    parseCliArgs,
+    getHelpText
+} = require("../../scripts/e2e-parallel/shared/argParser.js");
+const {
     cpuDelta,
     readCpuSnapshot
 } = require("../../scripts/e2e-parallel/shared/cpuAccounting.js");
 const {
-    getErrorLogPath
+    buildRunMetrics,
+    getErrorLogPath,
+    cleanupNonErrorLogs,
+    writeRunMetrics
 } = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     resetResourceGateWarnings,
     ResourceGate,
     rssByPid,
-    rssByProcessTree
+    rssByProcessTree,
+    TaskProcessSampler,
+    processScanStats
 } = require("../../scripts/e2e-parallel/shared/resourceGate.js");
 const {
-    buildSlotEnv
+    nextSampleDelayMs
+} = require("../../scripts/e2e-parallel/shared/runTask.js");
+const {
+    buildSlotEnv,
+    holdReason
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
 const {
     TaskResourcePool
@@ -38,7 +62,1676 @@ const {
     WorkerScheduler
 } = require("../../scripts/e2e-parallel/shared/workerScheduler.js");
 
+// One hardhat task whose cost-cache key is "hardhat||measured".
+const MEASURED_TASK = {
+    label: "measured",
+    logName: "measured",
+    args: [],
+    runner: "hardhat"
+};
+
+// A clock a second further on at every CPU reading, so each one is taken.
+function steadyClock() {
+    let at = 0;
+    return () => (at += 1000);
+}
+
 describe("distributed worker scheduler", function () {
+    it("accepts default FIFO and rejects invalid scheduling flags", function () {
+        expect(parseCliArgs(["node", "runner"])).to.include({
+            schedule: "fifo",
+            costCachePath: ".cache/test-costs.json",
+            costCacheReadOnly: false
+        });
+        expect(
+            parseCliArgs(["node", "runner", "--cost-cache-read-only"])
+                .costCacheReadOnly
+        ).to.equal(true);
+        expect(
+            parseCliArgs([
+                "node",
+                "runner",
+                "--schedule",
+                "cost",
+                "--cost-cache",
+                "custom.json"
+            ])
+        ).to.include({ schedule: "cost", costCachePath: "custom.json" });
+        expect(
+            parseCliArgs([
+                "node",
+                "runner",
+                "--schedule=fifo",
+                "--cost-cache=custom=cost.json"
+            ])
+        ).to.include({ schedule: "fifo", costCachePath: "custom=cost.json" });
+        expect(
+            parseCliArgs(["node", "runner", "--schedule=cost"]).schedule
+        ).to.equal("cost");
+        for (const flags of [
+            ["--schedule"],
+            ["--schedule="],
+            ["--schedule", "unknown"],
+            ["--schedule=unknown"],
+            ["--schedule", "--cost-cache=costs.json"],
+            ["--schedule", " cost"]
+        ]) {
+            expect(() => parseCliArgs(["node", "runner", ...flags])).to.throw(
+                "--schedule requires fifo or cost"
+            );
+        }
+        for (const flags of [
+            ["--cost-cache"],
+            ["--cost-cache="],
+            ["--cost-cache", ""],
+            ["--cost-cache", " "],
+            ["--cost-cache", "--schedule=cost"],
+            ["--cost-cache=-bad"],
+            ["--cost-cache=bad\u0000path"]
+        ]) {
+            expect(() => parseCliArgs(["node", "runner", ...flags])).to.throw(
+                "--cost-cache requires a nonempty path"
+            );
+        }
+        expect(getHelpText()).to.include("--schedule fifo|cost");
+        expect(getHelpText()).to.include("--cost-cache <path>");
+    });
+
+    it("validates wire cost numbers and the protocol predicate", function () {
+        const root = process.cwd();
+        const task = {
+            label: "wire",
+            logName: "wire",
+            runner: "hardhat",
+            args: ["test"],
+            cost: {
+                durationMs: 123,
+                cores: 0.3,
+                rssGb: 0.5,
+                known: false,
+                samples: 10
+            }
+        };
+        expect(toWireTask(task, root)).not.to.have.property("cost");
+        expect(
+            toWireTask(task, root, {
+                schedule: "cost",
+                distributedProtocol: 13
+            })
+        ).not.to.have.property("cost");
+        expect(
+            toWireTask(task, root, {
+                schedule: "cost",
+                distributedProtocol: 14
+            })
+        ).not.to.have.property("cost");
+        expect(
+            toWireTask(task, root, {
+                schedule: "fifo",
+                distributedProtocol: 15
+            })
+        ).not.to.have.property("cost");
+        const wire = toWireTask(task, root, {
+            schedule: "cost",
+            distributedProtocol: 15
+        });
+        expect(wire.cost).to.deep.equal({
+            cores: 0.3,
+            rssGb: 0.5,
+            known: false
+        });
+        expect(fromWireTask(wire, root).cost).to.deep.equal(wire.cost);
+        expect(
+            fromWireTask(
+                { ...wire, cost: { cores: 0, rssGb: 0, known: true } },
+                root
+            ).cost.known
+        ).to.equal(true);
+        for (const cost of [
+            null,
+            [],
+            { cores: -1, rssGb: 0, known: false },
+            { cores: NaN, rssGb: 0, known: false },
+            { cores: Infinity, rssGb: 0, known: false },
+            { cores: "1", rssGb: 0, known: false },
+            { cores: 0, rssGb: -1, known: false },
+            { cores: 0, rssGb: NaN, known: false },
+            { cores: 0, rssGb: Infinity, known: false },
+            { cores: 0, rssGb: "1", known: false },
+            { cores: 0, rssGb: 0, known: 0 },
+            { cores: 0, rssGb: 0 },
+            { cores: 0, rssGb: 0, known: false, durationMs: 100 }
+        ]) {
+            expect(() => fromWireTask({ ...wire, cost }, root)).to.throw(
+                "Invalid wire task cost"
+            );
+        }
+        expect(fromWireCostBudget(undefined)).to.equal(undefined);
+        expect(fromWireCostBudget({ cores: -0.5, rssGb: 2 })).to.deep.equal({
+            cores: -0.5,
+            rssGb: 2
+        });
+        for (const budget of [
+            null,
+            [],
+            { cores: 1 },
+            { cores: NaN, rssGb: 1 },
+            { cores: 1, rssGb: "1" },
+            { cores: 1, rssGb: 1, known: false }
+        ]) {
+            expect(() => fromWireCostBudget(budget)).to.throw(
+                "Invalid wire cost budget"
+            );
+        }
+        expect(() =>
+            fromWireTask(
+                { ...wire, args: [{ projectPath: "../outside.js" }] },
+                root
+            )
+        ).to.throw("Task path leaves extracted project");
+    });
+
+    it("keeps FIFO buffered ordering and admission unchanged", async function () {
+        const first = { id: "first" };
+        const second = { id: "second" };
+        const third = { id: "third" };
+        const queue = [first, second, third];
+        const starts: string[] = [];
+        const probes: Array<{
+            count: number;
+            assignment: unknown;
+            active: unknown[];
+        }> = [];
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let requests = 0;
+        const scheduler = new WorkerScheduler({
+            concurrencyCap: 1,
+            retryMs: 1000,
+            prefetch: true,
+            canRun: async (
+                count: number,
+                assignment: unknown,
+                active: Set<unknown>
+            ) => {
+                probes.push({ count, assignment, active: [...active] });
+                return count === 0;
+            },
+            requestTask: async () => {
+                requests++;
+                return queue.shift() ?? null;
+            },
+            runTask: async (assignment: { id: string }) => {
+                starts.push(assignment.id);
+                await pending;
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(starts).to.deep.equal(["first"]);
+            expect(requests).to.equal(2);
+            expect(scheduler.bufferedAssignment).to.equal(second);
+            await scheduler.requestWhenAvailable();
+            expect(probes[1]).to.deep.equal({
+                count: 1,
+                assignment: null,
+                active: [first]
+            });
+            expect(requests).to.equal(2);
+            expect(scheduler.bufferedAssignment).to.equal(second);
+            release();
+            await new Promise((resolve) => setImmediate(resolve));
+            await scheduler.requestWhenAvailable();
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(starts).to.deep.equal(["first", "second"]);
+            expect(requests).to.equal(3);
+            expect(scheduler.bufferedAssignment).to.equal(third);
+        } finally {
+            scheduler.stop();
+            release();
+        }
+    });
+
+    it("buffers a cost task the machine no longer admits and starts it on a later tick", async function () {
+        const task = { id: "task" };
+        const judged: unknown[] = [];
+        const starts: string[] = [];
+        let admit = false;
+        let requests = 0;
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 2,
+            retryMs: 1000,
+            canRun: async (_count: number, assignment: unknown) => {
+                judged.push(assignment);
+                return assignment === null || admit;
+            },
+            requestTask: async () => (++requests === 1 ? task : null),
+            runTask: async (assignment: { id: string }) => {
+                starts.push(assignment.id);
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            expect(judged).to.deep.equal([null, task]);
+            expect(starts).to.deep.equal([]);
+            expect(scheduler.bufferedAssignment).to.equal(task);
+            admit = true;
+            await scheduler.requestWhenAvailable();
+            expect(requests).to.equal(1);
+            expect(judged).to.deep.equal([null, task, task, task]);
+            expect(starts).to.deep.equal(["task"]);
+            expect(scheduler.bufferedAssignment).to.equal(null);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
+    it("probes admission before every cost fetch and fetches nothing while it holds", async function () {
+        const first = { id: "first" };
+        const probes: Array<{ count: number; assignment: unknown }> = [];
+        let requests = 0;
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 2,
+            retryMs: 1000,
+            canRun: async (count: number, assignment: unknown) => {
+                probes.push({ count, assignment });
+                return count === 0;
+            },
+            requestTask: async () => (++requests === 1 ? first : null),
+            runTask: async () => pending
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await scheduler.requestWhenAvailable();
+            expect(requests).to.equal(1);
+            expect(probes).to.deep.equal([
+                { count: 0, assignment: null },
+                { count: 0, assignment: first },
+                { count: 1, assignment: null }
+            ]);
+        } finally {
+            scheduler.stop();
+            release();
+        }
+    });
+
+    it("requests the next cost task at once after starting a known-cost one", async function () {
+        const run = async (known: boolean) => {
+            const queue = ["first", "second"].map((id) => ({
+                id,
+                task: { cost: { cores: 0.1, rssGb: 0.1, known } }
+            }));
+            let release!: () => void;
+            const pending = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            const scheduler = new WorkerScheduler({
+                schedule: "cost",
+                concurrencyCap: 4,
+                // Far longer than the test waits: only an immediate request
+                // can start the second task.
+                retryMs: 60000,
+                canRun: async () => true,
+                requestTask: async () => queue.shift() ?? null,
+                runTask: async () => pending
+            });
+            try {
+                await scheduler.requestWhenAvailable();
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                return scheduler.running;
+            } finally {
+                scheduler.stop();
+                release();
+            }
+        };
+        expect(await run(true)).to.equal(2);
+        expect(await run(false)).to.equal(1);
+    });
+
+    it("does not prefetch under cost", async function () {
+        const queue = [{ id: "first" }, { id: "second" }];
+        let requests = 0;
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 2,
+            retryMs: 1000,
+            prefetch: true,
+            canRun: async () => true,
+            requestTask: async () => {
+                requests++;
+                return queue.shift() ?? null;
+            },
+            runTask: async () => pending
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await new Promise((resolve) => setImmediate(resolve));
+            expect(requests).to.equal(1);
+            expect(scheduler.bufferedAssignment).to.equal(null);
+            await scheduler.requestWhenAvailable();
+            expect(requests).to.equal(2);
+            expect(scheduler.running).to.equal(2);
+        } finally {
+            scheduler.stop();
+            release();
+        }
+    });
+
+    it("holds cost admission on the predicted-core budget, the CPU valve and the cap", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-cpu-"));
+        try {
+            const statPath = path.join(root, "cpu-stat");
+            fs.writeFileSync(statPath, "cpu 0 0 0 1000 0 0 0 0 0 0\n");
+            const resources = new ResourceGate({
+                testPids: () => [],
+                infraPids: () => [],
+                targetLoad: 1,
+                memBoundGb: 10,
+                sampleOptions: {
+                    platform: "linux",
+                    now: steadyClock(),
+                    cpuCount: () => 4,
+                    procRoot: root,
+                    readFile: (file: string) => {
+                        if (file === "/proc/stat")
+                            return fs.readFileSync(statPath, "utf8");
+                        const error = new Error(
+                            "ENOENT"
+                        ) as NodeJS.ErrnoException;
+                        error.code = "ENOENT";
+                        throw error;
+                    }
+                }
+            });
+            const fits = {
+                schedule: "cost",
+                runningCost: { cores: 0.1, rssGb: 0.1 },
+                nextCost: { cores: 0.1, rssGb: 0.1 }
+            };
+            fs.writeFileSync(statPath, "cpu 0 0 0 2000 0 0 0 0 0 0\n");
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 3, rssGb: 0 },
+                    nextCost: { cores: 1.01, rssGb: 0 }
+                })
+            ).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("cpu");
+            // 95 of 100 jiffies busy: at the valve
+            fs.writeFileSync(statPath, "cpu 95 0 0 2005 0 0 0 0 0 0\n");
+            expect(await resources.allows(1, 4, fits)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("cpu");
+            // 94 of 100 jiffies busy: under it
+            fs.writeFileSync(statPath, "cpu 189 0 0 2011 0 0 0 0 0 0\n");
+            expect(await resources.allows(1, 4, fits)).to.equal(true);
+            expect(await resources.allows(4, 4, fits)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("cap");
+            expect(resources.stats().holdCounts).to.deep.equal({
+                cap: 1,
+                memory: 0,
+                cpu: 2
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps the host's target load as the cost CPU ceiling and reports the budget", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-ceiling-"));
+        try {
+            const statPath = path.join(root, "cpu-stat");
+            fs.writeFileSync(statPath, "cpu 0 0 0 1000 0 0 0 0 0 0\n");
+            const resources = new ResourceGate({
+                testPids: () => [],
+                infraPids: () => [],
+                targetLoad: 0.5,
+                memBoundGb: 10,
+                sampleOptions: {
+                    platform: "linux",
+                    now: steadyClock(),
+                    cpuCount: () => 4,
+                    procRoot: root,
+                    readFile: (file: string) => {
+                        if (file === "/proc/stat")
+                            return fs.readFileSync(statPath, "utf8");
+                        const error = new Error(
+                            "ENOENT"
+                        ) as NodeJS.ErrnoException;
+                        error.code = "ENOENT";
+                        throw error;
+                    }
+                }
+            });
+            // 60 of 100 jiffies busy: under 0.95, over the host's 0.5
+            fs.writeFileSync(statPath, "cpu 60 0 0 1040 0 0 0 0 0 0\n");
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 0.1, rssGb: 0.1 },
+                    nextCost: { cores: 0.1, rssGb: 0.1 }
+                })
+            ).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("cpu");
+            expect(resources.costCpuValve).to.equal(0.5);
+            expect(
+                resources.costBudget({ cores: 1.5, rssGb: 2 })
+            ).to.deep.equal({ cores: 2.5, rssGb: 8 });
+            expect(
+                holdReason({
+                    schedule: "cost",
+                    running: 1,
+                    concurrencyCap: 4,
+                    resourceGate: resources,
+                    memBoundGb: 10,
+                    targetLoad: 0.5
+                })
+            ).to.include("cpu 60%/50%");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("meters overlapping process-table scans once and counts a failed one", async function () {
+        const slowScan = (fails: boolean) =>
+            new TaskProcessSampler(100, {
+                warn: () => {},
+                execFile: async () => {
+                    await new Promise((resolve) => setTimeout(resolve, 300));
+                    if (fails) throw new Error("ps unavailable");
+                    return {
+                        stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
+                    };
+                }
+            });
+        const before = processScanStats();
+        const scans = Promise.all([
+            slowScan(false).sample(),
+            slowScan(true).sample()
+        ]);
+        // Time already spent scanning counts while the scans still run.
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const during = processScanStats();
+        expect(during.processScanMs - before.processScanMs).to.be.at.least(100);
+        await scans;
+        const after = processScanStats();
+        expect(after.processScanCount - before.processScanCount).to.equal(2);
+        // Two 300 ms scans side by side are 300 ms of scanning, not 600;
+        // the ceiling leaves room for event-loop lag under load.
+        expect(after.processScanMs - before.processScanMs)
+            .to.be.at.least(270)
+            .and.below(540);
+    });
+
+    it("holds a busy worker until its first CPU reading and keeps a reading for sooner checks", async function () {
+        let clock = 0;
+        let stat = "cpu 0 0 0 1000 0 0 0 0 0 0\n";
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 1,
+            memBoundGb: 10,
+            sampleOptions: {
+                platform: "linux",
+                now: () => clock,
+                cpuCount: () => 4,
+                readFile: (file: string) => {
+                    if (file === "/proc/stat") return stat;
+                    const error = new Error("ENOENT") as NodeJS.ErrnoException;
+                    error.code = "ENOENT";
+                    throw error;
+                }
+            }
+        });
+        const fits = {
+            schedule: "cost",
+            runningCost: { cores: 0.1, rssGb: 0.1 },
+            nextCost: { cores: 0.1, rssGb: 0.1 }
+        };
+        // No reading yet: only an idle worker admits.
+        clock = 100;
+        expect(await resources.allows(1, 4, fits)).to.equal(false);
+        expect(resources.lastHoldReason).to.equal("cpu");
+        expect(await resources.allows(0, 4, fits)).to.equal(true);
+        // Half busy over the first full interval.
+        stat = "cpu 500 0 0 1500 0 0 0 0 0 0\n";
+        clock = 400;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(0.5);
+        // Fully busy, but checked too soon: the last reading stands.
+        stat = "cpu 1500 0 0 1500 0 0 0 0 0 0\n";
+        clock = 450;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(0.5);
+        expect(resources.stats().cpuSampleCount).to.equal(1);
+        clock = 700;
+        await resources.sample();
+        expect(resources.cpuUtil).to.equal(1);
+        expect(resources.stats().cpuSampleCount).to.equal(2);
+    });
+
+    it("keeps a finish's queued request from starting a task while an unknown-cost start settles", async function () {
+        const retryMs = 1000;
+        const startedAt = new Map<string, number>();
+        const forever = new Promise<void>(() => {});
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "known", task: cost(true) },
+            { id: "unknown", task: cost(false) },
+            { id: "next", task: cost(true) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => {
+                const next = queue.shift() ?? null;
+                // "unknown" arrives on the same timer tick that "known"
+                // finishes on, after that finish queued its request.
+                if (next?.id === "unknown")
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                return next;
+            },
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "known") return forever;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            expect(
+                startedAt.get("next")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
+    it("requests at once again once an unknown-cost start's tick has passed", async function () {
+        const retryMs = 1000;
+        const startedAt = new Map<string, number>();
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "unknown", task: cost(false) },
+            { id: "known", task: cost(true) },
+            { id: "next", task: cost(true) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                return new Promise<void>(() => {});
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            // "known" waited out the tick; "next" follows it at once rather
+            // than a tick later.
+            expect(
+                startedAt.get("known")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+            expect(
+                startedAt.get("next")! - startedAt.get("known")!
+            ).to.be.below(retryMs / 2);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
+    it("lets another task's finish wait out an unknown-cost start's tick", async function () {
+        const retryMs = 300;
+        const startedAt = new Map<string, number>();
+        const forever = new Promise<void>(() => {});
+        const cost = (known: boolean) => ({
+            cost: { cores: 0.1, rssGb: 0.1, known }
+        });
+        const queue = [
+            { id: "known", task: cost(true) },
+            { id: "unknown", task: cost(false) },
+            { id: "next", task: cost(false) }
+        ];
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            canRun: async () => true,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "known") return forever;
+                // Finishes while "unknown" is still settling.
+                await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("next"), 10000, 10);
+            expect(
+                startedAt.get("next")! - startedAt.get("unknown")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
+    it("gives a cost task started by a finish a full tick before the next start", async function () {
+        const retryMs = 300;
+        const startedAt = new Map<string, number>();
+        let firstDone = false;
+        const queue = ["first", "second", "third"].map((id) => ({
+            id,
+            task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
+        }));
+        const forever = new Promise<void>(() => {});
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs,
+            // Nothing beside "first" until it finishes.
+            canRun: async (running: number) => running === 0 || firstDone,
+            requestTask: async () => queue.shift() ?? null,
+            runTask: async (assignment: { id: string }) => {
+                startedAt.set(assignment.id, Date.now());
+                if (assignment.id !== "first") return forever;
+                // Finishes late in the first tick, as the timer runs.
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                firstDone = true;
+            }
+        });
+        try {
+            await scheduler.requestWhenAvailable();
+            await waitFor(() => startedAt.has("third"), 10000, 10);
+            expect([...startedAt.keys()]).to.deep.equal([
+                "first",
+                "second",
+                "third"
+            ]);
+            // Timers never fire early; an old tick left running would start
+            // "third" about 50 ms after "second".
+            expect(
+                startedAt.get("third")! - startedAt.get("second")!
+            ).to.be.at.least(retryMs - 15);
+        } finally {
+            scheduler.stop();
+        }
+    });
+
+    it("requests at once when a cost task finishes, and only under cost", async function () {
+        const run = async (schedule: string) => {
+            const queue = ["first", "second"].map((id) => ({
+                id,
+                // Unknown costs: only the finish can trigger the next request.
+                task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
+            }));
+            const starts: string[] = [];
+            const scheduler = new WorkerScheduler({
+                schedule,
+                concurrencyCap: 1,
+                retryMs: 60000,
+                canRun: async (running: number) => running === 0,
+                requestTask: async () => queue.shift() ?? null,
+                runTask: async (assignment: { id: string }) => {
+                    starts.push(assignment.id);
+                }
+            });
+            try {
+                await scheduler.requestWhenAvailable();
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                return starts;
+            } finally {
+                scheduler.stop();
+            }
+        };
+        expect(await run("cost")).to.deep.equal(["first", "second"]);
+        expect(await run("fifo")).to.deep.equal(["first"]);
+    });
+
+    it("starts nothing from an immediate request that lands after stop", async function () {
+        let requests = 0;
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const scheduler = new WorkerScheduler({
+            schedule: "cost",
+            concurrencyCap: 4,
+            retryMs: 60000,
+            canRun: async () => true,
+            requestTask: async () => {
+                requests++;
+                return {
+                    id: `task-${requests}`,
+                    task: { cost: { cores: 0.1, rssGb: 0.1, known: true } }
+                };
+            },
+            runTask: async () => pending
+        });
+        await scheduler.requestWhenAvailable();
+        scheduler.stop();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(requests).to.equal(1);
+        expect(scheduler.running).to.equal(1);
+        release();
+    });
+
+    it("meters process-table scans for the run metrics", async function () {
+        const before = processScanStats();
+        const sampler = new TaskProcessSampler(100, {
+            execFile: async () => ({
+                stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
+            })
+        });
+        await sampler.sample();
+        await sampler.sample();
+        const after = processScanStats();
+        expect(after.processScanCount - before.processScanCount).to.equal(2);
+        expect(after.processScanMs).to.be.at.least(before.processScanMs);
+    });
+
+    it("holds a busy worker while CPU readings yield no utilization, and says so", async function () {
+        let clock = 0;
+        let stat = "cpu 0 0 0 1000 0 0 0 0 0 0\n";
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            sampleOptions: {
+                platform: "linux",
+                now: () => clock,
+                cpuCount: () => 4,
+                readFile: (file: string) => {
+                    if (file === "/proc/stat") return stat;
+                    const error = new Error("ENOENT") as NodeJS.ErrnoException;
+                    error.code = "ENOENT";
+                    throw error;
+                }
+            }
+        });
+        // Counters that have not moved give no utilization at all.
+        clock = 400;
+        expect(await resources.allows(1, 4)).to.equal(false);
+        expect(
+            holdReason({
+                schedule: "fifo",
+                running: 1,
+                concurrencyCap: 4,
+                resourceGate: resources,
+                memBoundGb: 10,
+                targetLoad: 0.8
+            })
+        ).to.equal("cpu (awaiting first CPU reading)");
+        stat = "cpu 100 0 0 1900 0 0 0 0 0 0\n";
+        clock = 800;
+        expect(await resources.allows(1, 4)).to.equal(true);
+    });
+
+    it("logs the fifo hold reason the gate counted", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "fifo-hold-"));
+        try {
+            const statPath = path.join(root, "cpu-stat");
+            fs.writeFileSync(statPath, "cpu 0 0 0 1000 0 0 0 0 0 0\n");
+            const resources = new ResourceGate({
+                testPids: () => [],
+                infraPids: () => [],
+                targetLoad: 0.5,
+                memBoundGb: 0.1,
+                sampleOptions: {
+                    platform: "linux",
+                    now: steadyClock(),
+                    cpuCount: () => 4,
+                    procRoot: root,
+                    readFile: (file: string) => {
+                        if (file === "/proc/stat")
+                            return fs.readFileSync(statPath, "utf8");
+                        const error = new Error(
+                            "ENOENT"
+                        ) as NodeJS.ErrnoException;
+                        error.code = "ENOENT";
+                        throw error;
+                    }
+                }
+            });
+            // CPU and memory are both over their limits.
+            fs.writeFileSync(statPath, "cpu 95 0 0 1005 0 0 0 0 0 0\n");
+            expect(await resources.allows(1, 4)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("cpu");
+            expect(
+                holdReason({
+                    schedule: "fifo",
+                    running: 1,
+                    concurrencyCap: 4,
+                    resourceGate: resources,
+                    memBoundGb: 0.1,
+                    targetLoad: 0.5
+                })
+            ).to.match(/^cpu /);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("does not probe admission for a full local cost worker with nothing queued", async function () {
+        const logDir = path.join(
+            process.cwd(),
+            "logs",
+            `scheduler-cost-idle-${process.pid}`
+        );
+        const output: string[] = [];
+        const originalConsoleLog = console.log;
+        let probes = 0;
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            lastHoldReason: null,
+            allows: async (running: number) => {
+                probes++;
+                return running === 0;
+            },
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10
+            })
+        };
+        console.log = (...values: unknown[]) => output.push(values.join(" "));
+        try {
+            const result = await runScheduler({
+                tasks: [
+                    {
+                        label: "long",
+                        logName: "long",
+                        runner: "forge",
+                        args: []
+                    }
+                ],
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate,
+                schedule: "cost",
+                costCachePath: path.join(logDir, "test-costs.json"),
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: unknown,
+                    label: string
+                ) => {
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    return {
+                        code: 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 50
+                    };
+                }
+            });
+            expect(result.completed).to.equal(1);
+        } finally {
+            console.log = originalConsoleLog;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+        expect(probes).to.equal(2);
+        expect(output.some((line) => line.includes("holding"))).to.equal(false);
+    });
+
+    it("refuses a busy local cost worker a test outside its budget and counts the hold", async function () {
+        const logDir = path.join(
+            process.cwd(),
+            "logs",
+            `scheduler-cost-budget-${process.pid}`
+        );
+        const output: string[] = [];
+        const originalConsoleLog = console.log;
+        const starts: string[] = [];
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            lastHoldReason: null,
+            allows: async () => true,
+            // Nothing beside the running test fits.
+            costBudget: () => ({ cores: 0, rssGb: 0 }),
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10,
+                holdCounts: { cap: 0, memory: 0, cpu: 0 }
+            })
+        };
+        console.log = (...values: unknown[]) => output.push(values.join(" "));
+        try {
+            const result = await runScheduler({
+                tasks: ["first", "second"].map((label) => ({
+                    label,
+                    logName: label,
+                    runner: "forge",
+                    args: []
+                })),
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 2,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate,
+                schedule: "cost",
+                costCachePath: path.join(logDir, "test-costs.json"),
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: unknown,
+                    label: string
+                ) => {
+                    starts.push(label);
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    return {
+                        code: 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 50
+                    };
+                }
+            });
+            expect(result.completed).to.equal(2);
+            const metrics = JSON.parse(
+                fs.readFileSync(path.join(logDir, "run-metrics.json"), "utf8")
+            );
+            expect(metrics.workers[0].peakConcurrency).to.equal(1);
+            expect(metrics.workers[0].holdCounts.cpu).to.be.at.least(1);
+            // The refused test was assigned only once the first finished.
+            const [first, second] = metrics.tasks.map(
+                (task: { assignedAtMs: number }) => task.assignedAtMs
+            );
+            expect(first).to.be.at.least(0);
+            expect(second - first).to.be.at.least(40);
+        } finally {
+            console.log = originalConsoleLog;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+        expect(starts).to.have.length(2);
+        expect(
+            output.some((line) =>
+                line.includes("holding — cpu (cost budget; predicted cost")
+            )
+        ).to.equal(true);
+    });
+
+    it("reports each task's first assignment from the run's start, or null", function () {
+        const metrics = buildRunMetrics({
+            tasks: [
+                { label: "assigned", firstAssignedAt: 1500 },
+                { label: "never" }
+            ],
+            workers: [],
+            makespanMs: 2000,
+            sumDurationMs: 0,
+            startedAt: 1000
+        });
+        expect(
+            metrics.tasks.map(
+                (task: { assignedAtMs: number | null }) => task.assignedAtMs
+            )
+        ).to.deep.equal([500, null]);
+    });
+
+    it("holds predicted memory even when CPU budget fits", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-admission-"));
+        let pids: number[] = [];
+        try {
+            const statPath = path.join(root, "cpu-stat");
+            fs.writeFileSync(statPath, "cpu 0 0 0 1000 0 0 0 0 0 0\n");
+            const resources = new ResourceGate({
+                testPids: () => pids,
+                infraPids: () => [],
+                targetLoad: 0.8,
+                memBoundGb: 1,
+                sampleOptions: {
+                    platform: "linux",
+                    now: steadyClock(),
+                    cpuCount: () => 4,
+                    procRoot: root,
+                    readFile: (file: string) => {
+                        if (file === "/proc/stat")
+                            return fs.readFileSync(statPath, "utf8");
+                        const error = new Error(
+                            "ENOENT"
+                        ) as NodeJS.ErrnoException;
+                        error.code = "ENOENT";
+                        throw error;
+                    }
+                }
+            });
+            fs.writeFileSync(statPath, "cpu 0 0 0 2000 0 0 0 0 0 0\n");
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 0.1, rssGb: 0.5 },
+                    nextCost: { cores: 0.1, rssGb: 0.5 }
+                })
+            ).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("memory");
+            expect(resources.stats().holdCounts).to.deep.equal({
+                cap: 0,
+                memory: 1,
+                cpu: 0
+            });
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 0.1, rssGb: 0.5 },
+                    nextCost: { cores: 0.1, rssGb: 0.4 }
+                })
+            ).to.equal(true);
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 3, rssGb: 0 },
+                    nextCost: { cores: 1, rssGb: 0 }
+                })
+            ).to.equal(true);
+            fs.mkdirSync(path.join(root, "100"));
+            const fields = Array(22).fill("0");
+            fields[0] = "S";
+            fields[1] = "1";
+            fields[19] = "100";
+            fs.writeFileSync(
+                path.join(root, "100/stat"),
+                `100 (owned) ${fields.join(" ")}\n`
+            );
+            fs.writeFileSync(
+                path.join(root, "100/status"),
+                "VmRSS:\t3145728 kB\n"
+            );
+            pids = [100];
+            expect(
+                await resources.allows(1, 4, {
+                    schedule: "cost",
+                    runningCost: { cores: 0.1, rssGb: 0.1 },
+                    nextCost: { cores: 0.1, rssGb: 0.1 }
+                })
+            ).to.equal(false);
+            expect(resources.occupiedGb).to.equal(3);
+            expect(resources.lastHoldReason).to.equal("memory");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("retains run metrics through successful log cleanup", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "metrics-cleanup-"));
+        try {
+            writeRunMetrics(root, { version: 1, tasks: [], makespanMs: 10 });
+            fs.writeFileSync(path.join(root, "success.ansi"), "passed");
+            const original = fs.readFileSync(
+                path.join(root, "run-metrics.json")
+            );
+            cleanupNonErrorLogs(root, true, false, true);
+            expect(
+                fs.readFileSync(path.join(root, "run-metrics.json"))
+            ).to.deep.equal(original);
+            expect(fs.existsSync(path.join(root, "success.ansi"))).to.equal(
+                false
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("persists all supplied worker hold counters", async function () {
+        const stats = {
+            peakCpu: 0.5,
+            avgCpu: 0.25,
+            cpuSampleCount: 2,
+            peakOccupiedGb: 1,
+            avgPerTestGb: 0.5,
+            memorySampleCount: 2,
+            memBoundGb: 10,
+            meanConcurrency: 1,
+            peakConcurrency: 1,
+            concurrencyWallMs: 100,
+            processScanCount: 5,
+            processScanMs: 12.5,
+            holdCounts: { cap: 2, memory: 3, cpu: 4 }
+        };
+        expect(() =>
+            validateWorkerStats({
+                ...stats,
+                holdCounts: { cap: -1, memory: 3, cpu: 4 }
+            })
+        ).to.throw("admission statistics");
+        expect(() =>
+            validateWorkerStats({ ...stats, meanConcurrency: NaN })
+        ).to.throw("admission statistics");
+        expect(() =>
+            validateWorkerStats({ ...stats, processScanCount: 1.5 })
+        ).to.throw("admission statistics");
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "metrics-peer",
+                    distributedProtocol: 14,
+                    attemptResult: {
+                        durationMs: 100,
+                        peakRssGb: 0.5,
+                        avgCores: 0.25
+                    },
+                    workerStats: stats
+                }
+            ],
+            { tasks: [MEASURED_TASK] }
+        );
+        expect(run.failure).to.equal(null);
+        expect(run.metrics.workers).to.have.length(1);
+        expect(run.metrics.workers[0].holdCounts).to.deep.equal({
+            cap: 2,
+            memory: 3,
+            cpu: 4
+        });
+        expect(run.metrics.workers[0]).to.include({
+            meanConcurrency: 1,
+            peakConcurrency: 1,
+            concurrencyWallMs: 100,
+            processScanCount: 5,
+            processScanMs: 12.5,
+            legacyAdmission: true
+        });
+        expect(run.metrics.tasks[0]).to.include({
+            peakRssGb: 0.5,
+            avgCores: 0.25
+        });
+    });
+
+    it("writes local finalizing samples to the cache", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "local-cost-cache-")
+        );
+        const fixture = path.join(root, "sample.cjs");
+        fs.writeFileSync(
+            fixture,
+            "describe('cache fixture', () => { it('runs', async () => { await new Promise(resolve => setTimeout(resolve, 200)); }); });\n"
+        );
+        const task = {
+            label: "sample",
+            logName: "sample",
+            runner: "hardhat",
+            args: ["test", "--no-compile", fixture]
+        };
+        try {
+            const result = await runScheduler({
+                tasks: [task],
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 100,
+                baseEnv: {},
+                logDir: root,
+                infraPids: () => [],
+                tickMs: 10,
+                projectRoot: root,
+                schedule: "cost"
+            });
+            expect(result.completed).to.equal(1);
+            expect(result.failed).to.have.length(0);
+            const records = Object.values(
+                JSON.parse(
+                    fs.readFileSync(
+                        path.join(root, ".cache/test-costs.json"),
+                        "utf8"
+                    )
+                ).tasks
+            ) as Array<{
+                samples: number;
+                durationMs: number;
+                avgCores: number;
+                peakRssGb: number;
+            }>;
+            expect(records).to.have.length(1);
+            expect(records[0].samples).to.equal(1);
+            expect(records[0].durationMs).to.be.greaterThan(0);
+            expect(records[0].avgCores).to.be.at.least(0);
+            expect(records[0].peakRssGb).to.be.greaterThan(0);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps protocol fourteen on legacy admission with cost selection", async function () {
+        const cli = parseCliArgs(["node", "runner", "--schedule", "cost"]);
+        const run = await runAgainstProtocolWorkers(
+            [
+                {
+                    name: "legacy-peer",
+                    distributedProtocol: 14,
+                    attemptResult: {
+                        durationMs: 100,
+                        peakRssGb: 0.5,
+                        avgCores: 0.25
+                    },
+                    workerStats: {
+                        peakCpu: 0.5,
+                        avgCpu: 0.25,
+                        cpuSampleCount: 2,
+                        peakOccupiedGb: 1,
+                        avgPerTestGb: 0.5,
+                        memorySampleCount: 2,
+                        memBoundGb: 10
+                    }
+                }
+            ],
+            {
+                tasks: [
+                    {
+                        label: "light",
+                        logName: "light",
+                        runner: "hardhat",
+                        args: []
+                    },
+                    {
+                        label: "long",
+                        logName: "long",
+                        runner: "hardhat",
+                        args: []
+                    }
+                ],
+                files: {
+                    "overrides.json": JSON.stringify({
+                        "hardhat||light": { durationMs: 100 },
+                        "hardhat||long": { durationMs: 1000 }
+                    })
+                },
+                run: {
+                    schedule: cli.schedule,
+                    costOverridesPath: "overrides.json"
+                }
+            }
+        );
+        expect(run.failure).to.equal(null);
+        expect(run.workers[0].labels).to.deep.equal(["long", "light"]);
+        expect(run.workers[0].costs).to.deep.equal([undefined, undefined]);
+        expect(run.metrics.workers).to.have.length(1);
+        expect(run.metrics.workers[0]).to.include({
+            legacyAdmission: true,
+            meanConcurrency: null,
+            peakConcurrency: null,
+            concurrencyWallMs: null,
+            measurementReason: "legacy-worker-stats-unavailable"
+        });
+        expect(run.metrics.workers[0].holdCounts).to.deep.equal({
+            cap: null,
+            memory: null,
+            cpu: null
+        });
+    });
+
+    it("reads but never writes the cost cache in read-only runs", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
+        const costCachePath = path.join(root, "test-costs.json");
+        const entry = (durationMs: number) => ({
+            durationMs,
+            avgCores: 0.1,
+            peakRssGb: 0.1,
+            measurementReason: null,
+            samples: 1,
+            lastSeenAt: "2026-10-01T00:00:00.000Z"
+        });
+        // Cached durations put "long" first; unread, discovery order would.
+        const seeded = JSON.stringify({
+            version: 2,
+            tasks: {
+                "forge||light": entry(100),
+                "forge||long": entry(1000),
+                "hardhat||light": entry(100),
+                "hardhat||long": entry(1000)
+            }
+        });
+        fs.writeFileSync(costCachePath, seeded);
+        const tasks = (runner: string) =>
+            ["light", "long"].map((label) => ({
+                label,
+                logName: label,
+                runner,
+                args: []
+            }));
+        const starts: string[] = [];
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            allows: async (running: number) => running === 0,
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10
+            })
+        };
+        try {
+            const local = await runScheduler({
+                tasks: tasks("forge"),
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir: root,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate,
+                schedule: "cost",
+                costCachePath,
+                costCacheReadOnly: true,
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: unknown,
+                    label: string
+                ) => {
+                    starts.push(label);
+                    return {
+                        code: 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 5
+                    };
+                }
+            });
+            expect(local.completed).to.equal(2);
+            expect(starts).to.deep.equal(["long", "light"]);
+            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+            const distributed = await runAgainstProtocolWorkers(
+                [
+                    {
+                        name: "read-only-peer",
+                        distributedProtocol: 15,
+                        attemptResult: {
+                            durationMs: 100,
+                            peakRssGb: 0.5,
+                            avgCores: 0.25
+                        }
+                    }
+                ],
+                {
+                    tasks: tasks("hardhat"),
+                    run: {
+                        schedule: "cost",
+                        costCachePath,
+                        costCacheReadOnly: true
+                    }
+                }
+            );
+            expect(distributed.failure).to.equal(null);
+            expect(distributed.workers[0].labels).to.deep.equal([
+                "long",
+                "light"
+            ]);
+            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("writes distributed finalizing samples and skips aborted commits", async function () {
+        const cacheDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-cost-cache-")
+        );
+        const costCachePath = path.join(cacheDir, "test-costs.json");
+        const peer = (durationMs: number, afterRunComplete?: () => void) => ({
+            name: "cache-peer",
+            distributedProtocol: 15,
+            attemptResult: { durationMs, peakRssGb: 0.5, avgCores: 0.25 },
+            workerStats: {
+                peakCpu: 0.5,
+                avgCpu: 0.25,
+                cpuSampleCount: 2,
+                peakOccupiedGb: 1,
+                avgPerTestGb: 0.5,
+                memorySampleCount: 2,
+                memBoundGb: 10
+            },
+            afterRunComplete
+        });
+        try {
+            const first = await runAgainstProtocolWorkers([peer(100)], {
+                tasks: [MEASURED_TASK],
+                run: { costCachePath }
+            });
+            expect(first.failure).to.equal(null);
+            const original = fs.readFileSync(costCachePath);
+            expect(
+                JSON.parse(original.toString()).tasks["hardhat||measured"]
+            ).to.include({
+                samples: 1,
+                durationMs: 100,
+                avgCores: 0.25,
+                peakRssGb: 0.5
+            });
+            const controller = new AbortController();
+            await runAgainstProtocolWorkers(
+                [peer(200, () => controller.abort())],
+                {
+                    tasks: [MEASURED_TASK],
+                    run: { costCachePath, signal: controller.signal }
+                }
+            );
+            expect(controller.signal.aborted).to.equal(true);
+            expect(fs.readFileSync(costCachePath)).to.deep.equal(original);
+        } finally {
+            fs.rmSync(cacheDir, { recursive: true, force: true });
+        }
+    });
+
+    it("retains exited child CPU and separates reused process identities", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "process-usage-"));
+        try {
+            fs.mkdirSync(path.join(root, "100"));
+            fs.mkdirSync(path.join(root, "101"));
+            const parent = Array(22).fill("0");
+            parent[0] = "S";
+            parent[1] = "1";
+            parent[11] = "100";
+            parent[13] = "9999";
+            parent[19] = "1";
+            const child = [...parent];
+            child[1] = "100";
+            child[11] = "200";
+            child[19] = "2";
+            fs.writeFileSync(
+                path.join(root, "100", "stat"),
+                `100 (parent (with spaces)) ${parent.join(" ")}\n`
+            );
+            fs.writeFileSync(
+                path.join(root, "100", "status"),
+                "VmRSS:\t1024 kB\n"
+            );
+            fs.writeFileSync(
+                path.join(root, "101", "stat"),
+                `101 (child) ${child.join(" ")}\n`
+            );
+            fs.writeFileSync(
+                path.join(root, "101", "status"),
+                "VmRSS:\t2048 kB\n"
+            );
+            const sampler = new TaskProcessSampler(100, {
+                platform: "linux",
+                procRoot: root
+            });
+            await Promise.all([sampler.sample(), sampler.sample()]);
+            fs.rmSync(path.join(root, "101"), { recursive: true });
+            await sampler.sample();
+            expect(sampler.result(3000)).to.include({
+                avgCores: 1,
+                peakRssGb: 3 / 1024,
+                measurementReason: null
+            });
+            fs.mkdirSync(path.join(root, "101"));
+            child[11] = "50";
+            child[19] = "3";
+            fs.writeFileSync(
+                path.join(root, "101", "stat"),
+                `101 (reused) ${child.join(" ")}\n`
+            );
+            fs.writeFileSync(
+                path.join(root, "101", "status"),
+                "VmRSS:\t1024 kB\n"
+            );
+            await sampler.sample();
+            expect(sampler.result(1000).avgCores).to.equal(3.5);
+            const unavailable = new TaskProcessSampler(100, {
+                platform: "linux",
+                procRoot: path.join(root, "missing"),
+                warn: () => {}
+            });
+            await unavailable.sample();
+            expect(unavailable.result(1000)).to.deep.equal({
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: "process-sampling-unavailable"
+            });
+            // A kernel thread or exiting process has no VmRSS: it holds no
+            // user memory and must not void the whole scan.
+            fs.writeFileSync(
+                path.join(root, "101", "status"),
+                "Name:\tkthread\n"
+            );
+            const rss = await rssByProcessTree([100], {
+                platform: "linux",
+                procRoot: root
+            });
+            expect(rss?.get(100)).to.equal(1 / 1024);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("skips a sample tick while a slow process scan is still running", async function () {
+        let scans = 0;
+        const sampler = new TaskProcessSampler(100, {
+            execFile: async () => {
+                scans++;
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                return {
+                    stdout: "  100     1  2048 0:01.00 Thu Oct  1 10:00:00 2026\n"
+                };
+            }
+        });
+        const first = sampler.sample();
+        expect(sampler.sample()).to.equal(first);
+        expect(sampler.sample()).to.equal(first);
+        await first;
+        await sampler.sample();
+        expect(scans).to.equal(2);
+        expect(sampler.result(1000)).to.include({
+            avgCores: 1,
+            peakRssGb: 2 / 1024
+        });
+    });
+
+    it("samples a task early and backs off to the steady interval", function () {
+        const delays = [100];
+        for (let index = 0; index < 5; index++)
+            delays.push(nextSampleDelayMs(delays[delays.length - 1]));
+        expect(delays).to.deep.equal([100, 200, 400, 800, 1000, 1000]);
+    });
+
+    it("parses fractional and day-prefixed ps CPU times", async function () {
+        const sampler = new TaskProcessSampler(10, {
+            platform: "darwin",
+            execFile: async () =>
+                "10 1 1024 1-02:03:04.5 Mon Jan 1 00:00:00 2024\n11 10 2048 00:00.5 Mon Jan 1 00:00:01 2024\n"
+        });
+        await sampler.sample();
+        expect(sampler.result(1000)).to.deep.equal({
+            peakRssGb: 3 / 1024,
+            avgCores: 93785,
+            measurementReason: null
+        });
+        const empty = new TaskProcessSampler(10, {
+            platform: "darwin",
+            execFile: async () => "",
+            warn: () => {}
+        });
+        await empty.sample();
+        expect(empty.result(1000).measurementReason).to.equal(
+            "process-sampling-unavailable"
+        );
+    });
+
+    it("integrates concurrency without changing the active assignment set at stop", async function () {
+        let release!: () => void;
+        const pending = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        const assignment = { id: "one" };
+        const scheduler = new WorkerScheduler({
+            retryMs: 1000,
+            concurrencyCap: 1,
+            canRun: async (running: number) => running === 0,
+            requestTask: async () => assignment,
+            runTask: async () => pending
+        });
+        await scheduler.requestWhenAvailable();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        scheduler.stop();
+        expect(scheduler.runningAssignments.has(assignment)).to.equal(true);
+        const stats = scheduler.stats();
+        expect(stats.peakConcurrency).to.equal(1);
+        expect(stats.concurrencyWallMs).to.be.greaterThan(0);
+        expect(stats.meanConcurrency).to.be.greaterThan(0);
+        release();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(scheduler.runningAssignments.size).to.equal(0);
+        expect(scheduler.running).to.equal(0);
+        expect(scheduler.stats()).to.deep.equal(stats);
+    });
+
     it("uses parallel-runner defaults and accepts server-local short overrides", function () {
         expect(SERVER_DEFAULTS.slots).to.equal(1);
         expect(SERVER_DEFAULTS.workers).to.equal(40);
@@ -458,6 +2151,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 accountPartitions: new AccountPartitionPool(1),
                 resourceGate,
+                costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
                     _args: string[],
@@ -524,6 +2218,7 @@ describe("distributed worker scheduler", function () {
                 logDir,
                 infraPids: () => [],
                 tickMs: 1,
+                costCachePath: path.join(logDir, "test-costs.json"),
                 resourceGate: {
                     cpuUtil: 0,
                     occupiedGb: 0,

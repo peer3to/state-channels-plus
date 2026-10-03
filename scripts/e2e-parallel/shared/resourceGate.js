@@ -1,11 +1,24 @@
 const { execFile } = require("child_process");
 const os = require("os");
+const fs = require("fs");
+const path = require("path");
+const { performance } = require("perf_hooks");
 const { promisify } = require("util");
-const { PER_TEST_MEM_GB } = require("./constants");
+const {
+    PER_TEST_MEM_GB,
+    PROC_CLOCK_TICKS_PER_SECOND,
+    COST_CPU_BUDGET,
+    COST_CPU_VALVE,
+    MIN_CPU_SAMPLE_MS
+} = require("./constants");
 const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
+const { costBudgetShortfall } = require("./scheduling");
 
 const execFileAsync = promisify(execFile);
 let warnedAboutPs = false;
+// lean: one process-wide scan meter; per-gate meters if a process ever hosts several workers
+// ms is wall time with at least one scan running, so overlapping scans count once.
+const processScans = { count: 0, ms: 0, active: 0, busySince: 0 };
 
 function cpuTimes() {
     return osTimes();
@@ -48,34 +61,120 @@ async function rssByPid(pids, options = {}) {
     }
 }
 
-async function rssByProcessTree(rootPids, options = {}) {
-    const roots = [...new Set(rootPids.filter(Boolean))];
-    if (!roots.length) return new Map();
-    try {
-        const run = options.execFile || execFileAsync;
-        const result = await run("ps", ["-axo", "pid=,ppid=,rss="]);
-        const output = typeof result === "string" ? result : result.stdout;
-        const processes = output
-            .split("\n")
-            .map((line) => line.trim().split(/\s+/).map(Number))
-            .filter(
-                ([pid, ppid, rss]) =>
-                    Number.isInteger(pid) &&
-                    Number.isInteger(ppid) &&
-                    Number.isFinite(rss)
+async function readProcProcesses({ procRoot = "/proc" } = {}) {
+    const processes = [];
+    for (const name of await fs.promises.readdir(procRoot)) {
+        if (!/^\d+$/.test(name)) continue;
+        try {
+            const stat = await fs.promises.readFile(
+                path.join(procRoot, name, "stat"),
+                "utf8"
+            );
+            const status = await fs.promises.readFile(
+                path.join(procRoot, name, "status"),
+                "utf8"
+            );
+            const fields = stat
+                .slice(stat.lastIndexOf(")") + 2)
+                .trim()
+                .split(/\s+/);
+            const ppid = Number(fields[1]);
+            const cpuSeconds =
+                (Number(fields[11]) + Number(fields[12])) /
+                PROC_CLOCK_TICKS_PER_SECOND;
+            const start = Number(fields[19]);
+            // Kernel threads, zombies and exiting processes have no VmRSS:
+            // they hold no user memory, so they count as zero.
+            const rss = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status);
+            if (
+                stat.lastIndexOf(")") < 0 ||
+                !Number.isInteger(ppid) ||
+                ppid < 0 ||
+                !Number.isFinite(cpuSeconds) ||
+                cpuSeconds < 0 ||
+                !Number.isFinite(start) ||
+                start < 0
+            ) {
+                throw new Error(`Invalid process data for ${name}`);
+            }
+            processes.push({
+                pid: Number(name),
+                ppid,
+                identity: `${name}:${start}`,
+                rssGb: rss ? Number(rss[1]) / 1024 / 1024 : 0,
+                cpuSeconds
+            });
+        } catch (error) {
+            if (error.code !== "ENOENT") throw error;
+        }
+    }
+    return processes;
+}
+
+function psCpuSeconds(text) {
+    const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/.exec(
+        text || ""
+    );
+    if (!match) throw new Error("Invalid ps CPU time");
+    return (
+        Number(match[1] || 0) * 86400 +
+        Number(match[2] || 0) * 3600 +
+        Number(match[3]) * 60 +
+        Number(match[4])
+    );
+}
+
+async function readPsProcesses(options) {
+    const run = options.execFile || execFileAsync;
+    const result = await run("ps", ["-axo", "pid=,ppid=,rss=,time=,lstart="]);
+    const output = typeof result === "string" ? result : result.stdout;
+    if (!output.trim()) throw new Error("Empty process table");
+    return output
+        .trim()
+        .split("\n")
+        .map((line) => {
+            const [pidText, ppidText, rssText, time, ...start] = line
+                .trim()
+                .split(/\s+/);
+            const [pid, ppid, rss] = [pidText, ppidText, rssText].map(Number);
+            if (
+                !Number.isInteger(pid) ||
+                !Number.isInteger(ppid) ||
+                !Number.isFinite(rss) ||
+                rss < 0
             )
-            .map(([pid, ppid, rss]) => ({
+                throw new Error("Invalid ps process data");
+            return {
                 pid,
                 ppid,
-                rssGb: rss / 1024 / 1024
-            }));
-        const byPid = new Map(
-            processes.map((process) => [process.pid, process])
-        );
+                rssGb: rss / 1024 / 1024,
+                cpuSeconds: time === undefined ? null : psCpuSeconds(time),
+                identity: `${pid}:${start.join(" ")}`
+            };
+        });
+}
+
+async function collectProcessTrees(rootPids, options = {}) {
+    const roots = [...new Set(rootPids.filter(Boolean))];
+    if (!roots.length) return new Map();
+    const platform =
+        options.platform ?? (options.execFile ? "ps" : process.platform);
+    if (processScans.active++ === 0) processScans.busySince = performance.now();
+    try {
+        const processes = await (
+            platform === "linux"
+                ? readProcProcesses(options)
+                : readPsProcesses(options)
+        ).finally(() => {
+            processScans.count++;
+            if (--processScans.active === 0)
+                processScans.ms += performance.now() - processScans.busySince;
+        });
+        const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
         const rootSet = new Set(roots);
-        const totals = new Map(roots.map((root) => [root, 0]));
-        for (const process of processes) {
-            let current = process.pid;
+        const trees = new Map(roots.map((root) => [root, []]));
+        for (const entry of processes) {
+            let current = entry.pid;
             const seen = new Set();
             while (!rootSet.has(current) && !seen.has(current)) {
                 seen.add(current);
@@ -83,19 +182,96 @@ async function rssByProcessTree(rootPids, options = {}) {
                 if (!parent) break;
                 current = parent.ppid;
             }
-            if (rootSet.has(current)) {
-                totals.set(current, totals.get(current) + process.rssGb);
-            }
+            if (rootSet.has(current)) trees.get(current).push(entry);
         }
-        return totals;
+        return trees;
     } catch (error) {
         if (!warnedAboutPs) {
             warnedAboutPs = true;
             (options.warn || console.warn)(
-                `Unable to sample process-tree RSS with ps; using system memory: ${error.message}`
+                `Unable to sample process tree; measurement unavailable: ${error.message}`
             );
         }
         return null;
+    }
+}
+
+async function rssByProcessTree(pids, options = {}) {
+    const trees = await collectProcessTrees(pids, options);
+    return (
+        trees &&
+        new Map(
+            [...trees].map(([pid, entries]) => [
+                pid,
+                entries.reduce((sum, entry) => sum + entry.rssGb, 0)
+            ])
+        )
+    );
+}
+
+// lean: per-task process-table scan; batch snapshots if processScanMs exceeds about a quarter of concurrencyWallMs on Linux hosts
+class TaskProcessSampler {
+    constructor(rootPid, options = {}) {
+        this.rootPid = rootPid;
+        this.options = options;
+        this.cpuByIdentity = new Map();
+        this.peakRssGb = null;
+        this.inFlight = Promise.resolve();
+        this.sampling = false;
+    }
+
+    // A tick that arrives while a scan is still running is skipped, so a slow
+    // process table never builds a backlog that finish() must wait out.
+    sample() {
+        if (this.sampling) return this.inFlight;
+        this.sampling = true;
+        this.inFlight = (async () => {
+            const trees = await collectProcessTrees(
+                [this.rootPid],
+                this.options
+            );
+            const entries = trees?.get(this.rootPid);
+            if (
+                !entries?.length ||
+                entries.some((entry) => entry.cpuSeconds === null)
+            )
+                return;
+            this.peakRssGb = Math.max(
+                this.peakRssGb ?? 0,
+                entries.reduce((sum, entry) => sum + entry.rssGb, 0)
+            );
+            for (const entry of entries) {
+                this.cpuByIdentity.set(
+                    entry.identity,
+                    Math.max(
+                        this.cpuByIdentity.get(entry.identity) || 0,
+                        entry.cpuSeconds
+                    )
+                );
+            }
+        })().finally(() => {
+            this.sampling = false;
+        });
+        return this.inFlight;
+    }
+
+    result(durationMs) {
+        if (this.peakRssGb === null || durationMs <= 0)
+            return {
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: "process-sampling-unavailable"
+            };
+        const cpuSeconds = [...this.cpuByIdentity.values()].reduce(
+            (sum, value) => sum + value,
+            0
+        );
+        const wallSeconds = durationMs / 1000;
+        return {
+            peakRssGb: this.peakRssGb,
+            avgCores: cpuSeconds / wallSeconds,
+            measurementReason: null
+        };
     }
 }
 
@@ -125,6 +301,8 @@ class ResourceGate {
         // hypervisor steal included) so a core occupied by anything counts
         // as occupied. What this cgroup itself consumed is kept beside it.
         this.cpuUtil = 0;
+        // False until a reading yields a utilization; cpuUtil is 0 till then.
+        this.cpuMeasured = false;
         this.peakCpu = 0;
         this.cpuSamples = [];
         this.containerCpuUtil = undefined;
@@ -145,45 +323,16 @@ class ResourceGate {
         this.memSampleCount = 0;
         this.occupiedGb = 0;
         this.peakOccupiedGb = 0;
+        this.holdCounts = { cap: 0, memory: 0, cpu: 0 };
+        this.lastHoldReason = null;
     }
 
     async sample() {
         const snapshot = readCpuSnapshot(this.sampleOptions);
-        const delta = cpuDelta(this.lastCpuSnapshot, snapshot);
-        this.lastCpuSnapshot = snapshot;
-        this.cpuSource = snapshot.source;
-        this.cpuCores = snapshot.cores;
-        const machineUtil = delta.hostCpuUtil ?? delta.cpuUtil;
-        if (machineUtil !== undefined) this.cpuUtil = machineUtil;
-        this.peakCpu = Math.max(this.peakCpu, this.cpuUtil);
-        this.cpuSamples.push(this.cpuUtil);
-        if (snapshot.source === "cgroup" && delta.cpuUtil !== undefined) {
-            this.containerCpuUtil = delta.cpuUtil;
-            this.peakContainerCpu = Math.max(
-                this.peakContainerCpu,
-                delta.cpuUtil
-            );
-            this.containerCpuSamples.push(delta.cpuUtil);
-        }
-        if (delta.hostSteal !== undefined)
-            this.peakHostSteal = Math.max(this.peakHostSteal, delta.hostSteal);
-        if (delta.cpuPressure !== undefined) {
-            this.cpuPressure = delta.cpuPressure;
-            this.peakCpuPressure = Math.max(
-                this.peakCpuPressure,
-                delta.cpuPressure
-            );
-            this.cpuPressureSamples.push(delta.cpuPressure);
-        }
-        if (delta.cpuPressureFull !== undefined)
-            this.peakCpuPressureFull = Math.max(
-                this.peakCpuPressureFull,
-                delta.cpuPressureFull
-            );
-        if (delta.throttledMs !== undefined) {
-            this.throttledMs += Math.max(0, delta.throttledMs);
-            this.nrThrottled += Math.max(0, delta.nrThrottled);
-        }
+        // Counters read over a near-zero interval are noise (coarse ones read
+        // 0%), so a check right after the last reading keeps that reading.
+        if (snapshot.at - this.lastCpuSnapshot.at >= MIN_CPU_SAMPLE_MS)
+            this.sampleCpu(snapshot);
 
         const testPids = this.testPids();
         const infraPids = this.infraPids();
@@ -216,18 +365,97 @@ class ResourceGate {
         }
     }
 
-    async allows(running, concurrencyCap) {
+    sampleCpu(snapshot) {
+        const delta = cpuDelta(this.lastCpuSnapshot, snapshot);
+        this.lastCpuSnapshot = snapshot;
+        this.cpuSource = snapshot.source;
+        this.cpuCores = snapshot.cores;
+        const machineUtil = delta.hostCpuUtil ?? delta.cpuUtil;
+        if (machineUtil !== undefined) {
+            this.cpuUtil = machineUtil;
+            this.cpuMeasured = true;
+        }
+        this.peakCpu = Math.max(this.peakCpu, this.cpuUtil);
+        this.cpuSamples.push(this.cpuUtil);
+        if (snapshot.source === "cgroup" && delta.cpuUtil !== undefined) {
+            this.containerCpuUtil = delta.cpuUtil;
+            this.peakContainerCpu = Math.max(
+                this.peakContainerCpu,
+                delta.cpuUtil
+            );
+            this.containerCpuSamples.push(delta.cpuUtil);
+        }
+        if (delta.hostSteal !== undefined)
+            this.peakHostSteal = Math.max(this.peakHostSteal, delta.hostSteal);
+        if (delta.cpuPressure !== undefined) {
+            this.cpuPressure = delta.cpuPressure;
+            this.peakCpuPressure = Math.max(
+                this.peakCpuPressure,
+                delta.cpuPressure
+            );
+            this.cpuPressureSamples.push(delta.cpuPressure);
+        }
+        if (delta.cpuPressureFull !== undefined)
+            this.peakCpuPressureFull = Math.max(
+                this.peakCpuPressureFull,
+                delta.cpuPressureFull
+            );
+        if (delta.throttledMs !== undefined) {
+            this.throttledMs += Math.max(0, delta.throttledMs);
+            this.nrThrottled += Math.max(0, delta.nrThrottled);
+        }
+    }
+
+    async allows(
+        running,
+        concurrencyCap,
+        { schedule = "fifo", runningCost, nextCost } = {}
+    ) {
         await this.sample();
-        return (
-            running === 0 ||
-            (running < concurrencyCap &&
-                this.cpuUtil < this.targetLoad &&
-                this.occupiedGb + this.avgPerTestGb < this.memBoundGb)
-        );
+        this.lastHoldReason = null;
+        if (running === 0) return true;
+        if (running >= concurrencyCap) return this.hold("cap");
+        // Until the first CPU reading a busy worker cannot see the load.
+        if (!this.cpuMeasured) return this.hold("cpu");
+        // Costs arrive validated: fromWireTask on a worker, CostCache locally.
+        if (schedule === "cost") {
+            const shortfall = costBudgetShortfall(
+                nextCost,
+                this.costBudget(runningCost)
+            );
+            if (shortfall) return this.hold(shortfall);
+            if (this.cpuUtil >= this.costCpuValve) return this.hold("cpu");
+            return true;
+        }
+        if (this.cpuUtil >= this.targetLoad) return this.hold("cpu");
+        if (this.occupiedGb + this.avgPerTestGb >= this.memBoundGb)
+            return this.hold("memory");
+        return true;
+    }
+
+    // The host's --target-load stays a hard ceiling under cost.
+    get costCpuValve() {
+        return Math.min(this.targetLoad, COST_CPU_VALVE);
+    }
+
+    /** What a cost worker can still start beside `runningCost`. */
+    costBudget(runningCost) {
+        return {
+            cores: this.cpuCores * COST_CPU_BUDGET - runningCost.cores,
+            rssGb:
+                this.memBoundGb - Math.max(this.occupiedGb, runningCost.rssGb)
+        };
+    }
+
+    hold(reason) {
+        this.lastHoldReason = reason;
+        this.holdCounts[reason]++;
+        return false;
     }
 
     stats() {
         return {
+            holdCounts: { ...this.holdCounts },
             peakCpu: this.peakCpu,
             avgCpu: this.cpuSamples.length
                 ? this.cpuSamples.reduce((sum, value) => sum + value, 0) /
@@ -269,16 +497,30 @@ function average(values) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+/** Time this process spent scanning the process table, and how often. */
+function processScanStats() {
+    return {
+        processScanCount: processScans.count,
+        processScanMs:
+            processScans.ms +
+            (processScans.active
+                ? performance.now() - processScans.busySince
+                : 0)
+    };
+}
+
 function resetResourceGateWarnings() {
     warnedAboutPs = false;
 }
 
 module.exports = {
     cpuTimes,
+    processScanStats,
     resetResourceGateWarnings,
     ResourceGate,
     rssByPid,
     rssByProcessTree,
+    TaskProcessSampler,
     rssGbForPids,
     systemOccupiedGb
 };

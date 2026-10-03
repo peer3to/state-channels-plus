@@ -121,6 +121,7 @@
     "test:unit:verbose": "TEST_DIR=test/unit yarn test:e2e:verbose",
     "test:parallel": "node scripts/test-e2e-parallel.js",
     "test:parallel:distributed": "node scripts/test-e2e-parallel.js --distributed",
+    "test:costs:snapshot": "node scripts/e2e-parallel/snapshotTestCosts.js",
     "distributed:identity": "node scripts/e2e-parallel/distributed/distributedIdentity.js",
     "distributed:admin": "node scripts/e2e-parallel/distributed/distributedAdmin.js",
     "test:parallel:image": "node scripts/e2e-parallel/distributed/buildRunnerImage.js",

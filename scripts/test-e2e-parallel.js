@@ -10,7 +10,8 @@ const {
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     MAX_SLOTS_FROM_POOL,
-    DEFAULT_STREAM_CHILD_OUTPUT
+    DEFAULT_STREAM_CHILD_OUTPUT,
+    DEFAULT_COST_OVERRIDES_PATH
 } = require("./e2e-parallel/shared/constants");
 
 const {
@@ -22,6 +23,7 @@ const {
     compiledTestTreeAvailable,
     refreshCompiledTestTree
 } = require("./e2e-parallel/shared/compiledTree");
+const { readOverrides } = require("./e2e-parallel/shared/costCache");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
 const {
     discoverForgeTasks
@@ -218,6 +220,8 @@ async function main(options = {}) {
         console.log(getHelpText());
         return;
     }
+    // A broken overrides file fails the run before anything is built.
+    readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
 
     // ---- discover tasks ----
     // The Mocha, Foundry and browser tiers are discovered independently and
@@ -440,7 +444,11 @@ async function main(options = {}) {
                 );
                 const stats = await runDistributed({
                     tasks,
+                    schedule: cli.schedule,
                     projectRoot: process.cwd(),
+                    costCachePath: cli.costCachePath,
+                    costCacheReadOnly: cli.costCacheReadOnly,
+                    costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
                     archivePath,
                     manifest,
                     logDir,
@@ -537,6 +545,11 @@ async function main(options = {}) {
 
         const stats = await runScheduler({
             tasks,
+            schedule: cli.schedule,
+            projectRoot: process.cwd(),
+            costCachePath: cli.costCachePath,
+            costCacheReadOnly: cli.costCacheReadOnly,
+            costOverridesPath: DEFAULT_COST_OVERRIDES_PATH,
             slots,
             slotCount,
             concurrencyCap,

@@ -6,9 +6,13 @@ const { TaskResourcePool } = require("../shared/taskResources");
 const { WorkerAttemptSpool } = require("./workerAttemptSpool");
 const { fromWireTask } = require("./taskWire");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
-const { ResourceGate } = require("../shared/resourceGate");
+const { processScanStats, ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
-const { holdReason } = require("../shared/scheduling");
+const {
+    admissionCost,
+    holdReason,
+    requestCostBudget
+} = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const { reduceAttemptOutput } = require("../shared/taskCoordinator");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -203,13 +207,16 @@ async function start(config) {
         concurrencyCap: config.concurrencyCap,
         retryMs: config.schedulerTickMs,
         prefetch: true,
-        canRun: async (running) => {
+        canRun: async (running, assignment, activeAssignments) => {
+            const schedule = scheduler.options.schedule;
             const allowed = await resources.allows(
                 running,
-                config.concurrencyCap
+                config.concurrencyCap,
+                admissionCost(schedule, assignment, activeAssignments)
             );
             if (!allowed) {
                 const reason = holdReason({
+                    schedule,
                     running,
                     concurrencyCap: config.concurrencyCap,
                     resourceGate: resources,
@@ -217,7 +224,10 @@ async function start(config) {
                     targetLoad: config.targetLoad
                 });
                 logging.hold({
-                    seq: scheduler?.bufferedAssignment?.seq || 1,
+                    seq:
+                        assignment?.seq ??
+                        scheduler.bufferedAssignment?.seq ??
+                        1,
                     total: config.taskCount,
                     reason,
                     buffered: scheduler.bufferedCount
@@ -225,9 +235,26 @@ async function start(config) {
             }
             return allowed;
         },
-        requestTask: async () => request("TASK_REQUEST"),
-        runTask: async (assignment) => {
+        requestTask: async () => {
+            const costBudget = requestCostBudget(
+                scheduler.options.schedule,
+                resources,
+                scheduler.runningAssignments
+            );
+            const assignment = await request(
+                "TASK_REQUEST",
+                costBudget ? { costBudget } : {}
+            );
+            if (!assignment) return assignment;
             const task = fromWireTask(assignment.task, config.projectRoot);
+            // The orchestrator sends a cost only under --schedule cost.
+            scheduler.options.schedule = Object.hasOwn(task, "cost")
+                ? "cost"
+                : "fifo";
+            return { ...assignment, task };
+        },
+        runTask: async (assignment) => {
+            const { task } = assignment;
             // Forge brings its own EVM and a browser gate starts its own node:
             // no warm slot, no funded partition.
             const execution = taskResources.acquire(task);
@@ -282,7 +309,12 @@ async function start(config) {
                 assignment: { ...assignment, task },
                 result: {
                     ...wireResult,
-                    reduced: reduceAttemptOutput(output.stdout, output.stderr)
+                    reduced: {
+                        ...reduceAttemptOutput(output.stdout, output.stderr),
+                        peakRssGb: result.peakRssGb,
+                        avgCores: result.avgCores,
+                        measurementReason: result.measurementReason
+                    }
                 },
                 spoolPath
             });
@@ -309,7 +341,14 @@ async function stop(
         }
         rejectPending(new Error("Distributed worker stopped"));
         completionExitCode = exitCode;
-        process.send({ kind: "WORKER_COMPLETE", stats: resources?.stats() });
+        process.send({
+            kind: "WORKER_COMPLETE",
+            stats: {
+                ...resources?.stats(),
+                ...scheduler?.stats(),
+                ...processScanStats()
+            }
+        });
         return;
     }
     rejectPending(new Error("Distributed worker stopped"));

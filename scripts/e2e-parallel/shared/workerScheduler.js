@@ -1,11 +1,20 @@
 class WorkerScheduler {
     constructor(options) {
-        this.options = options;
+        this.options = { schedule: "fifo", ...options };
         this.running = 0;
+        this.runningAssignments = new Set();
+        this.concurrencyStartedAt = Date.now();
+        this.concurrencyUpdatedAt = this.concurrencyStartedAt;
+        this.concurrencyIntegral = 0;
+        this.peakConcurrency = 0;
+        this.concurrencyStoppedAt = null;
         this.stopped = false;
         this.requestPending = false;
         this.bufferedAssignment = null;
         this.retryTimer = null;
+        // An unknown-cost start whose tick is still running: no immediate
+        // request until that tick fires or the task itself finishes.
+        this.settling = null;
     }
 
     start() {
@@ -28,7 +37,17 @@ class WorkerScheduler {
         this.requestPending = true;
         let assignment;
         try {
-            if (!(await this.options.canRun(this.running))) {
+            // Both modes ask before fetching: fifo with no task, cost with
+            // the buffered one, if any. The probe also samples the machine
+            // for the budget a cost request carries.
+            const fifo = this.options.schedule === "fifo";
+            if (
+                !(await this.options.canRun(
+                    this.running,
+                    fifo ? null : this.bufferedAssignment,
+                    this.runningAssignments
+                ))
+            ) {
                 this.scheduleRetry();
                 return;
             }
@@ -39,22 +58,76 @@ class WorkerScheduler {
                 this.scheduleRetry();
                 return;
             }
+            // The coordinator chose a task that fit the budget sent with the
+            // request; the machine may have changed since.
+            if (this.options.schedule === "cost") {
+                if (
+                    !(await this.options.canRun(
+                        this.running,
+                        assignment,
+                        this.runningAssignments
+                    ))
+                ) {
+                    this.bufferedAssignment = assignment;
+                    this.scheduleRetry();
+                    return;
+                }
+            }
         } finally {
             this.requestPending = false;
         }
         if (this.stopped) return;
+        this.updateConcurrency();
+        this.runningAssignments.add(assignment);
         this.running++;
+        this.peakConcurrency = Math.max(this.peakConcurrency, this.running);
         this.run(assignment);
-        this.scheduleRetry();
+        // A known cost is already counted against the budget, so the next
+        // request need not wait a tick for the CPU sample to catch up.
+        if (this.options.schedule === "cost" && assignment.task?.cost?.known)
+            this.requestSoon();
+        // An unknown-cost start gets a full tick, not what is left of an
+        // earlier one, so its usage shows before the next admission.
+        else if (this.options.schedule === "cost") {
+            this.settling = assignment;
+            this.restartRetry();
+        } else this.scheduleRetry();
         if (this.options.prefetch) this.prefetchAssignment();
     }
 
-    complete() {
+    updateConcurrency() {
+        const now = this.concurrencyStoppedAt ?? Date.now();
+        this.concurrencyIntegral +=
+            this.running * (now - this.concurrencyUpdatedAt);
+        this.concurrencyUpdatedAt = now;
+    }
+
+    stats() {
+        this.updateConcurrency();
+        const concurrencyWallMs =
+            this.concurrencyUpdatedAt - this.concurrencyStartedAt;
+        return {
+            meanConcurrency: concurrencyWallMs
+                ? this.concurrencyIntegral / concurrencyWallMs
+                : 0,
+            peakConcurrency: this.peakConcurrency,
+            concurrencyWallMs
+        };
+    }
+
+    complete(assignment) {
+        this.updateConcurrency();
+        this.runningAssignments.delete(assignment);
         this.running--;
-        this.scheduleRetry();
+        if (assignment === this.settling) this.settling = null;
+        // Under cost a finished task frees budget a queued one may fit now.
+        if (this.options.schedule === "cost") this.requestSoon();
+        else this.scheduleRetry();
     }
 
     stop() {
+        this.updateConcurrency();
+        this.concurrencyStoppedAt ??= this.concurrencyUpdatedAt;
         this.stopped = true;
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.retryTimer = null;
@@ -68,7 +141,7 @@ class WorkerScheduler {
             this.stop();
             this.options.onError?.(error);
         } finally {
-            this.complete();
+            this.complete(assignment);
         }
     }
 
@@ -77,7 +150,9 @@ class WorkerScheduler {
             this.stopped ||
             this.requestPending ||
             this.bufferedAssignment ||
-            this.running === 0
+            this.running === 0 ||
+            // A cost worker is handed only what it can start now.
+            this.options.schedule === "cost"
         )
             return;
         this.requestPending = true;
@@ -91,10 +166,30 @@ class WorkerScheduler {
         this.scheduleRetry();
     }
 
+    // A request that starts nothing schedules the usual retry itself. While an
+    // unknown-cost start settles, the pending tick makes the request instead.
+    requestSoon() {
+        setImmediate(() => {
+            // Checked when it runs: an unknown-cost start may have begun since.
+            if (this.settling) return this.scheduleRetry();
+            this.requestWhenAvailable().catch((error) =>
+                this.requestFailed(error)
+            );
+        });
+    }
+
+    restartRetry() {
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+        this.scheduleRetry();
+    }
+
     scheduleRetry() {
         if (this.stopped || this.retryTimer) return;
         this.retryTimer = setTimeout(() => {
             this.retryTimer = null;
+            // restartRetry() armed this tick for the settling start: it is over.
+            this.settling = null;
             this.requestWhenAvailable().catch((error) =>
                 this.requestFailed(error)
             );

@@ -219,6 +219,62 @@ redialing until the job times out; when some were instead quarantined before
 running a task (for example after repeated workspace preparation errors), it
 fails with `All distributed workers were quarantined before running a task`.
 
+### Cost-aware scheduling
+
+Both runners measure every test while it runs: peak memory of its process tree,
+average CPU cores and duration. At the end of a run the orchestrator (or the
+local runner) stores them per test in `.cache/test-costs.json`, and writes
+`logs/run-N/run-metrics.json` with how busy each worker was, why it held tests
+back and when each test was first assigned.
+
+By default (`--schedule fifo`) the measurements are only recorded. On Linux,
+fifo's memory admission now reads running tests' memory from `/proc`, where it
+used to fall back to whole-host memory and a fixed 2 GB per test, so containers
+may admit more tests than before.
+
+With `--schedule cost` the runner uses them: browser-only and longest tests
+start first, and a busy worker is handed only a test whose predicted CPU and
+memory still fit beside everything it runs. After starting a test whose cores
+and memory are measured or overridden, and after any test finishes, a worker
+requests its next test at once instead of waiting for the scheduler tick; after
+starting an unknown-cost test it waits a full tick, even if another test
+finishes meanwhile, so that test's usage shows first.
+The `--workers` cap still applies, and so does `--target-load`: machine CPU at
+or above `min(--target-load, 0.95)` holds new tests. Hold counts in
+`run-metrics.json` include tests a worker was refused because they did not fit
+its budget; a distributed run also logs each refusal in that worker's
+infrastructure log and totals them in its summary line.
+
+```shell
+yarn test:parallel --schedule cost --workers 30
+yarn test:parallel:distributed --schedule cost
+yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
+yarn test:parallel:distributed --cost-cache-read-only  # CI: read, never write
+```
+
+Each of a test's duration, cores and memory comes from, first match wins: an
+override, this run's measurement, this checkout's cache, the committed snapshot
+`scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
+from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
+cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled only when it fails the test; a redundant copy never); an attempt that starved is stored
+with 50% more cores and memory, so the next run admits it as more expensive,
+and a clean retry in the same run replaces that sample.
+
+`yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
+rounded and sorted so the diff shows only what changed; it stops without
+writing if the cache is missing or either file cannot be read. Commit a refreshed
+snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
+and stays stateless.
+
+To correct a test's cost by hand, add it to
+`scripts/e2e-parallel/test-costs.overrides.json`, keyed by
+`runner|file|full title`, e.g.
+`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
+are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
+before anything is built, in either schedule. The defaults are placeholders in
+`scripts/e2e-parallel/shared/constants.js`, to be tuned from
+`run-metrics.json`. Workers on protocol 13/14 keep the old admission.
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a

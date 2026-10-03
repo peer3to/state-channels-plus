@@ -7,13 +7,20 @@ const {
 const { TaskResourcePool } = require("../shared/taskResources");
 const {
     cpuTimes,
+    processScanStats,
     rssGbForPids,
     ResourceGate
 } = require("../shared/resourceGate");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
+const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
-const { holdReason } = require("../shared/scheduling");
+const {
+    admissionCost,
+    budgetHoldReason,
+    holdReason,
+    requestCostBudget
+} = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const logging = require("../shared/logging");
 
@@ -44,8 +51,20 @@ async function runScheduler({
     tickMs = SCHEDULER_TICK_MS,
     runTaskImpl = runTask,
     accountPartitions = new AccountPartitionPool(),
-    resourceGate
+    resourceGate,
+    projectRoot = process.cwd(),
+    schedule = "fifo",
+    costCachePath,
+    costCacheReadOnly,
+    costOverridesPath
 }) {
+    const startedAt = Date.now();
+    const costCache = new CostCache({
+        projectRoot,
+        cachePath: costCachePath,
+        overridesPath: costOverridesPath,
+        readOnly: costCacheReadOnly
+    });
     const taskResources = new TaskResourcePool({
         baseEnv,
         slots,
@@ -66,7 +85,15 @@ async function runScheduler({
 
     let scheduler;
     const coordinator = new TaskCoordinator(tasks, {
+        schedule,
+        costCache,
         onWorkAvailable: () => scheduler?.workAvailable(),
+        onBudgetHold: ({ seq, reason }) =>
+            logging.hold({
+                seq,
+                total: tasks.length,
+                reason: budgetHoldReason(reason)
+            }),
         onResult: ({ assignment, attempt, code, parsed }) => {
             if (code !== 0) {
                 logging.appendRunnerFailureMarker(
@@ -92,14 +119,20 @@ async function runScheduler({
     coordinator.registerWorker("local");
 
     scheduler = new WorkerScheduler({
+        schedule,
         concurrencyCap,
         retryMs: tickMs,
-        canRun: async (running) => {
-            if (coordinator.queue.length === 0) return false;
-            const allowed = await resources.allows(running, concurrencyCap);
+        canRun: async (running, assignment, activeAssignments) => {
+            if (!assignment && coordinator.queue.length === 0) return false;
+            const allowed = await resources.allows(
+                running,
+                concurrencyCap,
+                admissionCost(schedule, assignment, activeAssignments)
+            );
             if (!allowed && coordinator.finish().pending) {
-                const next = coordinator.queue[0];
+                const next = assignment ?? coordinator.queue[0];
                 const reason = holdReason({
+                    schedule,
                     running,
                     concurrencyCap,
                     resourceGate: resources,
@@ -114,7 +147,14 @@ async function runScheduler({
             }
             return allowed;
         },
-        requestTask: async () => coordinator.requestTask("local"),
+        requestTask: async () =>
+            coordinator.requestTask("local", {
+                costBudget: requestCostBudget(
+                    schedule,
+                    resources,
+                    scheduler.runningAssignments
+                )
+            }),
         onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
             // Forge brings its own EVM and a browser gate starts its own node:
@@ -200,6 +240,26 @@ async function runScheduler({
     });
 
     const resourceStats = resources.stats();
+    const metrics = logging.buildRunMetrics({
+        tasks,
+        workers: [
+            {
+                id: "local",
+                label: "local",
+                stats: coordinator.withBudgetHolds("local", {
+                    ...resourceStats,
+                    ...scheduler.stats(),
+                    ...processScanStats()
+                }),
+                legacyAdmission: schedule !== "cost"
+            }
+        ],
+        makespanMs: Date.now() - startedAt,
+        startedAt,
+        sumDurationMs: coordinator.sumDurationMs
+    });
+    logging.writeRunMetrics(logDir, metrics);
+    costCache.commit();
     return {
         failed: coordinator.failed,
         completed: coordinator.completed,
