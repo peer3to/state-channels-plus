@@ -851,10 +851,14 @@ describe("Unit: SpectateService", function () {
         it("successor genesis applied while the chain has not yet expired its origin window → rejected, origin kill period not expired on chain, not stored", async function () {
             const h = TestSession.getHarness();
             // a long evidence time keeps the chain window open while the requester applies;
-            // an inline VM reads the clock per call -> the offset below reaches the local mirror
+            // an inline VM reads the clock per call -> the offset below reaches the local mirror;
+            // a worker-hosted SDK keeps the offset to the requester's process
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork({
-                    configOverrides: { VM_DEDICATED_THREAD: false },
+                    configOverrides: {
+                        RUN_SDK_IN_THREAD: true,
+                        VM_DEDICATED_THREAD: false
+                    },
                     timeConfig: { evidenceTime: 30 },
                     skipEvidenceWait: true
                 });

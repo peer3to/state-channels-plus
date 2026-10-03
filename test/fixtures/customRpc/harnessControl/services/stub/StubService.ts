@@ -347,6 +347,9 @@ export type DoubleSignatureLogEntry = {
     metadata: Record<string, string>;
 };
 
+// the unpatched clock read, captured once so a held offset never restores another patch
+const realClockTimeInSeconds = Clock.getTimeInSeconds;
+
 /**
  * Method stub/restore for Byzantine and fault-injection scenarios. Each stub is
  * a concrete method (not a free-form path) so an SDK rename breaks compilation
@@ -928,13 +931,17 @@ export class StubService extends ANetworkRpcService<
         this.admissionObservation = undefined;
     }
 
-    /** Run this peer's clock `seconds` ahead of real time until `restoreClockOffset`. */
+    /**
+     * Run the host process clock `seconds` ahead of real time until `releaseClockOffset`.
+     * Per peer only in worker mode (`RUN_SDK_IN_THREAD`); inline hosts share one process.
+     */
     public holdClockOffset(seconds: number): void {
-        this.restoreClockOffset?.();
-        const original = Clock.getTimeInSeconds;
-        Clock.getTimeInSeconds = () => original.call(Clock) + seconds;
+        if (this.restoreClockOffset)
+            throw new Error("holdClockOffset - an offset is already held");
+        Clock.getTimeInSeconds = () =>
+            realClockTimeInSeconds.call(Clock) + seconds;
         this.restoreClockOffset = () => {
-            Clock.getTimeInSeconds = original;
+            Clock.getTimeInSeconds = realClockTimeInSeconds;
         };
     }
 

@@ -1,14 +1,18 @@
 // @spec-test-coverage-ignore: genesis-timestamp sync staging exercised by explicit SpectateService and E2E-Spectate declarations
 import { StateSnapshot } from "@/models";
 import type { SyncPayload } from "@/types";
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     applyServedSyncPayload,
     fetchServedSyncPayload
 } from "@test/fixtures/PinnedSyncStaging";
+import type { TestPeer } from "@test/harness/core/types";
 import { decodeMathState } from "@test/utils/mathHarnessAbi";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 
 /**
@@ -107,39 +111,7 @@ export async function syncForgedGenesisBeforeFirstBlock(
     expect(payload.latestForkGenesisSnapshot.forkId).to.equal(forkId);
     expect(forgedGenesisHash).to.not.equal(onChainGenesis.hash);
 
-    await h
-        .control(responder)
-        .stub.stubSpectatePayload(
-            Codec.encode(payload, Type.SyncPayload) as string
-        )
-        .request();
-    try {
-        await h
-            .control(victim)
-            .spectate.startSync(responder.address, forkId)
-            .request();
-        // settled either way: the responder is cut or the forged genesis is stored
-        await waitFor(async () => {
-            if (
-                await h
-                    .control(victim)
-                    .query.isBlacklisted(responder.address)
-                    .request()
-            )
-                return true;
-            const stored = await h
-                .control(victim)
-                .dispute.getGenesisSnapshotStruct(forkId)
-                .request();
-            return (
-                !!stored &&
-                StateSnapshot.decode(stored.encodedSnapshot).hash ===
-                    forgedGenesisHash
-            );
-        }, h.event.protocolEventTimeoutMs());
-    } finally {
-        await h.control(responder).stub.restoreSpectateStaleProof().request();
-    }
+    await serveForgedGenesisAndSettle(h, victim, responder, payload, forkId);
     return {
         forkId,
         victim,
@@ -189,42 +161,16 @@ export async function syncForgedSuccessorGenesisBeforeFirstBlock(
 
     served.latestForkGenesisSnapshot.timestamp =
         BigInt(served.latestForkGenesisSnapshot.timestamp) + 1n;
-    const forgedGenesisHash = StateSnapshot.from(
-        served.latestForkGenesisSnapshot
-    ).hash;
-    await h
-        .control(responder)
-        .stub.stubSpectatePayload(
-            Codec.encode(served, Type.SyncPayload) as string
-        )
-        .request();
-    try {
-        await h
-            .control(victim)
-            .spectate.startSync(responder.address, sourceForkId)
-            .request();
-        // settled either way: the responder is cut or the forged genesis is stored
-        await waitFor(async () => {
-            if (
-                await h
-                    .control(victim)
-                    .query.isBlacklisted(responder.address)
-                    .request()
-            )
-                return true;
-            const stored = await h
-                .control(victim)
-                .dispute.getGenesisSnapshotStruct(successorForkId)
-                .request();
-            return (
-                !!stored &&
-                StateSnapshot.decode(stored.encodedSnapshot).hash ===
-                    forgedGenesisHash
-            );
-        }, h.event.protocolEventTimeoutMs());
-    } finally {
-        await h.control(responder).stub.restoreSpectateStaleProof().request();
-    }
+    expect(
+        StateSnapshot.from(served.latestForkGenesisSnapshot).hash
+    ).to.not.equal(successorGenesisHash);
+    await serveForgedGenesisAndSettle(
+        h,
+        victim,
+        responder,
+        served,
+        sourceForkId
+    );
 
     await h.control(observer).stub.startTryReduce(sourceForkId).request();
     await waitFor(async () => {
@@ -336,5 +282,55 @@ export async function applyForgedGenesisPastChainGenesis(
         };
     } finally {
         await stub.restoreRecordedSyncRejections().request();
+    }
+}
+
+/**
+ * `responder` serves `payload` to `victim`, which syncs `syncForkId` from it.
+ * Resolves once the victim cut the responder or stored the payload's genesis.
+ */
+async function serveForgedGenesisAndSettle(
+    h: MathPeerTestHarness,
+    victim: TestPeer<HarnessControlRpc, MathStateMachine>,
+    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    payload: SyncPayload,
+    syncForkId: ForkId
+) {
+    const genesisForkId = String(payload.latestForkGenesisSnapshot.forkId);
+    const forgedGenesisHash = StateSnapshot.from(
+        payload.latestForkGenesisSnapshot
+    ).hash;
+    await h
+        .control(responder)
+        .stub.stubSpectatePayload(
+            Codec.encode(payload, Type.SyncPayload) as string
+        )
+        .request();
+    try {
+        await h
+            .control(victim)
+            .spectate.startSync(responder.address, syncForkId)
+            .request();
+        // settled either way: the responder is cut or the forged genesis is stored
+        await waitFor(async () => {
+            if (
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            )
+                return true;
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(genesisForkId)
+                .request();
+            return (
+                !!stored &&
+                StateSnapshot.decode(stored.encodedSnapshot).hash ===
+                    forgedGenesisHash
+            );
+        }, h.event.protocolEventTimeoutMs());
+    } finally {
+        await h.control(responder).stub.restoreSpectateStaleProof().request();
     }
 }
