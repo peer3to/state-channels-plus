@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: anchored sync staging exercised by explicit SpectateService declarations
 import { StateSnapshot } from "@/models";
 import type { SyncPayload } from "@/types";
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
+import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { id } from "ethers";
 
@@ -12,16 +16,34 @@ import { id } from "ethers";
  */
 export async function stageAnchoredSyncPayload(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 3);
+    return {
+        responder: h.getPeer(0),
+        requester: h.getPeer(2),
+        ...(await postAnchorAndServePayload(h, h.getPeer(0)))
+    };
+}
+
+/**
+ * `responder` posts the current snapshot and the peers advance two finalized
+ * blocks past it; returns the anchor and `responder`'s payload for the tip.
+ */
+export async function postAnchorAndServePayload(
+    h: MathPeerTestHarness,
+    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    waitForPeers?: number[]
+) {
     const forkId = h.activeForkId!;
-    const responder = h.getPeer(0);
-    const requester = h.getPeer(2);
     expect(
         await h.transition.postSnapshotWait({
             peerIndex: responder.index,
             forkId: String(forkId)
         })
     ).to.not.equal(undefined);
-    await h.transition.advanceState({ count: 2, waitForFinalization: true });
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers,
+        waitForFinalization: true
+    });
     const latestHeight = await h
         .control(responder)
         .query.getLatestBlockHeight(forkId)
@@ -41,8 +63,6 @@ export async function stageAnchoredSyncPayload(h: MathPeerTestHarness) {
     const payload = Codec.decode(served!.encodedSyncPayload, Type.SyncPayload);
     return {
         forkId,
-        responder,
-        requester,
         latestHeight: latestHeight!,
         onChainSnapshot,
         payload
@@ -66,7 +86,25 @@ export async function applyAnchoredSyncPayload(
         payload
     } = await stageAnchoredSyncPayload(h);
     mutate(payload, onChainSnapshot);
+    return applyPinnedSyncPayload(
+        h,
+        requester,
+        responder,
+        forkId,
+        latestHeight,
+        payload
+    );
+}
 
+/** `requester` applies `payload` as `responder`'s answer to a pinned request; returns the verdict and recorded rejection reasons. */
+export async function applyPinnedSyncPayload(
+    h: MathPeerTestHarness,
+    requester: TestPeer<HarnessControlRpc, MathStateMachine>,
+    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    forkId: ForkId,
+    blockHeight: number,
+    payload: SyncPayload
+): Promise<{ accepted: boolean; rejections: string[] }> {
     const stub = h.control(requester).stub;
     await stub.recordSyncRejections().request();
     try {
@@ -75,7 +113,7 @@ export async function applyAnchoredSyncPayload(
             .spectate.applySyncResponse(
                 responder.address,
                 forkId,
-                latestHeight,
+                blockHeight,
                 Codec.encode(payload, Type.SyncPayload) as string
             )
             .request({ timeoutMs: h.event.protocolEventTimeoutMs() });

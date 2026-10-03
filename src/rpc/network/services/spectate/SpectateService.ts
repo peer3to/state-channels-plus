@@ -407,7 +407,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     peerAddress,
                     "genesis timestamp mismatch"
                 );
-            // chain past genesis on this fork -> block 0 is no longer judged against a genesis
+            // chain past genesis on this fork -> no chain value authenticates the timestamp; persistence keeps a held genesis
 
             const latestFinalizedSnapshot =
                 syncPayload.milestoneSnapshots.length > 0

@@ -4,6 +4,10 @@ import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import {
+    applyPinnedSyncPayload,
+    postAnchorAndServePayload
+} from "@test/fixtures/HistoricSyncStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     applyServedSyncPayload,
@@ -223,33 +227,11 @@ export async function applyForgedGenesisPastChainGenesis(
     );
 
     await h.network.blacklistAndDisconnectPeer(spectator.index);
-    expect(
-        await h.transition.postSnapshotWait({
-            peerIndex: responder.index,
-            forkId: String(forkId)
-        })
-    ).to.not.equal(undefined);
-    await h.transition.advanceState({
-        count: 2,
-        waitForPeers: [0, 1, 2],
-        waitForFinalization: true
-    });
-    const onChainSnapshot = StateSnapshot.from(
-        await h.channelManager.getStateSnapshot(h.channelId)
+    const { latestHeight, payload } = await postAnchorAndServePayload(
+        h,
+        responder,
+        [0, 1, 2]
     );
-    expect(onChainSnapshot.forkID).to.equal(forkId);
-    expect(onChainSnapshot.blockHeight).to.be.greaterThan(0);
-
-    const latestHeight = (await h
-        .control(responder)
-        .query.getLatestBlockHeight(forkId)
-        .request())!;
-    const served = await h
-        .control(responder)
-        .spectate.generateSyncPayload(h.channelId, forkId, latestHeight)
-        .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-    expect(served).to.not.equal(null);
-    const payload = Codec.decode(served!.encodedSyncPayload, Type.SyncPayload);
     // the spectator is behind the proof -> its persistence runs
     const spectatorHeight =
         (await h
@@ -262,27 +244,19 @@ export async function applyForgedGenesisPastChainGenesis(
     payload.latestForkGenesisSnapshot.timestamp =
         BigInt(payload.latestForkGenesisSnapshot.timestamp) + 1n;
 
-    const stub = h.control(spectator).stub;
-    await stub.recordSyncRejections().request();
-    try {
-        const accepted = await h
-            .control(spectator)
-            .spectate.applySyncResponse(
-                responder.address,
-                forkId,
-                latestHeight,
-                Codec.encode(payload, Type.SyncPayload) as string
-            )
-            .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-        return {
-            accepted,
-            rejections: await stub.restoreRecordedSyncRejections().request(),
-            heldGenesisHash,
-            storedGenesisHash: await storedGenesisHash()
-        };
-    } finally {
-        await stub.restoreRecordedSyncRejections().request();
-    }
+    const result = await applyPinnedSyncPayload(
+        h,
+        spectator,
+        responder,
+        forkId,
+        latestHeight,
+        payload
+    );
+    return {
+        ...result,
+        heldGenesisHash,
+        storedGenesisHash: await storedGenesisHash()
+    };
 }
 
 /**
