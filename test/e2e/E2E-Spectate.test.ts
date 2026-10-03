@@ -1,7 +1,10 @@
 import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import { syncForgedGenesisBeforeFirstBlock } from "@test/fixtures/GenesisTimestampSyncStaging";
+import {
+    syncForgedGenesisBeforeFirstBlock,
+    syncForgedSuccessorGenesisBeforeFirstBlock
+} from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -250,6 +253,74 @@ describe("E2E: Spectate Service", function () {
             });
             expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
                 []
+            );
+        });
+
+        it("byzantine responder serves a timestamp-altered successor genesis before its block zero -> the writer rejects it, installs the chain genesis, and its block 0 is not slashable", async function () {
+            const h = TestSession.getHarness();
+            const {
+                successorForkId,
+                victim,
+                responder,
+                observer,
+                successorGenesisHash
+            } = await syncForgedSuccessorGenesisBeforeFirstBlock(h);
+
+            expect(
+                await h
+                    .control(victim)
+                    .query.isBlacklisted(responder.address)
+                    .request()
+            ).to.equal(true);
+            // fork adoption checks the genesis timestamp against the chain's own -> same hash
+            const onChainGenesis = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(onChainGenesis.forkID).to.equal(successorForkId);
+            expect(onChainGenesis.hash).to.equal(successorGenesisHash);
+            const stored = await h
+                .control(victim)
+                .dispute.getGenesisSnapshotStruct(successorForkId)
+                .request();
+            expect(stored).to.not.equal(null);
+            expect(StateSnapshot.decode(stored!.encodedSnapshot).hash).to.equal(
+                successorGenesisHash
+            );
+            const slashedBefore = await h.query.onChainSlashedParticipants();
+            // the staged source-fork dispute already counted -> watch only from block 0 on
+            h.event.resetEventSpies();
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [victim.index, observer.index]
+            });
+
+            const bundle = await h
+                .control(observer)
+                .query.getLatestBlockBundle(successorForkId)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(block.height).to.equal(0);
+            expect(block.author).to.equal(victim.address);
+            expect(block.previousBlockHash).to.equal(successorGenesisHash);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getFraudProofType(victim.address)
+                    .request()
+            ).to.equal(null);
+            await h.assert.dispute.didNotInitiate({
+                peers: [victim.index, observer.index]
+            });
+            expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
+                slashedBefore
             );
         });
 

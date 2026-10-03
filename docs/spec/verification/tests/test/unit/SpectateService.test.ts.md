@@ -23,6 +23,8 @@ The same-fork snapshot case creates the requester before opening the four-partic
 
 One `applySyncResponse` case stubs the requester's local diamond so the unfinalized blocks of an honest payload start with a block whose bytes do not decode; the sync returns false and records only the "block confirmation rejected" reason, so neither the pipeline log nor the pipeline throws.
 
+The genesis-timestamp cases mutate only the served genesis timestamp. A genesis-only payload before block zero, with one second added, is rejected as genesis timestamp mismatch, blacklists the responder and leaves the stored genesis equal to the on-chain one; the unaltered payload is accepted. A reduced-fork payload, with the chain still on the disputed fork, is rejected the same way and its altered genesis is not stored. Taken before the chain kill period ends, with the requester's clock held ahead so its local mirror already sees the window expired, the same successor is rejected as origin kill period not expired on chain.
+
 ## Tests and covered test IDs
 
 A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
