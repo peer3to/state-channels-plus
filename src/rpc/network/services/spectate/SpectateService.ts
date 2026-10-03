@@ -218,7 +218,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             // a successor fork's genesis timestamp is its origin window's kill period end, final once the chain says expired
-            let chainGenesisTimestamp: bigint | undefined;
+            let originKillPeriod = { isExpired: false, killPeriodEnd: 0n };
             if (forkIds.length > 0) {
                 const contract = stateManager.stateChannelManagerContract;
                 const encodedFinalityCalls = forkIds.map((forkId) =>
@@ -251,8 +251,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         "isKillPeriodExpired",
                         encodedFinalityResults[forkIds.length]
                     );
-                if (windowExists && isExpired)
-                    chainGenesisTimestamp = killPeriodEnd;
+                originKillPeriod = {
+                    isExpired: windowExists && isExpired,
+                    killPeriodEnd
+                };
             }
             const onChainDisputeWindows =
                 await this.fetchAndPersistOnChainDisputeWindows(
@@ -390,10 +392,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     "genesis timestamp mismatch"
                 );
 
-            // successor fork -> its timestamp must be the chain's genesis timestamp
+            // successor fork -> its timestamp must be the origin kill period end, once the chain says expired
+            if (isSuccessorFork && !originKillPeriod.isExpired)
+                return this.rejectSync(
+                    peerAddress,
+                    "origin kill period not expired on chain"
+                );
             if (
                 isSuccessorFork &&
-                chainGenesisTimestamp !== BigInt(genesisSnapshot.timestamp)
+                originKillPeriod.killPeriodEnd !==
+                    BigInt(genesisSnapshot.timestamp)
             )
                 return this.rejectSync(
                     peerAddress,

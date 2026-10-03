@@ -3,8 +3,11 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
 
@@ -389,52 +392,29 @@ export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
     const source = h.getPeer(0);
     const stub = h.control(observer).stub;
     await stub.recordSyncFinalityReads().request();
-    await stub.recordSyncRejections().request();
     try {
-        const response = await h.execOnHost(
+        const payload = await fetchServedSyncPayload(
+            h,
             observer,
-            async (sm, args) =>
-                sm.p2pManager.remoteRpc.spectateService
-                    .onSpectateRequest({
-                        channelId: sm.channelId,
-                        forkId: args.forkId
-                    })
-                    .request(args.source),
-            { source: source.address, forkId: sourceForkId }
-        );
-        const payload = Codec.decode(
-            response.encodedSyncPayload,
-            Type.SyncPayload
+            source,
+            sourceForkId
         );
         // Repeat a real proved window to exercise responder-sized input before rejection;
         // the repeat does not continue from the first window's reduced fork.
         payload.disputeWindows.push(payload.disputeWindows[0]);
-        const accepted = await h.execOnHost(
+        const { accepted, rejections } = await applyServedSyncPayload(
+            h,
             observer,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
-            {
-                source: source.address,
-                forkId: sourceForkId,
-                encodedSyncPayload: Codec.encode(
-                    payload,
-                    Type.SyncPayload
-                ) as string
-            }
+            source,
+            sourceForkId,
+            payload
         );
         expect(accepted).to.equal(false);
-        expect(
-            await stub.restoreRecordedSyncRejections().request()
-        ).to.deep.equal(["dispute window not linked"]);
+        expect(rejections).to.deep.equal(["dispute window not linked"]);
         expect(await stub.getSyncFinalityReadWidths().request()).to.deep.equal([
             2
         ]);
     } finally {
-        await stub.restoreRecordedSyncRejections().request();
         await stub.restoreSyncFinalityReads().request();
     }
 }
@@ -531,29 +511,52 @@ export async function applyDisputedSyncPayload(
     ).to.equal(sourceForkId);
     const observer = h.getPeer(2);
     const source = h.getPeer(0);
-    const stub = h.control(observer).stub;
+    const payload = await fetchServedSyncPayload(
+        h,
+        observer,
+        source,
+        sourceForkId
+    );
+    expect(payload.disputeWindows.length).to.equal(1);
+    expect(payload.disputeWindows[0].forkId).to.equal(sourceForkId);
+    mutate(payload, sourceForkId);
+    return applyServedSyncPayload(h, observer, source, sourceForkId, payload);
+}
+
+/** `responder`'s real answer, over the wire, to `requester`'s latest-state request for `forkId`. */
+export async function fetchServedSyncPayload(
+    h: MathPeerTestHarness,
+    requester: TestPeer<HarnessControlRpc, MathStateMachine>,
+    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    forkId: ForkId
+): Promise<SyncPayload> {
+    const response = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: responder.address, forkId }
+    );
+    return Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+}
+
+/** `requester` applies `payload` as `responder`'s answer to that request; returns the verdict and recorded rejection reasons. */
+export async function applyServedSyncPayload(
+    h: MathPeerTestHarness,
+    requester: TestPeer<HarnessControlRpc, MathStateMachine>,
+    responder: TestPeer<HarnessControlRpc, MathStateMachine>,
+    forkId: ForkId,
+    payload: SyncPayload
+): Promise<{ accepted: boolean; rejections: string[] }> {
+    const stub = h.control(requester).stub;
     await stub.recordSyncRejections().request();
     try {
-        const response = await h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.remoteRpc.spectateService
-                    .onSpectateRequest({
-                        channelId: sm.channelId,
-                        forkId: args.forkId
-                    })
-                    .request(args.source),
-            { source: source.address, forkId: sourceForkId }
-        );
-        const payload = Codec.decode(
-            response.encodedSyncPayload,
-            Type.SyncPayload
-        );
-        expect(payload.disputeWindows.length).to.equal(1);
-        expect(payload.disputeWindows[0].forkId).to.equal(sourceForkId);
-        mutate(payload, sourceForkId);
         const accepted = await h.execOnHost(
-            observer,
+            requester,
             async (sm, args) =>
                 sm.p2pManager.localRpc.spectateService.applySyncResponse(
                     args.source,
@@ -561,8 +564,8 @@ export async function applyDisputedSyncPayload(
                     args.encodedSyncPayload
                 ),
             {
-                source: source.address,
-                forkId: sourceForkId,
+                source: responder.address,
+                forkId,
                 encodedSyncPayload: Codec.encode(
                     payload,
                     Type.SyncPayload

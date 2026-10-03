@@ -368,6 +368,7 @@ export class StubService extends ANetworkRpcService<
     private restoreSyncReduction?: () => void;
     private restoreFinalityReads?: () => void;
     private restoreSyncRejections?: () => void;
+    private restoreClockOffset?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
     /** Number of finality predicates in each recorded provider call. */
@@ -925,6 +926,21 @@ export class StubService extends ANetworkRpcService<
         this.releaseAdmissionGossip();
         this.admissionObservation?.restore();
         this.admissionObservation = undefined;
+    }
+
+    /** Run this peer's clock `seconds` ahead of real time until `restoreClockOffset`. */
+    public holdClockOffset(seconds: number): void {
+        this.restoreClockOffset?.();
+        const original = Clock.getTimeInSeconds;
+        Clock.getTimeInSeconds = () => original.call(Clock) + seconds;
+        this.restoreClockOffset = () => {
+            Clock.getTimeInSeconds = original;
+        };
+    }
+
+    public releaseClockOffset(): void {
+        this.restoreClockOffset?.();
+        this.restoreClockOffset = undefined;
     }
 
     /** Scoped clock read for deadline tests; the action must be synchronous. */

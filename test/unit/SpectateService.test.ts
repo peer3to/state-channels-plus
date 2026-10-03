@@ -11,13 +11,15 @@ import {
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     applyDisputedSyncPayload,
+    applyServedSyncPayload,
     applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
-    assertSyncWindowReadRace
+    assertSyncWindowReadRace,
+    fetchServedSyncPayload
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -832,6 +834,52 @@ describe("Unit: SpectateService", function () {
             expect(
                 stored && StateSnapshot.decode(stored.encodedSnapshot).hash
             ).to.not.equal(alteredHash);
+        });
+        it("successor genesis applied while the chain has not yet expired its origin window → rejected, origin kill period not expired on chain, not stored", async function () {
+            const h = TestSession.getHarness();
+            // a long evidence time keeps the chain window open while the requester applies;
+            // an inline VM reads the clock per call -> the offset below reaches the local mirror
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    configOverrides: { VM_DEDICATED_THREAD: false },
+                    timeConfig: { evidenceTime: 30 },
+                    skipEvidenceWait: true
+                });
+            const requester = h.getPeer(2);
+            const responder = h.getPeer(0);
+            const payload = await fetchServedSyncPayload(
+                h,
+                requester,
+                responder,
+                sourceForkId
+            );
+            const reducedForkId = payload.latestForkGenesisSnapshot.forkId;
+            expect(reducedForkId).to.not.equal(sourceForkId);
+            // requester clock ahead of the chain -> its local mirror already sees the window expired
+            const stub = h.control(requester).stub;
+            await stub.holdClockOffset(60).request();
+            let result: { accepted: boolean; rejections: string[] };
+            try {
+                result = await applyServedSyncPayload(
+                    h,
+                    requester,
+                    responder,
+                    sourceForkId,
+                    payload
+                );
+            } finally {
+                await stub.releaseClockOffset().request();
+            }
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "origin kill period not expired on chain"
+            ]);
+            expect(
+                await h
+                    .control(requester)
+                    .dispute.getGenesisSnapshotStruct(String(reducedForkId))
+                    .request()
+            ).to.equal(null);
         });
     });
 

@@ -2,11 +2,12 @@
 import { StateSnapshot } from "@/models";
 import type { SyncPayload } from "@/types";
 import { Codec, Type } from "@/utils";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import type { TestPeer } from "@test/harness/core/types";
+import {
+    applyServedSyncPayload,
+    fetchServedSyncPayload
+} from "@test/fixtures/PinnedSyncStaging";
 import { waitFor } from "@test/utils/waitFor";
-import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 
 /**
@@ -28,7 +29,12 @@ export async function applyGenesisOnlySyncPayload(
     expect(onChainGenesis.forkID).to.equal(forkId);
     expect(onChainGenesis.blockHeight).to.equal(0);
 
-    const payload = await fetchGenesisOnlyPayload(h, requester, responder);
+    const payload = await fetchServedSyncPayload(
+        h,
+        requester,
+        responder,
+        forkId
+    );
     // empty milestone proof before block zero
     expect(payload.milestoneSnapshots.length).to.equal(0);
     expect(payload.disputeWindows.length).to.equal(0);
@@ -37,53 +43,36 @@ export async function applyGenesisOnlySyncPayload(
         payload.latestForkGenesisSnapshot
     ).hash;
 
-    const stub = h.control(requester).stub;
-    await stub.recordSyncRejections().request();
-    try {
-        const accepted = await h.execOnHost(
-            requester,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.applySyncResponse(
-                    args.source,
-                    { channelId: sm.channelId, forkId: args.forkId },
-                    args.encodedSyncPayload
-                ),
-            {
-                source: responder.address,
-                forkId,
-                encodedSyncPayload: Codec.encode(
-                    payload,
-                    Type.SyncPayload
-                ) as string
-            }
-        );
-        const rejections = await stub.restoreRecordedSyncRejections().request();
-        const stored = await h
+    const { accepted, rejections } = await applyServedSyncPayload(
+        h,
+        requester,
+        responder,
+        forkId,
+        payload
+    );
+    const stored = await h
+        .control(requester)
+        .dispute.getGenesisSnapshotStruct(forkId)
+        .request();
+    return {
+        accepted,
+        rejections,
+        responderBlacklisted: await h
             .control(requester)
-            .dispute.getGenesisSnapshotStruct(forkId)
-            .request();
-        return {
-            accepted,
-            rejections,
-            responderBlacklisted: await h
-                .control(requester)
-                .query.isBlacklisted(responder.address)
-                .request(),
-            onChainGenesisHash: onChainGenesis.hash,
-            servedGenesisHash,
-            storedGenesisHash: stored
-                ? StateSnapshot.decode(stored.encodedSnapshot).hash
-                : undefined
-        };
-    } finally {
-        await stub.restoreRecordedSyncRejections().request();
-    }
+            .query.isBlacklisted(responder.address)
+            .request(),
+        onChainGenesisHash: onChainGenesis.hash,
+        servedGenesisHash,
+        storedGenesisHash: stored
+            ? StateSnapshot.decode(stored.encodedSnapshot).hash
+            : undefined
+    };
 }
 
 /**
  * Channel open with no block yet; a byzantine peer answers sync with the real
  * genesis one second later and the height-0 writer syncs from it. Returns the
- * peers and both genesis hashes once the sync settled.
+ * peers and the on-chain genesis hash once the sync settled.
  */
 export async function syncForgedGenesisBeforeFirstBlock(
     h: MathPeerTestHarness
@@ -106,7 +95,7 @@ export async function syncForgedGenesisBeforeFirstBlock(
         (peer) => peer.address !== victim.address
     );
 
-    const payload = await fetchGenesisOnlyPayload(h, victim, responder);
+    const payload = await fetchServedSyncPayload(h, victim, responder, forkId);
     expect(payload.milestoneSnapshots.length).to.equal(0);
     payload.latestForkGenesisSnapshot.timestamp =
         BigInt(payload.latestForkGenesisSnapshot.timestamp) + 1n;
@@ -155,27 +144,6 @@ export async function syncForgedGenesisBeforeFirstBlock(
         victim,
         responder,
         observer,
-        onChainGenesisHash: onChainGenesis.hash,
-        forgedGenesisHash
+        onChainGenesisHash: onChainGenesis.hash
     };
-}
-
-/** `responder`'s real answer to a latest-state request for the active fork. */
-async function fetchGenesisOnlyPayload(
-    h: MathPeerTestHarness,
-    requester: TestPeer<HarnessControlRpc, MathStateMachine>,
-    responder: TestPeer<HarnessControlRpc, MathStateMachine>
-) {
-    const response = await h.execOnHost(
-        requester,
-        async (sm, args) =>
-            sm.p2pManager.remoteRpc.spectateService
-                .onSpectateRequest({
-                    channelId: sm.channelId,
-                    forkId: args.forkId
-                })
-                .request(args.source),
-        { source: responder.address, forkId: h.activeForkId! }
-    );
-    return Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
 }
