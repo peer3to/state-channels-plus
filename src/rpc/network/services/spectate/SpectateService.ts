@@ -1033,9 +1033,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         storage.inboundMessages.store(inboundBlock);
                     }
                 }
-                storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
+                // a held genesis is trusted; past genesis on chain the payload's timestamp is unchecked
+                const genesisSnapshot = StateSnapshot.from(
+                    syncPayload.latestForkGenesisSnapshot
                 );
+                if (
+                    !storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        genesisSnapshot.forkID
+                    )
+                )
+                    storage.stateSnapshots.storeStateSnapshot(genesisSnapshot);
                 storage.stateMachineStates.storeStateMachineState(
                     syncPayload.latestForkGenesisEncodedState,
                     {

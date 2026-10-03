@@ -248,3 +248,93 @@ export async function syncForgedSuccessorGenesisBeforeFirstBlock(
         successorGenesisHash
     };
 }
+
+/**
+ * A synced spectator is cut off while the participants post a snapshot past
+ * genesis and advance; peer 0 then serves it a proof whose genesis is one
+ * second later. Returns the verdict, rejection reasons and the spectator's
+ * genesis hash before and after.
+ */
+export async function applyForgedGenesisPastChainGenesis(
+    h: MathPeerTestHarness
+) {
+    await h.scenario.spectatorJoinedAndSynced();
+    const forkId = h.activeForkId!;
+    const responder = h.getPeer(0);
+    const spectator = h.getPeer(3);
+    const storedGenesisHash = async () => {
+        const stored = await h
+            .control(spectator)
+            .dispute.getGenesisSnapshotStruct(forkId)
+            .request();
+        return stored
+            ? StateSnapshot.decode(stored.encodedSnapshot).hash
+            : undefined;
+    };
+    const heldGenesisHash = await storedGenesisHash();
+    expect(heldGenesisHash, "spectator holds the genesis").to.not.equal(
+        undefined
+    );
+
+    await h.network.blacklistAndDisconnectPeer(spectator.index);
+    expect(
+        await h.transition.postSnapshotWait({
+            peerIndex: responder.index,
+            forkId: String(forkId)
+        })
+    ).to.not.equal(undefined);
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers: [0, 1, 2],
+        waitForFinalization: true
+    });
+    const onChainSnapshot = StateSnapshot.from(
+        await h.channelManager.getStateSnapshot(h.channelId)
+    );
+    expect(onChainSnapshot.forkID).to.equal(forkId);
+    expect(onChainSnapshot.blockHeight).to.be.greaterThan(0);
+
+    const latestHeight = (await h
+        .control(responder)
+        .query.getLatestBlockHeight(forkId)
+        .request())!;
+    const served = await h
+        .control(responder)
+        .spectate.generateSyncPayload(h.channelId, forkId, latestHeight)
+        .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+    expect(served).to.not.equal(null);
+    const payload = Codec.decode(served!.encodedSyncPayload, Type.SyncPayload);
+    // the spectator is behind the proof -> its persistence runs
+    const spectatorHeight =
+        (await h
+            .control(spectator)
+            .query.getLatestBlockHeight(forkId)
+            .request()) ?? -1;
+    expect(spectatorHeight).to.be.lessThan(
+        Number(payload.milestoneSnapshots.at(-1)!.blockHeight)
+    );
+    payload.latestForkGenesisSnapshot.timestamp =
+        BigInt(payload.latestForkGenesisSnapshot.timestamp) + 1n;
+
+    const stub = h.control(spectator).stub;
+    await stub.recordSyncRejections().request();
+    try {
+        const accepted = await h
+            .control(spectator)
+            .spectate.applySyncResponse(
+                responder.address,
+                forkId,
+                latestHeight,
+                Codec.encode(payload, Type.SyncPayload) as string
+            )
+            .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+        return {
+            accepted,
+            rejections: await stub.restoreRecordedSyncRejections().request(),
+            heldGenesisHash,
+            storedGenesisHash: await storedGenesisHash()
+        };
+    } finally {
+        await stub.restoreRecordedSyncRejections().request();
+    }
+}

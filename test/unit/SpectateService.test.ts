@@ -3,7 +3,10 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import { applyGenesisOnlySyncPayload } from "@test/fixtures/GenesisTimestampSyncStaging";
+import {
+    applyForgedGenesisPastChainGenesis,
+    applyGenesisOnlySyncPayload
+} from "@test/fixtures/GenesisTimestampSyncStaging";
 import {
     applyAnchoredSyncPayload,
     forgedOutboundBlock,
@@ -835,6 +838,16 @@ describe("Unit: SpectateService", function () {
                 stored && StateSnapshot.decode(stored.encodedSnapshot).hash
             ).to.not.equal(alteredHash);
         });
+        it("chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept", async function () {
+            const result = await applyForgedGenesisPastChainGenesis(
+                TestSession.getHarness()
+            );
+            // residual: no chain value binds this timestamp, so it is not checked
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(result.heldGenesisHash);
+        });
+
         it("successor genesis applied while the chain has not yet expired its origin window → rejected, origin kill period not expired on chain, not stored", async function () {
             const h = TestSession.getHarness();
             // a long evidence time keeps the chain window open while the requester applies;
