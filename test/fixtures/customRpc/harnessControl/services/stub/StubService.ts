@@ -347,6 +347,9 @@ export type DoubleSignatureLogEntry = {
     metadata: Record<string, string>;
 };
 
+// the unpatched clock read, captured once so a held offset never restores another patch
+const realClockTimeInSeconds = Clock.getTimeInSeconds;
+
 /**
  * Method stub/restore for Byzantine and fault-injection scenarios. Each stub is
  * a concrete method (not a free-form path) so an SDK rename breaks compilation
@@ -368,6 +371,7 @@ export class StubService extends ANetworkRpcService<
     private restoreSyncReduction?: () => void;
     private restoreFinalityReads?: () => void;
     private restoreSyncRejections?: () => void;
+    private restoreClockOffset?: () => void;
     /** Reasons passed to the real sync rejection handler. */
     private syncRejectionReasons: string[] = [];
     /** Number of finality predicates in each recorded provider call. */
@@ -925,6 +929,25 @@ export class StubService extends ANetworkRpcService<
         this.releaseAdmissionGossip();
         this.admissionObservation?.restore();
         this.admissionObservation = undefined;
+    }
+
+    /**
+     * Run the host process clock `seconds` ahead of real time until `releaseClockOffset`.
+     * Per peer only in worker mode (`RUN_SDK_IN_THREAD`); inline hosts share one process.
+     */
+    public holdClockOffset(seconds: number): void {
+        if (this.restoreClockOffset)
+            throw new Error("holdClockOffset - an offset is already held");
+        Clock.getTimeInSeconds = () =>
+            realClockTimeInSeconds.call(Clock) + seconds;
+        this.restoreClockOffset = () => {
+            Clock.getTimeInSeconds = realClockTimeInSeconds;
+        };
+    }
+
+    public releaseClockOffset(): void {
+        this.restoreClockOffset?.();
+        this.restoreClockOffset = undefined;
     }
 
     /** Scoped clock read for deadline tests; the action must be synchronous. */

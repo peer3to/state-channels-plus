@@ -4,19 +4,25 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    applyForgedGenesisPastChainGenesis,
+    applyGenesisOnlySyncPayload
+} from "@test/fixtures/GenesisTimestampSyncStaging";
+import {
     applyAnchoredSyncPayload,
     forgedOutboundBlock,
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
 import {
     applyDisputedSyncPayload,
+    applyServedSyncPayload,
     applySyncPayloadServedBeforeAdoption,
     assertConcurrentSyncWindowOverwrite,
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
-    assertSyncWindowReadRace
+    assertSyncWindowReadRace,
+    fetchServedSyncPayload
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -771,6 +777,126 @@ describe("Unit: SpectateService", function () {
             );
             expect(rejections).to.deep.equal([]);
             expect(accepted).to.equal(true);
+        });
+    });
+
+    describe("genesis timestamp binding", function () {
+        it("genesis-only payload before block zero with only the timestamp changed → rejected, genesis timestamp mismatch, responder blacklisted, altered genesis not stored", async function () {
+            const result = await applyGenesisOnlySyncPayload(
+                TestSession.getHarness(),
+                (payload) => {
+                    const genesis = payload.latestForkGenesisSnapshot;
+                    genesis.timestamp = BigInt(genesis.timestamp) + 1n;
+                }
+            );
+            expect(result.servedGenesisHash).to.not.equal(
+                result.onChainGenesisHash
+            );
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "genesis timestamp mismatch"
+            ]);
+            expect(result.responderBlacklisted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(
+                result.onChainGenesisHash
+            );
+        });
+
+        it("genesis-only payload before block zero matching the on-chain genesis → accepted, responder not blacklisted", async function () {
+            const result = await applyGenesisOnlySyncPayload(
+                TestSession.getHarness(),
+                () => {}
+            );
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.responderBlacklisted).to.equal(false);
+            expect(result.storedGenesisHash).to.equal(
+                result.onChainGenesisHash
+            );
+        });
+
+        it("reduced-fork genesis with only the timestamp changed → rejected, genesis timestamp mismatch, altered genesis not stored", async function () {
+            const h = TestSession.getHarness();
+            let reducedForkId = "";
+            let alteredHash = "";
+            const { accepted, rejections } = await applyDisputedSyncPayload(
+                h,
+                (payload) => {
+                    const genesis = payload.latestForkGenesisSnapshot;
+                    genesis.timestamp = BigInt(genesis.timestamp) + 1n;
+                    reducedForkId = String(genesis.forkId);
+                    alteredHash = String(StateSnapshot.from(genesis).hash);
+                }
+            );
+            expect(accepted).to.equal(false);
+            expect(rejections).to.deep.equal(["genesis timestamp mismatch"]);
+            const stored = await h
+                .control(h.getPeer(2))
+                .dispute.getGenesisSnapshotStruct(reducedForkId)
+                .request();
+            expect(
+                stored && StateSnapshot.decode(stored.encodedSnapshot).hash
+            ).to.not.equal(alteredHash);
+        });
+        it("chain past genesis on the same fork, lagging requester, genesis with only the timestamp changed → accepted, the held genesis is kept", async function () {
+            const result = await applyForgedGenesisPastChainGenesis(
+                TestSession.getHarness()
+            );
+            // residual: no chain value binds this timestamp, so it is not checked
+            expect(result.rejections).to.deep.equal([]);
+            expect(result.accepted).to.equal(true);
+            expect(result.storedGenesisHash).to.equal(result.heldGenesisHash);
+        });
+
+        it("successor genesis applied while the chain has not yet expired its origin window → rejected, origin kill period not expired on chain, not stored", async function () {
+            const h = TestSession.getHarness();
+            // a long evidence time keeps the chain window open while the requester applies;
+            // an inline VM reads the clock per call -> the offset below reaches the local mirror;
+            // a worker-hosted SDK keeps the offset to the requester's process
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    configOverrides: {
+                        RUN_SDK_IN_THREAD: true,
+                        VM_DEDICATED_THREAD: false
+                    },
+                    timeConfig: { evidenceTime: 30 },
+                    skipEvidenceWait: true
+                });
+            const requester = h.getPeer(2);
+            const responder = h.getPeer(0);
+            const payload = await fetchServedSyncPayload(
+                h,
+                requester,
+                responder,
+                sourceForkId
+            );
+            const reducedForkId = payload.latestForkGenesisSnapshot.forkId;
+            expect(reducedForkId).to.not.equal(sourceForkId);
+            // requester clock ahead of the chain -> its local mirror already sees the window expired
+            const stub = h.control(requester).stub;
+            await stub.holdClockOffset(60).request();
+            let result: { accepted: boolean; rejections: string[] };
+            try {
+                result = await applyServedSyncPayload(
+                    h,
+                    requester,
+                    responder,
+                    sourceForkId,
+                    payload
+                );
+            } finally {
+                await stub.releaseClockOffset().request();
+            }
+            expect(result.accepted).to.equal(false);
+            expect(result.rejections).to.deep.equal([
+                "origin kill period not expired on chain"
+            ]);
+            expect(
+                await h
+                    .control(requester)
+                    .dispute.getGenesisSnapshotStruct(String(reducedForkId))
+                    .request()
+            ).to.equal(null);
         });
     });
 

@@ -336,7 +336,8 @@ export class MathScenarioActions extends ScenarioActions {
      * A disputed fork whose kill period has expired, with every peer's
      * `reduction-*` timer held so nothing reduces until a test says so:
      * preDisputeSetup, hold the timers, one invalid state transition by the
-     * malicious peer, the committed dispute, then the evidence period.
+     * malicious peer, the committed dispute, then the evidence period
+     * (skipped with `skipEvidenceWait`).
      */
     async stageReducibleDisputedFork(options?: {
         configOverrides?: HarnessOptions["configOverrides"];
@@ -345,6 +346,8 @@ export class MathScenarioActions extends ScenarioActions {
         peerCount?: number;
         maliciousPeerIndex?: number;
         timeConfig?: { evidenceTime?: number };
+        /** return right after the commit, before the kill period expires */
+        skipEvidenceWait?: boolean;
     }): Promise<{ sourceForkId: ForkId }> {
         const peerCount = options?.peerCount ?? 4;
         await this.preDisputeSetup({
@@ -367,7 +370,8 @@ export class MathScenarioActions extends ScenarioActions {
             peersIndices: options?.disputingPeerIndices,
             expectedCount: 1
         });
-        await sleep(this.harness.event.evidencePeriodWaitMs(2));
+        if (!options?.skipEvidenceWait)
+            await sleep(this.harness.event.evidencePeriodWaitMs(2));
         return { sourceForkId };
     }
 
