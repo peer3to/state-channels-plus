@@ -2471,6 +2471,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
+     * Hold only the inbound storage write of InboundMessagesProcessed: the
+     * local diamond still applies the event, while inbound storage lags it.
+     */
+    public stubHoldInboundMessageStorage(): boolean {
+        const sm = this.service.sm;
+        if (!this.service.stubOriginals.has("inboundMessageStorage")) {
+            this.service.stubOriginals.set(
+                "inboundMessageStorage",
+                sm.onInboundMessage.bind(sm)
+            );
+        }
+        sm.onInboundMessage = (async (
+            ...args: Parameters<typeof sm.onInboundMessage>
+        ) => {
+            this.service.heldInboundStorageArgs.push(args);
+        }) as typeof sm.onInboundMessage;
+        return true;
+    }
+
+    /** Restore the storage write; optionally replay the held writes through it. */
+    public async restoreInboundMessageStorage(
+        replay: boolean
+    ): Promise<boolean> {
+        const sm = this.service.sm;
+        const original = this.service.stubOriginals.get(
+            "inboundMessageStorage"
+        );
+        if (original === undefined) return false;
+        const restored = original as typeof sm.onInboundMessage;
+        sm.onInboundMessage = restored;
+        this.service.stubOriginals.delete("inboundMessageStorage");
+        const held = this.service.heldInboundStorageArgs.splice(0);
+        if (replay) for (const args of held) await restored(...args);
+        return true;
+    }
+
+    /**
      * Drop selected subscribed logs before the scheduler records their key.
      * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
      * only loses the delivery - an explicit query of the same log still reaches

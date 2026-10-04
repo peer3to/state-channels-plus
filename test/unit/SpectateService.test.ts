@@ -4,6 +4,10 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    applyDisputeWindowInboundSyncPayload,
+    forgedInboundSuccessor
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
     applyAnchoredSyncPayload,
     forgedOutboundBlock,
     stageAnchoredSyncPayload
@@ -759,6 +763,38 @@ describe("Unit: SpectateService", function () {
             );
             expect(rejections).to.deep.equal([]);
             expect(accepted).to.equal(true);
+        });
+
+        it("chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    finalizeOnChain: true,
+                    mutate: (payload) => {
+                        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.push(
+                            forgedInboundSuccessor(payload)
+                        );
+                    }
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window reduced locally during sync → accepted, its inbound blocks stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { finalizeOnChain: false, mutate: () => {} }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
     });
 

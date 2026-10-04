@@ -28,16 +28,16 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
 | `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
-| `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
+| `sync-inbound`      | fixed          | high              | —          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
 | `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
 - **Unauthenticated on-chain paths (ranks 1–3):** any chain account can use them.
-- **Peer-assisted signing paths (ranks 4–5):** the attacker must be the sync responder that the victim selected.
+- **Peer-assisted signing paths (rank 4; rank 5 is fixed):** the attacker must be the sync responder that the victim selected.
 - **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
 
-The fixed item has no rank. All 7 protocol inputs are retained here, including the fixed claim.
+Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
 <a id="milestone-skip"></a>
 
@@ -169,27 +169,32 @@ No requirement states that `open` must reject expired terms, so these cases have
 
 <a id="sync-inbound"></a>
 
-## 6. Chain-final sync reduction input persistence
+## 6. Peer sync can make an honest node sign fabricated inbound data
 
-**Current assessment:** reported path removed; regression and engineer review pending.
-Original finding: confirmed, high severity, rank 5;
-[`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
+
+**Fix status:** resolved.
+
 Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence `occ_482d7e145268e00610d5142b`.
 
-The original finding depended on persisting unused inbound reduction inputs from a chain-final
-window. Current [persistence](../../../src/rpc/network/services/spectate/SpectateService.ts#L1028)
-skips that window's supplied snapshot, state and inbound blocks. Nonfinal windows still execute
-reduction before those inputs are trusted. The old unconditional-persistence path is no longer
-current evidence of an exploit.
+**Evidence and path.** The linked-window check excluded unrelated windows and did not persist the already-adopted prefix. It still skipped reduction-input validation for a chain-final window that started at the current chain fork and had not yet been adopted. persistSyncPayload stored that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor could become the local inbound tip and be signed during block production.
 
-Remaining verification must cover a finalized-but-unadopted window with a mutated ignored inbound
-list: trusted inbound head must not change and a signing participant must not sign the injected
-successor. The full security impact and regression assessment are not completed by this documentation
-update. [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11)
-remains a tracked regression obligation; no passing evidence is implied.
+**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:241–329](../../../src/rpc/network/services/spectate/SpectateService.ts#L241-L329); [src/rpc/network/services/spectate/SpectateService.ts:489–507](../../../src/rpc/network/services/spectate/SpectateService.ts#L489-L507); [src/rpc/network/services/spectate/SpectateService.ts:973–984](../../../src/rpc/network/services/spectate/SpectateService.ts#L973-L984); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
 
-Owners: [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
-and [synchronization](../specification/peer-communication/synchronization.md).
+**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint was crossed; the victim's node accepted and persisted the payload. Ranking class: peer-assisted signing path; it has no rank because the path is fixed.
+
+**Counterevidence and limits.** Already-adopted prefix windows were omitted. Nonfinal windows executed reduction. The attack needed a finalized-but-unadopted window, a lagging signing participant, and a fabricated successor that passed chain-shape/balance checks.
+
+**Proof gaps.** None left for the claim: the unit and E2E regressions below fail without the fix.
+
+**Fix (implemented):** engineer decision (2026-10-04): persist a window's `inboundMessageBlocksAppliedInReduce` only when this sync reduced that window itself, where `reduceAndFinalize` validated them. persistSyncPayload skips the reduction inputs of each chain-final window (`chainFinalForkIds`), so the peer-provided list never enters trusted inbound storage. The rejected alternative validated the list against the chain's inbound hash chain. The node still gets the genuine inbound blocks of such a window from the `InboundMessagesProcessed` chain events and the event-sync log recovery for missing inbound runs. Block production never walks below the snapshot's inbound head while inbound storage lags it. No contract changed. The regression work covered:
+
+- Changing only a finalized window's ignored inbound list leaves the trusted inbound head unchanged and stores none of the listed blocks.
+- A syncing participant never stores or signs the injected successor.
+
+Mapped permutation: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11) ([E2E-Spectate report](../verification/tests/test/e2e/E2E-Spectate.test.ts.md)). The storage-only case and the locally reduced positive case are component permutations in the [SpectateService unit report](../verification/tests/test/unit/SpectateService.test.ts.md).
+
+**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The tip-promotion component also relates to [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf); this report preserves the distinct end-to-end sync-to-signing claim.
 
 <a id="sync-genesis-time"></a>
 

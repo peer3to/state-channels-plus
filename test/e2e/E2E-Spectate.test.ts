@@ -1,6 +1,7 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -719,6 +720,14 @@ describe("E2E: Spectate Service", function () {
                 peerIndex: 5
             });
             await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+    });
+
+    describe("Participant sync across a chain-final window", function () {
+        it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness()
+            );
         });
     });
 

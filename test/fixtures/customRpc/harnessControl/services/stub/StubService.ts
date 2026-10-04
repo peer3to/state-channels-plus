@@ -17,6 +17,7 @@ import type {
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { deserializeRpcFrame } from "@/rpc/Rpc";
+import type StateManager from "@/stateManager/StateManager";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
@@ -98,6 +99,7 @@ export type StubKey =
     | "stateManagerAbort"
     | "snapshotUpdatedEvents"
     | "inboundMessageEvents"
+    | "inboundMessageStorage"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
@@ -529,6 +531,10 @@ export class StubService extends ANetworkRpcService<
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly heldInboundMessageArgs: unknown[][] = [];
+    /** onInboundMessage arg-tuples held by the inbound-storage hold stub. */
+    readonly heldInboundStorageArgs: Parameters<
+        StateManager["onInboundMessage"]
+    >[] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
     /** Subscribed inbound logs the drop stub has already lost once. */
