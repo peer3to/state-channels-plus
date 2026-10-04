@@ -152,10 +152,11 @@ state proofs).
 
 Semantics: [../protocol/state-proofs.md](../disputes/state-proofs.md).
 
-| Struct           | Fields                           | Role                                                                                                                                                  |
-| ---------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MilestoneProof` | `blockConfirmations[]`           | One milestone: a finality anchor proven directly by threshold signatures or virtually by later linked confirmations.                                  |
-| `StateProof`     | `milestones[]`, `signedBlocks[]` | A chain of milestone anchors plus a trailing, cryptographically linked, possibly non-final suffix of signed blocks reaching the claimed latest state. |
+| Struct            | Fields                                           | Role                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MilestoneProof`  | `blockConfirmations[]`                           | One milestone: a finality anchor proven directly by threshold signatures or virtually by later linked confirmations.                                                                                                                                                                                                                             |
+| `StateProof`      | `milestones[]`                                   | A chain of milestone anchors; the claimed latest block is the last block of the last milestone, whose blocks after its last proven point form the possibly non-final tail. An empty proof claims the fork genesis.                                                                                                                               |
+| `ProofWalkResult` | `valid`, `finalizedSnapshot`, `replayBlockIndex` | The result of one state-proof walk: validity, the finalized snapshot (walk start, last threshold-proven snapshot, or fork genesis), and the block index in the last milestone where its unfinal tail starts; an index equal to the last milestone's length means no tail (0 for an empty proof). When `valid` is false no other field is usable. |
 
 ### 7.4 Fraud proofs
 
@@ -189,6 +190,8 @@ for removal in favor of requiring transitions to actually change state).
 | `DisputeInboundHashNotInChain`                                                                                               | referenced an inbound message-block hash not in the on-chain inbound chain.                                            |
 | `DisputeInvalidBlockStructure`                                                                                               | contained a structurally invalid block.                                                                                |
 | `DisputeBlockAuthorNotParticipant`                                                                                           | contained a block authored by a non-participant.                                                                       |
+| `DisputeInboundAnchorBehindLatestState`                                                                                      | claimed an inbound tip behind the inbound head its own latest state consumed.                                          |
+| `DisputeStateProofBelowOnChainAnchor`                                                                                        | claimed a latest state strictly below the same-fork, non-genesis on-chain snapshot (an empty proof included).          |
 
 ## Assumptions and constraints
 

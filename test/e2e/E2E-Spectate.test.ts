@@ -1,6 +1,6 @@
-import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { freshSpectatorStopsOnPayload } from "@test/fixtures/HistoricSyncStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -11,11 +11,31 @@ import {
     assertSpectatorSilence,
     assertSpectatorRejectedWork
 } from "@test/fixtures/SpectatorSilenceFixture";
+import {
+    constructProof,
+    constructRecordingChainProofReads,
+    postSnapshotAt
+} from "@test/fixtures/StateProofConstructionStaging";
+import {
+    servedPayload,
+    stageRepeatedTailPayloads,
+    syncSpectatorOnServedPayload
+} from "@test/fixtures/SyncCompletionStaging";
+import {
+    failInitialSyncVerification,
+    forgedAdoptedStatePayload,
+    missingBlockHeights,
+    placeholderPayload,
+    servedEarlierStatePayload,
+    stageCompactSyncedSpectator,
+    stageLaggingSpectator,
+    syncFromServedPayload,
+    syncSpectatorAfterUnpostedLeave
+} from "@test/fixtures/SyncVerificationStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 /**
  * E2E Tests for Spectate Service
@@ -319,13 +339,14 @@ describe("E2E: Spectate Service", function () {
                             sm.blockIngestService.onBlockConfirmationStruct(
                                 args.blockConfirmation
                             );
-                        const decoded =
-                            sm.p2pManager.localRpc.spectate.decodeSyncPayload(
-                                args.encodedSyncPayload
-                            );
                         const persistPromise =
-                            sm.p2pManager.localRpc.spectateService.persistSyncPayload(
-                                decoded
+                            sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                                args.source,
+                                {
+                                    channelId: sm.channelId,
+                                    forkId: args.forkId
+                                },
+                                args.encodedSyncPayload
                             );
                         await new Promise((r) => setTimeout(r, 100));
                         sm.mutex.unlock();
@@ -347,7 +368,8 @@ describe("E2E: Spectate Service", function () {
                     blockHeight,
                     blockAuthor: blockInfo!.author,
                     blockConfirmation: blockConfirmation!,
-                    encodedSyncPayload: syncResult!.encodedSyncPayload
+                    encodedSyncPayload: syncResult!.encodedSyncPayload,
+                    source: sourcePeer.address
                 }
             );
 
@@ -418,9 +440,14 @@ describe("E2E: Spectate Service", function () {
                 .request();
 
             try {
-                const { shouldAbort } = await h
+                const accepted = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
+                    .spectate.applySyncResponse(
+                        h.getPeer(sourcePeer.index).address,
+                        forkId!,
+                        localLatestHeight - 1,
+                        syncResult!.encodedSyncPayload
+                    )
                     .request();
 
                 const didPersistLatestState = await h
@@ -428,7 +455,7 @@ describe("E2E: Spectate Service", function () {
                     .stub.wasUnsafeSetLatestStateCalled()
                     .request();
 
-                expect(shouldAbort).to.equal(false);
+                expect(accepted).to.equal(true);
                 expect(didPersistLatestState).to.equal(false);
                 expect(
                     await h
@@ -443,182 +470,403 @@ describe("E2E: Spectate Service", function () {
                     .request();
             }
         });
+    });
 
-        it("aborts spectating when a finalized sync block conflicts with storage", async function () {
+    describe("Synced proof reconstruction", function () {
+        it("spectate sync persists enough data to reconstruct and verify a proof on chain", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0, {
-                timeConfig: {
-                    p2pTime: 5,
-                    agreementTime: 3,
-                    chainFallbackTime: 2,
-                    evidenceTime: 10
-                }
-            });
-
-            const { peer: spectator } = await h.join.addSpectatorAuthoring({
-                authoringPeerIndices: [0, 1, 2, 3],
-                minimumBlocks: 2,
-                maximumBlocks: 20,
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({
+                count: 2,
                 waitForFinalization: true
             });
-            const spectatorIndex = spectator.index;
-            const participantIndices = [0, 1, 2, 3];
-            const forkId = h.activeForkId;
-            expect(forkId).to.not.be.undefined;
-
-            const spectatorLatestInfo = await h
-                .control(h.getPeer(spectator.index))
-                .query.getLatestBlockInfo(forkId!)
-                .request();
-            const spectatorLatestBeforeDisconnect = spectatorLatestInfo
-                ? Number(
-                      Codec.decode(spectatorLatestInfo.encodedBlock, Type.Block)
-                          .transaction.header.transactionCnt
-                  )
-                : -1;
-
-            await h.network.blacklistAndDisconnectPeer(spectatorIndex);
-            const leaverIndex = await h.transition.participantLeaveDetached({
-                waitForPeers: participantIndices,
+            expect(
+                await h.transition.postSnapshotWait({
+                    peerIndex: 0,
+                    forkId: String(h.activeForkId)
+                })
+            ).to.not.equal(undefined);
+            await h.transition.advanceState({
+                count: 2,
                 waitForFinalization: true
             });
-            const remainingParticipantIndices = participantIndices.filter(
-                (peerIndex) => peerIndex !== leaverIndex
+            const spectator = await h.join.addSpectatorWait();
+            expect(
+                (await constructProof(h, spectator.index)).chainValid
+            ).to.equal(true);
+        });
+
+        it("synced peer preserves proof reconstruction after progress and later anchor adoption", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            const spectator = h.getPeer(
+                (await h.join.addSpectatorWait()).index
             );
             await h.transition.advanceState({
-                count: 3,
-                waitForPeers: remainingParticipantIndices,
+                count: 2,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
-
-            const sourcePeer = await h.peerWithHighestBlock(forkId!);
-            const sourceLatestBlock = await h
-                .control(h.getPeer(sourcePeer.index))
-                .query.getLatestBlockInfo(forkId!)
-                .request();
-            expect(sourceLatestBlock).to.not.be.null;
-            const sourceLatestHeight = Number(
-                Codec.decode(sourceLatestBlock!.encodedBlock, Type.Block)
-                    .transaction.header.transactionCnt
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, spectator.index]
+            });
+            const afterProgress = await constructProof(h, spectator.index);
+            expect(afterProgress.chainValid).to.equal(true);
+            expect(
+                await h.transition.postSnapshotWait({
+                    peerIndex: 0,
+                    forkId: String(h.activeForkId)
+                })
+            ).to.not.equal(undefined);
+            await h.transition.advanceState({
+                count: 1,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [0, 1, 2, spectator.index]
+            });
+            const afterAdoption = await constructProof(h, spectator.index);
+            expect(afterAdoption.chainValid).to.equal(true);
+            expect(afterAdoption.latestProofHeight).to.be.greaterThan(
+                afterProgress.latestProofHeight!
             );
+        });
+    });
 
-            const syncResult = await h
-                .control(h.getPeer(sourcePeer.index))
-                .spectate.generateSyncPayload(
-                    h.channelId!,
-                    forkId!,
-                    sourceLatestHeight
-                )
-                .request();
-            expect(syncResult).to.not.be.null;
-            const syncPayload = Codec.decode(
-                syncResult!.encodedSyncPayload,
-                Type.SyncPayload
+    describe("Sync verification and completion", function () {
+        it("an initial sync whose proof walk read fails aborts the spectator without excluding anyone; a fresh spectator syncs once the read recovers", async function () {
+            const h = TestSession.getHarness();
+            const { spectator, participants, forkId, latestHeight } =
+                await failInitialSyncVerification(h);
+            // the failed initial load ends the spectator's connect attempt
+            await TestSession.expectFirstDetachedError({
+                includes: "connectToChannel failed",
+                timeoutMs: h.event.protocolEventTimeoutMs()
+            });
+            await TestSession.settleDetached({
+                expectedErrorIncludes: "connectToChannel failed"
+            });
+            expect(spectator.eventSpies.onAbort?.callCount).to.equal(1);
+            // a read failure is no verdict against the responder
+            for (const participant of participants)
+                expect(
+                    await h
+                        .control(participant)
+                        .query.isBlacklisted(spectator.address)
+                        .request()
+                ).to.equal(false);
+
+            const retried = h.getPeer((await h.join.addSpectatorWait()).index);
+            const query = h.control(retried).query;
+            expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
+                latestHeight
             );
-            expect(syncPayload.stateProof.milestones.length).to.be.greaterThan(
-                1
-            );
-
-            const latestFinalizedSnapshot =
-                syncPayload.milestoneSnapshots.at(-1) ??
-                syncPayload.latestForkGenesisSnapshot;
-            const finalizedHeight = Number(latestFinalizedSnapshot.blockHeight);
-            const finalizedBlocks = syncPayload.stateProof.milestones.flatMap(
-                (milestone, index) => {
-                    if (
-                        index ===
-                        syncPayload.stateProof.milestones.length - 1
-                    ) {
-                        const finalizedBlockConfirmation =
-                            milestone.blockConfirmations[0];
-                        return finalizedBlockConfirmation
-                            ? [
-                                  Block.fromBlockConfirmation(
-                                      finalizedBlockConfirmation
-                                  )
-                              ]
-                            : [];
-                    }
-
-                    return milestone.blockConfirmations.map(
-                        (blockConfirmation) =>
-                            Block.fromBlockConfirmation(blockConfirmation)
-                    );
-                }
-            );
-            const newFinalizedBlocks = finalizedBlocks.filter(
-                (block) =>
-                    block.height > spectatorLatestBeforeDisconnect &&
-                    block.height <= finalizedHeight
-            );
-            expect(newFinalizedBlocks.length).to.be.greaterThan(1);
-
-            const blockToConflict = newFinalizedBlocks.at(-1);
-            expect(blockToConflict).to.not.be.undefined;
-
-            const conflictingBlockStruct = Codec.decode(
-                blockToConflict!.encode(),
-                Type.Block
-            );
-            conflictingBlockStruct.stateSnapshotHash = ethers.keccak256(
-                ethers.toUtf8Bytes(`conflict-${blockToConflict!.hash}`)
-            );
-            const conflictingBlock = await Block.fromBlockStruct(
-                conflictingBlockStruct,
-                spectator.signer
-            );
-
-            expect(conflictingBlock.forkId).to.equal(blockToConflict!.forkId);
-            expect(conflictingBlock.height).to.equal(blockToConflict!.height);
-            expect(conflictingBlock.hash).to.not.equal(blockToConflict!.hash);
-
-            const storedConflictHash = await h
-                .control(h.getPeer(spectator.index))
-                .spectate.storeBlockJustPersist(
-                    Codec.encode(
-                        conflictingBlock.signedBlock,
-                        Type.SignedBlock
-                    ) as string
-                )
-                .request();
-            expect(storedConflictHash).to.equal(conflictingBlock.hash);
-
-            await h
-                .control(h.getPeer(spectator.index))
-                .stub.stubRecordUnsafeSetLatestState()
-                .request();
-
-            try {
-                const { shouldAbort } = await h
-                    .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
-                    .request();
-
-                const didPersistLatestState = await h
-                    .control(h.getPeer(spectator.index))
-                    .stub.wasUnsafeSetLatestStateCalled()
-                    .request();
-
-                expect(shouldAbort).to.equal(true);
-                expect(didPersistLatestState).to.equal(false);
-                for (const block of newFinalizedBlocks) {
-                    const storedBlockHash = await h
-                        .control(h.getPeer(spectator.index))
-                        .query.getBlockHashAt(block.forkId, block.height)
-                        .request();
-                    if (block.height === blockToConflict!.height) {
-                        expect(storedBlockHash).to.equal(conflictingBlock.hash);
-                    } else {
-                        expect(storedBlockHash).to.be.null;
-                    }
-                }
-            } finally {
-                await h
-                    .control(h.getPeer(spectator.index))
-                    .stub.restoreUnsafeSetLatestState()
-                    .request();
+            for (const participant of participants) {
+                expect(
+                    await query.isBlacklisted(participant.address).request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(participant)
+                        .query.isBlacklisted(retried.address)
+                        .request()
+                ).to.equal(false);
             }
+            await TestSession.settleDetached();
+        });
+
+        it("a lagging spectator rejects a served state below its own final point and blacklists the responder, also when the served tail would replay past that point; an honest head payload completes the sync", async function () {
+            const h = TestSession.getHarness();
+            const {
+                spectator,
+                forkId,
+                finalHeight,
+                latestHeight,
+                encodedEarlyPayload
+            } = await stageLaggingSpectator(h);
+            const query = h.control(spectator).query;
+            const stateBefore = await query
+                .getLatestStateMachineStateHash(forkId)
+                .request();
+            // the walk starts at the spectator's own final point: a state
+            // served below it is a stale sync proof
+            const stale = {
+                synced: false,
+                rejections: ["served state below the proof start"],
+                blacklisted: true,
+                latestHeight: finalHeight
+            };
+
+            // a history ending below the final point
+            expect(
+                await syncFromServedPayload(
+                    h,
+                    spectator,
+                    h.getPeer(1),
+                    encodedEarlyPayload,
+                    forkId,
+                    latestHeight
+                )
+            ).to.deep.equal(stale);
+
+            // an earlier state whose tail reaches past the final point:
+            // nothing below the start is replayed or persisted
+            const responder = h.getPeer(0);
+            expect(
+                await syncFromServedPayload(
+                    h,
+                    spectator,
+                    responder,
+                    await servedEarlierStatePayload(
+                        h,
+                        responder,
+                        forkId,
+                        finalHeight
+                    ),
+                    forkId,
+                    latestHeight
+                )
+            ).to.deep.equal(stale);
+            expect(
+                await query.getLatestStateMachineStateHash(forkId).request()
+            ).to.equal(stateBefore);
+
+            const honest = h.getPeer(2);
+            expect(
+                await syncFromServedPayload(
+                    h,
+                    spectator,
+                    honest,
+                    Codec.encode(
+                        await servedPayload(h, honest, forkId),
+                        Type.SyncPayload
+                    ) as string,
+                    forkId,
+                    latestHeight
+                )
+            ).to.deep.equal({
+                synced: true,
+                rejections: [],
+                blacklisted: false,
+                latestHeight
+            });
+            expect(
+                await query.getLatestStateMachineStateHash(forkId).request()
+            ).to.equal(
+                await h
+                    .control(honest)
+                    .query.getLatestStateMachineStateHash(forkId)
+                    .request()
+            );
+            expect(
+                (await constructProof(h, spectator.index)).chainValid
+            ).to.equal(true);
+        });
+
+        it("compact synchronized history constructs dispute without gap blocks", async function () {
+            const h = TestSession.getHarness();
+            const { spectator, forkId, anchorHeight, latestHeight } =
+                await stageCompactSyncedSpectator(h);
+            // only the threshold block far above the start is stored
+            expect(
+                await missingBlockHeights(h, spectator, forkId, 0, latestHeight)
+            ).to.deep.equal(
+                Array.from({ length: latestHeight }, (_, height) => height)
+            );
+
+            const proof = await constructProof(h, spectator.index);
+            expect(proof.startHeight).to.equal(anchorHeight);
+            expect(proof.milestones).to.deep.equal([[latestHeight]]);
+            expect(proof.chainValid).to.equal(true);
+            const dispute = await constructRecordingChainProofReads(
+                h,
+                spectator.index
+            );
+            expect(dispute.error).to.equal(null);
+            expect(dispute.carriesHeadProof).to.equal(true);
+        });
+
+        it("a forged adopted-state response has no storage effects; an unused placeholder below the requester's final point is ignored", async function () {
+            const h = TestSession.getHarness();
+            const { spectator, forkId, finalHeight, latestHeight } =
+                await stageLaggingSpectator(h);
+            const query = h.control(spectator).query;
+            const stateBefore = await query
+                .getLatestStateMachineStateHash(forkId)
+                .request();
+            const honest = await servedPayload(h, h.getPeer(0), forkId);
+
+            const forged = await forgedAdoptedStatePayload(h, honest);
+            expect(
+                await syncFromServedPayload(
+                    h,
+                    spectator,
+                    h.getPeer(0),
+                    forged.encodedSyncPayload,
+                    forkId,
+                    latestHeight
+                )
+            ).to.deep.equal({
+                synced: false,
+                rejections: ["milestones invalid"],
+                blacklisted: true,
+                latestHeight: finalHeight
+            });
+            expect(
+                await query
+                    .getStateSnapshotStructByHash(forged.forgedSnapshotHash)
+                    .request()
+            ).to.equal(null);
+            expect(
+                await query.getLatestStateMachineStateHash(forkId).request()
+            ).to.equal(stateBefore);
+
+            const placeholderHeight = finalHeight - 1;
+            const placeholder = placeholderPayload(honest, placeholderHeight);
+            expect(
+                await syncFromServedPayload(
+                    h,
+                    spectator,
+                    h.getPeer(1),
+                    placeholder.encodedSyncPayload,
+                    forkId,
+                    latestHeight
+                )
+            ).to.deep.equal({
+                synced: true,
+                rejections: [],
+                blacklisted: false,
+                latestHeight
+            });
+            const honestAtPlaceholder = await h
+                .control(h.getPeer(1))
+                .query.getBlockHashAt(forkId, placeholderHeight)
+                .request();
+            expect(honestAtPlaceholder).to.not.equal(placeholder.plantedHash);
+            expect(
+                await query.getBlockHashAt(forkId, placeholderHeight).request()
+            ).to.equal(honestAtPlaceholder);
+            expect(
+                await query
+                    .getStateSnapshotStructByHash(
+                        placeholder.plantedSnapshotHash
+                    )
+                    .request()
+            ).to.equal(null);
+        });
+
+        it("a repeated tail run cannot pre-store its forged block: its transition runs and stops a fresh spectator; the valid repeated run persists after replay", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, responder, repeated, repeatedForged, runHeights } =
+                await stageRepeatedTailPayloads(h);
+            const tailHeights = runHeights.slice(1);
+            expect(
+                await freshSpectatorStopsOnPayload(h, repeatedForged)
+            ).to.equal(true);
+
+            const spectator = await syncSpectatorOnServedPayload(h, repeated);
+            // SYNCED is set when the history is persisted, before the tail
+            // replay runs: wait for the replay to reach the responder's tip
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [responder.index, spectator.index]
+            });
+            const query = h.control(spectator).query;
+            const responderQuery = h.control(responder).query;
+            expect(await query.getLatestBlockHeight(forkId).request()).to.equal(
+                tailHeights.at(-1)
+            );
+            for (const height of tailHeights)
+                expect(
+                    await query.getBlockHashAt(forkId, height).request()
+                ).to.equal(
+                    await responderQuery
+                        .getBlockHashAt(forkId, height)
+                        .request()
+                );
+            expect(
+                await query.getLatestStateMachineStateHash(forkId).request()
+            ).to.equal(
+                await responderQuery
+                    .getLatestStateMachineStateHash(forkId)
+                    .request()
+            );
+        });
+
+        it("sync after an unposted leave persists the change point and separated milestones; reconstruction stays chain-valid after progress and after adopting the exit snapshot", async function () {
+            const h = TestSession.getHarness();
+            const { spectator, remaining, changeHeight, forkId, latestHeight } =
+                await syncSpectatorAfterUnpostedLeave(h);
+            const query = h.control(spectator).query;
+            expect(
+                await query.getParticipantChangeHeights(forkId).request()
+            ).to.deep.equal([changeHeight]);
+            // separated runs: the change block and the head, no gap blocks
+            expect(
+                await missingBlockHeights(h, spectator, forkId, 0, latestHeight)
+            ).to.deep.equal(
+                Array.from(
+                    { length: latestHeight + 1 },
+                    (_, height) => height
+                ).filter(
+                    (height) =>
+                        height !== changeHeight && height !== latestHeight
+                )
+            );
+            const synced = await constructProof(h, spectator.index);
+            expect(synced.startHeight).to.equal(0);
+            expect(synced.milestones).to.deep.equal([
+                [changeHeight],
+                [latestHeight]
+            ]);
+            expect(synced.chainValid).to.equal(true);
+            expect(
+                (await constructRecordingChainProofReads(h, spectator.index))
+                    .error
+            ).to.equal(null);
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [...remaining, spectator.index]
+            });
+            const afterProgress = await constructProof(h, spectator.index);
+            expect(afterProgress.milestones[0]).to.deep.equal([changeHeight]);
+            expect(afterProgress.latestProofHeight).to.equal(latestHeight + 1);
+            expect(afterProgress.chainValid).to.equal(true);
+
+            // the exit snapshot lands above the change point
+            const anchor = await postSnapshotAt(
+                h,
+                remaining[0],
+                latestHeight + 1
+            );
+            await waitFor(
+                async () =>
+                    (await constructProof(h, spectator.index)).startHeight ===
+                    anchor.blockHeight,
+                h.event.protocolEventTimeoutMs()
+            );
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [...remaining, spectator.index]
+            });
+            const afterAdoption = await constructProof(h, spectator.index);
+            expect(afterAdoption.startHeight).to.equal(anchor.blockHeight);
+            expect(Math.min(...afterAdoption.milestones.flat())).to.be.at.least(
+                anchor.blockHeight
+            );
+            expect(afterAdoption.latestProofHeight).to.equal(latestHeight + 2);
+            expect(afterAdoption.chainValid).to.equal(true);
         });
     });
 
@@ -1710,6 +1958,12 @@ describe("E2E: Spectate Service", function () {
                 "at least one commitment must be missing from the responder's storage"
             ).to.be.greaterThan(0);
 
+            // a window is served only once its kill period expired
+            await h.assert.dispute.killPeriodExpiredWait(
+                forkId,
+                responderIndex
+            );
+
             let threw = "";
             let syncResult: { encodedSyncPayload: string } | null = null;
             try {
@@ -1806,7 +2060,7 @@ describe("E2E: Spectate Service", function () {
             ).to.not.equal(forkId);
 
             expect(forkIds[0]).to.equal(provedSuccessor);
-            await restoreEvents(false);
+            await restoreEvents();
             await h.rpcStub.cancelScheduledReductions(responderIndex);
         });
 

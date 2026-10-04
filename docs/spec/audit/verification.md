@@ -317,3 +317,281 @@ their timeout. The indentation fix in that suite moved no declaration line. It d
 immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard
 reconnect case no longer fails in cleanup, but cleanup success is not an asserted oracle and earns no
 credit.
+
+## 2026-10-03 — Milestone-only state proofs, join wait, force-join bounds, founders, and sync refusals
+
+Current evidence for the SDK changes made for the autonomous poker client. Every row in the touched reports
+links its declaration's current line; rows whose test no longer exists were removed, and stale anchors elsewhere
+were repaired only where the declaration name matched exactly one test.
+
+**Mapped in full.**
+
+- State proofs: the [StateProofWalk Foundry report](../verification/tests/test/V1/StateChannelDiamondProxy/StateProofWalk.t.sol.md) maps the walk
+  start, dropped milestones, the start-run commitment, the union-threshold hops, genesis block 0, the empty proof,
+  overlap and order, genesis authentication, and the bad-input table to [`REQ-SP-8-9PK9TS.T1`](../specification/disputes/state-proofs.md#req-sp-8-9pk9ts.t1),
+  [`REQ-SP-4-NCSEX4.T1`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1), [`REQ-SP-3-SP1JG4.T1`](../specification/disputes/state-proofs.md#req-sp-3-sp1jg4.t1) and the matching
+  [`UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md#unit-test-state-proof-facet-1-jsb4sr) permutations. The
+  [payloads report](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFraudProofFacetPayloads.t.sol.md) maps the below-anchor counter
+  ([`REQ-SP-8-9PK9TS.T3`](../specification/disputes/state-proofs.md#req-sp-8-9pk9ts.t3)), and the [dispute-verification report](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
+  maps the challenge region, the table-driven block-challenge eligibility, and the latest-state balance check ([`REQ-SP-10-AM67R2.T1`](../specification/disputes/state-proofs.md#req-sp-10-am67r2.t1)). The
+  [Case 6 report](../verification/tests/test/e2e/disputeValidation/stateProof/case6_proofStart.test.ts.md) covers
+  [`REQ-SP-8-9PK9TS.T2.P4`](../specification/disputes/state-proofs.md#req-sp-8-9pk9ts.t2.p4): a forged claim below the on-chain snapshot is killed by the counter and slashes no
+  honest peer; the [Case 3 report](../verification/tests/test/e2e/disputeValidation/stateProof/case3_unfinalTail.test.ts.md) covers the unfinal tail. The
+  [AgreementManager report](../verification/tests/test/unit/AgreementManager.test.ts.md) covers compact construction and its errors
+  ([`REQ-DISPUTE-PIPE-13-W73B2F.T1`](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-w73b2f.t1)).
+- Audit: the [DisputeValidationService report](../verification/tests/test/unit/DisputeValidationService.test.ts.md) covers the below-anchor
+  detection without old snapshots, data availability before verification, the dropped forged milestone, and the
+  last-milestone replay. The [local-first report](../verification/tests/test/unit/DisputeValidationServiceLocalFirst.test.ts.md) covers the
+  verification tiers ([`REQ-SP-9-7MWKY8.T1`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8.t1)): a tier-one success is final, a chain false creates the invalidity
+  proof, and a local revert throws out of the audit with no chain read and no proof. The
+  [deployment report](../verification/tests/test/V1/UniversalDeployment.test.ts.md) covers the mirror's never-go-back rule
+  ([`REQ-MIRROR-5-YSFRKG.T1`](../specification/enforcement/local-mirror.md#req-mirror-5-ysfrkg.t1)) and the unrouted trusted-start walk.
+- Membership: the [MembershipService report](../verification/tests/test/unit/MembershipService.test.ts.md) covers
+  `getOwnJoinState`, the deferred and refused force-join starts, the timestamp counting rule, the seated-join reset,
+  and the two landed-join outcomes as two static tests. The
+  [runtime-port report](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md) covers the join wait to
+  the authorization deadline ([`REQ-TJOIN-7-NNGTAY.T1.P16`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p16) to [`REQ-TJOIN-7-NNGTAY.T1.P21`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p21)), including the real evidence-expired refusal
+  that disputes again on the next fork, and the closed-status leave that reaches the chain check
+  ([`REQ-LIF-10-QR8NQ9.T1.P13`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p13)). The [force-join E2E report](../verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md)
+  covers the grace on a fast table ([`INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P26`](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75.t1.p26)), the recovery after a refused start
+  ([`INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P28`](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75.t1.p28)), and the founders as self-removal disputers ([`REQ-LIF-10-QR8NQ9.T1.P14`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p14)). The
+  [StateApplicationService report](../verification/tests/test/unit/StateApplicationService.test.ts.md) covers the
+  pending-joiner status rule.
+- Negotiation and sync: the [lobby](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md) and
+  [targeted](../verification/tests/test/e2e/E2E-TargetedChannelJoin.test.ts.md) E2E reports cover the founder
+  rule for both modes ([`REQ-NEG-2-ED48TZ.T1.P8`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz.t1.p8), [`REQ-NEG-2-ED48TZ.T1.P9`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz.t1.p9)) and the cancel during a rejected commit. The
+  [SpectateService report](../verification/tests/test/unit/SpectateService.test.ts.md) covers the kill-period and
+  missing-window refusals and the responder behind the derived fork, which closes the old gaps
+  [`REQ-SYNC-1-T2589H.T1.P18`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p18), [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p10), and [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P11`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p11). The
+  [runtime lifecycle report](../verification/tests/test/rpc/RuntimeLifecycle.test.ts.md)
+  covers the single `onAbort` on an unexpected host port closure and after a host abort.
+
+**Refused credit.** [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P50`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p50) was reworded to what its test shows (the rejected wrapper leaves the dispute committed); the challenger's slash is not asserted.
+[`UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P8`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-5-m4e8pz.p8) stays unassigned: the test peer holds full history, not a history synced
+from the anchor. The E2E grace assertion for the
+block bound alone is weak; the fast-table test is the evidence for the grace.
+
+**Remaining gaps with no test.** State proofs: the former dispute-replay missing-predecessor permutation (P5 of the stage-4 planned test of [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), deleted on 2026-10-04 with abstention) and its missing-predecessor-state permutation (deleted on 2026-10-04, see below); [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P12`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p12), [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P13`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p13); [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P44`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-4-e7pe6x.p44); [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P53`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p53); [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P15`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p15), [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P16`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p16); [`UNIT-TEST-LOGGER-UTILS-35-FX59CT.P1`](../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-35-fx59ct.p1), [`UNIT-TEST-LOGGER-UTILS-35-FX59CT.P2`](../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-35-fx59ct.p2), [`UNIT-TEST-LOGGER-UTILS-35-FX59CT.P3`](../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-35-fx59ct.p3); [`REQ-MIRROR-5-YSFRKG.T1.P3`](../specification/enforcement/local-mirror.md#req-mirror-5-ysfrkg.t1.p3); [`UNIT-TEST-FRAUD-PROOF-SERVICE-1-RF6J18.P8`](../implementation/source/src/stateManager/utils/FraudProofService.ts.md#unit-test-fraud-proof-service-1-rf6j18.p8); [`REQ-LIF-10-QR8NQ9.T1.P46`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p46) (the dispute-settlement exception);
+[`REQ-SYNC-1-T2589H.T1.P21`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p21) and [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P14`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p14) (the reduce-data
+test is skipped); [`REQ-NEG-2-ED48TZ.T1.P10`](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz.t1.p10) ([`FIND-LOBBY-3-8TFTB5`](open-findings.md#find-lobby-3-8tftb5)). The join wait's disposal guard has no test.
+No test command was run for this documentation pass.
+
+## 2026-10-04 — Review fixes HR-1 to HR-6 (milestone-only state proofs)
+
+The engineer's review of plan 34 changed the proof walk and the dispute fraud proofs: no up-front genesis check in
+`verifyStateProof` (HR-1), `getAnchorSnapshot` and `_canStartFromOnChainSnapshot` (HR-2), the walk reads the genesis
+from the chain when it is on chain (HR-3), the balance check judges the dispute's latest state with no walk (HR-4),
+block-challenge eligibility by `isBlockChallengeEligible(dispute, blockIndex)` with no walk (HR-5), and
+`ProofWalkResult` reduced to `valid`, `finalizedSnapshot` and `replayBlockIndex` (HR-6).
+
+**Mapped in full.** The [dispute-verification report](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
+maps `test_blockChallengeEligibility` (12 table cases) to [`REQ-SP-10-AM67R2.T1.P5`](../specification/disputes/state-proofs.md#req-sp-10-am67r2.t1.p5) and
+[`REQ-SP-10-AM67R2.T1.P18`](../specification/disputes/state-proofs.md#req-sp-10-am67r2.t1.p18) to [`REQ-SP-10-AM67R2.T1.P23`](../specification/disputes/state-proofs.md#req-sp-10-am67r2.t1.p23), and
+`test_unfinalLatestInvalidBalanceProvesFraud` to [`REQ-SP-10-AM67R2.T1.P17`](../specification/disputes/state-proofs.md#req-sp-10-am67r2.t1.p17). The
+[StateProofWalk report](../verification/tests/test/V1/StateChannelDiamondProxy/StateProofWalk.t.sol.md) maps
+`test_genesisOnChainNeedsNoGenesisInput` to [`REQ-SP-4-NCSEX4.T1.P26`](../specification/disputes/state-proofs.md#req-sp-4-ncsex4.t1.p26) and
+`test_verifyStateProof_proofFromTheAnchorNeedsNoGenesisData_passes` to [`REQ-SP-8-9PK9TS.T1.P29`](../specification/disputes/state-proofs.md#req-sp-8-9pk9ts.t1.p29). Rows of the
+deleted Foundry tests were removed with the permutations they covered; the renamed tests keep their rows.
+
+**Removed with their behavior.** The chain-only eligibility re-check and the finalized-snapshot balance re-check of
+the auditor, the walk-evidence balance selection, the earlier-milestone and dropped-milestone challenge cases, and the
+`chainOnly` verification option no longer exist, so their permutations were deleted, not left as gaps.
+
+**Remaining gaps with no test.** These permutations of this change had no test at that point (round 4 below adds tests for P98 and P59): [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P97`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs.p97), the not-eligible block-allegation permutation (deleted on 2026-10-04, spectator-only), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P58`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p58), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P59`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p59). The engineer decisions of the same day (a stale sync proof cuts the responder; internal failures are fatal) removed the unavailable-verification and revert-fallback permutations. The missing-pinned-snapshot guard was later deleted as redundant (`getAuditingData` already abstains with `isPartial` when that snapshot is missing), together with its two permutations. No test command was run for this documentation pass.
+
+## 2026-10-04 — Plan 34 round 4: sync window inputs, unfinal-tail staging, open items
+
+**Security fix.** A chain-final window runs no local reduction, so `SpectateService.persistSyncPayload` now stores
+only its dispute confirmations: its latest snapshot, state and inbound blocks are unverified and are not stored
+(`VerifiedSync.chainFinalForkIds`). Before, a copy of a fork genesis with another timestamp (same snapshot data)
+replaced that fork's stored genesis. [`INV-SYNC-1-XCQZ28.T1.P19`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p19) proves it ([`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)).
+
+**New staging.** A cut-off third participant leaves peer 0 with an unfinal tail; the participant keys re-sign it
+into an invalid tail block, an alternative threshold-final history, or extra threshold-final milestones. A
+spectator whose block work and own sync application are held stays at its block below, or at, the chain anchor.
+These cover [`INV-SYNC-3-A7A2ED.T1.P3`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p3), [`INV-SYNC-3-A7A2ED.T1.P25`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p25), [`INV-SYNC-3-A7A2ED.T1.P26`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p26), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P53`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p53), [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P59`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p59), [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P15`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p15), [`UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P6`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-5-m4e8pz.p6), the not-eligible block-allegation permutation (deleted on 2026-10-04, spectator-only) and [`REQ-DISPUTE-PIPE-5-RZZB48.T4.P2`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t4.p2).
+
+**Finding from the new tests.** A fresh spectator persists the verified payload and reaches `SYNCED` before its
+tail replay. When a tail block then proves fraud, the runtime stops, but `connectToChannel` has already answered
+true ([`INV-SYNC-3-A7A2ED.T1.P25`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p25) asserts only that the runtime stops).
+
+**Coverage exception (C).** the former dispute-replay missing-predecessor permutation (P5 of the stage-4 planned test of [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), deleted on 2026-10-04 with abstention), first clause (a deviating replayed block whose predecessor is neither stored nor
+in the proof): the structure rule links every last-milestone block at index 1 or above to the proof block before
+it, and a block at index 0 is replayed only when it is stored (`isLastMilestoneStoredLocally`) or is a genesis block
+0, which `createInvalidStateTransitionProof` judges from the genesis.
+
+**Still open.**
+
+- [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P97`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs.p97), walk-not-usable half: it needs a stored balance-breaking latest state behind a walk that no tier accepts. A
+  posted audit persists the forged block only on an auditor without a block at its height, and then that block is
+  the auditor's threshold point, so tier one accepts the later walk. On an auditor that holds a block at that height
+  the forged block is not persisted and the no-data audit abstains ("lastFinalized state is not in storage").
+- the local-invalid, chain-valid permutation (deleted on 2026-10-04, spectator-only) and its specification twin (deleted on 2026-10-04): a spectator whose sync application is held stores no genesis, so `getAuditingData` throws
+  "genesisStateSnapshot not found" before any verdict. A spectator synced first and then held still stores the exit's
+  posted block, and its tier-one walk answers valid before any storage or chain walk.
+- The missing-predecessor-state permutation of the same plan item (deleted on 2026-10-04): tier one starts at the auditor's latest threshold point, which is at or above every stored block whose state
+  is missing (a sync stores states only for its installed point and its replayed tail).
+- the former dispute-replay missing-predecessor permutation (P5 of the stage-4 planned test of [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), deleted on 2026-10-04 with abstention), second clause: it needs an auditor that stores a different block at the predecessor height with a different
+  state, inside a run that a local tier accepts.
+- [`UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P4`](../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md#unit-test-disputevalidation-strategy-1-4tztj6.p4): the outsider-author allegation through the stored merge needs a stored block whose author is outside its
+  participant union and a new confirmation equal to the author's signature. Live validation rejects such an author
+  first; sync and audit persistence were not shown to store one.
+- [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P14`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p14): unchanged (the mirror's inbound head must be above TS storage).
+- [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P16`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p16): no flow found that stores a milestone's first block without its snapshot or builds a proof its own walk
+  rejects.
+
+## 2026-10-04 — Engineer decisions: sync status at install, coverage items, join grace on the joiner's clock
+
+**Sync status at install (kept).** The engineer decided to keep the earlier sync order: the sync verifies
+finality, persists everything and sets the status during the install, then replays the unfinalized tail as normal
+block replay, as a gossiped block would be handled. The behavior named in the finding of the previous entry is
+therefore by design: a fraudulent tail block stops a fresh spectator's runtime after the install, and
+[`INV-SYNC-3-A7A2ED.T1.P25`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p25) asserts that the runtime stops.
+
+**Coverage items.**
+
+- the local-invalid, chain-valid permutation (deleted on 2026-10-04, spectator-only) and its specification twin (deleted on 2026-10-04): written. A spectator that synced early is cut off and its
+  local diamond misses a leaver's exit snapshot (a new `onStateSnapshotUpdated` mirror hold). Both local tiers count
+  the leaver and answer invalid; the chain's anchor is the exit snapshot and answers valid; no proof is stored. The
+  audit then throws "Block hash … not found in storage" from the auditing-data rebuild (`getAuditingData` reads the
+  cut-off spectator's missing message history and throws instead of returning `isPartial`). This is outside the
+  permutation and is recorded here as a question for the engineer, not changed.
+- [`UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P4`](../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md#unit-test-disputevalidation-strategy-1-4tztj6.p4): written through the route the engineer named. The walk does not check authors,
+  so an expired dispute's unaudited persistence (`persistDisputeDataWithoutAudit` with unfinal blocks) stores an
+  outsider-authored tail block; a later replay that adds the author's own signature as a confirmation reaches the
+  stored merge, and `notAllSingersAreParticipants` stores `DisputeBlockAuthorNotParticipant`. The stored merge runs
+  as its own scheduled task, so the audit call returns before that proof is stored.
+- [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P14`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p14): the serving path now maps a reduce-data rebuild that throws (a reduce input missing
+  from storage, as for a window synced chain-final) to the named refusal "Reduce data unavailable for disputed fork
+  <forkId>". Mapped to the existing chain-final refusal test, which also gained its verification row.
+- [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P16`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p16): the throw stays (an internal-consistency check, fatal by the engineer's rule). It is
+  not testable without corrupt storage.
+- Deleted, with the engineer's approval: the "walk not usable" half of
+  [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P97`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs.p97) (after HR-4 the balance check does not use the walk, and an invalid walk stores
+  `DisputeInvalidStateProof` first); the replayed-block-with-missing-predecessor-state permutation of the same plan item (tier one starts at or above every stored
+  block whose state is missing); and the second clause of the former dispute-replay missing-predecessor permutation (P5 of the stage-4 planned test of [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), deleted on 2026-10-04 with abstention) (two different blocks
+  at one height inside an accepted run means the threshold double-signed, which is outside the trust model).
+
+**Join grace on the joiner's clock.** A block counts toward the force-join block trigger when the joiner commits
+it once its own `Clock` is past the grace start; block timestamps play no part. The two permutations of the timestamp rule (one
+specification, one implementation) were deleted and replaced by
+[`INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P29`](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75.t1.p29) and [`UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P56`](../implementation/source/src/stateManager/membership/MembershipService.ts.md#unit-test-membership-service-1-edfkzf.p56).
+
+## 2026-10-04 — Engineer decisions: sync status at install restored; only participants audit
+
+**Sync status set during the install (revert).** The "status last" change of the previous entry is reverted: the
+sync verifies finality, persists everything and sets the status during the install, then replays the unfinalized
+tail as normal block replay. `StateApplicationService` has no deferred-status install and no
+`settleParticipationStatus`; `persistSyncPayload` returns only `shouldAbort`. The spectator tail test is back to
+asserting that the runtime stops ([`INV-SYNC-3-A7A2ED.T1.P25`](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed.t1.p25)); the two permutations added for the status-last
+rule (one specification, one implementation) and the successful-tail permutation pair were deleted with their test,
+fixture and record-only status probe.
+
+**Only participants and pending participants audit.** Data availability is guaranteed only to them.
+`EventHandler.handleDisputeCommitted` audits a non-final dispute only for `isCommittedParticipantStatus`; any
+other observer builds no counter and, for now, aborts its runtime
+([`OQ-SPEC-SPECTATOR-DISPUTE-1-Y1FNMM` (What a spectator does during a dispute)](../specification/open-questions.md#oq-spec-spectator-dispute-1-y1fnmm)). The dispute strategy and its stored merges start only from that audit, so the one
+gate covers them. The final and expired branches build no counter and are not gated. Reduction challenges
+(`validateDisputeReductionAndChallenge`) are not dispute audits and were not changed.
+[`REQ-DISPUTE-PIPE-2-MJRJV1.T2.P1`](../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1.t2.p1) covers the gate end to end.
+
+Tests that used a spectator as the auditor:
+
+- Re-staged with a participant or pending participant: the far-future genesis-tail timestamp case (a cut-off
+  participant that holds only the genesis) and the synced-past-the-start case (a pending participant).
+- Deleted with their staging and permutations, as only reachable with a spectator auditor, and spectators do not
+  audit: the missing last-milestone-start skip (the abstention permutation of the
+  replay start and its audit twin), the two omitted-data tier verdicts on a held genesis auditor, the
+  not-eligible allegation below the chain anchor, the start-height unlinked block at the chain anchor, the
+  mirror missing a leaver's exit snapshot (local invalid, chain valid; implementation and specification
+  permutations), the abstentions without the state below a replayed conflict (two strategy permutations), and the
+  unanchorable no-data e2e case.
+- Kept, because spectators still reach the code without auditing: `verifyStateProof` tiers and unaudited
+  persistence on a held spectator, and `getAuditingData` on a synced spectator (the final and expired branches).
+
+**Partial-rebuild latest-state fix kept.** [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P99`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs.p99) is reached by a participant
+auditor on an exit-anchored fork (a proof wholly below its local final point), so the partial-rebuild path in
+`getAuditingData` and the `DisputeNotLatestState` check in `continueOtherChecks` stay.
+
+**Open.** [`OQ-SPEC-JOIN-DISPUTE-RACE-1-SG2WK1` (Dispute before a submitted join is on chain)](../specification/open-questions.md#oq-spec-join-dispute-race-1-sg2wk1): a dispute that lands before a submitted join is on chain gives the
+joiner no data availability guarantee.
+
+## 2026-10-04 — Engineer decisions: spectators abort on every dispute event; general rules re-staged
+
+**Abort on every dispute event.** `EventHandler.handleDisputeCommitted` now checks the status once, right after
+the relevance check and before the final, expired and audit branches. A non-participant (status neither
+`PARTICIPATING` nor `PENDING_PARTICIPANT`) logs why and calls `stateManager.abort()` on every dispute event of its
+fork: new, final or expired. It stores no dispute, builds no counter and follows no reduction. The final branch's
+non-participant abort after a failed genesis preparation became dead and was removed; a failed preparation now
+always logs and throws ([`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1),
+[`OQ-SPEC-SPECTATOR-DISPUTE-1-Y1FNMM` (What a spectator does during a dispute)](../specification/open-questions.md#oq-spec-spectator-dispute-1-y1fnmm)). New end-to-end case:
+[`REQ-DISPUTE-PIPE-2-MJRJV1.T2.P2`](../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1.t2.p2) (a spectator whose first dispute event is threshold-final aborts).
+
+**Race fixed in the non-final spectator case** ([`REQ-DISPUTE-PIPE-2-MJRJV1.T2.P1`](../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1.t2.p1)). Peer 0's tampered dispute
+stated no reason, so it required an existing dispute window and sometimes reverted with
+`RaceConditionDisputeWindowNotOpen`, leaving nothing to kill. Peer 0 now disputes as a self-removal, so its dispute
+opens the window itself. The test no longer posts peer 1's dispute by hand after the kill: the honest
+participants already upload replacement evidence on their own, and the manual dispute could arrive after the
+evidence period (`RaceConditionDisputeEvidencePeriodExpired`).
+
+**Tests the previous entry kept for spectators.**
+
+- `getAuditingData` from a same-fork on-chain start: re-staged; the installed peer submits its join and assembles
+  the data as a pending participant.
+- `verifyStateProof` programming error ([`UNIT-TEST-AGREEMENT-MANAGER-3-7FSY0D.P9`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-3-7fsy0d.p9)): re-staged on a pending participant
+  (`heldGenesisPendingAuditor`, which replaces `heldGenesisAuditor`).
+- Unaudited persistence of an unverified proof ([`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P96`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs.p96)): re-staged on a
+  participant with a posted forged block above the tip that no tier proves final.
+- Missing finalized state flags partial ([`UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ.P6`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-5-m4e8pz.p6)): the test was deleted with
+  its only staging (`withSpectatorSyncedAcrossGap`, a held fresh spectator). A pending participant synced past the
+  start held the state of every point it held above the start, so no participant staging was found; the
+  permutation stays open with no test.
+
+**General rules re-staged with a participant or pending participant.**
+
+- The former pending-participant abstain permutation of the DisputeValidationStrategy family (P25, deleted on 2026-10-04: honest auditors never abstain; its staging now feeds [`UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P33`](../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md#unit-test-disputevalidation-strategy-1-4tztj6.p33)): restored. A pending participant whose join installed the head
+  state (no state below it) audits a linked unseen block above a threshold-final block; the transition proof has
+  no predecessor state, so the strategy abstains and the audit is valid with no proof.
+- [`REQ-DISPUTE-PIPE-5-RZZB48.T4.P2`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t4.p2): restored. A participant cut off right after the snapshot post holds the anchor as
+  its threshold point; peers 0 and 1 author one more block. Its audit of an unlinked block at the anchor height
+  that commits the anchor, then a non-leader block linked to it, is invalid at index 1 and the proof slashes that
+  author, not the auditor.
+
+**General rules left deleted (no participant or pending participant reaches them).**
+
+- [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-3-ay91rs) P87 and P88 (no-data proof whose earlier milestone fails the chain walk): the
+  no-data path first requires the last milestone final by everyone, and everyone includes pending participants
+  (the on-chain participant union). A pending auditor that has not signed it gets
+  `DisputeLastMilestoneNotFinalAndNoAuditingData` first. A participant or pending participant that signed it holds
+  that run, so its first tier walks from a threshold point at or above the earlier milestone, drops it, and accepts;
+  the chain walk these permutations need is never asked.
+- P98 of the same family (block-allegation eligibility answered not eligible, the auditor's walk below the chain
+  anchor): the auditor's walk must start below a posted chain anchor. A participant signed every block up to the
+  anchor before it could be posted, and a pending participant is synced to the latest state by its own join, so
+  neither walks from below the anchor.
+- [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-4-e7pe6x) P5 and its specification twin, P5 of [`REQ-SP-9-7MWKY8.T1`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8.t1) (a local tier answers invalid, the
+  chain answers valid): both local tiers must reject a proof the chain accepts. A participant signs every block of
+  the proof it holds, so its first tier accepts. The one divergence found (a mirror that misses a leaver's exit
+  snapshot) needs an auditor whose history stops before the exit; such an auditor is cut off, and it can become a
+  pending participant only by reconnecting to submit its join, after which its mirror walk accepted the proof.
+
+## 2026-10-04 — No abstention, posted finalized state, stale sync proofs (decisions 8-13)
+
+This entry supersedes the abstention statements of the earlier 2026-10-04 entries: an honest auditor no longer
+abstains, so every case above that ended "valid, no proof" because the auditor lacked a predecessor, a stored last
+milestone, or an inbound run now either replays from the predecessor or fails as an internal error.
+
+Evidence added in the verification reports: the full-audit, fast-forward, missing-base, unrecoverable-gap and
+missed-run persistence cases of the auditor; the predecessor-based ingest, validation, strategy, snapshot-assembly,
+block-commit and fraud-proof builder cases (new [FraudProofService report](../verification/tests/test/unit/FraudProofService.test.ts.md));
+the expired-kill-period full audit (unit and end-to-end, offline auditor through the kill period); the posted
+finalized state forge cases; the stale served state and initial-sync abort cases; and the case-10 alternate-history
+cases (David, longest valid chain, final dispute). Rows of deleted tests were removed and their abstain permutations
+deleted.
+
+Open evidence gaps (permutations with no test): the live missing-snapshot builder case of FraudProofService, the
+predecessor-judging and `applyFraudProof(undefined)` strategy cases, the predecessor-snapshot ingest case, the storage
+predecessor reads, the reduce-data reschedule branch, and [`REQ-SP-9-7MWKY8.T1.P1`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8.t1.p1) and `.T1.P3`, which lost
+their auditor evidence when posted verification became chain-only. The expired-audit case of
+[`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P17`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p17) cannot tell whether the head state came from the replay or from a recovered
+calldata log; the engineer should confirm it as full coverage.

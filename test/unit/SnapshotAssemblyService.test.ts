@@ -253,6 +253,82 @@ describe("Unit: SnapshotAssemblyService", function () {
             expect(r.left).to.equal(0);
         });
 
+        it("coordinates the stored history does not hold (a dispute's own chain) → assembled from the passed previous snapshot", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+
+            const writer = await h.query.getNextPeerToWrite();
+            const height = await h
+                .control(writer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const timestamp = await h
+                .control(writer)
+                .query.getClockTimeInSeconds()
+                .request();
+            const call = await h
+                .getPeer(writer.index)
+                .p2pInstance.p2pContractInstance.add.populateTransaction(1);
+            const tx = factory.transaction({
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: height,
+                    participant: writer.address,
+                    timestamp
+                },
+                body: { encodedData: call.data, data: call.data }
+            });
+
+            const r = await h.execOnHost(
+                h.getPeer(writer.index),
+                async (sm, args) => {
+                    const previous =
+                        sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
+                            { forkId: args.forkId, height: args.height }
+                        );
+                    // storage holds nothing below these coordinates
+                    const assembled =
+                        await sm.snapshotAssemblyService.assembleFromTransaction(
+                            { forkId: args.unknownForkId, height: args.height },
+                            args.tx,
+                            previous,
+                            [],
+                            args.timestamp
+                        );
+                    if (!assembled.success) return { success: false as const };
+                    return {
+                        success: true as const,
+                        inbound: String(
+                            assembled.stateSnapshot
+                                .latestInboundMessageBlockHash
+                        ),
+                        previousInbound: String(
+                            previous.latestInboundMessageBlockHash
+                        ),
+                        originForkId: String(
+                            assembled.stateSnapshot.snapshotData.originForkId
+                        ),
+                        previousOriginForkId: String(
+                            previous.snapshotData.originForkId
+                        )
+                    };
+                },
+                { forkId, height, timestamp, tx, unknownForkId: randomHash() },
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
+            );
+
+            expect(r.success).to.equal(true);
+            if (!r.success) return;
+            expect(r.inbound).to.equal(r.previousInbound);
+            expect(r.originForkId).to.equal(r.previousOriginForkId);
+        });
+
         // pinned: applyTransaction's success mirrors the state machine's own
         // header check, so the same calldata succeeds for the writer whose
         // turn it is and fails for anyone else.

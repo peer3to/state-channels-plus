@@ -216,7 +216,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public virtual returns (bool isFinal);
 
-    function hasStateProofHeaderMismatch(Dispute memory dispute) public pure virtual returns (bool);
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public view virtual returns (bool);
 
     function isDisputeInboundHashValid(Dispute memory dispute) public view virtual returns (bool);
 
@@ -262,7 +262,20 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         virtual
         returns (bool);
 
-    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view virtual returns (bool);
+    function getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        virtual
+        returns (bool canUseOnChainSnapshot, StateSnapshot memory onChainSnapshot);
+
+    function isBlockChallengeEligible(Dispute memory dispute, uint256 blockIndex) public view virtual returns (bool);
+
+    function isStateProofLinked(
+        bytes32 channelId,
+        bytes32 forkId,
+        StateProof memory stateProof,
+        SnapshotData memory genesisStateSnapshotData
+    ) public view virtual returns (bool);
 
     function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
         public
@@ -276,12 +289,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         virtual
         returns (bool found, uint256 blockIndex);
 
-    function verifyMilestones(
-        bytes32 forkId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) public virtual returns (bool isValid);
+    function verifyMilestones(ProofWalkInput memory input) public view virtual returns (ProofWalkResult memory);
 
     function isMilestoneFinal(
         bytes32 forkId,

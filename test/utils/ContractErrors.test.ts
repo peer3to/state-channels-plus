@@ -1,13 +1,20 @@
+import { ContractExecutor } from "@/evm";
+import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { SignedBlockEthersType } from "@/types/ethers";
 import {
     CustomEvmError,
+    isLocalEvmExecutionFailure,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { routedFacets } from "@/utils/routedFacets";
+import { EVM } from "@ethereumjs/evm";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import * as factory from "@test/factory";
+import { withSdkStorage } from "@test/fixtures/node/ContractExecutorRuntimeFixture";
+import { corruptNextSdkExecutorRequest } from "@test/fixtures/node/SdkExecutorFixture";
+import { getSimpleNumberStorageFactory } from "@test/fixtures/SimpleNumberStorage.fixture";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { expect } from "chai";
@@ -338,5 +345,94 @@ describe("encodedCustomErrorRevert", () => {
         expect(() =>
             factory.encodedCustomErrorRevert("ErrorThatDoesNotExist")
         ).to.throw("Unknown contract error: ErrorThatDoesNotExist");
+    });
+});
+
+describe("isLocalEvmExecutionFailure", () => {
+    const failureOf = (call: () => Promise<unknown>) =>
+        call().then(
+            () => expect.fail("the call must fail"),
+            (error: unknown) => error
+        );
+
+    it("is true for a local EVM revert, direct or wrapped by the signer or the executor RPC boundary, and false for any other failure or value", async () => {
+        const factoryStorage = await getSimpleNumberStorageFactory(hre);
+        const revertData = factoryStorage.interface.encodeFunctionData(
+            "revertWithMessage",
+            ["local revert"]
+        );
+        // the executor itself, in process
+        const direct = new ContractExecutor(await EVM.create());
+        let directRevert: unknown;
+        try {
+            const deployment = await direct.deploy(
+                (await factoryStorage.getDeployTransaction()).data!
+            );
+            directRevert = await failureOf(() =>
+                direct.executeCall(
+                    revertData,
+                    deployment.createdAddress!.toString()
+                )
+            );
+        } finally {
+            direct.dispose();
+        }
+        let boundaryRevert: unknown;
+        let signerRevert: unknown;
+        let signerFailure: unknown;
+        let executorFailure: unknown;
+        // an executor behind its runtime connection, in a worker thread
+        await withSdkStorage(true, async (executor, address) => {
+            boundaryRevert = await failureOf(() =>
+                executor.executeCall(revertData, address)
+            );
+            const signer = new LocalContractExecutorSigner(
+                ethers.Wallet.createRandom(),
+                executor
+            );
+            signerRevert = await failureOf(() =>
+                signer.call({ to: address, data: revertData })
+            );
+            // a call with no target never reaches the EVM
+            signerFailure = await failureOf(() => signer.call({ data: "0x" }));
+            const control = corruptNextSdkExecutorRequest(
+                executor,
+                "executeCall"
+            );
+            try {
+                executorFailure = await failureOf(() =>
+                    executor.executeCall(revertData, address)
+                );
+            } finally {
+                control.dispose();
+            }
+        });
+
+        expect(isLocalEvmExecutionFailure(directRevert), "direct").to.equal(
+            true
+        );
+        expect(
+            isLocalEvmExecutionFailure(boundaryRevert),
+            "executor RPC boundary"
+        ).to.equal(true);
+        expect(isLocalEvmExecutionFailure(signerRevert), "signer").to.equal(
+            true
+        );
+        expect(
+            isLocalEvmExecutionFailure(signerFailure),
+            "signer failure before the EVM"
+        ).to.equal(false);
+        expect(
+            isLocalEvmExecutionFailure(executorFailure),
+            "executor connection failure"
+        ).to.equal(false);
+        expect(isLocalEvmExecutionFailure(undefined), "undefined").to.equal(
+            false
+        );
+        expect(isLocalEvmExecutionFailure(42), "number").to.equal(false);
+        expect(
+            isLocalEvmExecutionFailure({ code: "CALL_EXCEPTION" }),
+            "plain object"
+        ).to.equal(false);
     });
 });

@@ -24,7 +24,10 @@ ReduceOutput, Timeout.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Auditing data holds one milestone snapshot per milestone.** `DisputeAuditingData.milestoneSnapshots`
+   ([#L126](../../../../../../../contracts/V1/types/DisputeTypes.sol#L126)) has one entry per milestone of the dispute's proof, the walk's `ProofWalkInput.milestoneSnapshots`
+   ([ProofTypes.sol](./ProofTypes.sol.md)); the walk refuses a count mismatch. The former "K − 1 entries" comment is
+   corrected; dropped milestones keep an entry that the walk never reads.
 
 ## Inputs, outputs, state, and side effects
 

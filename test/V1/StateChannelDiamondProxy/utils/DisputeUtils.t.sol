@@ -53,25 +53,24 @@ contract DisputeUtilsTest is Test {
     }
 
     function _stateProofWithLastMilestone(uint256 confirmations) internal pure returns (StateProof memory sp) {
-        sp.milestones = new MilestoneProof[](1);
-        sp.milestones[0].blockConfirmations = new BlockConfirmation[](confirmations);
+        sp.milestones = new MilestoneProof[](2);
+        sp.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        sp.milestones[0].blockConfirmations[0].signedBlock.encodedBlock = "earlier milestone";
+        sp.milestones[1].blockConfirmations = new BlockConfirmation[](confirmations);
+        for (uint256 i = 0; i < confirmations; i++) {
+            sp.milestones[1].blockConfirmations[i].signedBlock.encodedBlock = abi.encode("last milestone block", i);
+        }
     }
 
-    function test_unfinalized_emptyLastMilestone_returnsEmpty() public {
-        StateProof memory sp = _stateProofWithLastMilestone(0);
-        BlockConfirmation[] memory res = _getUnfinalizedBlockConfirmationsFromStateProof(sp);
-        assertEq(res.length, 0, "empty last milestone -> no unfinalized blocks");
+    function test_latestSignedBlock_emptyProof_hasNoBlock() public pure {
+        StateProof memory sp;
+        (bool hasBlock,) = _getLatestSignedBlock(sp);
+        assertFalse(hasBlock, "the empty proof is the fork genesis");
     }
 
-    function test_unfinalized_skipsFirstFinalizedBlock() public {
-        StateProof memory sp = _stateProofWithLastMilestone(3);
-        BlockConfirmation[] memory res = _getUnfinalizedBlockConfirmationsFromStateProof(sp);
-        assertEq(res.length, 2, "3 confirmations -> 2 unfinalized");
-    }
-
-    function testFuzz_unfinalized_neverReverts(uint8 n) public {
-        StateProof memory sp = _stateProofWithLastMilestone(n);
-        BlockConfirmation[] memory res = _getUnfinalizedBlockConfirmationsFromStateProof(sp);
-        assertEq(res.length, n == 0 ? 0 : uint256(n) - 1, "n confirmations -> max(0, n-1) unfinalized");
+    function testFuzz_latestSignedBlock_neverReverts(uint8 n) public pure {
+        (bool hasBlock, SignedBlock memory latest) = _getLatestSignedBlock(_stateProofWithLastMilestone(n));
+        assertEq(hasBlock, n != 0, "n confirmations -> a latest block unless n is 0");
+        if (hasBlock) assertEq(latest.encodedBlock, abi.encode("last milestone block", uint256(n) - 1));
     }
 }

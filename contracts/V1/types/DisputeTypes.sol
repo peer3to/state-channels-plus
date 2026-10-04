@@ -123,7 +123,9 @@ struct OnChainSlash {
 struct DisputeAuditingData {
     SnapshotData genesisStateSnapshotData;
     StateSnapshot latestStateSnapshot;
-    StateSnapshot[] milestoneSnapshots; //for K milestones there will be K-1 snapshots, since the first milestone is the genesisSnapshot
+    // one entry per milestone; entries used to test threshold finality include the resulting snapshot of a
+    // genesis-linked block-0 milestone; the normal on-chain-anchor entry needs no threshold check
+    StateSnapshot[] milestoneSnapshots;
     bytes latestFinalizedStateStateMachineState;
     MessageBlock[] inboundMessageBlocks;
     /// @notice Stores all outbound message blocks since genesis

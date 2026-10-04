@@ -216,12 +216,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return disputeWindow.evidence.creationTimestamp != 0;
     }
 
-    function _getStateMachineParticipants(bytes memory encodedState) internal virtual returns (address[] memory) {
-        // setState fails
-        stateMachineImplementation.setState(encodedState);
-        return stateMachineImplementation.getParticipants();
-    }
-
     function _getP2pTime() internal view virtual returns (uint256) {
         return p2pTime;
     }
@@ -336,7 +330,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, commitment);
     }
 
-    function _isBlockAuthentic(SignedBlock memory _block) internal view virtual returns (bool) {
+    function _isBlockAuthentic(SignedBlock memory _block) internal view returns (bool) {
         (bool decoded, Block memory decodedBlock) =
             UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
         if (!decoded) return false;
@@ -440,32 +434,21 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return _isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot);
     }
 
-    function _isLatestFinalizedStateLinkedToLatestFinalizedBlock(
-        Dispute memory dispute,
-        StateSnapshot memory latestFinalizedStateSnapshot,
-        bytes memory latestFinalizedStateMachineState
-    ) internal pure returns (bool) {
-        bytes32 snapshotHash = keccak256(abi.encode(latestFinalizedStateSnapshot));
-        if (
-            latestFinalizedStateSnapshot.snapshotData.stateMachineStateHash
-                != keccak256(latestFinalizedStateMachineState)
-        ) {
-            return false;
-        }
+    /// The on-chain anchor of `forkId`: the on-chain snapshot, and whether a state proof can start from it.
+    function _getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
+        internal
+        view
+        returns (bool canUseOnChainSnapshot, StateSnapshot memory onChainSnapshot)
+    {
+        onChainSnapshot = stateSnapshots[channelId];
+        canUseOnChainSnapshot = _canStartFromOnChainSnapshot(onChainSnapshot, forkId);
+    }
 
-        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
-        if (milestones.length > 0) {
-            MilestoneProof memory lastMilestone = milestones[milestones.length - 1];
-            if (lastMilestone.blockConfirmations.length == 0) {
-                return false;
-            }
-
-            Block memory latestFinalizedBlock =
-                abi.decode(lastMilestone.blockConfirmations[0].signedBlock.encodedBlock, (Block));
-            return latestFinalizedBlock.stateSnapshotHash == snapshotHash;
-        }
-
-        return dispute.input.forkId == keccak256(abi.encode(latestFinalizedStateSnapshot.snapshotData));
+    /// `snapshot` is on `forkId` and a block commits to it. The genesis (its data hashes to the fork ID, at height 0)
+    /// is excluded: no block commits to it, block 0 only links back to it through `previousBlockHash`.
+    function _canStartFromOnChainSnapshot(StateSnapshot memory snapshot, bytes32 forkId) internal pure returns (bool) {
+        return snapshot.forkId == forkId
+            && (snapshot.blockHeight != 0 || keccak256(abi.encode(snapshot.snapshotData)) != forkId);
     }
 
     function _isDataLinkedToDisputeInput(
@@ -523,13 +506,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         );
     }
 
-    function _applyInboundMessages(
+    // Applies the inbound messages to the state already loaded in the state machine.
+    // `encodedStateMachineState` is that loaded state; it is only hashed into the failure error.
+    function _processInboundMessages(
         bytes memory encodedStateMachineState,
         MessageBlock[] memory inboundMessageBlocks,
         Balance memory currentInboundTotalDeposits
-    ) internal returns (bytes memory encodedModifiedState, Balance memory newTotalDeposits) {
+    ) internal returns (Balance memory newTotalDeposits) {
         newTotalDeposits = currentInboundTotalDeposits;
-        stateMachineImplementation.setState(encodedStateMachineState);
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
@@ -548,7 +532,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                     stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
-        encodedModifiedState = stateMachineImplementation.getState();
     }
 
     function _processOutboundMessage(Message memory message) internal virtual returns (bool) {
@@ -654,5 +637,249 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         emit DisputeReducedResultCommitted(
             channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, msg.sender
         );
+    }
+
+    /**
+     * The one state-proof walk from the start (the same-fork non-genesis on-chain snapshot, else the fork genesis).
+     * Milestones wholly below the start are dropped. The run holding an on-chain start commits it at its exact
+     * height and needs no threshold. Every other kept milestone proves its first block by the union threshold of
+     * the last verified set; only a genesis block 0 of a single-milestone proof may stay unfinal (then the whole run
+     * is the unfinal tail). Every kept block is linked, height + 1 and author-signed. `checkFinality` false checks
+     * linkage only, never reads milestone snapshots, and only `valid` is usable.
+     */
+    function _walkStateProof(ProofWalkInput memory input, StateSnapshot memory start, bool checkFinality)
+        internal
+        view
+        returns (ProofWalkResult memory result)
+    {
+        MilestoneProof[] memory milestones = input.stateProof.milestones;
+        bool useOnChainSnapshot = _canStartFromOnChainSnapshot(start, input.forkId);
+        // For K milestones, K snapshots are provided where each snapshot corresponds to each milestone finalization
+        if (checkFinality && milestones.length != input.milestoneSnapshots.length) return result;
+        if (!useOnChainSnapshot || milestones.length == 0) {
+            // an empty proof is the fork genesis
+            bool isGenesisLinked;
+            bool hasGenesisTimestamp;
+            (isGenesisLinked, hasGenesisTimestamp, start) = _getGenesisSnapshot(input, start);
+            if (!isGenesisLinked) return result;
+            // the chain may no longer date the genesis (timestamp 0); only an empty proof does not need it
+            if (!hasGenesisTimestamp && milestones.length != 0) return result;
+        }
+        result.finalizedSnapshot = start;
+        bytes32 startSnapshotHash = keccak256(abi.encode(start));
+        uint256 previousFirstHeight;
+
+        for (uint256 i = 0; i < milestones.length; i++) {
+            MilestoneProof memory milestone = milestones[i];
+            uint256 length = milestone.blockConfirmations.length;
+            if (length == 0) return result;
+            (bool firstDecoded, Block memory firstBlock) = _tryDecodeRequiredBlock(input, milestone, 0);
+            (bool lastDecoded, Block memory lastBlock) = _tryDecodeRequiredBlock(input, milestone, length - 1);
+            if (!firstDecoded || !lastDecoded) return result;
+
+            uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
+            if (firstHeight < previousFirstHeight) return result;
+            previousFirstHeight = firstHeight;
+            result.replayBlockIndex = length;
+            // wholly below the start: dropped, awarding no finality
+            if (lastBlock.transaction.header.transactionCnt < start.blockHeight) continue;
+
+            if (useOnChainSnapshot && firstHeight <= start.blockHeight) {
+                // the run holds the on-chain start: its block at the start height commits it
+                uint256 offset = start.blockHeight - firstHeight;
+                if (offset >= length) return result;
+                (bool startDecoded, Block memory startBlock) = _tryDecodeRequiredBlock(input, milestone, offset);
+                if (
+                    !startDecoded || startBlock.transaction.header.transactionCnt != start.blockHeight
+                        || startBlock.stateSnapshotHash != startSnapshotHash
+                ) return result;
+                (bool isStartRunLinked,,) = _walkMilestoneBlocks(input.forkId, milestone, offset, new address[](0));
+                if (!isStartRunLinked) return result;
+                result.replayBlockIndex = offset + 1;
+                continue;
+            }
+
+            bool isGenesisZero = !useOnChainSnapshot && firstHeight == 0;
+            // block zero links back to the genesis through previousBlockHash; that alone does not finalize it
+            if (isGenesisZero && firstBlock.previousBlockHash != startSnapshotHash) return result;
+
+            StateSnapshot memory resultingSnapshot;
+            address[] memory expectedParticipants;
+            if (checkFinality) {
+                resultingSnapshot = input.milestoneSnapshots[i];
+                expectedParticipants = _deriveMilestoneUnionParticipants(
+                    input.channelId, result.finalizedSnapshot.snapshotData, resultingSnapshot.snapshotData
+                );
+            }
+            (bool isLinked, uint256 thresholdCount, bytes32 firstSnapshotHash) =
+                _walkMilestoneBlocks(input.forkId, milestone, 0, expectedParticipants);
+            if (!isLinked) return result;
+            if (!checkFinality) continue;
+
+            if (
+                thresholdCount == expectedParticipants.length
+                    && keccak256(abi.encode(resultingSnapshot)) == firstSnapshotHash
+            ) {
+                result.finalizedSnapshot = resultingSnapshot;
+                result.replayBlockIndex = 1;
+            } else if (isGenesisZero && milestones.length == 1) {
+                // an unfinal genesis block zero: the only run is the unfinal tail
+                result.replayBlockIndex = 0;
+            } else {
+                return result;
+            }
+        }
+
+        result.valid = true;
+    }
+
+    /// Decodes the block at `blockIndex` and checks its channel and fork.
+    function _tryDecodeRequiredBlock(ProofWalkInput memory input, MilestoneProof memory milestone, uint256 blockIndex)
+        internal
+        view
+        returns (bool, Block memory decodedBlock)
+    {
+        bool decoded;
+        (decoded, decodedBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[blockIndex].signedBlock.encodedBlock
+        );
+        return (
+            decoded && decodedBlock.transaction.header.channelId == input.channelId
+                && decodedBlock.transaction.header.forkId == input.forkId,
+            decodedBlock
+        );
+    }
+
+    /// The fork genesis as a snapshot: the start snapshot itself when it is this fork's genesis, else the input genesis
+    /// data (it must hash to the fork ID), dated through its origin fork (also for a reduced fork not adopted on chain).
+    function _getGenesisSnapshot(ProofWalkInput memory input, StateSnapshot memory startSnapshot)
+        internal
+        view
+        returns (bool isLinked, bool hasTimestamp, StateSnapshot memory genesisSnapshot)
+    {
+        if (startSnapshot.forkId == input.forkId && !_canStartFromOnChainSnapshot(startSnapshot, input.forkId)) {
+            return (true, true, startSnapshot);
+        }
+        if (!_isGenesisSnapshotDataLinkedToFork(input.forkId, input.genesisStateSnapshotData)) {
+            return (false, false, genesisSnapshot);
+        }
+        genesisSnapshot.snapshotData = input.genesisStateSnapshotData;
+        genesisSnapshot.forkId = input.forkId;
+        (hasTimestamp, genesisSnapshot.timestamp) =
+            _getGenesisTimestamp(input.channelId, input.genesisStateSnapshotData.originForkId, input.forkId);
+        return (true, hasTimestamp, genesisSnapshot);
+    }
+
+    function _deriveMilestoneUnionParticipants(
+        bytes32 channelId,
+        SnapshotData memory previousSnapshotData,
+        SnapshotData memory resultingSnapshotData
+    ) internal view returns (address[] memory expectedParticipants) {
+        expectedParticipants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            previousSnapshotData.participants, resultingSnapshotData.participants
+        );
+
+        if (channelId == bytes32(0)) {
+            return expectedParticipants;
+        }
+
+        address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
+            channelId,
+            resultingSnapshotData.latestInboundMessageBlockHash,
+            previousSnapshotData.latestInboundMessageBlockHash
+        );
+        expectedParticipants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            expectedParticipants, pendingParticipants
+        );
+        return expectedParticipants;
+    }
+
+    /**
+     * Walks `milestone` from `fromIndex`: every block decodes, stays on `forkId` and the run's channel, links to its
+     * predecessor by hash and height + 1, and carries its author's signature. Counts the distinct
+     * `expectedParticipants` among the authors and confirmation signers.
+     */
+    function _walkMilestoneBlocks(
+        bytes32 forkId,
+        MilestoneProof memory milestone,
+        uint256 fromIndex,
+        address[] memory expectedParticipants
+    ) internal view returns (bool isLinked, uint256 thresholdCount, bytes32 fromBlockSnapshotHash) {
+        // TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that can't be verified won't be spammed
+        if (fromIndex >= milestone.blockConfirmations.length) {
+            return (false, 0, bytes32(0));
+        }
+        address[] memory thresholdSet = new address[](expectedParticipants.length);
+        bytes memory previousEncodedBlock;
+        Block memory previousBlock;
+        BlockConfirmation memory currentBlockConfirmation;
+        address adr;
+        bool isValid;
+        for (uint256 i = fromIndex; i < milestone.blockConfirmations.length; i++) {
+            currentBlockConfirmation = milestone.blockConfirmations[i];
+            (bool decoded, Block memory currentBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+                currentBlockConfirmation.signedBlock.encodedBlock
+            );
+            if (!decoded || currentBlock.transaction.header.forkId != forkId) {
+                return (false, 0, bytes32(0));
+            }
+            //check linked
+            if (i != fromIndex) {
+                if (
+                    currentBlock.transaction.header.channelId != previousBlock.transaction.header.channelId
+                        || currentBlock.previousBlockHash != keccak256(previousEncodedBlock)
+                        || !_isNextHeight(previousBlock, currentBlock)
+                ) {
+                    return (false, 0, bytes32(0));
+                }
+            } else {
+                fromBlockSnapshotHash = currentBlock.stateSnapshotHash;
+            }
+            // Collect signatures
+            (adr, isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
+                currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
+            );
+            if (!isValid || adr != currentBlock.transaction.header.participant) {
+                return (false, 0, bytes32(0));
+            }
+            // This doesn't check if the signer is a participant -> if it's a dishonest block it will fail on the STF and the dispute will be slashed
+            thresholdCount = _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
+
+            for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
+                (adr, isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
+                    currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
+                );
+                if (!isValid) {
+                    return (false, 0, bytes32(0));
+                }
+                thresholdCount =
+                    _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
+            }
+            previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
+            previousBlock = currentBlock;
+        }
+        return (true, thresholdCount, fromBlockSnapshotHash);
+    }
+
+    /// `current` is the height right after `previous`, without overflowing at the maximum height.
+    function _isNextHeight(Block memory previous, Block memory current) internal pure returns (bool) {
+        uint256 currentHeight = current.transaction.header.transactionCnt;
+        return currentHeight != 0 && currentHeight - 1 == previous.transaction.header.transactionCnt;
+    }
+
+    function _tryInsertAddressInThresholdSet(
+        address adr,
+        address[] memory thresholdSet,
+        uint256 currentThresholdCount,
+        address[] memory expectedParticipants
+    ) internal pure returns (uint256) {
+        for (uint256 i = 0; i < expectedParticipants.length; i++) {
+            if (expectedParticipants[i] == adr && thresholdSet[i] != adr) {
+                thresholdSet[i] = adr;
+                return currentThresholdCount + 1;
+            }
+        }
+
+        return currentThresholdCount;
     }
 }

@@ -29,6 +29,8 @@ import {
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import type { TimeoutManager } from "@/utils/TimeoutManager";
 import * as factory from "@test/factory";
+import { localExecutorConnection } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
+import { RuntimeRpcControl } from "@test/fixtures/runtimeRpc/RuntimeRpcControl";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
@@ -78,6 +80,7 @@ export type StubKey =
     | "calldataPosting"
     | "undecodableUnfinalizedBlock"
     | "invalidBlockStructurePredicate"
+    | "invalidBlockStructureChainPredicate"
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
@@ -135,7 +138,9 @@ export type StubKey =
     | "chainLogQueries"
     | "onChainSlashesRead"
     | "disputeWindowTimestamp"
+    | "localDisputeWindowTimestamp"
     | "disputeCommittedHandler"
+    | "channelOpenedHandler"
     | "lobbyCreateRpcMethods"
     | "negotiationCreateRpcMethods"
     | "matchedNegotiation"
@@ -165,7 +170,6 @@ export type ReductionApplicationControl =
       }
     | { outcome: "reject"; at: "getParticipants" | "getNextToWrite" };
 
-/** Which stage of a reduction attempt the attempt hold pauses. */
 /**
  * Where a reduction attempt pauses: before any executor work, at the synced
  * dispute read, at candidate computation, or at the submission's gas-limit
@@ -206,7 +210,8 @@ type HeldRpcReply = {
         | HeldLobbyReplyKind
         | HeldNegotiationReplyKind
         | "spectate"
-        | "timeoutBuild";
+        | "timeoutBuild"
+        | "channelOpened";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -374,6 +379,8 @@ export class StubService extends ANetworkRpcService<
     private finalityReadWidths: number[] = [];
     private chainMembershipReadCount = 0;
     private restoreChainMembership?: () => void;
+    private heldChainMembershipRead?: HeldRpcReply;
+    private restoreHeldChainMembershipRead?: () => void;
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private restoreSyncReductionRecorder?: () => void;
@@ -576,6 +583,7 @@ export class StubService extends ANetworkRpcService<
     private heldLobbyReply?: HeldRpcReply;
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
+    private heldChannelOpened?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
     private heldPostMatchTargetRefresh?: HeldRpcReply;
@@ -1079,6 +1087,40 @@ export class StubService extends ANetworkRpcService<
         return this.heldMatchedNegotiation?.entered ?? 0;
     }
 
+    /** Holds this runtime's ChannelOpened handling (genesis install and its bus publication). */
+    public holdChannelOpenedHandler(): void {
+        this.releaseChannelOpenedHandler();
+        const eventHandler = this.sm.eventHandler;
+        const original = eventHandler.onChannelOpened;
+        this.stubOriginals.set("channelOpenedHandler", original);
+        const hold = this.createRpcHold("channelOpened");
+        this.heldChannelOpened = hold;
+        eventHandler.onChannelOpened = async (
+            ...args: Parameters<typeof original>
+        ) => {
+            hold.entered += 1;
+            await hold.gate;
+            return Reflect.apply(original, eventHandler, args);
+        };
+    }
+
+    public releaseChannelOpenedHandler(): number {
+        const entered = this.heldChannelOpened?.entered ?? 0;
+        this.heldChannelOpened?.release();
+        const original = this.stubOriginals.get("channelOpenedHandler");
+        if (original) {
+            this.sm.eventHandler.onChannelOpened =
+                original as typeof this.sm.eventHandler.onChannelOpened;
+            this.stubOriginals.delete("channelOpenedHandler");
+        }
+        this.heldChannelOpened = undefined;
+        return entered;
+    }
+
+    public getHeldChannelOpenedCount(): number {
+        return this.heldChannelOpened?.entered ?? 0;
+    }
+
     public failNextMatchedNegotiation(): void {
         this.restoreFailedMatchedNegotiation();
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
@@ -1101,7 +1143,61 @@ export class StubService extends ANetworkRpcService<
         this.stubOriginals.delete("failMatchedNegotiation");
     }
 
-    public holdSpectateResponses(fail = false): void {
+    /**
+     * The next local `reduceAndFinalize` reaches the executor with corrupted
+     * params (the executor answers "Malformed RPC request"): a local EVM
+     * connection failure, armed only when that reduction is sent.
+     */
+    public failNextLocalReduction(): void {
+        const contract = this.sm.diamondStateMachine.localDiamondContract;
+        const original = contract.getFunction("reduceAndFinalize");
+        const previous = Object.getOwnPropertyDescriptor(
+            contract,
+            "reduceAndFinalize"
+        );
+        const restore = () => {
+            if (previous)
+                Object.defineProperty(contract, "reduceAndFinalize", previous);
+            else Reflect.deleteProperty(contract, "reduceAndFinalize");
+        };
+        Object.defineProperty(contract, "reduceAndFinalize", {
+            value: (...args: Parameters<typeof original>) => {
+                restore();
+                RuntimeRpcControl.attachTo(
+                    localExecutorConnection(this.sm)
+                ).corruptNextParams("executeCall");
+                return original(...args);
+            },
+            configurable: true,
+            writable: true
+        });
+    }
+
+    /**
+     * The next struct replay (`onBlockConfirmationStruct`, e.g. a sync's
+     * tail replay) meets a failing executor connection: its first local
+     * call fails, as an executor fault would.
+     */
+    public failNextBlockReplay(): void {
+        const ingest = this.sm.blockIngestService;
+        const original = ingest.onBlockConfirmationStruct;
+        const restore = () =>
+            Reflect.deleteProperty(ingest, "onBlockConfirmationStruct");
+        Object.defineProperty(ingest, "onBlockConfirmationStruct", {
+            value: (...args: Parameters<typeof original>) => {
+                restore();
+                RuntimeRpcControl.attachTo(
+                    localExecutorConnection(this.sm)
+                ).corruptNextParams("executeCall");
+                return Reflect.apply(original, ingest, args);
+            },
+            configurable: true,
+            writable: true
+        });
+    }
+
+    /** `beforePayload` holds the request before its payload is built. */
+    public holdSpectateResponses(fail = false, beforePayload = false): void {
         this.releaseSpectateResponses();
         const service = this.p2pManager.localRpc.spectateService;
         const original = service.createRPCMethods.bind(service);
@@ -1112,9 +1208,15 @@ export class StubService extends ANetworkRpcService<
             const methods = original(transport);
             const endpoint = methods.onSpectateRequest.bind(methods);
             methods.onSpectateRequest = async (request) => {
+                if (beforePayload) {
+                    hold.entered += 1;
+                    await hold.gate;
+                }
                 const response = await endpoint(request);
-                hold.entered += 1;
-                await hold.gate;
+                if (!beforePayload) {
+                    hold.entered += 1;
+                    await hold.gate;
+                }
                 if (fail) {
                     throw new Error("injected spectate response failure");
                 }
@@ -1410,6 +1512,76 @@ export class StubService extends ANetworkRpcService<
     public restoreChainMembershipReads(): void {
         this.restoreChainMembership?.();
         this.restoreChainMembership = undefined;
+    }
+
+    /**
+     * Hold the next chain membership read (both participant lists) until
+     * release. With `atBlockNumber`, the read is answered from the chain
+     * state at that block: a read that started before a join landed returns
+     * after it. With `fail`, the released read rejects instead.
+     */
+    public holdChainMembershipRead(
+        atBlockNumber: number | null,
+        fail: boolean
+    ): void {
+        this.releaseChainMembershipRead();
+        const contract = this.sm.stateChannelManagerContract;
+        const getParticipants = contract.getParticipants;
+        const getPendingParticipants = contract.getPendingParticipants;
+        const blockTag = atBlockNumber ?? "latest";
+        const hold = this.createRpcHold("spectate");
+        this.heldChainMembershipRead = hold;
+        const restore = () => {
+            Reflect.set(contract, "getParticipants", getParticipants);
+            Reflect.set(
+                contract,
+                "getPendingParticipants",
+                getPendingParticipants
+            );
+        };
+        this.restoreHeldChainMembershipRead = restore;
+        const heldRead = async <T>(read: () => Promise<T>): Promise<T> => {
+            const answer = read();
+            // the stale answer is observed even when the hold fails it
+            void answer.catch(() => undefined);
+            await hold.gate;
+            if (fail) throw new Error("injected chain membership read failure");
+            return answer;
+        };
+        Reflect.set(
+            contract,
+            "getParticipants",
+            (channelId: Parameters<typeof getParticipants>[0]) => {
+                Reflect.set(contract, "getParticipants", getParticipants);
+                hold.entered += 1;
+                return heldRead(() => getParticipants(channelId, { blockTag }));
+            }
+        );
+        Reflect.set(
+            contract,
+            "getPendingParticipants",
+            (channelId: Parameters<typeof getPendingParticipants>[0]) => {
+                Reflect.set(
+                    contract,
+                    "getPendingParticipants",
+                    getPendingParticipants
+                );
+                return heldRead(() =>
+                    getPendingParticipants(channelId, { blockTag })
+                );
+            }
+        );
+    }
+
+    public getHeldChainMembershipReadCount(): number {
+        return this.heldChainMembershipRead?.entered ?? 0;
+    }
+
+    public releaseChainMembershipRead(): void {
+        this.heldChainMembershipRead?.release();
+        this.heldChainMembershipRead = undefined;
+        this.restoreHeldChainMembershipRead?.();
+        this.restoreHeldChainMembershipRead = undefined;
     }
 
     public holdSyncWindowPersistence(): void {
@@ -1748,6 +1920,37 @@ export class StubService extends ANetworkRpcService<
                 );
             }
         }));
+    }
+
+    /**
+     * The real submission lands and its receipt arrives, then the call reports
+     * a failure: an uncertain transport error, or the contract's
+     * participant-already-exists error a resent submission would meet.
+     */
+    public landMembershipSubmissionThenFail(
+        kind: HeldMembershipReceiptKind,
+        failure: "uncertain" | "alreadyExists"
+    ): void {
+        const { contract, original } = this.captureMembershipMethod(kind);
+        this.heldMembershipReceiptKind = kind;
+        Reflect.set(contract, kind, async (...parameters: unknown[]) => {
+            const tx = await Reflect.apply(original, contract, parameters);
+            await tx.wait();
+            if (failure === "uncertain") {
+                throw new Error(
+                    `injected uncertain ${kind} outcome after landing`
+                );
+            }
+            throw Object.assign(
+                new Error(`injected ${kind} already-exists outcome`),
+                {
+                    data: contract.interface.encodeErrorResult(
+                        "ErrorJoinChannelParticipantAlreadyExists",
+                        [this.sm.channelId, this.sm.signerAddress]
+                    )
+                }
+            );
+        });
     }
 
     public failMembershipSubmissionUncertain(
@@ -2665,7 +2868,30 @@ export class StubService extends ANetworkRpcService<
     }
 
     /** Make the dispute-window creation timestamp read throw. */
-    failDisputeWindowTimestampRead(): void {
+    /**
+     * The chain read fails; with `local`, so does the local diamond's read,
+     * the one the force-join check asks.
+     */
+    failDisputeWindowTimestampRead(local = false): void {
+        if (local) {
+            const localDiamond =
+                this.sm.diamondStateMachine.localDiamondContract;
+            if (!this.stubOriginals.has("localDisputeWindowTimestamp")) {
+                this.stubOriginals.set(
+                    "localDisputeWindowTimestamp",
+                    localDiamond.getDisputeWindowCreationTimestamp
+                );
+            }
+            localDiamond.getDisputeWindowCreationTimestamp =
+                this.asRecordingContractMethod(
+                    localDiamond.getDisputeWindowCreationTimestamp,
+                    async () => {
+                        throw new Error(
+                            "stubbed local getDisputeWindowCreationTimestamp failure"
+                        );
+                    }
+                );
+        }
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("disputeWindowTimestamp")) {
             this.stubOriginals.set(
@@ -2684,7 +2910,44 @@ export class StubService extends ANetworkRpcService<
             );
     }
 
+    /**
+     * The local diamond's read, the one the force-join check asks, reports a
+     * window on the current fork whose evidence period ended a second ago.
+     * Restored by `restoreDisputeWindowTimestampRead`.
+     */
+    answerExpiredLocalDisputeWindow(): void {
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        if (!this.stubOriginals.has("localDisputeWindowTimestamp")) {
+            this.stubOriginals.set(
+                "localDisputeWindowTimestamp",
+                localDiamond.getDisputeWindowCreationTimestamp
+            );
+        }
+        const evidenceTime = this.sm.timeConfig.evidenceTime;
+        localDiamond.getDisputeWindowCreationTimestamp =
+            this.asRecordingContractMethod(
+                localDiamond.getDisputeWindowCreationTimestamp,
+                async () =>
+                    BigInt(
+                        Math.max(
+                            1,
+                            (await Clock.getBlockchainTime()).timestamp -
+                                evidenceTime -
+                                1
+                        )
+                    )
+            );
+    }
+
     restoreDisputeWindowTimestampRead(): boolean {
+        const localOriginal = this.stubOriginals.get(
+            "localDisputeWindowTimestamp"
+        );
+        if (localOriginal !== undefined) {
+            this.sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp =
+                localOriginal as typeof this.sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp;
+            this.stubOriginals.delete("localDisputeWindowTimestamp");
+        }
         const original = this.stubOriginals.get("disputeWindowTimestamp");
         if (original === undefined) return false;
         this.sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp =

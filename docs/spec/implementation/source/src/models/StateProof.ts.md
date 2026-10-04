@@ -19,11 +19,13 @@
 
 ## Responsibility and observable boundary
 
-StateProof wrapper with `tryFrom` decode (the audit's decode-or-unjudgeable gate).
+StateProof wrapper with `tryFrom` decode (the audit's decode-or-unjudgeable gate). The model holds
+only `milestones`, each a list of decoded blocks; it has no separate signed-block list.
 
 ## Key design decisions
 
-1. **`tryFrom` never throws** — undecodable proofs become classified audit outcomes.
+1. **`tryFrom` never throws** — undecodable proofs become classified audit outcomes. One block that does not decode makes the whole proof `null` ([#L15-L18](../../../../../../src/models/StateProof.ts#L15-L18)).
+2. **Milestones only.** The model mirrors the contract `StateProof { milestones }` ([#L5](../../../../../../src/models/StateProof.ts#L5)); an empty proof decodes to zero milestones ([#L11-L22](../../../../../../src/models/StateProof.ts#L11-L22)). Why: the unfinal tail is part of the last milestone, so a second block list would be a second proof shape with no owner.
 
 ## Inputs, outputs, state, and side effects
 

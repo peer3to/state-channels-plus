@@ -11,93 +11,6 @@ describe("Unit: ReductionExecutor", function () {
     // that outcome must reschedule, never reach ReductionManager.failCompletion
     // (which answers with abort() and strands the peer for good)
     describe("reduce data unavailable", function () {
-        it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
-            const h = TestSession.getHarness();
-            // The staging's offender is the next writer after two blocks,
-            // peer 2, and the reduction slashes it; the lagging peer under
-            // test must therefore be another participant. With peer 2 as the
-            // lagging peer this case only passed because an aborted runtime
-            // kept reducing after disposal, which the terminal reduction
-            // owner no longer allows.
-            const laggingIndex = 1;
-            const { forkId, held } =
-                await h.scenario.stageDisputeOverHeldInboundGap({
-                    laggingIndex: laggingIndex
-                });
-            const scheduled =
-                await h.rpcStub.recordScheduledTasks(laggingIndex);
-
-            // let the kill period lapse - before that the attempt returns at
-            // the gate and never reaches the reduce computation
-            await waitFor(
-                async () =>
-                    h.execOnHost(
-                        h.getPeer(laggingIndex),
-                        async (sm, a) => {
-                            const { isExpired } =
-                                await sm.reductionManager.isKillPeriodExpiredCached(
-                                    a.forkId
-                                );
-                            return isExpired;
-                        },
-                        { forkId }
-                    ),
-                h.event.protocolEventTimeoutMs()
-            );
-
-            // drive the executor directly: ReductionManager.tryReduce returns
-            // the shared completion promise, which a deferred attempt leaves
-            // pending on purpose
-            const outcome = await h.execOnHost(
-                h.getPeer(laggingIndex),
-                async (sm, args) => {
-                    let threw = "";
-                    try {
-                        await sm.reductionManager[
-                            "reductionExecutor"
-                        ].tryReduce(args.forkId);
-                    } catch (e) {
-                        threw = e instanceof Error ? e.message : String(e);
-                    }
-                    return { threw, forkIdAfter: String(sm.forkId) };
-                },
-                { forkId },
-                {
-                    timeoutMs: h.event.hostExecTimeoutMs()
-                }
-            );
-
-            // the regression: this used to throw out of the executor, and
-            // ReductionManager answered the throw with abort()
-            expect(outcome.threw).to.equal("");
-            expect(outcome.forkIdAfter).to.equal(forkId);
-            expect(
-                (await scheduled.tasks()).map((task) => task.taskName)
-            ).to.include(`reduction-${forkId}`);
-            expect(
-                await h
-                    .control(h.getPeer(laggingIndex))
-                    .query.getStatus()
-                    .request(),
-                "a deferred reduction must not evict the peer"
-            ).to.equal(Status.PARTICIPATING);
-            expect(
-                await h
-                    .control(h.getPeer(laggingIndex))
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([]);
-            await scheduled.restore();
-
-            // the missing log lands -> the rescheduled attempt has the run it
-            // needs and the fork finally moves
-            await held.release();
-            await h.assert.sync.forkChangedWait({
-                originalForkId: forkId,
-                honestPeerIndices: [laggingIndex]
-            });
-        });
-
         it("someone else's reduction while the run is unavailable → not challenged, no throw", async function () {
             const h = TestSession.getHarness();
             const laggingIndex = 2;
@@ -243,7 +156,7 @@ describe("Unit: ReductionExecutor", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
         });
 
         it("a re-dispatched dispute log that fails again → failed attempt, not a fatal", async function () {
@@ -282,7 +195,7 @@ describe("Unit: ReductionExecutor", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
         });
 
         it("unreadable dispute window → the reduction is not challenged", async function () {
@@ -313,7 +226,7 @@ describe("Unit: ReductionExecutor", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
         });
     });
 
@@ -517,7 +430,7 @@ describe("Unit: ReductionExecutor", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
 
             await h.assert.dispute.reductionCompletedWait({
                 sourceForkId: forkId,

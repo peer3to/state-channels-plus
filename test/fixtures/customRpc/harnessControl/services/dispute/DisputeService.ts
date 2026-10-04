@@ -16,10 +16,6 @@ import {
     hash as randomHashFactory,
     blockStructWithTransactionHeader as factoryBlockStructWithHeader
 } from "@test/factory";
-import {
-    expectSignedBlocksOnlyStateProof as assertSignedBlocksOnly,
-    expectMilestonesOnlyStateProof as assertMilestonesOnly
-} from "@test/harness/actions/assert/expectDisputeInput";
 import type {
     BlockConfirmationStruct,
     BlockStruct,
@@ -78,20 +74,16 @@ export type PersistedItemProjection = {
 };
 
 export type PersistDisputeDataProjection = {
-    /** Message of a thrown persist error; absent when it returned. */
+    /** The audit's verdict; absent when it threw. */
+    isValid?: boolean;
+    /** Message of a thrown audit error; absent when it returned. */
     threwMessage?: string;
     /** Per decodable milestone confirmation block, state-proof order. */
     milestoneBlocks: PersistedItemProjection[];
     undecodableMilestoneBlockCount: number;
-    /** Per decodable `stateProof.signedBlocks` entry, proof order. */
-    signedBlocks: PersistedItemProjection[];
-    undecodableSignedBlockCount: number;
     /** Auditing-data snapshots: latest first, then milestone snapshots. */
     snapshots: PersistedItemProjection[];
-    /**
-     * Keyed by keccak256 of the finalized state; absent without auditing data
-     * and for the "" sentinel.
-     */
+    /** Keyed by keccak256 of the finalized state; absent without auditing data. */
     stateMachineState?: PersistedItemProjection;
     inboundMessages: PersistedItemProjection[];
     outboundMessages: PersistedItemProjection[];
@@ -171,12 +163,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
     nowSeconds(): number {
         return Clock.getTimeInSeconds();
     }
-    expectSignedBlocksOnlyStateProof(stateProof: StateProofStruct): void {
-        assertSignedBlocksOnly(stateProof);
-    }
-    expectMilestonesOnlyStateProof(stateProof: StateProofStruct): void {
-        assertMilestonesOnly(stateProof);
-    }
     getLatestBlockFromStateProof(stateProof: StateProofStruct) {
         return this.sm.diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
             stateProof
@@ -198,10 +184,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
                 ? block.transaction.header.participant
                 : null;
         };
-        for (const sb of stateProof.signedBlocks) {
-            const author = authorAt(sb.encodedBlock);
-            if (author) return author;
-        }
         for (const m of stateProof.milestones) {
             for (const bc of m.blockConfirmations) {
                 const author = authorAt(bc.signedBlock.encodedBlock);
@@ -223,9 +205,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         const setForkId: BlockTransform = (bs) =>
             factoryBlockStructWithHeader(bs, { forkId });
 
-        for (let i = 0; i < proof.signedBlocks.length; i++) {
-            await this.rewriteSignedBlockAtIndex(dispute, i, setForkId);
-        }
         for (let m = 0; m < proof.milestones.length; m++) {
             const bcs = proof.milestones[m]!.blockConfirmations;
             for (let j = 0; j < bcs.length; j++) {
@@ -239,48 +218,20 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         }
     }
 
-    async rewriteLastSignedBlockInDispute(
-        dispute: DisputeStruct,
-        transform: BlockTransform
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        await this.rewriteSignedBlockAtIndex(
-            dispute,
-            proof.signedBlocks.length - 1,
-            transform
-        );
-    }
-
-    async rewriteSignedBlockAtIndex(
-        dispute: DisputeStruct,
-        index: number,
-        transform: BlockTransform
-    ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        if (index < 0 || index >= proof.signedBlocks.length) {
-            throw new Error(
-                `rewriteSignedBlockAtIndex: index ${index} out of range (have ${proof.signedBlocks.length} signedBlocks)`
-            );
-        }
-        proof.signedBlocks[index] = await this.remapSignedBlock(
-            proof.signedBlocks[index],
-            transform
-        );
-    }
-
-    async rewriteLastSignedBlockAuthorAsOutsider(
+    /** Re-sign the last block of the last milestone as a fresh outsider. */
+    async rewriteLastMilestoneBlockAuthorAsOutsider(
         dispute: DisputeStruct,
         stateSnapshotHash?: Hash
     ): Promise<void> {
-        const proof = dispute.input.stateProof;
-        const index = proof.signedBlocks.length - 1;
-        if (index < 0) {
+        const confirmations =
+            dispute.input.stateProof.milestones.at(-1)?.blockConfirmations;
+        if (!confirmations?.length) {
             throw new Error(
-                "rewriteLastSignedBlockAuthorAsOutsider: stateProof has no signed blocks"
+                "rewriteLastMilestoneBlockAuthorAsOutsider: stateProof has no blocks"
             );
         }
         const outsider = Wallet.createRandom();
-        const block = Block.fromSignedBlock(proof.signedBlocks[index]);
+        const block = Block.fromBlockConfirmation(confirmations.at(-1)!);
         const blockStruct = {
             ...factoryBlockStructWithHeader(block.blockStruct, {
                 participant: outsider.address
@@ -288,9 +239,11 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             stateSnapshotHash:
                 stateSnapshotHash ?? block.blockStruct.stateSnapshotHash
         };
-        proof.signedBlocks[index] = (
-            await Block.fromBlockStruct(blockStruct, outsider)
-        ).signedBlock;
+        confirmations[confirmations.length - 1] = {
+            signedBlock: (await Block.fromBlockStruct(blockStruct, outsider))
+                .signedBlock,
+            signatures: []
+        };
     }
 
     async rewriteLastMilestoneSignedBlockInDispute(
@@ -442,22 +395,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
 
         const truncate = (): boolean => {
-            if (stateProof.signedBlocks.length > 0) {
-                const lastBlock = Codec.decode(
-                    stateProof.signedBlocks.at(-1)!.encodedBlock,
-                    Type.Block
-                );
-                const h = Number(
-                    (
-                        lastBlock as {
-                            transaction: { header: { transactionCnt: bigint } };
-                        }
-                    ).transaction.header.transactionCnt
-                );
-                if (h <= targetHeight) return false;
-                stateProof.signedBlocks.pop();
-                return true;
-            }
             if (stateProof.milestones.length > 0) {
                 const lastMilestone =
                     stateProof.milestones[stateProof.milestones.length - 1]!;
@@ -639,34 +576,18 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         };
     }
 
-    /** Run the real persist; project each item's storage presence before/after. */
-    persistDisputeDataWithoutAudit(
+    /** Run the real audit; project each item's storage presence before/after. */
+    async auditDisputePersistence(
         encodedDispute: string,
-        options: {
-            encodedAuditingData?: string;
-            includeUnfinalizedBlocks: boolean;
-            /**
-             * Applied after decode: DisputeManager emits "" in-memory for a
-             * missing finalized state, but "" is not ABI-encodable, so it
-             * cannot cross the port inside encodedAuditingData.
-             */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
-    ): PersistDisputeDataProjection {
+        options?: { encodedAuditingData?: string }
+    ): Promise<PersistDisputeDataProjection> {
         const dispute = Codec.decode(encodedDispute, Type.Dispute);
-        const auditingData = options.encodedAuditingData
+        const auditingData = options?.encodedAuditingData
             ? Codec.decode(
                   options.encodedAuditingData,
                   Type.DisputeAuditingData
               )
             : undefined;
-        if (
-            auditingData &&
-            options.latestFinalizedStateStateMachineStateOverride !== undefined
-        ) {
-            auditingData.latestFinalizedStateStateMachineState =
-                options.latestFinalizedStateStateMachineStateOverride;
-        }
 
         const milestoneBlocks: Block[] = [];
         let undecodableMilestoneBlockCount = 0;
@@ -676,13 +597,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
                 if (block) milestoneBlocks.push(block);
                 else undecodableMilestoneBlockCount++;
             }
-        }
-        const signedBlocks: Block[] = [];
-        let undecodableSignedBlockCount = 0;
-        for (const sb of dispute.input.stateProof.signedBlocks) {
-            const block = Block.tryFromSignedBlock(sb);
-            if (block) signedBlocks.push(block);
-            else undecodableSignedBlockCount++;
         }
         const snapshots = auditingData
             ? [
@@ -697,14 +611,12 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             (mb) => keccakHash(Codec.encode(mb, Type.MessageBlock)) as Hash
         );
         // oracle computed here, not read back from storage: the persist key is
-        // the state's own hash, and the "" sentinel has no key
+        // the state's own hash
         const stateKey =
             auditingData &&
-            auditingData.latestFinalizedStateStateMachineState !== ""
-                ? (keccakHash(
-                      auditingData.latestFinalizedStateStateMachineState
-                  ) as Hash)
-                : undefined;
+            (keccakHash(
+                auditingData.latestFinalizedStateStateMachineState
+            ) as Hash);
 
         const blockStored = (block: Block) =>
             !!this.storage.blocks.getBlock(block.hash);
@@ -717,7 +629,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
 
         const before = {
             milestoneBlocks: milestoneBlocks.map(blockStored),
-            signedBlocks: signedBlocks.map(blockStored),
             snapshots: snapshots.map(snapshotStored),
             inbound: inboundHashes.map(
                 (h) => !!this.storage.inboundMessages.getMessageBlock(h)
@@ -728,12 +639,12 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             state: stateStored(stateKey)
         };
 
+        let isValid: boolean | undefined;
         let threwMessage: string | undefined;
         try {
-            this.sm.disputeValidationService.persistDisputeDataWithoutAudit(
+            isValid = await this.sm.disputeValidationService.validateDispute(
                 dispute,
-                auditingData,
-                { includeUnfinalizedBlocks: options.includeUnfinalizedBlocks }
+                auditingData
             );
         } catch (error) {
             threwMessage =
@@ -754,6 +665,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             }));
 
         return {
+            isValid,
             threwMessage,
             milestoneBlocks: project(
                 milestoneBlocks.map(blockKey),
@@ -761,12 +673,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
                 milestoneBlocks.map(blockStored)
             ),
             undecodableMilestoneBlockCount,
-            signedBlocks: project(
-                signedBlocks.map(blockKey),
-                before.signedBlocks,
-                signedBlocks.map(blockStored)
-            ),
-            undecodableSignedBlockCount,
             snapshots: project(
                 snapshots.map((s) => String(s.hash)),
                 before.snapshots,

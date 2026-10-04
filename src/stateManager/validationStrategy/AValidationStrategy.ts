@@ -1,4 +1,3 @@
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block, StateSnapshot } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
@@ -23,8 +22,9 @@ export default abstract class AValidationStrategy {
      * spectate, and calldata pipelines validate in-order blocks and enforce
      * both. Dispute replay audits a fixed proof out of live order on an
      * already-disputed fork, so it enforces neither (and never pays for the
-     * disputed-fork lookup). When false, `blockForkIsDisputed` and
-     * `blockIsNotNextAndIsInTheFuture` are never called.
+     * disputed-fork lookup). When false, `blockForkIsDisputed`,
+     * `blockIsNotNextAndIsInTheFuture` and `blockIsBelowInstalledHistory`
+     * are never called.
      */
     public abstract get enforcesLiveForkAndOrderingGates(): boolean;
 
@@ -111,20 +111,19 @@ export default abstract class AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
-    public abstract blockIsNotLinkedAndIsNotFirstBlock(
+    /**
+     * A block below the next height with no stored block at its height: it
+     * lies under the installed history (a sync installed a later state), so
+     * there is no predecessor state to judge it from. SUCCESS continues the
+     * pipeline.
+     */
+    public abstract blockIsBelowInstalledHistory(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
-    /**
-     * Position the state machine before the next-leader check. Live pipelines
-     * already hold the block's predecessor state (blocks execute in order), so
-     * this is a no-op; dispute replay walks a proof out of live order and must
-     * load the block's previous-snapshot state first.
-     */
-    public abstract prepareStateMachineForLeaderCheck(
-        entry: QueuedBlockEntry,
-        diamondStateMachine: ADiamondStateMachine
-    ): Promise<void>;
+    public abstract blockIsNotLinkedAndIsNotFirstBlock(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
 
     public abstract objectiveInvalidTimestampDetected(
         block: Block

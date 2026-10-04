@@ -31,6 +31,8 @@ export async function assertWorkerParentLoss(
         let exited = false;
         let client!: P2pRuntimeClientRoot;
         const errors: Error[] = [];
+        // Terminal abort signals the client bus delivered.
+        let abortSignals = 0;
         let releaseClientCleanup = () => {};
         let restoreClientCleanup = () => {};
         channel.onmessage = (event) => {
@@ -60,6 +62,9 @@ export async function assertWorkerParentLoss(
                     if (root instanceof P2pRuntimeClientRoot) {
                         client = root;
                         client.onHostError((error) => errors.push(error));
+                        client.events.on("p2pEventHooks", "onAbort", () => {
+                            abortSignals++;
+                        });
                     }
                 }
             }
@@ -90,6 +95,8 @@ export async function assertWorkerParentLoss(
                     await requested;
                     await waitFor(() => exited);
                     expect(errors).to.have.length(0);
+                    // A host abort is forwarded once; the closure adds none.
+                    expect(abortSignals).to.equal(mode === "abort" ? 1 : 0);
                 } else if (mode === "closed-parent") {
                     const failures: Error[] = [];
                     const fail = host.fail.bind(host);
@@ -120,6 +127,8 @@ export async function assertWorkerParentLoss(
                     expect(errors.map((error) => error.message)).to.deep.equal([
                         "P2P runtime host closed the connection"
                     ]);
+                    // The unexpected closure is one terminal abort signal.
+                    expect(abortSignals).to.equal(1);
                     restoreClientCleanup();
                     releaseClientCleanup();
                 } else if (mode === "exit") {
@@ -138,6 +147,7 @@ export async function assertWorkerParentLoss(
                     expect(errors.map((error) => error.message)).to.deep.equal([
                         "Root worker exited with 23"
                     ]);
+                    expect(abortSignals).to.equal(1);
                     await client.dispose();
                     expect(client.connections.size).to.equal(0);
                 } else {

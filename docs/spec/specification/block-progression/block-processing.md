@@ -86,7 +86,8 @@ counted close of the synchronization rules (one strike, suspension at the bound,
 (the sync landed on the source's latest fork and the block is neither committed there nor re-queued
 for execution by the sync's replay) supplied junk
 and is excluded as well; only a source whose lineage carries the block stays. A block on any other
-fork after the sync is inconclusive and its source is kept. A probe toward a source with another
+fork after the sync is inconclusive and its source is kept; so is a block at a free height below the history the
+synchronization installed, because the proof does not cover that height. A probe toward a source with another
 synchronization already in flight waits for that one first, because it need not cover the block.
 
 ### Stage 4 — Ordering

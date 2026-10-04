@@ -99,6 +99,9 @@ export class P2pRuntimeClientRoot extends AInternalRpcRoot {
             const error = new Error("P2P runtime host closed the connection");
             for (const listener of this.hostErrorListeners) listener(error);
         }
+        // An unexpected closure ends participation like a host abort: the
+        // client bus gets the one terminal signal its waiters already observe.
+        if (!this.hostAborted) this.events.emit("p2pEventHooks", "onAbort", []);
         void this.dispose();
     }
 

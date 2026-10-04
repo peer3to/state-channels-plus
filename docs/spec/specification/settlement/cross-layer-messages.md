@@ -150,8 +150,8 @@ on-chain.
 Two snapshot-advance paths exist:
 
 1. **Same-fork update.** Prove the finality of a newer snapshot
-   on the canonical fork: milestone proofs are verified against the current on-chain snapshot's
-   threshold context, the new snapshot must be strictly newer, and its inbound tip must equal the
+   on the canonical fork: the state-proof walk starts at the current on-chain snapshot and must
+   prove the new snapshot by the union threshold of its last milestone, the new snapshot must be strictly newer, and its inbound tip must equal the
    chain's inbound head: a same-fork advance is blocked until the channel has consumed every
    pending inbound message.
 2. **Successor-fork update.** After a dispute reduces and its
@@ -231,7 +231,7 @@ The per-verdict consequences are specified in the spectating validation context
 optionally, a pinned fork and height. A responder returns the reduced dispute-window chain from the on-chain
 snapshot's fork to the tip fork (with the disputes, latest states, and inbound blocks needed to
 re-run each reduction), the tip fork's genesis snapshot + encoded state, a `StateProof`
-(milestones + trailing signed blocks), milestone snapshots, the latest finalized encoded state,
+(milestones only; the unfinal tail rides in the last milestone), milestone snapshots, the latest finalized encoded state,
 and the outbound message-block ranges covering on-chain tip → fork genesis → latest finalized
 snapshot. The requester verifies everything locally, simulates the on-chain advance, persists the
 accepted state, and replays unfinalized blocks through the ordinary validation rules.
@@ -275,17 +275,23 @@ able to block later admissions. The flow:
    and credits the balance. From that block's snapshot on, the joiner is a snapshot participant.
 5. **Forced inclusion (fallback).** If prompt inclusion fails, the joiner forces it through the
    dispute game — forced inbound-message inclusion is one of the four dispute inputs
-   (cross-ref [protocol/disputes.md](../disputes/disputes.md)). **For this protocol version:** on submitting the join, the
-   off-chain participant records the local block height
-   (`the corresponding participant-state operation`,
-   `ForceJoinStorage`); if `N = |participants| + 1`
-   further blocks pass without the joiner becoming a participant, it fires a dispute
-   (`maybeInitiateForceJoinDispute`). Reduction selects as the successor fork's inbound tip the
+   (cross-ref [protocol/disputes.md](../disputes/disputes.md)). **For this protocol version:** the joiner starts its escalation only once it
+   observes its own join as an inbound message on chain; a receipt or a submission alone starts nothing.
+   A block trigger then counts only blocks authored at least `agreementTime` after that observation (the
+   time the table's writers need to observe the join themselves) and fires when `N = |participants| + 1`
+   further blocks follow the first counted block without the joiner becoming a participant. A time
+   trigger fires the same single dispute when `N` full turn windows pass with no inclusion, so a table
+   that authors no blocks cannot hold the join pending forever
+   ([`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)). Reduction selects as the successor fork's inbound tip the
    chain's inbound head as of the dispute-window expiry (walking back past newer blocks) and
    applies the pending inbound blocks — including the join — to the output state
    (`the corresponding dispute-verification operation` / `reduceOutputToSnapshotData`).
    The successor-fork genesis therefore contains the joiner as a participant; from then on the
    joiner is covered by leader election and receives its authoring slot.
+   A dispute is admitted only when it carries the chain's latest inbound head, and no join lands on a
+   disputed fork, so the reduction consumes every join that landed before the window opened. A joiner
+   whose own escalation is refused because the fork's evidence period has ended is not retried and needs
+   no dispute of its own: that window's reduction seats it.
 
 **Pending participants matter before inclusion.** `getPendingParticipants` derives joiners from
 the `JOIN` messages in the persisted inbound chain that the channel's current snapshot has not
@@ -320,7 +326,7 @@ block is adopted on-chain (§2).
 Dispute-derived exits use the same stream: reduction applies slashes (`_slashParticipant`),
 removals/timeouts and self-removals (`_removeParticipant`) to the output state and packages the
 resulting `ExitChannel`s into one deterministic outbound block committed by the successor-fork
-genesis snapshot (`generateDisputeOutputState`). Normal exits, dispute-derived exits, and any
+genesis snapshot (the per-dispute output-state computation). Normal exits, dispute-derived exits, and any
 future outbound instruction are processed by the identical incremental mechanism — there is no
 separate withdrawal transaction type.
 
@@ -348,6 +354,12 @@ sum to more than the channel controls, induce a newcomer to deposit, withdraw th
 through valid-looking exits, and leave the newcomer holding an unpayable in-channel balance.
 
 ### 6.4 Verification
+
+In a dispute, the invariant is checked on the dispute's latest state: the snapshot its proof's last
+block commits, or the fork genesis for an empty proof
+([`REQ-SP-10-AM67R2`](../disputes/state-proofs.md#req-sp-10-am67r2)). A synchronizing
+requester checks it on the latest finalized snapshot it verified before adopting it
+([synchronization.md](../peer-communication/synchronization.md)).
 
 ---
 

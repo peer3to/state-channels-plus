@@ -27,26 +27,35 @@ Network source keys use the existing checksum-address helper. Equivalent address
 
 `BlockOrigin` names network, calldata and proof origins. The options type requires a sender for network copies; internal callers supply these typed options.
 
-The entry has `sourcesToSignatures: Map<Address, Set<Signature>>`. [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L131)
+The entry has `sourcesToSignatures: Map<Address, Set<Signature>>`. [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L150)
 adds each source's distinct signatures until its N-value allowance is full, then drops extra values.
 Other sources keep their own budgets. A repeated signature is charged once per supplier. The same
 merge applies to creation, queued copies and restore; stored blocks use standalone entries.
 Storage does no signature selection by encoding, normalization or recovery. `createEntry` builds the
 entry's author-signed base block with `block.authorSignedCopy()`
-([createEntry](../../../../../../src/storage/QueueStorage.ts#L71)) instead of decoding `signedBlock` again: its argument is already this
+([createEntry](../../../../../../src/storage/QueueStorage.ts#L86-L90)) instead of decoding `signedBlock` again: its argument is already this
 call's own deep copy from the Storage facade's copy boundary, so sharing that copy's decoded struct
 and cached hash cannot alias a caller's block. `mergeEntry` builds the admitted copy it merges into
 the target the same way, from the target's own block
-([mergeEntry](../../../../../../src/storage/QueueStorage.ts#L166-L167)): the incoming copy has the same signed bytes, so the target's
+([mergeEntry](../../../../../../src/storage/QueueStorage.ts#L186)): the incoming copy has the same signed bytes, so the target's
 decode, hash and author signature are reused and only the incoming on-chain timestamp and the
 admitted confirmation signatures are taken from it. Network intake therefore decodes a
 confirmation once, in [BlockQueueManager](../stateManager/ingest/BlockQueueManager.ts.md). Block owns representation
 and timestamp merging; validation checks the admitted signatures. Dequeue and processing are unchanged.
 
+`BlockPredecessor` ([#L25-L33](../../../../../../src/storage/QueueStorage.ts#L25-L33)) names what a replayed block is judged from: the block it
+extends (none for the fork genesis), that block's resulting snapshot, and the snapshot's state. A
+`QueuedBlockEntry` carries an optional `predecessor` ([#L40-L41](../../../../../../src/storage/QueueStorage.ts#L40-L41)) that only dispute
+replay sets, through `BlockIngestService.onBlockConfirmationStruct`; such an entry is created
+directly and never queued. The type lives with the entry because every judge of the entry
+(`ValidationService`, `BlockIngestService`, `FraudProofService`, `DisputeValidationStrategy`)
+reads it from there; queue storage never reads or merges it.
+
 ## Inputs, outputs, state, and side effects
 
 Explicit origin and source contributions enter through createEntry and queueBlock. Storage owns the
-queued entries and coordinate index. Dequeue returns a QueuedBlockEntry; it performs no I/O, timers,
+queued entries and coordinate index. The optional replay `predecessor` is set by the dispute-replay
+caller on a directly created entry. Dequeue returns a QueuedBlockEntry; it performs no I/O, timers,
 signer recovery, or processing lifecycle management. The Storage facade provides deep-copy boundaries.
 
 ## Linked requirements
@@ -78,10 +87,10 @@ None demonstrated.
 
 | Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                  | Gap / divergence                                                 |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)            | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L131) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
-| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L131) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
-| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L131) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
-| [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L131) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
+| [`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)            | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L150) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
+| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L150) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
+| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L150) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
+| [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | Covered               | **Here:** [mergeEntry](../../../../../../src/storage/QueueStorage.ts#L150) and the ordinary queue implement source accounting and ordinary queue scheduling. **Other files:** [BlockQueueManager.ts](../stateManager/ingest/BlockQueueManager.ts.md) gates network sources; [Block.ts](../models/Block.ts.md) owns block/timestamp merge. | Per queued network entry only; aggregate limits remain separate. |
 
 ## Component test obligations
 

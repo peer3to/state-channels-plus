@@ -51,21 +51,15 @@ describe("E2E: dispute validation / balanceInvariant", function () {
                     throw new Error("expected dispute auditing data");
                 }
 
-                const proof = dispute.input.stateProof;
-                if (proof.signedBlocks.length > 0) {
-                    proof.signedBlocks[proof.signedBlocks.length - 1] =
-                        forged.forgedBlock.signedBlock;
-                } else {
-                    const milestone = proof.milestones.at(-1);
-                    if (!milestone?.blockConfirmations.length) {
-                        throw new Error("expected a latest state-proof block");
-                    }
-                    milestone.blockConfirmations[0] =
-                        forged.forgedBlock.blockConfirmationStruct;
-                    auditingData.milestoneSnapshots[
-                        auditingData.milestoneSnapshots.length - 1
-                    ] = forged.forgedSnapshot.toStruct();
+                const milestone = dispute.input.stateProof.milestones.at(-1);
+                if (!milestone?.blockConfirmations.length) {
+                    throw new Error("expected a latest state-proof block");
                 }
+                milestone.blockConfirmations[0] =
+                    forged.forgedBlock.blockConfirmationStruct;
+                auditingData.milestoneSnapshots[
+                    auditingData.milestoneSnapshots.length - 1
+                ] = forged.forgedSnapshot.toStruct();
 
                 auditingData.latestStateSnapshot =
                     forged.forgedSnapshot.toStruct();

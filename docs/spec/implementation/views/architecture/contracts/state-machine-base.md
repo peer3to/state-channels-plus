@@ -21,7 +21,8 @@ two places:
 
 1. **Off-chain**, inside every participant's SDK EVM, on every proposed block.
 2. **On-chain**, inside the manager's dispute and fraud-proof re-execution
-   (`executeStateTransition`, `generateDisputeOutputState`, milestone/state-proof checks).
+   (`executeStateTransition`, the internal `DisputeVerificationFacet._generateDisputeOutputState`
+   behind the dispute output-state helpers, milestone/state-proof checks).
 
 Both executions MUST produce identical results from identical inputs. Everything in this document
 serves that one property: the fraud-proof system works only because a claimed transition can be
@@ -183,7 +184,7 @@ revert; and messages accumulate only within a single transition, never across tr
 Dispatch: `messageType == MESSAGE_TYPE_JOIN` (`keccak256("JOIN_CHANNEL_MESSAGE")`,
 [MessageTypeHashes.sol](../../../../../../contracts/V1/types/MessageTypeHashes.sol#L1)) → decode
 `JoinChannel` → `_joinChannel`. Anything else → `_processCustomInboundMessage` (default `false`).
-The manager calls this during dispute output generation (`_applyInboundMessages`) and requires
+The manager calls this during dispute output generation (`_processInboundMessages`) and requires
 success — a `false` return reverts the manager with
 `ErrorDisputeStateMachineInboundProcessingFailed(blockIndex, messageIndex, participant, messageType, stateMachineStateHash)`,
 whose last operand is the state the walk was seeded with, not the state reached by the time the

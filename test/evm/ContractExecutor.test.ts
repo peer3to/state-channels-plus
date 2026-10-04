@@ -513,6 +513,33 @@ describe("ContractExecutor", function () {
         expect(maxActiveRunCalls).to.equal(1);
     });
 
+    it("should start a call issued right after another call's completion on a new macrotask", async function () {
+        const getValueData = SimpleNumberStorage.interface.encodeFunctionData(
+            SimpleNumberStorage.interface.getFunction("getValue")
+        );
+        const order: string[] = [];
+        let timer!: Promise<void>;
+
+        // A worker port delivers queued requests in one task: each request
+        // arrives once the previous one has finished, with the mutex free.
+        await executeContractCall(getValueData)
+            .then(() => {
+                order.push("call");
+                timer = new Promise<void>((resolve) =>
+                    setTimeout(() => {
+                        order.push("timer");
+                        resolve();
+                    }, 0)
+                );
+                return simulateContractCall(getValueData);
+            })
+            .then(() => order.push("call"));
+        await timer;
+
+        // The timer queued between the calls runs before the second call.
+        expect(order).to.deep.equal(["call", "timer", "call"]);
+    });
+
     it("should throw an error for invalid function calls", async function () {
         // Function signature that doesn't exist
         const invalidFunctionData = "0xffffffff";

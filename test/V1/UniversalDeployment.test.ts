@@ -9,6 +9,7 @@ import {
 } from "../../scripts/V1/deploy";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { ContractSizeLimitError } from "@/index";
+import { StateSnapshot } from "@/models";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectLocalDiamond } from "@/utils/localDiamond";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -17,6 +18,13 @@ import {
     createSdkOwnedExecutor,
     disposeSdkExecutorFixtures
 } from "@test/fixtures/node/SdkExecutorFixture";
+import {
+    authorOnlyRun,
+    snapshotAt,
+    walkChannelGenesis,
+    walkInput,
+    walkResultProjection
+} from "@test/fixtures/StateProofWalkStaging";
 import {
     createJoinChannelTestObject,
     createOpenChannelTestObject
@@ -51,6 +59,19 @@ describe("Universal Deployment", () => {
         }
         return receipt.contractAddress;
     };
+
+    const deployLocalMirror = async () =>
+        connectLocalDiamond(
+            (
+                await deployLocalDiamond(
+                    deployMathStateMachineLocally,
+                    localSigner,
+                    undefined,
+                    12_000_000
+                )
+            ).address.toString(),
+            localSigner
+        );
 
     before(async () => {
         [deployer] = await ethers.getSigners();
@@ -118,16 +139,7 @@ describe("Universal Deployment", () => {
         });
 
         it("ignores stale overwrite events and deduplicates on-chain slashes", async () => {
-            const { address } = await deployLocalDiamond(
-                deployMathStateMachineLocally,
-                localSigner,
-                undefined,
-                12_000_000
-            );
-            const contract = connectLocalDiamond(
-                address.toString(),
-                localSigner
-            );
+            const contract = await deployLocalMirror();
             const channelId = ethers.id("local-diamond-event-ordering");
             const participant = deployer.address;
 
@@ -192,6 +204,145 @@ describe("Universal Deployment", () => {
             expect(window.evidence.lastEvidenceSubmissionTimestamp).to.equal(
                 100n
             );
+        });
+
+        it("refuses older same-fork, origin-fork and absent snapshot logs", async () => {
+            const contract = await deployLocalMirror();
+            const channelId = ethers.id("local-diamond-snapshot-order");
+            const forkId = ethers.id("local-diamond-snapshot-fork-a");
+            const atHeight8 = factory.stateSnapshot({ forkId, blockHeight: 8 });
+            const newFork = factory.stateSnapshot({
+                forkId: ethers.id("local-diamond-snapshot-fork-b"),
+                blockHeight: 0,
+                snapshotData: { originForkId: forkId }
+            });
+            const mirrored = async () =>
+                StateSnapshot.from(await contract.getStateSnapshot(channelId))
+                    .hash;
+
+            // a trusted (0, 0) reconciliation does not advance the event coordinate
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                atHeight8.toStruct(),
+                0,
+                0
+            );
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                factory.stateSnapshot({ forkId, blockHeight: 6 }).toStruct(),
+                11,
+                1
+            );
+            expect(await mirrored(), "older same-fork log").to.equal(
+                atHeight8.hash
+            );
+
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                newFork.toStruct(),
+                0,
+                0
+            );
+            expect(await mirrored(), "a new fork is accepted").to.equal(
+                newFork.hash
+            );
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                factory.stateSnapshot({ forkId, blockHeight: 9 }).toStruct(),
+                12,
+                1
+            );
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                factory.stateSnapshot({ forkId: ethers.ZeroHash }).toStruct(),
+                0,
+                0
+            );
+            expect(await mirrored(), "origin-fork and absent logs").to.equal(
+                newFork.hash
+            );
+        });
+
+        it("a same-fork snapshot log at the stored height replaces the stored snapshot", async () => {
+            const contract = await deployLocalMirror();
+            const channelId = ethers.id("local-diamond-snapshot-same-height");
+            const forkId = ethers.id("local-diamond-snapshot-same-height-fork");
+            const first = factory.stateSnapshot({ forkId, blockHeight: 8 });
+            const replacement = factory.stateSnapshot({
+                forkId,
+                blockHeight: 8
+            });
+            expect(replacement.hash).to.not.equal(first.hash);
+            const mirrored = async () =>
+                StateSnapshot.from(await contract.getStateSnapshot(channelId))
+                    .hash;
+
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                first.toStruct(),
+                10,
+                1
+            );
+            await contract.onStateSnapshotUpdated(
+                channelId,
+                replacement.toStruct(),
+                11,
+                1
+            );
+
+            expect(await mirrored()).to.equal(replacement.hash);
+        });
+
+        it("local supplied start does not mutate mirror", async () => {
+            const contract = await deployLocalMirror();
+            const author = ethers.Wallet.createRandom();
+            const channel = walkChannelGenesis(
+                "local-supplied-start",
+                [author.address, ethers.Wallet.createRandom().address],
+                1_000n
+            );
+            const mirrored = snapshotAt(channel.genesis, 5n);
+            await contract.onStateSnapshotUpdated(
+                channel.channelId,
+                mirrored,
+                10,
+                1
+            );
+            // a trusted point at 8 commits the run's first block; only its author signed it
+            const chosen = snapshotAt(channel.genesis, 8n);
+            const input = walkInput(
+                channel,
+                [await authorOnlyRun(channel, author, [8n, 9n])],
+                [chosen]
+            );
+
+            expect(
+                walkResultProjection(
+                    await contract.verifyMilestonesFromTrustedStart.staticCall(
+                        input,
+                        chosen,
+                        true
+                    )
+                )
+            ).to.deep.equal({
+                valid: true,
+                finalizedSnapshotHash: StateSnapshot.from(chosen).hash,
+                replayBlockIndex: 1n
+            });
+            expect(
+                (await contract.verifyMilestones(input)).valid,
+                "from the mirrored start the point at 8 lacks its threshold"
+            ).to.equal(false);
+            await contract.verifyMilestonesFromTrustedStart(
+                input,
+                chosen,
+                true
+            );
+            expect(
+                StateSnapshot.from(
+                    await contract.getStateSnapshot(channel.channelId)
+                ).hash
+            ).to.equal(StateSnapshot.from(mirrored).hash);
         });
     });
 

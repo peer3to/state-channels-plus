@@ -1,10 +1,9 @@
+import { StateSnapshot } from "@/models";
 import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import { StateChannelManagerInterface } from "@typechain-types";
-import {
-    SnapshotDataStruct,
-    StateSnapshotStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct,
@@ -36,21 +35,9 @@ describe("StateChannelManagerProxy.verifyStateProof", function () {
         expect(result).to.equal(false);
     });
 
-    it("returns false instead of reverting when signedBlocks contain undecodable bytes", async function () {
-        const { dispute, auditingData } = buildGenesisDispute();
-        dispute.input.stateProof.signedBlocks = [buildUndecodableSignedBlock()];
-
-        const result = await mathChannelManager.verifyStateProof.staticCall(
-            dispute,
-            auditingData
-        );
-
-        expect(result).to.equal(false);
-    });
-
     it("isCorrectLatestState returns false instead of reverting when latest block is undecodable", async function () {
         const { dispute, auditingData } = buildGenesisDispute();
-        dispute.input.stateProof.signedBlocks = [buildUndecodableSignedBlock()];
+        dispute.input.stateProof.milestones = [UNDECODABLE_MILESTONE];
 
         const result = await mathChannelManager.isCorrectLatestState.staticCall(
             dispute,
@@ -62,16 +49,16 @@ describe("StateChannelManagerProxy.verifyStateProof", function () {
 
     it("verifyMilestones returns false instead of reverting when a milestone block is undecodable", async function () {
         const { dispute, auditingData } = buildGenesisDispute();
-        const milestone = buildUndecodableMilestoneProof();
 
-        const result = await mathChannelManager.verifyMilestones.staticCall(
-            dispute.input.forkId,
-            [milestone],
-            [auditingData.latestStateSnapshot],
-            auditingData.latestStateSnapshot
-        );
+        const result = await mathChannelManager.verifyMilestones.staticCall({
+            channelId: dispute.input.channelId,
+            forkId: dispute.input.forkId,
+            stateProof: { milestones: [UNDECODABLE_MILESTONE] },
+            genesisStateSnapshotData: auditingData.genesisStateSnapshotData,
+            milestoneSnapshots: [auditingData.latestStateSnapshot]
+        });
 
-        expect(result).to.equal(false);
+        expect(result.valid).to.equal(false);
     });
 
     it("isMilestoneFinal returns false instead of reverting when a milestone block is undecodable", async function () {
@@ -79,11 +66,43 @@ describe("StateChannelManagerProxy.verifyStateProof", function () {
         const result = await mathChannelManager.isMilestoneFinal.staticCall(
             dispute.input.forkId,
             auditingData.genesisStateSnapshotData,
-            buildUndecodableMilestoneProof()
+            UNDECODABLE_MILESTONE
         );
 
         expect(result[0]).to.equal(false);
         expect(result[1]).to.equal(ethers.ZeroHash);
+    });
+
+    it("routes getAnchorSnapshot, verifyMilestones and isStateProofLinked through the proxy", async function () {
+        const { dispute, auditingData } = buildGenesisDispute();
+        const { channelId, forkId } = dispute.input;
+        const stateProof = { milestones: [] };
+        const genesisStateSnapshotData = auditingData.genesisStateSnapshotData;
+
+        const [canUseOnChainSnapshot, onChainSnapshot] =
+            await mathChannelManager.getAnchorSnapshot(channelId, forkId);
+        expect(canUseOnChainSnapshot).to.equal(false);
+        expect(onChainSnapshot.forkId).to.equal(ethers.ZeroHash);
+        // the empty proof is the fork genesis, undated since no channel holds it
+        const result = await mathChannelManager.verifyMilestones({
+            channelId,
+            forkId,
+            stateProof,
+            genesisStateSnapshotData,
+            milestoneSnapshots: []
+        });
+        expect(result.valid).to.equal(true);
+        expect(StateSnapshot.from(result.finalizedSnapshot).hash).to.equal(
+            dispute.input.latestStateSnapshotHash
+        );
+        expect(
+            await mathChannelManager.isStateProofLinked(
+                channelId,
+                forkId,
+                stateProof,
+                genesisStateSnapshotData
+            )
+        ).to.equal(true);
     });
 });
 
@@ -91,7 +110,7 @@ function buildGenesisDispute(): {
     dispute: DisputeStruct;
     auditingData: DisputeAuditingDataStruct;
 } {
-    const genesisStateSnapshotData = buildSnapshotData();
+    const genesisStateSnapshotData = factory.snapshotData();
     const forkId = ethers.keccak256(
         Codec.encode(genesisStateSnapshotData, Type.SnapshotData)
     );
@@ -109,83 +128,28 @@ function buildGenesisDispute(): {
         inboundMessageBlocks: [],
         outboundMessageBlocks: []
     };
-    const disputeAuditingDataHash = ethers.keccak256(
-        Codec.encode(auditingData, Type.DisputeAuditingData)
-    );
-    const latestStateSnapshotHash = ethers.keccak256(
-        Codec.encode(latestStateSnapshot, Type.StateSnapshot)
-    );
-
-    return {
-        auditingData,
-        dispute: {
-            input: {
-                channelId: ethers.keccak256(
-                    ethers.toUtf8Bytes("state-proof-verification")
-                ),
-                forkId,
-                latestStateSnapshotHash,
-                latestInboundMessageBlockHash: ethers.ZeroHash,
-                lastInboundMessageBlockHeight: 0n,
-                stateProof: {
-                    milestones: [],
-                    signedBlocks: []
-                },
-                onChainSlashes: [],
-                disputeAuditingDataHash,
-                disputer: ethers.ZeroAddress,
-                timeout: {
-                    participant: ethers.ZeroAddress,
-                    blockHeight: 0n,
-                    minTimeStamp: 0n,
-                    isForced: false,
-                    previousBlockProducer: ethers.ZeroAddress,
-                    previousBlockProducerPostedCalldata: false,
-                    participantSignatureOnPreviousBlock: "0x"
-                },
-                requireExistingDisputeWindow: false,
-                selfRemoval: false
-            },
-            postedAuditingData: true,
-            outputSnapshotDataHash: ethers.ZeroHash
-        }
-    };
-}
-
-function buildSnapshotData(): SnapshotDataStruct {
-    return {
-        originForkId: ethers.ZeroHash,
-        stateMachineStateHash: ethers.ZeroHash,
-        participants: [],
-        latestInboundMessageBlockHash: ethers.ZeroHash,
-        latestInboundMessageBlockHeight: 0n,
-        latestOutboundMessageBlockHash: ethers.ZeroHash,
-        latestOutboundMessageBlockHeight: 0n,
-        totalDeposits: {
-            amount: 0n,
-            data: "0x"
+    const dispute = factory.dispute({
+        input: {
+            channelId: ethers.id("state-proof-verification"),
+            forkId,
+            latestStateSnapshotHash:
+                StateSnapshot.from(latestStateSnapshot).hash,
+            latestInboundMessageBlockHash: ethers.ZeroHash,
+            disputeAuditingDataHash: ethers.keccak256(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            )
         },
-        totalWithdrawals: {
-            amount: 0n,
-            data: "0x"
+        postedAuditingData: true
+    });
+    return { dispute, auditingData };
+}
+
+/** A milestone whose one block does not decode. */
+const UNDECODABLE_MILESTONE: MilestoneProofStruct = {
+    blockConfirmations: [
+        {
+            signedBlock: { encodedBlock: "0x1234", signature: "0x" },
+            signatures: []
         }
-    };
-}
-
-function buildUndecodableSignedBlock() {
-    return {
-        encodedBlock: "0x1234",
-        signature: "0x"
-    };
-}
-
-function buildUndecodableMilestoneProof(): MilestoneProofStruct {
-    return {
-        blockConfirmations: [
-            {
-                signedBlock: buildUndecodableSignedBlock(),
-                signatures: []
-            }
-        ]
-    };
-}
+    ]
+};

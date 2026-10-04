@@ -122,6 +122,10 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
         return await this.service.requireP2pSigner().getChannelStatus();
     }
 
+    public async getOwnJoinState() {
+        return await this.service.requireP2pSigner().getOwnJoinState();
+    }
+
     public async setIsLeader(value: boolean) {
         this.service.requireP2pSigner().setIsLeader(value);
     }

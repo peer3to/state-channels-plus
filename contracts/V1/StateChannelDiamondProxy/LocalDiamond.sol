@@ -9,7 +9,6 @@ import "../StateChannelManagerEvents.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
 import "./utils/GeneralUtils.sol";
-import "hardhat/console.sol";
 
 /**
  * @title LocalDiamond
@@ -79,7 +78,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 logIndex
     ) external {
         if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
-        console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;
 
@@ -105,8 +103,25 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
+        if (_isOlderSnapshot(stateSnapshots[channelId], stateSnapshot)) return;
         if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) return;
         stateSnapshots[channelId] = stateSnapshot;
+    }
+
+    /**
+     * The mirror never goes back: a trusted (0, 0) reconciliation does not
+     * advance the event coordinate, so a queued older log could otherwise
+     * replace it. Older: a lower block on the stored fork, the stored fork's
+     * origin fork, or an absent (zero-fork) snapshot, which a read of a
+     * closed channel returns. Any other fork is a new fork and is accepted.
+     */
+    function _isOlderSnapshot(StateSnapshot storage stored, StateSnapshot calldata incoming)
+        private
+        view
+        returns (bool)
+    {
+        if (incoming.forkId == stored.forkId) return incoming.blockHeight < stored.blockHeight;
+        return incoming.forkId == bytes32(0) || incoming.forkId == stored.snapshotData.originForkId;
     }
 
     // Called by InboundMessagesProcessed event
@@ -299,10 +314,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         _disputeWindow.reducedResult.reducer = disputeWindow.reducedResult.reducer;
     }
 
-    function getLatestJoinChannelBlockHash(bytes32 channelId) public view returns (bytes32) {
-        return channelBalances[channelId].latestInboundMessageBlockHash;
-    }
-
     function getTotalDeposits(bytes32 channelId) public view returns (Balance memory) {
         return channelBalances[channelId].totalDeposits;
     }
@@ -355,17 +366,6 @@ contract LocalDiamond is StateChannelManagerProxy {
         outputState = abi.decode(returnData, (DisputeOutputState));
     }
 
-    function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        view
-        returns (bool)
-    {
-        // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
-            dispute, disputeAuditingData
-        );
-    }
-
     function isBlockAuthorParticipant(
         Block memory _block,
         StateSnapshot memory previousSnapshot,
@@ -373,17 +373,6 @@ contract LocalDiamond is StateChannelManagerProxy {
     ) public pure returns (bool) {
         return _isBlockAuthorParticipant(_block, previousSnapshot, resultingSnapshot);
     }
-
-    // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-    //     public
-    //     view
-    //     returns (bool)
-    // {
-    //     // The underlying function is pure, so no need for a delegatecall
-    //     return
-    //         DisputeVerificationFacet(disputeVerificationFacetAddress)
-    //             .isCorrectAuditingData(dispute, disputeAuditingData);
-    // }
 
     function isDisputeOutputCorrect(
         Dispute memory dispute,
@@ -431,29 +420,12 @@ contract LocalDiamond is StateChannelManagerProxy {
         return _isDisputeInboundAnchorBehindLatestState(dispute, latestStateSnapshot);
     }
 
-    function getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
-        public
-        pure
-        returns (BlockConfirmation[] memory)
-    {
-        return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
-    }
-
-    // ========== Override for debugging - Browser compatible console logs ==========
-
-    function _isBlockAuthentic(SignedBlock memory _block) internal view override returns (bool) {
-        (bool decoded, Block memory decodedBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
-        if (!decoded) {
-            console.log("isBlockAuthentic - false - 1");
-            return false;
-        }
-        (address signer, bool isValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(_block.encodedBlock, _block.signature);
-        if (signer != decodedBlock.transaction.header.participant || !isValid) {
-            console.log("isBlockAuthentic - false - 2");
-            return false;
-        }
-        return true;
+    /// The state-proof walk from `chosenSnapshot` instead of the mirrored snapshot (local only).
+    function verifyMilestonesFromTrustedStart(
+        ProofWalkInput memory input,
+        StateSnapshot memory chosenSnapshot,
+        bool checkFinality
+    ) public view returns (ProofWalkResult memory) {
+        return _walkStateProof(input, chosenSnapshot, checkFinality);
     }
 }

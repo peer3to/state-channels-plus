@@ -509,8 +509,9 @@ cost at most about one more budget, so twice the requirement keeps a local trans
 refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
 dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
 estimate, and the local call gets no such addition. A local predicate whose work does not fit the
-granted gas fails locally; the local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
-not a wrong verdict. A local state transition has no chain answer to fall back to. Until
+granted gas fails locally; since 2026-10-04 that failure propagates as an error with no chain fallback
+([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is a failed
+evaluation the node sees, not a wrong verdict. A local state transition has no chain answer to fall back to. Until
 2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
 local call was under-funded, whose call frame ran out of gas outside the transition, or whose
 executor failed would build a fraud proof against an honest author, and could start a dispute on
@@ -640,3 +641,66 @@ neither result reaches the caller or the host, so a caller never sees a result p
 declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
+
+## Milestone-only state proofs, join wait, force-join bounds, founders, and sync refusals — 2026-10-03
+
+**Fixed failures.** [`FIND-LOBBY-2-4ZYPB5`](open-findings.md#find-lobby-2-4zypb5), [`FIND-LEAVE-5-PRK7EX`](open-findings.md#find-leave-5-prk7ex), [`FIND-LEAVE-6-3N4FHR`](open-findings.md#find-leave-6-3n4fhr), [`FIND-LEAVE-4-WDH0XC`](open-findings.md#find-leave-4-wdh0xc), and
+[`FIND-LOBBY-4-BKEF02`](open-findings.md#find-lobby-4-bkef02) were liveness failures: no fund, signature, or verdict was at risk. [`FIND-SYNC-4-S75SP4`](open-findings.md#find-sync-4-s75sp4) and
+[`FIND-JOIN-2-9SRZJS`](open-findings.md#find-join-2-9srzjs) were false penalties against honest peers (a blacklisted requester and a disputed fast table);
+both fixes remove a penalty and accept nothing new on chain. [`FIND-DISPUTE-4-B29QGY`](open-findings.md#find-dispute-4-b29qgy) was a safety-relevant
+liveness failure: a peer synced mid-fork could not dispute.
+
+**Milestone-only proofs.** A state proof is milestones only, checked by one walk from one start
+([`REQ-SP-8-9PK9TS`](../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts)): the same-fork on-chain snapshot when it is not the fork genesis, else
+the genesis. The walk accepts more than a full history check only by dropping milestones wholly below a final
+start and by not reading the prefix of the run that holds it; the block at the start height must commit the
+start, so the state after it is on-chain truth. Every other kept milestone needs the union threshold of the last
+verified set, so a membership change cannot be skipped, and an unfinal block 0 is allowed only as the sole
+milestone. A claim below the same-fork on-chain snapshot is not current: the dedicated below-anchor counter kills
+it with no signed newer state and no reconstruction, so the old residual (an honest participant had to answer
+with a newer-state counter dispute) is gone. A dispute submitter is liable only for the unfinal tail of the last
+milestone, addressed by its index in that milestone
+([`REQ-SP-10-AM67R2`](../specification/disputes/state-proofs.md#req-sp-10-am67r2)); a peer that relies on finalized history it never replayed cannot be
+slashed for it. Eligibility runs no walk: the tail start comes from the last milestone and the on-chain anchor
+alone, and the validity of earlier milestones is left to the invalid-state-proof counter. One case widens
+liability on purpose (engineer decision, review HR-5): with one milestone that starts at genesis block 0, block 0 is
+challengeable even when it is threshold-final, so the disputer answers for a fraudulent block 0 that every
+participant signed. The balance proof judges the dispute's latest state, never below the same-fork on-chain
+snapshot, with no walk and no walk evidence (review HR-4); this keeps
+[`FIND-BALANCE-1-S6SP4N`](open-findings.md#find-balance-1-s6sp4n) mitigated, and its withdrawal comparison still reads the current on-chain total.
+The walk needs no supplied genesis data when the fork genesis is on chain (review HR-1, HR-3), which removes one
+way for an honest dispute from the on-chain anchor to fail verification.
+
+**Verification tiers.** A node verifies from its latest local threshold-final point, then its local copy's start,
+then the chain's start ([`REQ-SP-9-7MWKY8`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8)). A local success is final with no chain reconfirmation;
+this is safe only under the stated premise that at least one participant is honest and finality needs every
+participant's signature, so proven final history stays consistent as finality advances (engineer decision). Only
+the chain answers invalid; a failed read or a local failure is an error that propagates and never becomes an
+adverse fraud proof (engineer decision 2026-10-04: internal failures are fatal). A stale sync proof, or a served
+state that does not reach the walk's finalized point, is a verification failure that cuts the responder. An internal
+error of the requester during a sync propagates and does not cut the responder; only peer data rejects
+([`FIND-SYNC-6-EA08S6`](open-findings.md#find-sync-6-ea08s6), resolved). Residual: some callers still cut a
+source that stays ineligible. The
+structure check is input-only and needs no chain read. The mirror's never-go-back guard has two gaps: a fork two
+or more reductions back is accepted as a new fork ([`FIND-MIRROR-2-5RR4G4`](open-findings.md#find-mirror-2-5rr4g4)), and the genesis write on
+`ChannelOpened` is not guarded ([`FIND-MIRROR-3-VYWGPF`](open-findings.md#find-mirror-3-vywgpf)). Both affect only the local mirror's view.
+
+**Force join and join wait.** Both force-join bounds start when the joiner observes its own join; the block bound
+counts the blocks the joiner commits once its own clock is past an `agreementTime` grace; block timestamps play no part. The residual early-dispute risk is a fast
+joiner clock inside the grace; the chain still adjudicates every dispute. A start refused for an expired evidence
+period is not retried; the next observed dispute's reduction consumes the whole inbound queue and seats the joiner,
+and a join cannot land on a disputed fork. The leave of an unobserved join waits until the chain is past the join
+authorization deadline, so an expired authorization can no longer admit the join after the runtime walked away.
+The force-join markers and the authorization deadline live in memory; a restarted joiner loses both triggers and
+the join wait ([`FIND-JOIN-3-WSQWQB`](open-findings.md#find-join-3-wsqwqb)).
+
+**Founders and sync.** A founder completes only after its own genesis, so it never runs the observer initial sync
+against its own channel. On a receipt failure after a provider error, a founder whose opening landed is still
+treated as an observer ([`FIND-LOBBY-3-8TFTB5`](open-findings.md#find-lobby-3-8tftb5)). A responder refuses with an error reply while a dispute window's
+kill period runs, so neither side is blacklisted. The responder and the requester judge kill-period expiry from
+their own clocks with no tolerance; a skew of about one second can still make the requester reject an honest
+responder at the boundary ([`FIND-SYNC-5-HNX25J`](open-findings.md#find-sync-5-hnx25j)). An observer sends one initial sync request; any failure,
+an explicit refusal included, aborts it. A founder never runs that sync against its own channel, and a
+participant or pending participant can serve it, so an honest responder does not refuse it.
+
+Engineer approval and risk acceptance remain pending.

@@ -9,9 +9,13 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockOrigin, getSourcePeers } from "@/storage/QueueStorage";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import type {
+    BlockPredecessor,
+    QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
+import { FraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import { Codec, Mutex, Type } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
@@ -67,14 +71,10 @@ export type BlockCalldataRecoveryProbe = {
 
 export type DisputeStrategyResultMatrix = Record<string, string>;
 
-export type CleanCommittedDivergenceProbe = {
-    result: string;
-    proofStored: boolean;
-};
-
 export type MissingParticipantSnapshotsProbe = {
     earlyAuthorResult: string;
-    signatureUnionResult: string;
+    /** The union hook's error without the executed snapshots; null when it returned. */
+    signatureUnionError: string | null;
     proofStored: boolean;
 };
 
@@ -197,19 +197,35 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Single owner of dispute-strategy construction for the stub probes, so
-     * constructor inputs can't drift between them. `blockIndexInUnfinalized
-     * PartOfStateProof` is 0 - the probes replay the first unfinalized block.
+     * constructor inputs can't drift between them. The probes replay `block`
+     * as the first block of the last milestone, judged from the stored
+     * history below it. Without one the probe judges it from the fork
+     * genesis: an unlinked block never reaches a proof builder.
      */
     public createDisputeValidationStrategy(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        block: Block
     ): DisputeValidationStrategy {
         return new DisputeValidationStrategy(
             this.sm.storage,
             dispute,
             0,
-            this.sm.diamondStateMachine.localDiamondContract,
+            this.getStoredPredecessor(block) ??
+                this.sm.storage.getPredecessor(block.forkId)!,
+            this.sm.disputeValidationService,
             this.sm.logger
         );
+    }
+
+    /** The stored block below `block` (the fork genesis at height 0), with its snapshot and state. */
+    public getStoredPredecessor(block: Block): BlockPredecessor | undefined {
+        if (block.height === 0)
+            return this.sm.storage.getPredecessor(block.forkId);
+        const below = this.sm.storage.blocks.getBlock(
+            block.forkId,
+            block.height - 1
+        );
+        return below && this.sm.storage.getPredecessor(block.forkId, below);
     }
 
     /**
@@ -540,7 +556,15 @@ export class ValidationProbeService extends ANetworkRpcService<
         const { dispute } = await this.sm.disputeManager.constructDispute(
             this.sm.forkId
         );
-        const strategy = this.createDisputeValidationStrategy(dispute);
+        // the result mapping reads no predecessor: the fork genesis serves
+        const strategy = new DisputeValidationStrategy(
+            this.sm.storage,
+            dispute,
+            0,
+            this.sm.storage.getPredecessor(this.sm.forkId)!,
+            this.sm.disputeValidationService,
+            this.sm.logger
+        );
         const matrix: DisputeStrategyResultMatrix = {};
         for (const result of [
             BlockValidationResult.SUCCESS,
@@ -592,7 +616,10 @@ export class ValidationProbeService extends ANetworkRpcService<
                 () => {},
                 { joined: new Set(), left: new Set() },
                 {
-                    strategy: this.createDisputeValidationStrategy(dispute),
+                    strategy: this.createDisputeValidationStrategy(
+                        dispute,
+                        block
+                    ),
                     onBlockCommitted: () => {
                         committed = true;
                     }
@@ -729,7 +756,10 @@ export class ValidationProbeService extends ANetworkRpcService<
             const { dispute } = await sm.disputeManager.constructDispute(
                 sm.forkId
             );
-            strategy = this.createDisputeValidationStrategy(dispute);
+            strategy = this.createDisputeValidationStrategy(
+                dispute,
+                entry.block
+            );
         }
         let result: string;
         try {
@@ -755,29 +785,6 @@ export class ValidationProbeService extends ANetworkRpcService<
         };
     }
 
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        const { dispute } = await this.sm.disputeManager.constructDispute(
-            this.sm.forkId
-        );
-        const latestBlock = this.sm.storage.blocks.getLatestBlock(
-            this.sm.forkId
-        );
-        if (!latestBlock) throw new Error("Expected a latest block");
-        const strategy = this.createDisputeValidationStrategy(dispute);
-        const entry = this.sm.storage.queues.createEntry(latestBlock, {
-            origin: BlockOrigin.PROOF
-        });
-
-        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
-        return {
-            result: BlockValidationResult[result],
-            proofStored:
-                this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                    dispute
-                ) !== undefined
-        };
-    }
-
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
         const { dispute } = await this.sm.disputeManager.constructDispute(
             this.sm.forkId
@@ -793,21 +800,25 @@ export class ValidationProbeService extends ANetworkRpcService<
             },
             this.sm.signer
         );
-        const strategy = this.createDisputeValidationStrategy(dispute);
+        const strategy = this.createDisputeValidationStrategy(dispute, block);
         const entry = this.sm.storage.queues.createEntry(block, {
             origin: BlockOrigin.PROOF
         });
 
         const earlyAuthorResult =
             await strategy.blockAuthorIsNotParticipant(entry);
-        const signatureUnionResult =
-            await strategy.notAllSingersAreParticipants(
+        const signatureUnionError = await strategy
+            .notAllSingersAreParticipants(
                 entry,
                 new Set([block.originalSignature])
+            )
+            .then(
+                () => null,
+                (error: unknown) => errorMessage(error)
             );
         return {
             earlyAuthorResult: BlockValidationResult[earlyAuthorResult],
-            signatureUnionResult: BlockValidationResult[signatureUnionResult],
+            signatureUnionError,
             proofStored:
                 this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                     dispute
@@ -844,7 +855,8 @@ export class ValidationProbeService extends ANetworkRpcService<
         switch (options?.strategy) {
             case "dispute":
                 strategy = this.createDisputeValidationStrategy(
-                    factory.dispute()
+                    factory.dispute({ input: { forkId: sm.forkId } }),
+                    block
                 );
                 break;
             case "spectating":
@@ -901,6 +913,12 @@ export class ValidationProbeService extends ANetworkRpcService<
                 } else if (hook) {
                     result = await run.instrumentedStrategy[hook](run.entry);
                 } else {
+                    // dispute replay judges from the predecessor's state, as
+                    // BlockIngestService positions it
+                    if (run.entry.predecessor)
+                        await this.sm.diamondStateMachine.setState(
+                            run.entry.predecessor.state
+                        );
                     result =
                         await this.sm.validationService.validateBlockConfirmation(
                             run.entry,
@@ -965,31 +983,112 @@ export class ValidationProbeService extends ANetworkRpcService<
     /**
      * Replay one confirmation as the dispute audit does: the struct caller
      * `onBlockConfirmationStruct` with a real DisputeValidationStrategy for
-     * `dispute` at unfinalized block index 0. The strategy's side effect (a
-     * stored dispute fraud proof) stays real.
+     * `dispute` at unfinalized block index 0, judged from the stored history
+     * below it. The strategy's side effect (a stored dispute fraud proof)
+     * stays real.
      */
     public async runBlockConfirmationStructUnderDispute(
         encodedBlockConfirmation: string,
         encodedDispute: string
     ): Promise<DisputeStructIngestProbe> {
-        const strategy = this.createDisputeValidationStrategy(
-            Codec.decode(encodedDispute, Type.Dispute)
+        const confirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Block.tryFromBlockConfirmation(confirmation);
+        const predecessor = block
+            ? this.getStoredPredecessor(block)
+            : undefined;
+        const strategy = new DisputeValidationStrategy(
+            this.sm.storage,
+            Codec.decode(encodedDispute, Type.Dispute),
+            0,
+            predecessor ?? this.sm.storage.getPredecessor(this.sm.forkId)!,
+            this.sm.disputeValidationService,
+            this.sm.logger
         );
         try {
             return {
                 accepted:
                     await this.sm.blockIngestService.onBlockConfirmationStruct(
-                        Codec.decode(
-                            encodedBlockConfirmation,
-                            Type.BlockConfirmation
-                        ),
-                        { validationStrategy: strategy }
+                        confirmation,
+                        { validationStrategy: strategy, predecessor }
                     ),
                 threw: null
             };
         } catch (error) {
             return { accepted: null, threw: errorMessage(error) };
         }
+    }
+
+    /**
+     * Run the live strategy's `FraudProofService` builder for
+     * `encodedBlockConfirmation`'s block. `predecessorHeight` passes the
+     * stored block at that height (-1: the fork genesis) as the explicit
+     * predecessor, as dispute replay does; absent, the builder reads storage.
+     * Returns the stored fraud proof, or null when the builder abstained.
+     */
+    public probeInvalidStateTransitionProof(
+        encodedBlockConfirmation: string,
+        options?: { predecessorHeight?: number }
+    ): { proofType: number; participant: string; encodedProof: string } | null {
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
+        const fraudProofService =
+            this.sm.blockValidationStrategy.fraudProofService;
+        const proofHash = fraudProofService.createInvalidStateTransitionProof(
+            block,
+            this.getPredecessorAt(block.forkId, options?.predecessorHeight)
+        );
+        const proof =
+            proofHash &&
+            this.sm.storage.fraudProofs.getFraudProofByHash(proofHash);
+        return proof
+            ? {
+                  proofType: Number(proof.proofType),
+                  participant: String(proof.participant),
+                  encodedProof: String(proof.encodedProof)
+              }
+            : null;
+    }
+
+    /** `buildInvalidTimestampProof` as `probeInvalidStateTransitionProof` drives it; the encoded proof. */
+    public probeInvalidTimestampProof(
+        encodedBlockConfirmation: string,
+        options?: { predecessorHeight?: number }
+    ): { encodedProof: string } {
+        const block = Block.fromBlockConfirmation(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
+        const proof =
+            this.sm.blockValidationStrategy.fraudProofService.buildInvalidTimestampProof(
+                block,
+                this.getPredecessorAt(block.forkId, options?.predecessorHeight)
+            );
+        return {
+            encodedProof: String(
+                Codec.encode(proof, FraudProofType.InvalidTimestamp)
+            )
+        };
+    }
+
+    /** The stored block at `height` (-1: the fork genesis) with its snapshot and state; undefined without a height. */
+    private getPredecessorAt(
+        forkId: ForkId,
+        height: number | undefined
+    ): BlockPredecessor | undefined {
+        if (height === undefined) return undefined;
+        const block =
+            height < 0
+                ? undefined
+                : this.sm.storage.blocks.getBlock(forkId, height);
+        if (height >= 0 && !block)
+            throw new Error(`Expected a stored block at height ${height}`);
+        const predecessor = this.sm.storage.getPredecessor(forkId, block);
+        if (!predecessor)
+            throw new Error(`Expected a held predecessor at height ${height}`);
+        return predecessor;
     }
 
     /**
@@ -1024,12 +1123,16 @@ export class ValidationProbeService extends ANetworkRpcService<
         // isLinked !prevBlock edge) are drivable here. the dispute struct is
         // only referenced when a deviation stores fraud-proof evidence; the
         // paths driven here don't, so a placeholder dispute is faithful.
+        // dispute replay judges the block from its predecessor
+        if (options?.strategy === "dispute")
+            entry.predecessor = this.getStoredPredecessor(block);
         const strategy =
             options?.strategy === "dispute"
                 ? this.createDisputeValidationStrategy(
                       options.encodedDispute
                           ? Codec.decode(options.encodedDispute, Type.Dispute)
-                          : factory.dispute()
+                          : factory.dispute({ input: { forkId: sm.forkId } }),
+                      block
                   )
                 : options?.strategy === "spectating"
                   ? sm.spectatingValidationStrategy

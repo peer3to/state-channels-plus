@@ -1,5 +1,7 @@
 import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
+import { readMathPeer } from "@test/fixtures/OffChainPromotionFixture";
+import { stageAuditorOfflineThroughKillPeriod } from "@test/fixtures/OfflineAuditorStaging";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import {
@@ -9,7 +11,7 @@ import {
 } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { id } from "ethers";
+import { id, ZeroHash } from "ethers";
 
 describe("E2E: ReductionManager", function () {
     describe("ordinary reduction submission outcomes", function () {
@@ -157,7 +159,7 @@ describe("E2E: ReductionManager", function () {
         // the queries come back before the healthy holds are released, so the
         // lagging peer recovers the window on its own attempt
         await blinded.restore();
-        await restoreEvents(false);
+        await restoreEvents();
         expect(
             await h
                 .control(h.getPeer(laggingIndex))
@@ -268,5 +270,75 @@ describe("E2E: ReductionManager", function () {
                 .query.getCompletedReductionForkId(sourceForkId)
                 .request()
         ).to.equal(await h.control(targetPeer).query.getForkId().request());
+    });
+
+    it("auditor offline through the kill period reduces from a longer valid dispute's head", async function () {
+        const h = TestSession.getHarness();
+        const {
+            forkId,
+            offlineIndex,
+            honestIndices,
+            connectedRaces,
+            restoreCommits,
+            headState,
+            waitUntilKillPeriodExpired,
+            headSum
+        } = await stageAuditorOfflineThroughKillPeriod(h, "connectedPeers");
+        const offline = h.control(h.getPeer(offlineIndex));
+        expect(await headState(), "the offline peer missed the head").to.equal(
+            null
+        );
+        await waitUntilKillPeriodExpired();
+
+        // the commit arrives only after the kill period: the full audit
+        // replays the dispute's tail and persists the head it never received
+        await restoreCommits();
+        // one recovery pass answers null while a commitment's log is not yet
+        // readable
+        await waitFor(async () => {
+            const recovered = await offline.dispute
+                .recoverCommittedDisputes(forkId)
+                .request();
+            return recovered !== null && recovered > 0;
+        }, h.event.protocolEventTimeoutMs());
+        expect(
+            await headState(),
+            "the audit persisted the head's state"
+        ).to.not.equal(null);
+        expect(
+            h.event.getEventCallCount(offlineIndex, "onDisputeKilled")
+        ).to.equal(0);
+
+        // the offline peer is the only reducer: its reduce data is the head's
+        const reducedResult = () =>
+            h.channelManager.getReducedResult(h.channelId, forkId);
+        await waitFor(
+            async () => (await reducedResult()).reducedForkId !== ZeroHash,
+            h.event.protocolEventTimeoutMs()
+        );
+        const reduced = await reducedResult();
+        expect(reduced.reducer).to.equal(h.getPeer(offlineIndex).address);
+        expect(
+            await offline.query.getCompletedReductionForkId(forkId).request()
+        ).to.equal(reduced.reducedForkId);
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            honestPeerIndices: [offlineIndex]
+        });
+        expect(
+            (await readMathPeer(h, offlineIndex)).state.number,
+            "reduced from the dispute's head"
+        ).to.equal(headSum);
+
+        for (const race of connectedRaces)
+            await race.release({ replayEvents: true, runHeldTasks: true });
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            honestPeerIndices: honestIndices
+        });
+        for (const forkIdAfter of await h.peerForkIds(
+            honestIndices.map((index) => h.getPeer(index))
+        ))
+            expect(forkIdAfter).to.equal(reduced.reducedForkId);
     });
 });

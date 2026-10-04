@@ -79,16 +79,16 @@ sequenceDiagram
 Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L1),
 which is mutexed and idempotent per fork (`didIDispute` flag):
 
-| Trigger                                                                                                         | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
-| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L483) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
-| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
-| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
-| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
-| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
-| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                 | merged evidence                                                                                                                                           |
+| Trigger                                                                                                                | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp)        | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
+| Participant timeout                                                                                                    | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L483) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
+| Voluntary self-removal (exit without N/N signatures)                                                                   | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
+| Forced inbound inclusion (join ignored for N+1 blocks counted after the `agreementTime` grace, or N full turn windows) | `maybeInitiateForceJoinDispute` or the force-join deadline                                             | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
+| On-chain slash observed on an undisputed fork                                                                          | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
+| Dispute killed, window empty                                                                                           | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
+| Reduction found an empty window                                                                                        | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
+| Auditor holds more evidence than a valid observed dispute                                                              | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                 | merged evidence                                                                                                                                           |
 
 ### 3.2 Timeout detection detail
 
@@ -118,7 +118,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L322),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L321),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -130,14 +130,21 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L573)
-assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L552)
+assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`
+([DisputeManager report](../../../source/src/disputeManager/DisputeManager.ts.md)). One built proof
+carries its start, its milestone snapshots and its walked final state into the auditing data:
 
-1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
-   for the fork's latest stored height: milestones at every participant-set
-   change point plus a latest-state milestone when threshold coverage exists;
-   otherwise the linked `signedBlocks` suffix back to the last finality anchor
-   ([../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md)).
+1. **State proof.** [`AgreementManager.buildStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L112)
+   for the fork's latest stored height ([#L564](../../../../../../src/disputeManager/DisputeManager.ts#L564)): from the local proof start (the
+   same-fork non-genesis on-chain snapshot the local diamond reports, else the fork genesis), one
+   milestone per participant change above the start, the latest threshold milestone, then the
+   unfinal tail up to the latest height appended to the last milestone (or one run from the start
+   block without a milestone). A height below the start or missing/unlinked required history
+   throws; the throw ends the attempt. The builder walks its own proof once on the local diamond
+   (`verifyMilestonesFromTrustedStart`) to get the finalized snapshot
+   ([AgreementManager report](../../../source/src/agreementManager/AgreementManager.ts.md))
+   ([state-proofs](../../../../specification/disputes/state-proofs.md)).
 2. **Slash set.** `LocalDiamond.getOnChainSlashedParticipants ∩ participants`;
    for every participant not yet slashed on-chain that we hold a local fraud
    proof for, the proof joins `fraudProofsToApply` and the participant joins
@@ -145,111 +152,166 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    the dispute's claimed set is a subset of the on-chain set when it executes
    (separation of fraud-proof enforcement from reduction, [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)).
 3. **Timeout** from storage, or the empty struct.
-4. **Auditing data** (`getAuditingData`): genesis `SnapshotData`, one snapshot
-   per milestone, the latest state snapshot, the latest _finalized_ state's
-   encoded machine state, and the inbound/outbound message-block ranges linking
-   snapshot tips. `isPartial` (anything missing locally) aborts construction.
+4. **Auditing data** ([`getAuditingData`](../../../../../../src/disputeManager/DisputeManager.ts#L779)): genesis `SnapshotData`, one snapshot
+   per milestone as the walk reads it, the latest state snapshot, the finalized state's encoded
+   machine state, and the inbound/outbound message-block ranges linking snapshot tips; the outbound
+   range starts at the proof start's outbound tip ([#L876](../../../../../../src/disputeManager/DisputeManager.ts#L876)–[#L886](../../../../../../src/disputeManager/DisputeManager.ts#L886)). The finalized snapshot
+   comes from the chain's own walk (`verifyMilestones` staticCall on the chain manager), so the
+   posted finalized state is the one the chain's `verifyStateProof` binds (D1) even when the local
+   mirror lags the chain's start; `"0x"` when that walk rejects ([#L810](../../../../../../src/disputeManager/DisputeManager.ts#L810)–[#L826](../../../../../../src/disputeManager/DisputeManager.ts#L826)). A proof given as
+   a plain struct is described with `describeStateProof`. The inbound run comes from
+   `EventSyncService.loadSynchronizedInboundRun`. `isPartial` (anything missing locally) aborts
+   construction.
 5. **Output commitment.** `LocalDiamond.computeDisputeOutputSnapshotData.staticCall(input, latestSnapshot, latestState, inboundBlocks)`
    computes the successor-fork genesis `SnapshotData`; its hash becomes
    `outputSnapshotDataHash`. The dispute thereby pre-commits to its own
    reduction outcome.
 6. **`postedAuditingData` = `!SCM.isLastMilestoneFinalByEveryone(dispute)`** —
-   auditing data is posted as calldata only when the proof's final anchor is
+   auditing data is posted as calldata only when the proof's last milestone is
    not already known-final to everyone (data availability for auditors).
    The chain judges it against the dispute's historic threshold: its snapshot participants (no adoption onto
    the fork while a proof can land), joiners at or below the dispute's inbound anchor, minus the dispute's own
    `onChainSlashes` only, so the same verdict holds for every later read of the committed dispute.
    A code TODO flags re-evaluating this under early finalization. The probe runs on the
-   LocalDiamond first (`preferLocal`): a local "not final" posts the data without a chain read —
+   LocalDiamond first (`preferLocal`, [#L728](../../../../../../src/disputeManager/DisputeManager.ts#L728)–[#L739](../../../../../../src/disputeManager/DisputeManager.ts#L739)): a local "not final" posts the data without a chain read —
    posting is never wrong, only costlier — while a local "final", whose omitted data is slashable
    if the mirror lagged, is confirmed by `SCM` ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.
 
+There is no on-chain check of the finished proof before upload and no second build: the proof is
+built once from the local start, and the chain walk drops milestones below its own start
+([`REQ-DISPUTE-PIPE-13-W73B2F` (Proof construction from the local start)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-w73b2f)).
+
 **Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain or calldata upload. No upload passes a gas limit: the chain signer sends each
-with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest dispute that lands
-between estimate and inclusion cannot push a late disputer out of gas (and past the evidence
-window). Race reverts are classified:
+without: the plain or calldata upload. Without fraud proofs no gas limit is passed: the chain
+signer sends each upload with its estimate plus headroom (`GAS_ESTIMATE_HEADROOM_PERCENT`), so a
+concurrent honest dispute that lands between estimate and inclusion cannot push a late disputer out
+of gas (and past the evidence window). The multicall, which may replay a transition, passes the
+estimate plus the manager's replay requirement (`replayGasLimit`). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
 closed), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
-the chain's inbound head -> load the missing inbound run up to that head and
-rebuild). On failure the `didIDispute` flag is rolled back so a later attempt
-can retry.
+the chain's inbound head; it has no handler, so it ends the attempt like any
+other unhandled revert). A throw from construction ends the attempt the same way. On failure the
+`didIDispute` flag is rolled back so a later attempt can retry.
 
 ## 5. Audit: validity and authorization checks
 
-[`DisputeValidationService.validateDispute`](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L50)
-returns `false` iff a [`DisputeFraudProof`](../../../../../../src/stateManager/utils/DisputeFraudProofService.ts#L1)
+[`DisputeValidationService.validateDispute`](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L47)
+returns `false` iff a [`DisputeFraudProof`](../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts#L49)
 was stored — the caller then kills the dispute. Checks run in order; every
 predicate that also exists in Solidity is evaluated by `staticCall` against the
 canonical implementation so the off-chain auditor can never disagree with the
 on-chain apply-handler ([`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq)). "Local-first" below means the call goes to the
 LocalDiamond through `preferLocal`: the answer that clears the dispute is accepted locally, and the
 answer that would produce a fraud proof (or a local revert) is re-asked of `SCM` before the proof is
-stored ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)):
+stored ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The header and block-structure
+predicates do not use `preferLocal`: they read only the proof, so they run on the LocalDiamond only.
+Posted auditing data is judged by the chain alone: one `SCM.verifyStateProof` staticCall (the
+commitment, the walk, the latest state, and D1: the posted finalized state is the state of the
+walk's finalized snapshot). Its `false` stores `DisputeInvalidStateProof`; a read error throws out
+of the audit with no proof. This is a flagged design deviation from local-first (one chain read
+per posted audit), recorded in the [DisputeValidationService report](../../../source/src/stateManager/dispute/DisputeValidationService.ts.md).
+Only after the chain accepted the proof does `AgreementManager.verifyStateProof` run its walk, to
+decide what to persist ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48);
+[AgreementManager report](../../../source/src/agreementManager/AgreementManager.ts.md)).
 
-| #   | Check                                                                    | Canonical predicate                                                                                                                                                                                                                                            | Fraud proof on failure                          |
-| --- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | Inbound hash is a real on-chain inbound tip                              | `isDisputeInboundHashValid` (LocalDiamond, then chain re-check); unreachable for a committed dispute, which upload anchors at the inbound head — kept as defence in depth                                                                                      | `DisputeInboundHashNotInChain`                  |
-| 2   | State proof decodes                                                      | `StateProof.tryFrom` (undecodable + posted data → invalid state proof; undecodable + no posted data → **no fireable proof**, audit skipped as valid)                                                                                                           | `DisputeInvalidStateProof`                      |
-| 3   | Proof header matches input                                               | `LocalDiamond.hasStateProofHeaderMismatch` only — pure, so the mirror computes exactly what the chain would                                                                                                                                                    | `DisputeStateProofHeaderMismatch`               |
-| 4   | Block structure in proof                                                 | `LocalDiamond.findFirstInvalidBlockStructureInStateProof`                                                                                                                                                                                                      | `DisputeInvalidBlockStructure(blockIndex)`      |
-| 5a  | Posted auditing data: proof verifies                                     | `verifyStateProof(dispute, auditingData)`, local-first (chain revert = false)                                                                                                                                                                                  | `DisputeInvalidStateProof`                      |
-| 5b  | No posted data: last milestone final by everyone                         | `isLastMilestoneFinalByEveryone`, local-first (snapshot participants ∪ joiners at or below the anchor − `input.onChainSlashes`)                                                                                                                                | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
-| 5c  | No posted data: anchor available locally                                 | `isLastMilestoneStoredLocally` — if not, audit is skipped as valid (cannot judge without the baseline)                                                                                                                                                         | —                                               |
-| 6   | Replay                                                                   | §5.1                                                                                                                                                                                                                                                           | per-block proofs                                |
-| 7   | Latest state consistent with replayed proof (no posted data)             | `isCorrectLatestState`, local-first                                                                                                                                                                                                                            | `DisputeInvalidStateProof`                      |
-| 8   | Claimed slashes ⊆ on-chain slash set                                     | `LocalDiamond.getOnChainSlashedParticipants`, re-checked against the chain before proving                                                                                                                                                                      | `DisputeOnChainSlashesNotSubset`                |
-| 9   | Balance invariant on the latest snapshot                                 | `verifyBalanceInvariantCheckSnapshot`, local-first ([../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md))                                                                                                       | `DisputeInvalidBalanceInvariant`                |
-| 10  | Disputer used its latest state                                           | disputer's latest signed block (local storage) vs claimed height                                                                                                                                                                                               | `DisputeNotLatestState(block, signature)`       |
-| 11  | Timeout block: linked to proof tip                                       | `LocalDiamond.getLatestBlockFromStateProof` height + 1                                                                                                                                                                                                         | `TimeoutNotLinkedToLatestState`                 |
-| 12  | Timeout: target is next leader                                           | `peekNextToWrite(latestState)` on the dispute state machine                                                                                                                                                                                                    | `TimeoutParticipantNotNext`                     |
-| 13  | Timeout: not too early                                                   | window creation timestamp `<` previous relevant timestamp + wait time (strict `<`, mirroring `DisputeFraudProofFacet._handleTimeoutTooEarly`; equality accepts) — extra time is forfeited only if the target's posted signature on the previous block verifies | `TimeoutTooEarly`                               |
-| 14  | Timeout: target not already N/N-signed                                   | `block.didEveryoneSign(participantsUnion)`                                                                                                                                                                                                                     | `TimeoutThreshold`                              |
-| 15  | Timeout: target posted the block as calldata                             | build `TimeoutCalldataPosted` and **preflight** with `validateTimeoutCalldataPostedProof` — an auditor must never submit a proof that would slash itself; a local "invalid" drops the proof, a local "valid" is confirmed by `SCM` before the proof is stored  | `TimeoutCalldataPosted`                         |
-| 16  | Dispute states a reason (timeout, slashes, self-removal, forced inbound) | `LocalDiamond.hasDisputeReason` ([../protocol/disputes.md](../../../../specification/disputes/disputes.md) §3)                                                                                                                                                 | `InvalidDisputeReason`                          |
-| 17  | Output correct                                                           | `isDataLinkedToDisputeInput` sanity (snapshot hash, state hash, proof tip, inbound chain), then `LocalDiamond.isDisputeOutputCorrect`                                                                                                                          | `DisputeInvalidOutputState`                     |
+**No abstention.** Every audit ends in `true`, `false` with exactly one stored proof, or a thrown
+internal failure (no verdict, no proof). There is no "skipped as valid" path: the auditor
+replays and persists the tail material it lacks, recovers missing chain events through
+`EventSyncService.loadSynchronizedInboundRun`, and throws when data is still missing after that
+(no fork genesis, replay base not held, latest snapshot or state not held, inbound run not
+recoverable).
+
+| #   | Check                                                                                               | Canonical predicate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Fraud proof on failure                          |
+| --- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| 1   | Inbound hash is a real on-chain inbound tip                                                         | `isDisputeInboundHashValid` (LocalDiamond, then chain re-check); unreachable for a committed dispute, which upload anchors at the inbound head — kept as defence in depth                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `DisputeInboundHashNotInChain`                  |
+| 2   | Proof header matches input                                                                          | `LocalDiamond.hasStateProofHeaderMismatch` only — pure, so the mirror computes exactly what the chain would; an undecodable block answers no mismatch and the structure check judges that block ([#L61](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L61)–[#L76](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L76))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `DisputeStateProofHeaderMismatch`               |
+| 3   | Block structure in the last milestone                                                               | `LocalDiamond.findFirstInvalidBlockStructureInStateProof` only; it scans only the last milestone and names the block by its `blockIndex` there ([#L78](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L78)–[#L92](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L92))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `DisputeInvalidBlockStructure(blockIndex)`      |
+| 4   | No posted data: last milestone final by everyone (data availability, before any proof verification) | `isLastMilestoneFinalByEveryone`, local-first (snapshot participants ∪ joiners at or below the inbound anchor − `input.onChainSlashes`); posted flag without data throws ([#L94](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L94)–[#L101](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L101))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
+| 5a  | Latest claimed block not below the chain's same-fork non-genesis snapshot                           | `SCM.getAnchorSnapshot` (chain, never the mirror); an empty proof claims the genesis and is below such a snapshot ([#L103](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L103), [#L257](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L257)–[#L280](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L280))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `DisputeStateProofBelowOnChainAnchor`           |
+| 5b  | Posted auditing data: the chain verifies the proof                                                  | the walk evidence needs the fork genesis (missing → throw, [#L301](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L301)–[#L332](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L332)); `SCM.verifyStateProof` alone, including D1 ([#L106](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L106)–[#L108](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L108), [#L339](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L339)–[#L347](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L347)); `false` → reject; a read error throws; then the verified material at or above the walk's start is persisted, the last milestone's replay tail excluded ([#L164](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L164)–[#L240](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L240)) | `DisputeInvalidStateProof`                      |
+| 5c  | No posted data: latest state correct and proof linked                                               | evidence from storage (genesis fills missing snapshots); `isCorrectLatestState` and `isStateProofLinked`, local-first; no walk ([#L110](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L110)–[#L133](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L133))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `DisputeInvalidStateProof`                      |
+| 6   | Claimed slashes ⊆ on-chain slash set (before the replay)                                            | `getOnChainSlashedParticipants`, local-first, re-checked against the chain before proving ([#L135](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L135)–[#L136](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L136), [#L535](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L535)–[#L553](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L553))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `DisputeOnChainSlashesNotSubset`                |
+| 7   | Replay                                                                                              | §5.1 ([#L138](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L138))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | per-block proofs                                |
+| 8   | Inbound anchor not behind the latest snapshot                                                       | the latest snapshot by hash from the proof's latest block (missing → throw); `LocalDiamond.isDisputeInboundAnchorBehindLatestState` ([#L140](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L140)–[#L152](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L152), [#L479](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L479)–[#L502](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L502))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `DisputeInboundAnchorBehindLatestState`         |
+| 9   | Audit inputs                                                                                        | the latest snapshot and its state by hash (missing → throw); the inbound run the dispute names through `EventSyncService.loadSynchronizedInboundRun`, which recovers missed chain logs; still unavailable → throw ([#L508](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L508)–[#L532](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L532))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | — (internal failure)                            |
+| 10  | Balance invariant on the dispute's latest state                                                     | `verifyBalanceInvariantCheckSnapshot`, one local-first read, on the latest snapshot and its state; no walk, no finalized-snapshot selection ([#L566](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L566)–[#L573](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L573), [#L839](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L839)–[#L875](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L875); [cross-layer messages](../../../../specification/settlement/cross-layer-messages.md))                                                                                                                                                                                                                                                                                                                                                                                     | `DisputeInvalidBalanceInvariant`                |
+| 11  | Disputer used its latest state                                                                      | disputer's latest signed block (local storage) vs the latest snapshot's height                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `DisputeNotLatestState(block, signature)`       |
+| 12  | Timeout block: linked to proof tip                                                                  | `LocalDiamond.getLatestBlockFromStateProof` height + 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `TimeoutNotLinkedToLatestState`                 |
+| 13  | Timeout: target is next leader                                                                      | `peekNextToWrite(latestState)` on the dispute state machine                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `TimeoutParticipantNotNext`                     |
+| 14  | Timeout: not too early                                                                              | window creation timestamp `<` previous relevant timestamp + wait time (strict `<`, mirroring `DisputeFraudProofFacet._handleTimeoutTooEarly`; equality accepts) — extra time is forfeited only if the target's posted signature on the previous block verifies                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `TimeoutTooEarly`                               |
+| 15  | Timeout: target not already N/N-signed                                                              | `block.didEveryoneSign(participantsUnion)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `TimeoutThreshold`                              |
+| 16  | Timeout: target posted the block as calldata                                                        | build `TimeoutCalldataPosted` and **preflight** with `validateTimeoutCalldataPostedProof` — an auditor must never submit a proof that would slash itself; a local "invalid" drops the proof, a local "valid" is confirmed by `SCM` before the proof is stored ([#L700](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L700)–[#L736](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L736))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `TimeoutCalldataPosted`                         |
+| 17  | Dispute states a reason (timeout, slashes, self-removal, forced inbound, existing window)           | `LocalDiamond.hasDisputeReason` ([../protocol/disputes.md](../../../../specification/disputes/disputes.md) §3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `InvalidDisputeReason`                          |
+| 18  | Output correct                                                                                      | `LocalDiamond.isDisputeOutputCorrect` on the audit inputs (latest snapshot, latest state, recovered inbound run) ([#L761](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L761)–[#L778](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L778))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `DisputeInvalidOutputState`                     |
 
 ### 5.1 Replay of the unfinalized proof suffix
 
-`LocalDiamond.getUnfinalizedBlockConfirmationsFromStateProof` yields the blocks
-past the last final anchor. Each runs through the **block-confirmation
-pipeline** with a per-block
-[`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)
-(`blockIndexInUnfinalizedPartOfStateProof` recorded for the proof): live
-fork/ordering gates are off, the state machine is repositioned to each block's
-previous snapshot before the leader check, and deviations map to dispute fraud
-proofs — `DisputeInvalidBlockInStateProofApplyFraudProof` (wrapping the
-ordinary block fraud proof for invalid transitions, wrong genesis, forged
-inbound blocks, invalid timestamps), `DisputeInvalidBlockStructure`
-(authentication/linkage deviations, but only when the canonical Solidity
-structure predicate also fails — a local linkage gap alone must not kill an
-honest dispute), `DisputeBlockAuthorNotParticipant`. A double sign discovered
-during replay stores an ordinary fraud proof and **continues** (the dispute may
-still be honest; a code TODO notes the proof should be applied without opening
-a new dispute). A replay returning `false` without a stored dispute fraud proof
-is an internal error (throws).
+`replayLastMilestoneTail` ([#L368](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L368)–[#L440](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L440)) replays only the last milestone's unfinal tail, on the
+dispute's own chain:
+
+- **Tail start.** `findTailStart` ([#L443](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L443)–[#L456](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L456)) binary-searches the first block index the chain's
+  `isBlockChallengeEligible` admits (eligibility is monotone in the index). No walk is needed, and
+  the replay never judges a block the chain treats as final, also when the mirror's start lags the
+  chain's.
+- **Base.** `Storage.getPredecessor(forkId, tail[start - 1])` — that block (or the fork genesis
+  for start 0) with its snapshot and state, read by hash; not held → throw ([#L379](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L379)–[#L387](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L387)).
+- **Fast-forward.** Tail blocks already stored by hash with a held snapshot and state are skipped;
+  the last of them becomes the base ([#L388](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L388)–[#L395](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L395)).
+- **Explicit predecessor.** Each remaining block runs through the **block-confirmation pipeline**
+  (`BlockIngestService.onBlockConfirmationStruct`) with a per-block
+  [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L22) (addressed by the block's `blockIndex` in the last
+  milestone) and the explicit predecessor `{block, snapshot, state}`: the ingest positions the
+  state machine on the predecessor's state, and the author, linkage and time checks read the
+  predecessor instead of the auditor's own history at that height ([#L396](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L396)–[#L411](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L411)). After a
+  success the replayed block's snapshot and state are read back by hash as the next predecessor;
+  missing → throw ([#L426](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L426)–[#L434](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L434)).
+
+Live fork/ordering gates are off. Deviations map to dispute fraud proofs —
+`DisputeInvalidBlockInStateProofApplyFraudProof` (wrapping the ordinary block fraud proof, built
+from the predecessor, for invalid transitions, wrong genesis, forged inbound blocks, invalid
+timestamps) and `DisputeBlockAuthorNotParticipant` (previous block and snapshot from the
+predecessor). An authentication failure during replay is not alleged: the canonical structure
+scan of the last milestone (check 3) already passed ([#L110](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L110)–[#L115](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L115)). Right before a block
+allegation is stored, the strategy asks `isBlockChallengeEligible` again (one chain read of the
+contract's `isBlockChallengeEligible(dispute, blockIndex)`, [#L350](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L350)–[#L358](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L358)); an ineligible
+allegation throws ([#L62](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L62)–[#L74](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L74)) and is unreachable because the replay starts at the
+chain's tail start. A double sign discovered during replay stores an ordinary fraud proof and
+**continues** (the dispute may still be honest; a code TODO notes the proof should be applied
+without opening a new dispute). A block of another history that conflicts with a stored block but
+is not linked to it is judged normally (SUCCESS for the conflict check). A replay that returns
+`false` without a stored dispute fraud proof is an internal error and throws
+([#L412](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L412)–[#L425](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L425)). Every replayed snapshot and state stays stored by hash, so a dispute head on an
+alternate history is reducible later
+([DisputeValidationStrategy report](../../../source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md),
+[FraudProofService report](../../../source/src/stateManager/utils/FraudProofService.ts.md),
+[BlockIngestService report](../../../source/src/stateManager/ingest/BlockIngestService.ts.md)).
+During a dispute replay `BlockCommitService` skips its membership step (pending → participating,
+force-join dispute).
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L352):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L351):
 
+- **Non-participant** (status neither participating nor pending participant):
+  aborts its runtime on every dispute event of its fork before any branch
+  below ([#L397-L409](../../../../../../src/eventHandlers/EventHandler.ts#L397-L409)); only participants and pending participants handle disputes.
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, derive auditing data locally if not
   posted, compute the successor genesis via
   `computeDisputeOutputSnapshotData` + `computeDisputeOutputState`
   (staticCalls), and complete the fork's reduction operation with
-  `reducedForkId = dispute.outputSnapshotDataHash`. Non-participants that
-  cannot assemble the data abort (spectators fail closed).
+  `reducedForkId = dispute.outputSnapshotDataHash`.
 - **Kill period expired** (window exists, `isKillPeriodExpired`): challenging
-  is forbidden, so persist everything available
-  (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
+  is forbidden, but the node still runs the full audit (§5): its replay
+  persists every block, snapshot and state the reduction reads. An invalid
+  verdict is only logged (no kill). Then persist the confirmation and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L487)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L491)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,
@@ -279,7 +341,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   its own paths (§3.1). Reduction is scheduled at `killPeriodEnd` in every
   case.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L821)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L824)):
 drop the fork's cached evidence comparison, record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
@@ -303,7 +365,7 @@ is still a participant.
 2. **Preconditions** (re-checked at run time): fork still current; window
    exists on-chain; kill period expired (memoized per `(channel, fork)` —
    "not expired until `killPeriodEnd`" is reused, "expired" is terminal).
-3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/EventSyncService.ts#L268):
+3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L215):
    the window's commitments from the chain, with any dispute whose event never
    reached us recovered by targeted log queries (3 attempts, widening span)
    — a reducer never reads a window its storage cannot back. Empty window →
@@ -331,7 +393,7 @@ is still a participant.
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L699)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L702)):
 drop the fork's cached evidence comparison (`DisputeManager.forgetEvidenceComparison`), mirror
 into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute the reduction on `SCM`
@@ -343,7 +405,7 @@ reducer is blacklisted. A locally unavailable dispute set means the reduction
 was already consumed — treated as processed.
 
 **Snapshot advancement.** After the successor fork is uncontestable,
-[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L37)
+[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L54)
 walks the on-chain snapshot's fork through `getReducedResult` /
 `isReduceChallengePeriodExpired` hops to the first undisputed fork, builds
 `updateStateSnapshotFork` calldata (with the outbound message-block range the
@@ -358,10 +420,11 @@ multicalls both. This is also the N/N exit path of the block pipeline.
   by commitment, the per-fork `didIDispute` flag.
 - [`DisputeFraudProofStorage`](../../../../../../src/storage/DisputeFraudProofStorage.ts#L8):
   one dispute fraud proof per dispute (the audit stops at the first).
-- `persistDisputeDataWithoutAudit` imports proof-carried snapshots, machine
-  states, message blocks, and (optionally) unfinalized blocks with
+- The audit persists verified posted material (finalized state, message
+  blocks, blocks and committed snapshots at or above the walk start) with
   `justPersist` — persistence without advancing the fork's max height, so
-  imported history never masquerades as live progress.
+  imported history never masquerades as live progress — and its replay
+  stores every replayed snapshot and state by hash.
 - Return to execution: `unsafeSetGenesisState` → `setLatestState` sets the new
   `forkId` (clearing queue-recovery gates), recomputes status from the new
   participant set (a removed/slashed participant drops to `SYNCED`; a snapshot
@@ -376,11 +439,13 @@ multicalls both. This is also the N/N exit path of the block pipeline.
   audit deadlines (kill period) therefore inherit the RPC availability
   assumption ([../security/trust-model.md](../../../../specification/security/trust-model.md)). The
   executor code marks provider failure during reduction as fatal.
-- The auditor can only audit what it can anchor: a dispute over data the
-  auditor never held (no posted auditing data, anchor not in storage) is
-  skipped as valid rather than killed — honest-peer coverage relies on at
-  least one peer holding the data
-  ([../security/data-availability.md](../../../../specification/security/data-availability.md)).
+- Only participants and pending participants audit, and data availability is
+  guaranteed to them
+  ([../security/data-availability.md](../../../../specification/security/data-availability.md)):
+  the auditor audits every dispute in full, recovers missing chain events
+  through the event service, and treats data still missing after recovery
+  as an internal failure (throw, no verdict) — never as a reason to skip or
+  to kill.
 - Time windows (`evidenceTime`, kill period, challenge period) come from the
   contracts; the SDK never computes its own authority over them, it reads
   `isKillPeriodExpired` / `isReduceChallengePeriodExpired`.
@@ -460,13 +525,13 @@ _Non-normative._
 | Requirement / invariant                                    | Statement                                                                                                   | Implementation status | Implementation evidence                                                                                                                                                                                                                                  | Gap / divergence |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr) | Per-fork dispute idempotence with rollback on failed upload.                                                | Covered               | [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L1) (`dispute`)                                                                                                                                            | None.            |
-| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L26) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
+| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L25) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
 | [`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha) | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | Covered               | `validateDispute` + `hasStoredDisputeFraudProof` throw paths                                                                                                                                                                                             | None.            |
 | [`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd) | Deterministic, order-independent reduction; races classified as convergence.                                | Covered               | [src/stateManager/reduction](../../../../../../src/stateManager/reduction) (`classifyReductionRace`, `compute`)                                                                                                                                          | None.            |
 | [`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0) | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | Covered               | [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L52) (`completeWithGenesis`), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (final path) | None.            |
 | [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq) | Fraud proofs slash before/independently of the dispute that consumes the slash set.                         | Covered               | `constructDispute` multicall ordering; `killDispute`                                                                                                                                                                                                     | None.            |
 | [`REQ-DVP-1-MQJTYR`](dispute-pipeline.md#req-dvp-1-mqjtyr) | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`tryTimeoutParticipant`)                                                                                                                                      | None.            |
-| [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                                       | None.            |
+| [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/eventSync/EventSyncService.ts](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L1) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                   | None.            |
 | [`REQ-DVP-3-CFFAW1`](dispute-pipeline.md#req-dvp-3-cffaw1) | An incorrect committed reduction is challenged within the challenge period.                                 | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`validateDisputeReductionAndChallenge`)                                                                                                                     | None.            |
 
 ## Dispute admission and state contributions

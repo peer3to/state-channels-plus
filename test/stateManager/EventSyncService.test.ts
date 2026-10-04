@@ -342,7 +342,7 @@ describe("EventSyncService", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
         });
 
         it("dispute window-span read fails → failed recovery, no throw", async function () {
@@ -373,7 +373,7 @@ describe("EventSyncService", function () {
                 runHeldTasks: false,
                 keepTasksHeld: true
             });
-            await restoreEvents(false);
+            await restoreEvents();
         });
     });
 

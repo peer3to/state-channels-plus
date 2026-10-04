@@ -329,8 +329,7 @@ export class TransitionActions<
             .control(peer)
             .transition.prepareUpdateSnapshotSameFork(forkId)
             .request();
-        if (!sameForkData.canPost || sameForkData.callData.length === 0)
-            return undefined;
+        if (sameForkData.kind !== "ready") return undefined;
 
         const transaction =
             await peer.p2pInstance.stateChannelManagerContract.multicall(

@@ -6,6 +6,7 @@ import {
     Type,
     sleep
 } from "@/utils";
+import { channelIdToDiscoveryKey } from "@/utils";
 import {
     assertAuthoredLeaveFallback,
     assertExitFallbackFailureGuards
@@ -1203,6 +1204,97 @@ describe("discovery runtime port", function () {
         await expect(leave).to.be.rejectedWith("disposed");
     });
 
+    it("an ordinary lobby open joins the opened channel's discovery key on both founders", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        // Record-only: every discovery join still runs.
+        for (const peer of h.peers) {
+            await h.execOnHost(peer, (sm) => {
+                const manager = sm.p2pManager;
+                const join = manager.joinDiscoveryKey.bind(manager);
+                const keys: string[] = [];
+                Reflect.set(manager, "recordedDiscoveryKeys", keys);
+                manager.joinDiscoveryKey = async (key: string) => {
+                    keys.push(key);
+                    return join(key);
+                };
+            });
+        }
+
+        const results = await Promise.all(
+            h.peers.map((peer) =>
+                peer.p2pInstance.p2pSigner.joinLobby(
+                    ethers.id("discovery-lobby-announcement")
+                )
+            )
+        );
+
+        const channelKey = channelIdToDiscoveryKey(results[0]!.channelId);
+        for (const peer of h.peers) {
+            const keys = await h.execOnHost(
+                peer,
+                (sm) =>
+                    Reflect.get(
+                        sm.p2pManager,
+                        "recordedDiscoveryKeys"
+                    ) as string[]
+            );
+            expect(keys).to.include(channelKey);
+        }
+    });
+
+    it("a closed status does not settle a terminal leave while the chain still lists the leaver", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const leaver = h.getPeer(1);
+        // The exit is authored, so the leaver is absent from local state,
+        // while its snapshot post is parked and the chain still lists it.
+        const post = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+        let exit: Promise<unknown> | undefined;
+        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+            exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
+        });
+        const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
+        let leaveSettled = false;
+        const settled = leave.then(() => {
+            leaveSettled = true;
+        });
+        try {
+            await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
+            await h.transition.advanceState();
+            await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
+            await exit;
+            await h.event.waitUntilLeavePhase(leaver.index, "exit-authored");
+            await post.waitUntilHeld();
+            await h
+                .control(leaver)
+                .stub.setPeerStatus(Status.NOT_OPENED)
+                .request();
+
+            await h.execOnHost(leaver, async (sm) => {
+                await sm.leaveChannelService.onSettledStateObserved();
+            });
+
+            expect(
+                await h.execOnHost(leaver, async (sm) => ({
+                    remainsLocal:
+                        await sm.membershipService.isSignerInLocalState(),
+                    listedOnChain: await sm.membershipService.isSignerOnChain()
+                }))
+            ).to.deep.equal({ remainsLocal: false, listedOnChain: true });
+            expect(leaveSettled).to.equal(false);
+        } finally {
+            await post.release();
+        }
+        // The posted snapshot drops the leaver on chain: the leave settles.
+        await settled;
+        expect(
+            (await h.channelManager.getParticipants(h.channelId)).includes(
+                leaver.address
+            )
+        ).to.equal(false);
+    });
+
     it("pending terminal leave rejects joinLobby", async function () {
         await assertPendingLeaveGuard(TestSession.getHarness(), "joinLobby");
     });
@@ -1303,7 +1395,374 @@ describe("discovery runtime port", function () {
         });
     });
 
-    it("leave watchdog rejects after the evidence period expires", async function () {
+    it("a pending joiner whose join never lands keeps its leave waiting past one turn window and settles it back to SYNCED once the authorization expired on chain", async function () {
+        const h = TestSession.getHarness();
+        // The authorization outlives one turn window (11 s at this time model).
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 18
+        });
+        const joiner = prepared.joiner;
+        const recorder = await h.rpcStub.recordDisputeSubmissions(joiner.index);
+        const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+            joiner.index,
+            "joinChannel"
+        );
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(false);
+            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            let leaveSettled = false;
+            const settled = leave.then(() => {
+                leaveSettled = true;
+            });
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+            const { p2pTime, agreementTime, chainFallbackTime } =
+                await h.execOnHost(h.getPeer(joiner.index), async (sm) => ({
+                    ...sm.timeConfig
+                }));
+            const oneTurnWindowEnd =
+                Date.now() +
+                (p2pTime + agreementTime + chainFallbackTime) * 1000;
+
+            // The founders keep authoring through the wait.
+            await h.transition.keepAuthoringUntil({
+                until: () => Date.now() >= oneTurnWindowEnd,
+                waitForPeers: [0, 1, 2],
+                maximumBlocks: 10
+            });
+            expect(leaveSettled).to.equal(false);
+            expect(
+                (await h.control(joiner).query.getLeaveChannelState().request())
+                    ?.phase
+            ).to.equal("awaiting-join");
+
+            await Promise.all([
+                h.scenario.chainBlockPastWait(prepared.joinDeadline!),
+                h.transition.keepAuthoringUntil({
+                    until: () => leaveSettled,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 20
+                })
+            ]);
+            await settled;
+
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(await recorder.submissions()).to.deep.equal([]);
+        } finally {
+            await restore();
+            await recorder.restore();
+        }
+    });
+
+    it("a join that lands after one turn window but before its authorization expires turns the waiting leave into a member's leave", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 18
+        });
+        const joiner = prepared.joiner;
+        const releaseSubmission = await h.rpcStub.holdMembershipSubmission(
+            joiner.index,
+            "joinChannel"
+        );
+        const leavePhase = async () =>
+            (await h.control(joiner).query.getLeaveChannelState().request())
+                ?.phase;
+        let leave: Promise<void> | undefined;
+        try {
+            // The submission is in flight when the leave is requested.
+            const join = joiner.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(joiner)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1
+            );
+            leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            void leave.catch(() => undefined);
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+            const { p2pTime, agreementTime, chainFallbackTime } =
+                await h.execOnHost(h.getPeer(joiner.index), async (sm) => ({
+                    ...sm.timeConfig
+                }));
+            const oneTurnWindowEnd =
+                Date.now() +
+                (p2pTime + agreementTime + chainFallbackTime) * 1000;
+            await h.transition.keepAuthoringUntil({
+                until: () => Date.now() >= oneTurnWindowEnd,
+                waitForPeers: [0, 1, 2],
+                maximumBlocks: 10
+            });
+            expect(await leavePhase()).to.equal("awaiting-join");
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            await releaseSubmission();
+            expect(await join).to.equal(true);
+            await h.transition.keepAuthoringUntil({
+                until: async () => (await leavePhase()) === "awaiting-exit",
+                waitForPeers: [0, 1, 2],
+                maximumBlocks: 10
+            });
+
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.not.equal(Status.SYNCED);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.include(joiner.address);
+        } finally {
+            await releaseSubmission();
+            await joiner.p2pInstance.dispose();
+        }
+        await expect(leave).to.be.rejectedWith("disposed");
+    });
+
+    it("a pending joiner that observes its join during the join wait leaves as a member", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+        const joiner = prepared.joiner;
+        // the join lands but the joiner does not observe it yet
+        const held = await h.rpcStub.holdInboundMessageEvents(joiner.index);
+        expect(
+            await joiner.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            )
+        ).to.equal(true);
+        const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+        void leave.catch(() => undefined);
+        await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+
+        await held.release({ replay: true });
+
+        await h.event.waitUntilLeavePhase(joiner.index, "awaiting-exit");
+    });
+
+    it("a join wait that ends with the join listed on chain but not yet observed runs the member's leave", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 15
+        });
+        const joiner = prepared.joiner;
+        // The founders keep authoring but never include the join, so the
+        // joiner stays pending; it never observes its join while the wait
+        // runs out.
+        const restores = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.byzantine.stubPendingInboundInclusion(index)
+            )
+        );
+        const held = await h.rpcStub.holdInboundMessageEvents(joiner.index);
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(true);
+            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            void leave.catch(() => undefined);
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+
+            await Promise.all([
+                h.scenario.chainBlockPastWait(prepared.joinDeadline!),
+                h.transition.keepAuthoringUntil({
+                    until: async () =>
+                        (
+                            await h
+                                .control(joiner)
+                                .query.getLeaveChannelState()
+                                .request()
+                        )?.phase === "awaiting-exit",
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 20
+                })
+            ]);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+        } finally {
+            await held.release({ replay: false });
+            await Promise.all(restores.map((restore) => restore()));
+        }
+    });
+
+    it("an own-join observation during the join wait's chain read keeps the member's leave although the late read answers not listed", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 15
+        });
+        const joiner = prepared.joiner;
+        const restores = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.byzantine.stubPendingInboundInclusion(index)
+            )
+        );
+        const held = await h.rpcStub.holdInboundMessageEvents(joiner.index);
+        const blockBeforeJoin = await h.provider.getBlockNumber();
+        let leaveSettled = false;
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(true);
+            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            void leave.then(
+                () => (leaveSettled = true),
+                () => (leaveSettled = true)
+            );
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+            // The wait's chain read is answered from before the join landed
+            // and returns only after the joiner observed its join.
+            const staleRead = await h.rpcStub.holdChainMembershipRead(
+                joiner.index,
+                { atBlockNumber: blockBeforeJoin }
+            );
+            try {
+                await Promise.all([
+                    h.scenario.chainBlockPastWait(prepared.joinDeadline!),
+                    h.transition.keepAuthoringUntil({
+                        until: async () => (await staleRead.heldCount()) > 0,
+                        waitForPeers: [0, 1, 2],
+                        maximumBlocks: 20
+                    })
+                ]);
+                await held.release({ replay: true });
+                await h.event.waitUntilLeavePhase(
+                    joiner.index,
+                    "awaiting-exit"
+                );
+            } finally {
+                await staleRead.release();
+            }
+            await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
+
+            expect(
+                (await h.control(joiner).query.getLeaveChannelState().request())
+                    ?.phase
+            ).to.equal("awaiting-exit");
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            expect(leaveSettled).to.equal(false);
+        } finally {
+            await held.release({ replay: false });
+            await Promise.all(restores.map((restore) => restore()));
+            await joiner.p2pInstance.dispose();
+        }
+    });
+
+    it("a chain membership read that fails at the end of the join wait rejects the leave", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 15
+        });
+        const joiner = prepared.joiner;
+        const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+            joiner.index,
+            "joinChannel"
+        );
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(false);
+            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            void leave.catch(() => undefined);
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+            const failingRead = await h.rpcStub.holdChainMembershipRead(
+                joiner.index,
+                { fail: true }
+            );
+            try {
+                await Promise.all([
+                    h.scenario.chainBlockPastWait(prepared.joinDeadline!),
+                    h.transition.keepAuthoringUntil({
+                        until: async () => (await failingRead.heldCount()) > 0,
+                        waitForPeers: [0, 1, 2],
+                        maximumBlocks: 20
+                    })
+                ]);
+            } finally {
+                await failingRead.release();
+            }
+
+            await expect(leave).to.be.rejectedWith(
+                "injected chain membership read failure"
+            );
+        } finally {
+            await restore();
+        }
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "injected chain membership read failure"
+        });
+    });
+
+    it("a founders' timeout dispute on an idle table during the join wait still lets an unlanded join's leave settle back to SYNCED after expiry", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 25
+        });
+        const joiner = prepared.joiner;
+        const forkId = h.activeForkId!;
+        const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+            joiner.index,
+            "joinChannel"
+        );
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(false);
+            const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+            void leave.catch(() => undefined);
+            await h.event.waitUntilLeavePhase(joiner.index, "awaiting-join");
+
+            // Nobody authors: the founders' own timeout checks dispute the
+            // idle fork while the joiner's leave waits for its join.
+            await h.dispute.resolveDisputeWait({
+                forkId,
+                honestPeerIndices: [0, 1, 2]
+            });
+            await h.scenario.chainBlockPastWait(prepared.joinDeadline!);
+            await leave;
+
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(
+                await h.channelManager.getPendingParticipants(h.channelId)
+            ).to.not.include(joiner.address);
+        } finally {
+            await restore();
+        }
+    });
+
+    it("leave watchdog waits for the next dispute window after the evidence period expires", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
@@ -1322,16 +1781,85 @@ describe("discovery runtime port", function () {
                 }
             }
         );
-        await expect(
-            leaver.p2pInstance.p2pSigner.leaveChannel()
-        ).to.be.rejectedWith("RaceConditionDisputeEvidencePeriodExpired");
+        let isSettled = false;
+        const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
+        void leave.then(
+            () => (isSettled = true),
+            () => (isSettled = true)
+        );
+
+        await h.event.waitUntilLeavePhase(leaver.index, "awaiting-settlement");
+
         expect(await recorder.submissions()).to.have.length(1);
         expect(
             await h.control(leaver).query.didIDispute(h.activeForkId!).request()
         ).to.equal(false);
-        await TestSession.settleDetached({
-            expectedErrorIncludes: "RaceConditionDisputeEvidencePeriodExpired"
+        expect(isSettled, "the leave waits for the next window").to.equal(
+            false
+        );
+    });
+
+    it("a watchdog dispute refused by a really expired evidence window waits for the reduction and disputes again on the next fork until the leaver is removed", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0, {
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
         });
+        const opener = h.getPeer(0);
+        const leaver = h.getPeer(1);
+        const forkId = h.activeForkId!;
+        // Every upload of the leaver parks until the window it targets has
+        // run out of evidence time, then goes to the chain for real.
+        const leaverDisputes = await h.rpcStub.recordDisputeSubmissions(
+            leaver.index,
+            { hold: true, forward: true }
+        );
+        // The opener's own self-removal opens the window.
+        const openerLeave = opener.p2pInstance.p2pSigner.leaveChannel();
+        await waitFor(() =>
+            h.channelManager.isForkDisputed(h.channelId, forkId)
+        );
+        const leave = leaver.p2pInstance.p2pSigner.leaveChannel();
+        await leaverDisputes.waitUntilHeld();
+        const windowOpenedAt = Number(
+            await h.channelManager.getDisputeWindowCreationTimestamp(
+                h.channelId,
+                forkId
+            )
+        );
+        const { evidenceTime } = await h.execOnHost(leaver, async (sm) => ({
+            evidenceTime: sm.timeConfig.evidenceTime
+        }));
+        await h.scenario.chainBlockPastWait(windowOpenedAt + evidenceTime);
+        await leaverDisputes.release();
+
+        await h.event.waitUntilLeavePhase(leaver.index, "awaiting-settlement");
+        const [refused] = await leaverDisputes.submissions();
+        expect(refused.revert?.name).to.equal(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+        expect(
+            Codec.decode(refused.encodedDispute, Type.Dispute).input.forkId
+        ).to.equal(forkId);
+
+        // The window reduces; on the next fork the leave re-arms and its
+        // watchdog disputes again, which removes the leaver.
+        await leave;
+        await openerLeave;
+        const accepted = (await leaverDisputes.submissions()).filter(
+            (submission) => submission.revert === null && submission.waited
+        );
+        expect(accepted.length).to.be.greaterThan(0);
+        const redispute = Codec.decode(
+            accepted[accepted.length - 1].encodedDispute,
+            Type.Dispute
+        );
+        expect(redispute.input.forkId).to.not.equal(forkId);
+        expect(redispute.input.selfRemoval).to.equal(true);
+        expect(
+            (await h.channelManager.getParticipants(h.channelId)).includes(
+                leaver.address
+            )
+        ).to.equal(false);
     });
 
     it("fixed N plus one block bound starts the same self-removal dispute", async function () {

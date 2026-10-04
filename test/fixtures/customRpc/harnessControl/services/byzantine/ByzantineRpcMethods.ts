@@ -11,7 +11,7 @@ import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
+import type { Address, Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { SignatureUtils } from "@/utils/SignatureUtils";
 import type {
@@ -157,6 +157,30 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             originalBlockHash: originalBlock.hash,
             originalBlockHeight: originalBlock.height
         };
+    }
+
+    /**
+     * The next block on this peer's head, unsigned, as its next writer
+     * authors it (see {@link ByzantineService.craftNextBlock}). The caller
+     * signs it with the author's key.
+     */
+    public async craftNextBlock(
+        encodedData: Bytes
+    ): Promise<{ encodedBlock: string; author: Address }> {
+        return await this.service.craftNextBlock(encodedData);
+    }
+
+    /**
+     * Run a block confirmation through this peer's own block pipeline, the
+     * way a gossiped block arrives, without a transport source. Returns
+     * whether the pipeline keeps the (absent) sender connected.
+     */
+    public async ingestBlockConfirmation(
+        encodedBlockConfirmation: string
+    ): Promise<boolean> {
+        return await this.service.sm.blockIngestService.onBlockConfirmationStruct(
+            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
+        );
     }
 
     /**

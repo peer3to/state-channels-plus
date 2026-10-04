@@ -55,8 +55,8 @@ Disposal releases the executor logger through its normal public disposal method.
    send also funds proof checks and restoring the machine's state through its estimate
    ([DisputeManager](../../disputeManager/DisputeManager.ts.md)), and the local call gets no such
    addition. So a local predicate call can still run out of gas where the chain would run it; that
-   is a local revert, and the local-first caller falls back to the chain (decision 3), so the
-   consequence is an extra chain read, not a different answer. A local `stateTransition` that is
+   is a local failure, and the local-first caller propagates it as an error with no chain read and
+   no verdict (decision 3), so the consequence is a failed local decision, never a different answer. A local `stateTransition` that is
    refused or runs out of gas in its own frame is a local failure, not an invalid transition
    ([EvmDiamondStateMachine](../EvmDiamondStateMachine.ts.md) decision 4). The floor can exceed a dispute
    transaction's budget, so a local call can do more work than one dispute transaction may. The old
@@ -68,9 +68,18 @@ Disposal releases the executor logger through its normal public disposal method.
    exception starts with `LOCAL_EVM_EXECUTION_FAILED` from [evmErrorHandler](../../utils/evmErrorHandler.ts.md), followed by the
    decoded custom-error name when there is one, else the EVM's own exception (`out of gas`,
    `revert`, ...) ([#L180](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L180)); `isInvalidStateTransitionError` reads that reason. The local signer and the RPC
-   boundary keep that text when they wrap the error, so `isLocalEvmExecutionFailure` recognizes a mirror
-   revert wherever it surfaces, and a local-first read falls back to the chain only for it
+   boundary keep that text when they wrap the error, so the reason stays readable wherever it
+   surfaces. A local-first read never classifies the error: every local failure propagates
    ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
+4. **Every call starts on its own macrotask.** Deploy, canonical calls and simulations share one
+   [Mutex](../../utils/Mutex.ts.md) so a simulation's checkpoint/revert cannot overlap a canonical
+   write, and each locks it with `acquireAsMacroTask`
+   ([#L98](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L98),
+   [#L115](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L115),
+   [#L132](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L132)). Rationale: a
+   worker port delivers queued requests in one task; calls that each find the mutex free would
+   otherwise run back to back in that task and block the event loop for their summed time. The
+   order of calls and their results are unchanged.
 
 ## Inputs, outputs, state, and side effects
 
@@ -99,9 +108,9 @@ claims complete conformance for a requirement that depends on other files.
   requirement also covers deleting previous outbound messages and copying the input, as far as the
   chain's block gas limit lets a replay be sent. The rest of a dispute call (proof checks, state
   restoration) is not bounded by it, so a local predicate call can run out of gas where a chain
-  call funded by the sender's estimate runs; the local-revert fallback turns that into a chain
-  read, never an answer. A local state transition that is refused or runs out of gas in its own
-  frame is thrown as a local failure and never judged.
+  call funded by the sender's estimate runs; that out-of-gas is a fatal local failure, never an
+  answer. A local state transition that is refused or runs out of gas in its own frame is thrown
+  as a local failure and never judged.
 - **Residual (accepted):** the 0xffffff floor. When the chain's budgets are smaller, a Byzantine
   dispute can make an auditor spend up to about 16.7M gas of local work per evaluated call before
   the chain is asked — more than the chain would run for that call, but bounded and not under the
@@ -129,7 +138,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | ------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [`REQ-TIME-5-S9NQXK`](../../../../../specification/protocol-model/time.md#req-time-5-s9nqxk)                  | Covered               | **Here:** [source](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L170) stamps deploy, execute, and simulation calls from the injected clock; simulation rolls back its state writes. **Other files:** [Clock.ts](../../Clock.ts.md) (current clock and adjustment), [createContractExecutor.ts](createContractExecutor.ts.md) (clock/factory wiring), [ContractExecutorService.ts](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (worker-local clock derivation).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                       |
 | [`REQ-ENFSM-1-DKJCY2`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) | Covered               | **Here:** every call runs with `callGasLimit` ([#L169](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L169)), which [`localEvmCallGasLimit`](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L43) raises to at least twice the manager's replay gas, so a local transition gets its full budget after deleting previous outbound messages and copying its input, and classifies it as a funded on-chain replay does; a refusal or an out-of-gas of the call's own frame is a local failure, never a verdict. **Other files:** [EvmDiamondStateMachine](../EvmDiamondStateMachine.ts.md) and [evmErrorHandler](../../utils/evmErrorHandler.ts.md) turn such a failure into a thrown error; [P2pRuntimeHostRoot](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) reads the chain values and sets the limit; [AStateMachine](../../../contracts/V1/AStateMachine.sol.md) refuses an under-funded transition; [StateChannelManagerProxy](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) refuses to adjudicate one. | —                                                       |
-| [`REQ-MIRROR-4-H9C4YS`](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)         | Covered               | **Here:** [`localEvmCallGasLimit`](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L43) = max(0xffffff, dispute-execution budget, 2 × replay gas), applied to every `runCall` ([#L169](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L169)): the second requirement covers deleting previous outbound messages and copying the input, so a local transition is not refused where a funded chain replay runs it; the requirement is not a bound on the rest of a dispute call, so a local predicate out-of-gas is possible where the chain runs and is handled as a revert (fallback to the chain); the floor can exceed a dispute transaction's budget. **Other files:** [P2pRuntimeHostRoot](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (reads `getGasLimit` and `getStateTransitionReplayGas` once at start), [createContractExecutor](createContractExecutor.ts.md) and [ContractExecutorService](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (carry the limit to either placement).                   | Accepted residual: the 0xffffff floor (limits section). |
+| [`REQ-MIRROR-4-H9C4YS`](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)         | Covered               | **Here:** [`localEvmCallGasLimit`](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L43) = max(0xffffff, dispute-execution budget, 2 × replay gas), applied to every `runCall` ([#L169](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L169)): the second requirement covers deleting previous outbound messages and copying the input, so a local transition is not refused where a funded chain replay runs it; the requirement is not a bound on the rest of a dispute call, so a local predicate out-of-gas is possible where the chain runs and is a fatal local failure; the floor can exceed a dispute transaction's budget. **Other files:** [P2pRuntimeHostRoot](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md) (reads `getGasLimit` and `getStateTransitionReplayGas` once at start), [createContractExecutor](createContractExecutor.ts.md) and [ContractExecutorService](../../rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) (carry the limit to either placement).                                         | Accepted residual: the 0xffffff floor (limits section). |
 
 ## Component test obligations
 

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared math transition actions exercised by owning mapped test declarations
 import { Status } from "@/types";
+import type { ForkId } from "@/types/types";
 import { DetachedPromises } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import {
@@ -163,6 +164,28 @@ export class MathTransitionActions extends TransitionActions<
         return super.keepAuthoringUntil({
             ...options,
             txFn: options.txFn ?? ((contract) => contract.add(1))
+        });
+    }
+
+    /**
+     * Keep the listed peers authoring until `forkId` is disputed on chain: a
+     * pending joiner's force-join bound counts only blocks authored once its
+     * join has been on chain for agreementTime, so a fixed block count can
+     * land inside that grace.
+     */
+    async keepAuthoringUntilForkDisputed(options: {
+        forkId: ForkId;
+        waitForPeers: number[];
+        maximumBlocks?: number;
+    }): Promise<number> {
+        return this.keepAuthoringUntil({
+            until: () =>
+                this.harness.channelManager.isForkDisputed(
+                    this.harness.channelId,
+                    options.forkId
+                ),
+            waitForPeers: options.waitForPeers,
+            maximumBlocks: options.maximumBlocks ?? 20
         });
     }
 

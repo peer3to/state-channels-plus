@@ -242,6 +242,22 @@ export class RpcStubActions<
                 .request();
     }
 
+    /** Holds the peer's ChannelOpened handling; the returned release lets it run. */
+    async holdChannelOpenedHandler(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdChannelOpenedHandler()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseChannelOpenedHandler()
+                .request();
+    }
+
     async failNextMatchedNegotiation(peerIndex: number): Promise<void> {
         await this.harness
             .control(this.harness.getPeer(peerIndex))
@@ -473,16 +489,16 @@ export class RpcStubActions<
              */
             passFirst?: boolean;
         } = {}
-    ): Promise<(replay: boolean) => Promise<void>> {
+    ): Promise<() => Promise<void>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
             .stub.stubHoldDisputeCommittedEvents(options.passFirst ?? true)
             .request();
-        return async (replay: boolean) => {
+        return async () => {
             await this.harness
                 .control(peer)
-                .stub.restoreDisputeCommittedEvents(replay)
+                .stub.restoreDisputeCommittedEvents()
                 .request();
         };
     }
@@ -688,7 +704,8 @@ export class RpcStubActions<
      *
      * This disables the handler, so on-demand inbound recovery cannot heal it
      * either - recovery re-dispatches the log into the same held handler. Use
-     * it to stage the abstain; use `dropInboundMessageLogs` to stage recovery.
+     * it to stage an unrecoverable gap; use `dropInboundMessageLogs` to stage
+     * recovery.
      */
     async holdInboundMessageEvents(peerIndex: number): Promise<{
         /** Chain events held so far. */
@@ -708,6 +725,51 @@ export class RpcStubActions<
                 const { replay = true } = options;
                 await ctl().restoreInboundMessageEvents(replay).request();
             }
+        };
+    }
+
+    /**
+     * Hold the peer's next chain membership read until `release`. With
+     * `atBlockNumber`, it is answered from the chain state at that block: a
+     * read that started before a join landed returns after it. With `fail`,
+     * the released read rejects.
+     */
+    async holdChainMembershipRead(
+        peerIndex: number,
+        options: { atBlockNumber?: number; fail?: boolean } = {}
+    ): Promise<{
+        /** Reads parked so far. */
+        heldCount: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl()
+            .holdChainMembershipRead(
+                options.atBlockNumber ?? null,
+                options.fail ?? false
+            )
+            .request();
+        return {
+            heldCount: async () =>
+                await ctl().getHeldChainMembershipReadCount().request(),
+            release: async () => {
+                await ctl().releaseChainMembershipRead().request();
+            }
+        };
+    }
+
+    /**
+     * The peer's force-join check reads a dispute window on its fork whose
+     * evidence period has ended, so a due force join is refused. Returns a
+     * teardown.
+     */
+    async answerExpiredLocalDisputeWindow(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubAnswerExpiredLocalDisputeWindow().request();
+        return async () => {
+            await ctl().restoreDisputeWindowTimestampRead().request();
         };
     }
 
@@ -787,6 +849,8 @@ export class RpcStubActions<
                         (await ctl.getBlockWorkHoldEntered().request()) > 0,
                     this.harness.event.protocolEventTimeoutMs()
                 ),
+            /** Calls that reached the hold so far. */
+            entered: () => ctl.getBlockWorkHoldEntered().request(),
             release: () => ctl.releaseBlockWorkHold().request()
         };
     }

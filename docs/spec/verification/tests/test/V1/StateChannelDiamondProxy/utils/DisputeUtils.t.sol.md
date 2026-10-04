@@ -10,16 +10,16 @@
 
 ## Overview
 
-A minimal Foundry unit suite calling the free function
-`_getUnfinalizedBlockConfirmationsFromStateProof` directly (file-level import of
-`DisputeUtils.sol`; no diamond, no storage). Inputs are synthetic `StateProof`s whose last
-milestone carries `n` empty block confirmations; the oracle is the returned array length: an empty
-last milestone yields an empty result, `n` confirmations yield `n − 1` (the first, finalized block
-is skipped), and a fuzz over `uint8 n` pins the exact `max(0, n − 1)` formula while proving the
-walk never reverts. Confirmation contents, signatures, and the callers that consume the
-unfinalized suffix are out of scope. The DisputeUtils source report declares no component test
-obligations, and no specification permutation is fully demonstrated by these length-only checks,
-so all rows stay unassigned.
+A minimal Foundry unit suite that calls `DisputeUtils.sol` free functions directly (file-level
+import; no diamond, no storage). The `_hasDisputeReason` cases build a `DisputeInput` and a
+snapshot by hand and assert the boolean: no evidence is no reason; `requireExistingDisputeWindow`
+alone is a reason; a timeout, a self-removal or a forced inbound height each count without the
+flag; and on-chain slashes count only when every slashed address is in the snapshot's participant
+set. The `_getLatestSignedBlock` cases check the dispute's latest claimed block: an empty proof has
+no block (it denotes the fork genesis), and a fuzz over `uint8 n` builds an earlier one-block
+milestone plus a last milestone of `n` blocks and asserts that the call never reverts, has a block
+unless `n` is 0, and returns the last milestone's last block. Signatures and the callers that use
+the latest block are out of scope.
 
 ## Tests and covered test IDs
 
@@ -31,6 +31,5 @@ so all rows stay unassigned.
 | [`test_reason_selfRemovalStillCountsWhenFlagFalse`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L27) (line 27)   | [`REQ-DISPUTE-PIPE-9-TDWQPV.T1.P4`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv.t1.p4), [`UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P4`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md#unit-test-dispute-utils-1-30fxam.p4) |
 | [`test_reason_forcedInboundStillCountsWhenFlagFalse`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L34) (line 34) | [`REQ-DISPUTE-PIPE-9-TDWQPV.T1.P5`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv.t1.p5), [`UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P5`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md#unit-test-dispute-utils-1-30fxam.p5) |
 | [`test_reason_falseRequiresEverySlashToBeEligible`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L41) (line 41)   | [`REQ-DISPUTE-PIPE-9-TDWQPV.T1.P6`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv.t1.p6), [`UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P6`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md#unit-test-dispute-utils-1-30fxam.p6) |
-| [`test_unfinalized_emptyLastMilestone_returnsEmpty`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L60) (line 60)  | —                                                                                                                                                                                                                                                                                                                         |
-| [`test_unfinalized_skipsFirstFinalizedBlock`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L66) (line 66)         | —                                                                                                                                                                                                                                                                                                                         |
-| [`testFuzz_unfinalized_neverReverts`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L72) (line 72)                 | —                                                                                                                                                                                                                                                                                                                         |
+| [`test_latestSignedBlock_emptyProof_hasNoBlock`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L65) (line 65)      | [`UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P7`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md#unit-test-dispute-utils-1-30fxam.p7)                                                                                                                                      |
+| [`testFuzz_latestSignedBlock_neverReverts`](../../../../../../../../test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol#L71) (line 71)           | [`UNIT-TEST-DISPUTE-UTILS-1-30FXAM.P8`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md#unit-test-dispute-utils-1-30fxam.p8)                                                                                                                                      |

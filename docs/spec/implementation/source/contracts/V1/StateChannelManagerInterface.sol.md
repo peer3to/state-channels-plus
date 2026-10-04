@@ -62,13 +62,27 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
    ([#L90](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L90)) is new: the gas the
    replay call chain needs so the replayed transition gets its full stipend
    ([UtilityFacet](./StateChannelDiamondProxy/UtilityFacet.sol.md) decision 7).
+   The StateProofFacet block ([#L252](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L252)) declares the walk entries:
+   `getAnchorSnapshot` ([#L265](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L265)), `isBlockChallengeEligible(dispute, blockIndex)` ([#L271](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L271)),
+   `isStateProofLinked` ([#L273](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L273)),
+   `isInvalidBlockStructureInStateProof(stateProof, blockIndex)` over the last milestone ([#L280](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L280)),
+   `findFirstInvalidBlockStructureInStateProof` returning `(found, blockIndex)`
+   ([#L286](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L286)), and `verifyMilestones(ProofWalkInput) → ProofWalkResult` ([#L292](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L292)),
+   all `view`. The SDK prover, the auditor and spectator sync read the anchor, the block-challenge bound and the one walk
+   through this type, so the contract stays the one owner of those choices
+   ([`REQ-SP-8-9PK9TS`](../../../../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts);
+   [StateProofFacet](./StateChannelDiamondProxy/StateProofFacet.sol.md) and
+   [StateChannelCommon](./StateChannelDiamondProxy/StateChannelCommon.sol.md) own their semantics). The former
+   signed-block linkage, anchor, base and skip-index declarations are deleted with their functions.
+   `LocalDiamond.verifyMilestonesFromTrustedStart` is deliberately not declared here: production
+   callers bind this type, and a trusted start is local only ([LocalDiamond](./StateChannelDiamondProxy/LocalDiamond.sol.md)).
 3. **Each declaration repeats the implementing function's state mutability, not the forwarder's.**
    The old proxy forwarder bodies were `nonpayable` even when the facet function reads nothing, and
    those mutabilities were carried over verbatim when the declarations moved here. They are now
    corrected against the owning facet: `reduce`, `hasInvalidTimestamp`, `isDisputeInboundHashValid`,
-   `isCorrectLatestState`, `areSignedBlocksLinkedAndVerified`,
+   `isCorrectLatestState`,
    `isInvalidBlockStructureInStateProof` and `findFirstInvalidBlockStructureInStateProof` became
-   `view`; `hasStateProofHeaderMismatch` became `pure`; and
+   `view` (the later entries `getAnchorSnapshot`, `isBlockChallengeEligible`, `isStateProofLinked` and `verifyMilestones` are `view` too); `hasStateProofHeaderMismatch` is `view` (it decodes each block through `UtilityFacet.tryDecodeBlock`, [#L219](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L219)); and
    `isGenesisSnapshotWithoutTimeCheck`/`isSnapshotNewer` moved from `view` to `pure`. This is not
    cosmetic: mutability is what decides whether ethers sends an `eth_call` or a transaction, so a
    `nonpayable` declaration of a read-only facet function costs the caller a transaction and returns

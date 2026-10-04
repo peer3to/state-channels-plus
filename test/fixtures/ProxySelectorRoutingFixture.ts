@@ -40,14 +40,10 @@ const notRoutedByFacet: Record<
     Record<FacetFunctionName, ExclusionReason>
 > = {
     DisputeVerificationFacet: {
-        checkDisputeAuditingDataCommitment:
-            "internal verification step - reached by facets and LocalDiamond, never through the proxy",
         computeDisputeOutputSnapshotData:
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
         computeDisputeOutputState:
             "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
-        generateDisputeOutputState:
-            "internal step of the dispute pipeline, not part of the diamond surface",
         isDisputeOutputCorrect:
             "dispute verification helper - LocalDiamond delegatecalls it with its own gas budget",
         killDispute:

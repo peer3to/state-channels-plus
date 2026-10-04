@@ -75,10 +75,10 @@ recoverable through the forced-inclusion dispute input
 ([`REQ-DIS-1-XAJ1VA`](disputes/disputes.md#req-dis-1-xaj1va), input 4); a failed join leaves the depositor with the
 dispute-forced path and refund/exit behavior defined by settlement.
 
-**[`REQ-IX-4-BB35GC`](disputes/README.md#req-ix-4-bb35gc) — Proof material.** Block progression produces the material disputes consume: milestones,
-threshold-signed blocks, the signed non-final suffix, and posted calldata commitments. Validity: the
-material MUST satisfy the state-proof rules ([state-proofs.md](./disputes/state-proofs.md)) —
-finality anchors, membership hops, linkage — without dispute-side reinterpretation. Timing: material
+**[`REQ-IX-4-BB35GC`](disputes/README.md#req-ix-4-bb35gc) — Proof material.** Block progression produces the material disputes consume: milestones built from
+threshold-signed blocks, with the non-final tail inside the last milestone, and posted calldata
+commitments. Validity: the material MUST satisfy the state-proof rules ([state-proofs.md](./disputes/state-proofs.md)) —
+the walk start, finality anchors, membership hops, linkage — without dispute-side reinterpretation. Timing: material
 is admissible relative to the dispute window's chain-time bounds. Trust boundary: proof material is
 adversarial input to on-chain verification even when produced honestly. Failure: insufficient or
 invalid material yields a rejected or killed claim; it MUST NOT corrupt the audit of other claims

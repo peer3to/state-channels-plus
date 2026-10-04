@@ -26,6 +26,13 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [index.ts](./index.ts.md)
 - [keys.ts](./keys.ts.md)
 
+## Replay predecessor
+
+[QueueStorage](QueueStorage.ts.md) defines `BlockPredecessor` and the entry's optional `predecessor`;
+[Storage](Storage.ts.md) answers both reads of what a block is judged from: the stored history
+below its height (`getPreviousBlockAndSnapshot`) and a block's resulting snapshot and state by hash
+(`getPredecessor`).
+
 ## Queue admission contributions
 
 | Source report | Contribution | Requirements |

@@ -185,12 +185,15 @@ contract FraudProofFacet is StateChannelCommon {
                 newSnapshotData.latestInboundMessageBlockHeight = expectedInboundHeight;
                 newSnapshotData.latestInboundMessageBlockHash = keccak256(abi.encode(fraudBlock.messageBlocks[i]));
             }
-            (encodedModifiedState, newSnapshotData.totalDeposits) =
-                _applyInboundMessages(encodedModifiedState, fraudBlock.messageBlocks, newSnapshotData.totalDeposits);
+            // executeStateTransition left the transitioned state loaded in the state machine.
+            newSnapshotData.totalDeposits =
+                _processInboundMessages(encodedModifiedState, fraudBlock.messageBlocks, newSnapshotData.totalDeposits);
+            encodedModifiedState = stateMachineImplementation.getState();
         }
 
         newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
-        newSnapshotData.participants = _getStateMachineParticipants(encodedModifiedState);
+        // The state machine holds encodedModifiedState (transition plus inbound messages).
+        newSnapshotData.participants = stateMachineImplementation.getParticipants();
         newSnapshotData.originForkId = previousStateSnapshot.forkId;
 
         StateSnapshot memory newStateSnapshot = StateSnapshot({

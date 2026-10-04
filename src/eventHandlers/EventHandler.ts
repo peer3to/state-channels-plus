@@ -394,6 +394,19 @@ export class EventHandler {
             return;
         }
 
+        // Only participants and pending participants audit or follow a
+        // dispute: data availability is guaranteed to them. A non-participant
+        // aborts on every dispute event (new, final or expired).
+        const status = this.stateManager.status;
+        if (!isCommittedParticipantStatus(status)) {
+            this.logger.warn(
+                "Dispute observed as a non-participant: only participants handle disputes; aborting",
+                { channelId, forkId, status, isFinal, dispute: disputeMeta }
+            );
+            this.stateManager.abort();
+            return;
+        }
+
         this.stateManager.blockQueueManager.clearFork(forkId);
 
         const isFirstOccurrence =
@@ -489,18 +502,9 @@ export class EventHandler {
                             : undefined
                 };
             } catch (error) {
-                const status = this.stateManager.status;
-                if (!isCommittedParticipantStatus(status)) {
-                    this.logger.warn(
-                        "Unable to prepare final dispute genesis as a non-participant; aborting",
-                        { channelId, forkId, status, error }
-                    );
-                    this.stateManager.abort();
-                    return;
-                }
                 this.logger.error("Final dispute genesis preparation failed", {
                     forkId,
-                    status,
+                    status: this.stateManager.status,
                     error
                 });
                 throw error;
@@ -521,45 +525,26 @@ export class EventHandler {
                 channelId,
                 forkId
             );
+        // decisions only for the current fork, rechecked after each await
+        if (this.stateManager.forkId !== forkId) return;
         if (windowExists && isExpired) {
             // The kill period is over, so this dispute can no longer be
-            // challenged. Preserve all available data and reduce from it.
+            // challenged. Audit it in full anyway: the replay persists every
+            // block, snapshot and state the reduction reads.
             this.logger.warn(
                 "onDisputeCommited: Kill period EXPIRED! Unconditionally persisting the dispute!",
                 { dispute: disputeMeta }
             );
-            let persistableAuditingData = disputeAuditingData;
-            if (!persistableAuditingData) {
-                try {
-                    const derived =
-                        await this.stateManager.disputeManager.getAuditingData(
-                            forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    if (!derived.isPartial) {
-                        persistableAuditingData = derived.auditingData;
-                    } else {
-                        this.logger.warn(
-                            "Expired dispute proof data is partial; snapshots, state, or messages are unavailable",
-                            { dispute: disputeMeta }
-                        );
-                    }
-                } catch (error) {
-                    this.logger.warn(
-                        "Expired dispute auditing data is unavailable; persisting decodable committed blocks only",
-                        { dispute: disputeMeta, error }
-                    );
-                }
-            }
-            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
-                dispute,
-                persistableAuditingData,
-                { includeUnfinalizedBlocks: true }
-            );
+            const isValid =
+                await this.stateManager.disputeValidationService.validateDispute(
+                    dispute,
+                    disputeAuditingData
+                );
+            if (!isValid)
+                this.logger.warn(
+                    "Expired dispute is invalid, but can no longer be killed",
+                    { dispute: disputeMeta }
+                );
             await this.persistDisputeAndNotify(
                 channelId,
                 forkId,
@@ -578,8 +563,9 @@ export class EventHandler {
                 dispute,
                 disputeAuditingData
             );
-
         if (!isValid) {
+            // no old-fork evidence once the fork changed during the audit
+            if (this.stateManager.forkId !== forkId) return;
             const disputeFraudProof =
                 this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
                     dispute
@@ -638,7 +624,23 @@ export class EventHandler {
             // through and schedule from the commitment handled here. If this
             // call uploads a fresh commitment, its event can reschedule the
             // reduction with the later window end.
-            await this.stateManager.disputeManager.dispute(forkId);
+            try {
+                await this.stateManager.disputeManager.dispute(forkId);
+            } catch (error) {
+                // The evidence period closed before this upload landed: no
+                // evidence can join the window any more, so the intentional
+                // DisputeManager throw ends here and the reduction is still
+                // scheduled below.
+                if (
+                    tryDecodeCustomError(error)?.name !==
+                    "RaceConditionDisputeEvidencePeriodExpired"
+                )
+                    throw error;
+                this.logger.info(
+                    "More evidence refused: the evidence period expired",
+                    { forkId, channelId }
+                );
+            }
         }
 
         this.stateManager.reductionManager.schedule(

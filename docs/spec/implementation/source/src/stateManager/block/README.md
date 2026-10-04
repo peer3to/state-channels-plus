@@ -5,9 +5,14 @@
 ## Contents
 
 - [BlockCommitService.ts](./BlockCommitService.ts.md)
+- [BlockProductionService.ts](./BlockProductionService.ts.md)
+- [SnapshotAssemblyService.ts](./SnapshotAssemblyService.ts.md)
 
 This subsystem owns committed-block effects, including later cooperative promotion from
-`PENDING_PARTICIPANT` to `PARTICIPATING`.
+`PENDING_PARTICIPANT` to `PARTICIPATING`. A dispute replay commits blocks of the dispute's own chain:
+[SnapshotAssemblyService](SnapshotAssemblyService.ts.md) assembles them from the passed previous
+snapshot, and [BlockCommitService](BlockCommitService.ts.md) stores them without the status step,
+signing, gossip or follow-up work.
 
 ## Queue admission contributions
 

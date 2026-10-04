@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness entry point re-exporting test infrastructure; evidence belongs to its calling test declarations
 // Core types and interfaces
 export * from "./core/types";
 export * from "./core/testTimeConfig";
@@ -21,10 +22,7 @@ export {
     DisputeTampering,
     DisputeTamperingActions
 } from "./actions/DisputeTamperingActions";
-export {
-    expectMilestonesOnlyStateProof,
-    expectSignedBlocksOnlyStateProof
-} from "./actions/assert/expectDisputeInput";
+export { expectUnfinalTailStateProof } from "./actions/assert/expectDisputeInput";
 export { AssertActions } from "./actions/assert/AssertActions";
 export { ByzantineActions } from "./actions/ByzantineActions";
 export { RPCActions } from "./actions/RPCActions";

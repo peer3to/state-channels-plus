@@ -32,10 +32,6 @@ function _areBlocksSameChannel(Block memory _block1, Block memory _block2) pure 
     return _getBlockChannel(_block1) == _getBlockChannel(_block2);
 }
 
-function _doesBlockCommitToSnapshot(Block memory _block, StateSnapshot memory snapshot) pure returns (bool) {
-    return _block.stateSnapshotHash == keccak256(abi.encode(snapshot));
-}
-
 function _isBlockAuthorParticipant(
     Block memory _block,
     StateSnapshot memory previousSnapshot,

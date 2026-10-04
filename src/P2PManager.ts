@@ -294,13 +294,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.initialSyncStarted = true;
         this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
-        const success = await this.localRpc.spectateService.sync(
-            peerAddress,
-            stateManager.channelId,
-            undefined,
-            undefined,
-            stateManager.timeConfig.agreementTime * 2 * 1000
-        );
+        // a failed initial sync aborts, also when it throws
+        const success = await this.localRpc.spectateService
+            .sync(
+                peerAddress,
+                stateManager.channelId,
+                undefined,
+                undefined,
+                stateManager.timeConfig.agreementTime * 2 * 1000
+            )
+            .catch((error) => {
+                this.logger.warn("Initial sync failed", {
+                    peerAddress,
+                    error: errorMessage(error)
+                });
+                return false;
+            });
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.

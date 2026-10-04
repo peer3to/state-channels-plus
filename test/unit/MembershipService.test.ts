@@ -1,7 +1,9 @@
 import { hash as randomHash } from "../factory";
+import Clock from "@/Clock";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
-import { sleep } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
+import { assertLandedJoinStartsGrace } from "@test/fixtures/ForceJoinGraceStaging";
 import {
     assertSlashAdmission,
     assertSlashRefreshFailure
@@ -513,6 +515,242 @@ describe("Unit: MembershipService", function () {
             }
         });
 
+        it("arms a force-join deadline of one full turn window per pending turn once the joiner observes its own join", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const control = h.control(prepared.joiner);
+            const joiner = h.getPeer(prepared.joiner.index);
+            // Recorded only: the deadline itself is the E2E subject.
+            await control.stub
+                .stubRecordScheduledTasks("force join deadline")
+                .request();
+            try {
+                const submittedAt = Clock.getTimeInSeconds();
+                expect(
+                    await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(true);
+                const deadlineDelays = async () =>
+                    (
+                        await control.stub.getRecordedScheduledTasks().request()
+                    ).tasks
+                        .filter(
+                            (task) => task.taskName === "force join deadline"
+                        )
+                        .map((task) => task.delayMs);
+                await waitFor(
+                    async () => (await deadlineDelays()).length > 0,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const observedBy = Clock.getTimeInSeconds();
+                const { participantCount, timeConfig, countingStartsAt } =
+                    await h.execOnHost(joiner, async (sm) => ({
+                        participantCount: (
+                            await sm.diamondStateMachine.getParticipants()
+                        ).length,
+                        timeConfig: sm.timeConfig,
+                        countingStartsAt:
+                            sm.storage.forceJoin.getCountingStartsAt() ?? null
+                    }));
+
+                // Counting starts agreementTime after the joiner observed its
+                // join (one second of clock skew either side).
+                expect(countingStartsAt).to.be.within(
+                    submittedAt + timeConfig.agreementTime - 1,
+                    observedBy + timeConfig.agreementTime + 1
+                );
+                expect(await deadlineDelays()).to.deep.equal([
+                    (participantCount + 1) *
+                        (timeConfig.p2pTime +
+                            timeConfig.agreementTime +
+                            timeConfig.chainFallbackTime) *
+                        1000
+                ]);
+            } finally {
+                await control.stub.restoreRecordScheduledTasks().request();
+            }
+        });
+
+        it("starts no force-join timer while its join is not observed on chain", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const control = h.control(prepared.joiner);
+            const joiner = h.getPeer(prepared.joiner.index);
+            await control.stub.stubRecordScheduledTasks().request();
+            const releaseSubmission = await h.rpcStub.holdMembershipSubmission(
+                prepared.joiner.index,
+                "joinChannel"
+            );
+            try {
+                const join = prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                );
+                await waitFor(
+                    async () =>
+                        (await control.stub
+                            .getHeldMembershipReceiptCount()
+                            .request()) === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
+                // the founders keep authoring: blocks alone start nothing
+                await h.transition.advanceState({
+                    count: 4,
+                    waitForPeers: [0, 1, 2]
+                });
+
+                const { tasks } = await control.stub
+                    .getRecordedScheduledTasks()
+                    .request();
+                expect(
+                    tasks.filter(
+                        (task) => task.taskName === "force join deadline"
+                    )
+                ).to.deep.equal([]);
+                expect(
+                    await h.execOnHost(joiner, async (sm) => ({
+                        countingStartsAt:
+                            sm.storage.forceJoin.getCountingStartsAt() ?? null,
+                        boundFired: sm.storage.forceJoin.hasBoundFired()
+                    }))
+                ).to.deep.equal({
+                    countingStartsAt: null,
+                    boundFired: false
+                });
+                await releaseSubmission();
+                // The table moved on, so the released join may be refused.
+                await join;
+            } finally {
+                await releaseSubmission();
+                await control.stub.restoreRecordScheduledTasks().request();
+            }
+        });
+
+        it("re-arms a force-join deadline that chain state defers, without disputing", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const control = h.control(prepared.joiner);
+            const joiner = h.getPeer(prepared.joiner.index);
+            const deadlineMs = await h.execOnHost(
+                joiner,
+                async (sm) =>
+                    ((await sm.diamondStateMachine.getParticipants()).length +
+                        1) *
+                    (sm.timeConfig.p2pTime +
+                        sm.timeConfig.agreementTime +
+                        sm.timeConfig.chainFallbackTime) *
+                    1000
+            );
+            await control.stub.stubRecordScheduledTasks().request();
+            // the founders never include the join, and the joiner cannot read
+            // the dispute window, so every force-join start defers
+            const restores = await Promise.all(
+                [0, 1, 2].map((index) =>
+                    h.byzantine.stubPendingInboundInclusion(index)
+                )
+            );
+            await control.stub
+                .stubFailDisputeWindowTimestampRead(true)
+                .request();
+            try {
+                expect(
+                    await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(true);
+                const deadlines = async () =>
+                    (
+                        await control.stub.getRecordedScheduledTasks().request()
+                    ).tasks.filter(
+                        (task) => task.taskName === "force join deadline"
+                    ).length;
+                await h.transition.keepAuthoringUntil({
+                    until: async () => (await deadlines()) === 2,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 2 * Math.ceil(deadlineMs / 1000)
+                });
+
+                expect(
+                    await h.execOnHost(joiner, async (sm) =>
+                        sm.storage.forceJoin.hasBoundFired()
+                    )
+                ).to.equal(false);
+            } finally {
+                await control.stub
+                    .restoreDisputeWindowTimestampRead()
+                    .request();
+                await Promise.all(restores.map((restore) => restore()));
+                await control.stub.restoreRecordScheduledTasks().request();
+            }
+        });
+
+        it("a seated join clears every join-bound field and cancels the force-join deadline, so a later join starts fresh bounds", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const joiner = h.getPeer(prepared.joiner.index);
+            const joinBounds = () =>
+                h.execOnHost(joiner, async (sm) => {
+                    const forceJoin = sm.storage.forceJoin;
+                    return {
+                        submissionHeight:
+                            forceJoin.getJoinSubmissionBlockHeight() ?? null,
+                        authorizationDeadline:
+                            forceJoin.getJoinAuthorizationDeadline() ?? null,
+                        countingStartsAt:
+                            forceJoin.getCountingStartsAt() ?? null,
+                        countingFromHeight:
+                            forceJoin.getCountingFromHeight() ?? null,
+                        boundFired: forceJoin.hasBoundFired(),
+                        deadlineArmed:
+                            Reflect.get(
+                                sm.membershipService,
+                                "forceJoinDeadline"
+                            ) !== undefined
+                    };
+                });
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(true);
+            await waitFor(
+                async () => (await joinBounds()).deadlineArmed,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect((await joinBounds()).authorizationDeadline).to.equal(
+                Number(
+                    Codec.decode(
+                        prepared.confirmation.signedJoinChannel
+                            .encodedJoinChannel,
+                        Type.JoinChannel
+                    ).deadlineTimestamp
+                )
+            );
+
+            await h.transition.keepAuthoringUntilPeersStatus({
+                peerIndices: [joiner.index],
+                status: Status.PARTICIPATING,
+                waitForPeers: [0, 1, 2]
+            });
+
+            expect(await joinBounds()).to.deep.equal({
+                submissionHeight: null,
+                authorizationDeadline: null,
+                countingStartsAt: null,
+                countingFromHeight: null,
+                boundFired: false,
+                deadlineArmed: false
+            });
+        });
+
         it("rejects a duplicate first join while submission is pending", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
@@ -595,6 +833,14 @@ describe("Unit: MembershipService", function () {
                             undefined
                     )
                 ).to.equal(true);
+                // never confirmed on chain -> the block bound has no grace to start
+                expect(
+                    await h.execOnHost(
+                        h.getPeer(prepared.joiner.index),
+                        async (sm) =>
+                            sm.storage.forceJoin.getCountingStartsAt() ?? null
+                    )
+                ).to.equal(null);
                 expect(
                     await new TargetedChannelJoinFixture(h).isDisposed(
                         prepared.joiner
@@ -603,6 +849,20 @@ describe("Unit: MembershipService", function () {
             } finally {
                 await restore();
             }
+        });
+
+        it("a join that landed before an uncertain outcome still starts the force-join grace", async function () {
+            await assertLandedJoinStartsGrace(
+                TestSession.getHarness(),
+                "uncertain"
+            );
+        });
+
+        it("a join that landed before an already-exists outcome still starts the force-join grace", async function () {
+            await assertLandedJoinStartsGrace(
+                TestSession.getHarness(),
+                "alreadyExists"
+            );
         });
 
         it("direct joinChannel revert after pending preserves the channel", async function () {
@@ -707,6 +967,112 @@ describe("Unit: MembershipService", function () {
         });
     });
 
+    // the runtime's own join, read through the real signer
+    describe("getOwnJoinState", function () {
+        it("a synced spectator with no join submitted → none", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+
+            expect(
+                await prepared.joiner.p2pInstance.p2pSigner.getOwnJoinState()
+            ).to.deep.equal({ state: "none" });
+        });
+
+        it("an uncertain join that never reaches the chain → open until the chain is past its authorization deadline, then expired", async function () {
+            const h = TestSession.getHarness();
+            const joinAuthorizationSeconds = 3;
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+                joinAuthorizationSeconds
+            });
+            const signer = prepared.joiner.p2pInstance.p2pSigner;
+            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+                prepared.joiner.index,
+                "joinChannel"
+            );
+            try {
+                expect(
+                    await signer.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(false);
+
+                // the remaining time is counted on the joiner's own clock (its
+                // own chain-time adjustment), so bound it by that clock read
+                // just before and just after the state
+                const joinerQuery = h.control(prepared.joiner).query;
+                const clockBefore = await joinerQuery
+                    .getClockTimeInSeconds()
+                    .request();
+                const open = await signer.getOwnJoinState();
+                const clockAfter = await joinerQuery
+                    .getClockTimeInSeconds()
+                    .request();
+                expect(open.state).to.equal("open");
+                expect(
+                    open.state === "open" ? open.secondsUntilExpiry : 0
+                ).to.be.within(
+                    Math.max(prepared.joinDeadline! + 1 - clockAfter, 1),
+                    Math.max(prepared.joinDeadline! + 1 - clockBefore, 1)
+                );
+
+                await h.scenario.chainBlockPastWait(prepared.joinDeadline!);
+                expect(await signer.getOwnJoinState()).to.deep.equal({
+                    state: "expired"
+                });
+                // a read only: the runtime stays pending
+                expect(
+                    await h.control(prepared.joiner).query.getStatus().request()
+                ).to.equal(Status.PENDING_PARTICIPANT);
+            } finally {
+                await restore();
+            }
+        });
+
+        it("a join that landed before an uncertain outcome → landed", async function () {
+            const h = TestSession.getHarness();
+            const joinerIndex = await assertLandedJoinStartsGrace(
+                h,
+                "uncertain"
+            );
+
+            expect(
+                await h
+                    .getPeer(joinerIndex)
+                    .p2pInstance.p2pSigner.getOwnJoinState()
+            ).to.deep.equal({ state: "landed" });
+        });
+
+        it("a join whose receipt failed → none, back to SYNCED", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const signer = prepared.joiner.p2pInstance.p2pSigner;
+            const restore = await h.rpcStub.failMembershipReceipt(
+                prepared.joiner.index,
+                "joinChannel"
+            );
+            try {
+                expect(
+                    await signer.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(false);
+
+                expect(await signer.getOwnJoinState()).to.deep.equal({
+                    state: "none"
+                });
+                expect(
+                    await h.control(prepared.joiner).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await restore();
+            }
+        });
+    });
+
     describe("topUpBalance", function () {
         it("a synced non-participant tops up → rejected on status", async function () {
             const h = TestSession.getHarness();
@@ -772,7 +1138,7 @@ describe("Unit: MembershipService", function () {
             await recorder.restore();
         });
 
-        it("defers force join until on-chain membership and a usable dispute window", async function () {
+        it("defers force join while its join is not on chain and starts it once listed with no open dispute window", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin(1);
             const joiner = h.getPeer(prepared.joiner.index);
@@ -805,20 +1171,23 @@ describe("Unit: MembershipService", function () {
                     sm.storage.forceJoin.setJoinSubmissionBlockHeight(
                         block.height - participants.length - 1
                     );
+                    sm.storage.forceJoin.setCountingStartsAt(0);
+                    sm.storage.forceJoin.setCountingFromHeight(
+                        block.height - participants.length - 1
+                    );
                     await sm.membershipService.maybeInitiateForceJoinDispute(
                         block,
                         participants
                     );
                     return {
-                        disputeStarted:
-                            sm.storage.forceJoin.hasDisputeStarted(),
+                        boundFired: sm.storage.forceJoin.hasBoundFired(),
                         markerRetained:
                             sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
                             undefined
                     };
                 });
                 expect(absentResult).to.deep.equal({
-                    disputeStarted: false,
+                    boundFired: false,
                     markerRetained: true
                 });
                 expect(await recorder.submissions()).to.have.length(0);
@@ -831,64 +1200,6 @@ describe("Unit: MembershipService", function () {
                         .query.getOnChainParticipantUnion()
                         .request({ timeoutMs: h.event.hostExecTimeoutMs() })
                 ).to.include(prepared.joiner.address);
-
-                const latestChainBlock = await h.provider.getBlock("latest");
-                expect(latestChainBlock).to.not.equal(null);
-                const evidenceTime = await h.execOnHost(
-                    joiner,
-                    async (sm) => sm.timeConfig.evidenceTime
-                );
-                const expiredWindowTimestamp = Math.max(
-                    1,
-                    latestChainBlock!.timestamp - evidenceTime
-                );
-                const expiredResult = await h.execOnHost(
-                    joiner,
-                    async (sm, args) => {
-                        const getWindow =
-                            sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp.bind(
-                                sm.diamondStateMachine.localDiamondContract
-                            );
-                        Reflect.set(
-                            sm.diamondStateMachine.localDiamondContract,
-                            "getDisputeWindowCreationTimestamp",
-                            async () => BigInt(args.windowTimestamp)
-                        );
-                        try {
-                            const block = sm.storage.blocks.getLatestBlock(
-                                sm.forkId
-                            )!;
-                            const participants =
-                                await sm.diamondStateMachine.getParticipants();
-                            sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                                block.height - participants.length - 1
-                            );
-                            await sm.membershipService.maybeInitiateForceJoinDispute(
-                                block,
-                                participants
-                            );
-                            return {
-                                disputeStarted:
-                                    sm.storage.forceJoin.hasDisputeStarted(),
-                                markerRetained:
-                                    sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                                    undefined
-                            };
-                        } finally {
-                            Reflect.set(
-                                sm.diamondStateMachine.localDiamondContract,
-                                "getDisputeWindowCreationTimestamp",
-                                getWindow
-                            );
-                        }
-                    },
-                    { windowTimestamp: expiredWindowTimestamp }
-                );
-                expect(expiredResult).to.deep.equal({
-                    disputeStarted: false,
-                    markerRetained: true
-                });
-                expect(await recorder.submissions()).to.have.length(0);
 
                 await h.execOnHost(joiner, async (sm) => {
                     const getWindow =
@@ -906,6 +1217,11 @@ describe("Unit: MembershipService", function () {
                         )!;
                         const participants =
                             await sm.diamondStateMachine.getParticipants();
+                        // The landed join's grace has passed.
+                        sm.storage.forceJoin.setCountingStartsAt(0);
+                        sm.storage.forceJoin.setCountingFromHeight(
+                            block.height - participants.length - 1
+                        );
                         await sm.membershipService.maybeInitiateForceJoinDispute(
                             block,
                             participants
@@ -934,7 +1250,96 @@ describe("Unit: MembershipService", function () {
             }
         });
 
-        it("fires exactly at joinSubmissionHeight + participants + 1", async function () {
+        it("an expired dispute evidence window refuses the force join and ends both bounds with no retry", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(1);
+            const joiner = h.getPeer(prepared.joiner.index);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                joiner.index
+            );
+            try {
+                expect(
+                    await joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(true);
+                // the joiner observed its join: both bounds are armed
+                await waitFor(
+                    async () =>
+                        await h.execOnHost(
+                            joiner,
+                            async (sm) =>
+                                Reflect.get(
+                                    sm.membershipService,
+                                    "forceJoinDeadline"
+                                ) !== undefined
+                        ),
+                    h.event.protocolEventTimeoutMs()
+                );
+                // the fork's window has an ended evidence period
+                const restoreWindow =
+                    await h.rpcStub.answerExpiredLocalDisputeWindow(
+                        joiner.index
+                    );
+                let result;
+                try {
+                    result = await h.execOnHost(joiner, async (sm) => {
+                        const block = sm.storage.blocks.getLatestBlock(
+                            sm.forkId
+                        )!;
+                        const participants =
+                            await sm.diamondStateMachine.getParticipants();
+                        const forceJoin = sm.storage.forceJoin;
+                        // the block bound is due on this block
+                        forceJoin.setCountingStartsAt(0);
+                        forceJoin.setCountingFromHeight(
+                            block.height - participants.length - 1
+                        );
+                        await sm.membershipService.maybeInitiateForceJoinDispute(
+                            block,
+                            participants
+                        );
+                        return {
+                            boundFired: forceJoin.hasBoundFired(),
+                            deadlineArmed:
+                                Reflect.get(
+                                    sm.membershipService,
+                                    "forceJoinDeadline"
+                                ) !== undefined,
+                            markerRetained:
+                                forceJoin.getJoinSubmissionBlockHeight() !==
+                                undefined
+                        };
+                    });
+                } finally {
+                    await restoreWindow();
+                }
+                // no window any more: the spent bound still starts nothing
+                await h.execOnHost(joiner, async (sm) => {
+                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
+                    await sm.membershipService.maybeInitiateForceJoinDispute(
+                        block,
+                        await sm.diamondStateMachine.getParticipants()
+                    );
+                });
+
+                expect(result).to.deep.equal({
+                    boundFired: true,
+                    deadlineArmed: false,
+                    markerRetained: true
+                });
+                expect(await recorder.submissions()).to.have.length(0);
+                expect(
+                    await h.control(joiner).query.getStatus().request()
+                ).to.equal(Status.PENDING_PARTICIPANT);
+            } finally {
+                await recorder.restore();
+            }
+        });
+
+        it("fires exactly at the counting start height + participants + 1", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
             await h.transition.advanceState({ count: 5 });
@@ -950,7 +1355,9 @@ describe("Unit: MembershipService", function () {
                         await sm.diamondStateMachine.getParticipants();
                     const triggerOffset = participants.length + 1;
 
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
+                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(0);
+                    sm.storage.forceJoin.setCountingStartsAt(0);
+                    sm.storage.forceJoin.setCountingFromHeight(
                         block.height - triggerOffset + 1
                     );
                     await sm.membershipService.maybeInitiateForceJoinDispute(
@@ -958,9 +1365,9 @@ describe("Unit: MembershipService", function () {
                         participants
                     );
                     const startedOneBlockEarly =
-                        sm.storage.forceJoin.hasDisputeStarted();
+                        sm.storage.forceJoin.hasBoundFired();
 
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
+                    sm.storage.forceJoin.setCountingFromHeight(
                         block.height - triggerOffset
                     );
                     await sm.membershipService.maybeInitiateForceJoinDispute(
@@ -972,8 +1379,7 @@ describe("Unit: MembershipService", function () {
                         blockHeight: block.height,
                         participantCount: participants.length,
                         startedOneBlockEarly,
-                        startedAtThreshold:
-                            sm.storage.forceJoin.hasDisputeStarted()
+                        startedAtThreshold: sm.storage.forceJoin.hasBoundFired()
                     };
                 });
 
@@ -987,6 +1393,130 @@ describe("Unit: MembershipService", function () {
                     h.event.protocolEventTimeoutMs()
                 );
                 expect(await recorder.submissions()).to.have.length(1);
+            } finally {
+                await recorder.restore();
+            }
+        });
+
+        it("counts no block during the agreementTime grace and then counts from the first block after it", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            await h.transition.advanceState({ count: 5 });
+
+            const observer = h.getPeer(0);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const result = await h.execOnHost(observer, async (sm) => {
+                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
+                    const participants =
+                        await sm.diamondStateMachine.getParticipants();
+                    const forceJoin = sm.storage.forceJoin;
+                    // Submitted long ago, but the join only just landed.
+                    forceJoin.setJoinSubmissionBlockHeight(0);
+                    forceJoin.setCountingStartsAt(Number.MAX_SAFE_INTEGER);
+                    await sm.membershipService.maybeInitiateForceJoinDispute(
+                        block,
+                        participants
+                    );
+                    const duringGrace = {
+                        started: forceJoin.hasBoundFired(),
+                        countingFrom: forceJoin.getCountingFromHeight() ?? null
+                    };
+
+                    forceJoin.setCountingStartsAt(0);
+                    await sm.membershipService.maybeInitiateForceJoinDispute(
+                        block,
+                        participants
+                    );
+                    return {
+                        blockHeight: block.height,
+                        duringGrace,
+                        afterGrace: {
+                            started: forceJoin.hasBoundFired(),
+                            countingFrom:
+                                forceJoin.getCountingFromHeight() ?? null
+                        }
+                    };
+                });
+
+                expect(result.duringGrace).to.deep.equal({
+                    started: false,
+                    countingFrom: null
+                });
+                expect(result.afterGrace).to.deep.equal({
+                    started: false,
+                    countingFrom: result.blockHeight
+                });
+                expect(await recorder.submissions()).to.deep.equal([]);
+            } finally {
+                await recorder.restore();
+            }
+        });
+
+        it("counts a block by the joiner's own Clock at commit, not its timestamp: one authored a second before counting starts counts once the Clock is past the start", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            await h.transition.advanceState({ count: 2 });
+
+            const observer = h.getPeer(0);
+            const control = h.control(observer);
+            const recorder = await h.rpcStub.recordDisputeSubmissions(
+                observer.index
+            );
+            try {
+                const committed = await h.execOnHost(observer, async (sm) => {
+                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
+                    return {
+                        height: block.height,
+                        timestamp: block.timestamp
+                    };
+                });
+                // The author stamps a block one second past its own Clock
+                // (execution allowance), so wait on the joiner's own Clock
+                // until it is past the start one second after the stamp.
+                await waitFor(
+                    async () =>
+                        (await control.query
+                            .getClockTimeInSeconds()
+                            .request()) >
+                        committed.timestamp + 1
+                );
+                const result = await h.execOnHost(
+                    observer,
+                    async (sm, { height }) => {
+                        const block = sm.storage.blocks.getBlock(
+                            sm.forkId,
+                            height
+                        )!;
+                        const participants =
+                            await sm.diamondStateMachine.getParticipants();
+                        const forceJoin = sm.storage.forceJoin;
+                        forceJoin.setJoinSubmissionBlockHeight(0);
+                        forceJoin.setCountingStartsAt(block.timestamp + 1);
+                        await sm.membershipService.maybeInitiateForceJoinDispute(
+                            block,
+                            participants
+                        );
+                        return {
+                            blockHeight: block.height,
+                            countingFrom:
+                                forceJoin.getCountingFromHeight() ?? null,
+                            boundFired: forceJoin.hasBoundFired()
+                        };
+                    },
+                    { height: committed.height }
+                );
+
+                expect({
+                    countingFrom: result.countingFrom,
+                    boundFired: result.boundFired
+                }).to.deep.equal({
+                    countingFrom: result.blockHeight,
+                    boundFired: false
+                });
+                expect(await recorder.submissions()).to.deep.equal([]);
             } finally {
                 await recorder.restore();
             }

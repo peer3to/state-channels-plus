@@ -20,8 +20,7 @@ export const MilestoneProofEthersType = `tuple(
 )`;
 
 export const StateProofEthersType = `tuple(
-    ${MilestoneProofEthersType}[] milestones,
-    ${SignedBlockEthersType}[] signedBlocks
+    ${MilestoneProofEthersType}[] milestones
 )`;
 
 export const FraudProofEthersType = `tuple(
@@ -213,16 +212,20 @@ export const TimeoutTooEarlyProofEthersType = `tuple(
 
 export const DisputeInvalidBlockInStateProofApplyFraudProofEthersType = `tuple(
     ${FraudProofEthersType} fraudProof,
-    uint256 blockIndexInUnfinalizedPartOfStateProof
+    uint256 blockIndex
 )`;
 
 export const DisputeBlockAuthorNotParticipantProofEthersType = `tuple(
-    uint256 blockIndexInUnfinalizedPartOfStateProof,
+    uint256 blockIndex,
     ${SignedBlockEthersType} previousBlock,
     ${StateSnapshotEthersType} previousStateSnapshot,
     ${StateSnapshotEthersType} resultingStateSnapshot
 )`;
 
 export const DisputeInvalidBlockStructureProofEthersType = `tuple(
-    uint256 blockIndexInUnfinalizedPartOfStateProof
+    uint256 blockIndex
+)`;
+
+export const DisputeStateProofBelowOnChainAnchorProofEthersType = `tuple(
+    bool __
 )`;

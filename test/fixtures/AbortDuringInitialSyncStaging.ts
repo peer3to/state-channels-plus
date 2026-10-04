@@ -12,6 +12,28 @@ import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 
+/** Keep `participants` authoring while `run` runs. */
+async function keepAuthoringWhile<TCustomRpc extends HarnessControlRpc, T>(
+    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    participants: number[],
+    run: () => Promise<T>
+): Promise<T> {
+    let finished = false;
+    const keepAlive = h.transition.keepAuthoringUntil({
+        until: () => finished,
+        waitForPeers: participants,
+        maximumBlocks: 40,
+        txFn: (contract) => contract.add(1)
+    });
+    void keepAlive.catch(() => undefined);
+    try {
+        return await run();
+    } finally {
+        finished = true;
+        await keepAlive;
+    }
+}
+
 /** Keep the participants authoring through a fresh observer's spawn and test body. */
 export async function withFreshInitialSyncObserver<
     TCustomRpc extends HarnessControlRpc
@@ -23,25 +45,90 @@ export async function withFreshInitialSyncObserver<
     await h.network.joinSelectedKey([0, 1], String(h.channelId));
     // A slow spawn must not leave the first writer idle long enough to
     // open a timeout dispute before the observer begins its initial sync.
-    let finished = false;
-    const keepAlive = h.transition.keepAuthoringUntil({
-        until: () => finished,
-        waitForPeers: [0, 1],
-        maximumBlocks: 40,
-        txFn: (contract) => contract.add(1)
-    });
-    void keepAlive.catch(() => undefined);
-    try {
+    await keepAuthoringWhile(h, [0, 1], async () => {
         const observerIndex = h.peers.length;
         await h.createPeer(
             observerIndex,
             h.signerFor(slotAccountIndex(observerIndex))
         );
         await run(h.getPeer(observerIndex));
+    });
+}
+
+/**
+ * Whether `observer`'s real initial load answers false and its runtime
+ * closes.
+ */
+async function initialLoadStops<TCustomRpc extends HarnessControlRpc>(
+    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    observer: Pick<TestPeer<TCustomRpc>, "p2pInstance">
+): Promise<boolean> {
+    const host = clientRootFor(observer.p2pInstance).p2pRuntimeHostRemoteRoot!;
+    const connected = await observer.p2pInstance.p2pSigner.connectToChannel(
+        h.channelId
+    );
+    await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
+    return connected === false && host.isClosed;
+}
+
+/**
+ * For each encoded payload, every participant serves it and a fresh
+ * spectator runs its real initial load while the participants keep
+ * authoring. Returns per case whether the spectator stopped.
+ */
+export async function freshSpectatorStopsOnEach<
+    TCustomRpc extends HarnessControlRpc,
+    T extends string
+>(
+    h: PeerTestHarness<TCustomRpc, MathStateMachine>,
+    encodedPayloads: Record<T, string>,
+    participantIndices: number[]
+): Promise<Record<T, boolean>> {
+    const stopped = {} as Record<T, boolean>;
+    try {
+        await keepAuthoringWhile(h, participantIndices, async () => {
+            for (const name of Object.keys(encodedPayloads) as T[]) {
+                for (const index of participantIndices)
+                    await h
+                        .control(h.getPeer(index))
+                        .stub.stubSpectatePayload(encodedPayloads[name])
+                        .request();
+                stopped[name] = await initialLoadStops(
+                    h,
+                    await h.join.createSpectatorPeer()
+                );
+            }
+        });
     } finally {
-        finished = true;
-        await keepAlive;
+        for (const index of participantIndices)
+            await h
+                .control(h.getPeer(index))
+                .stub.restoreSpectateStaleProof()
+                .request();
     }
+    return stopped;
+}
+
+/**
+ * Both participants hold their sync answers; a fresh spectator runs its real
+ * initial load. Returns whether it stopped.
+ */
+export async function freshSpectatorStopsOnSilence<
+    TCustomRpc extends HarnessControlRpc
+>(h: PeerTestHarness<TCustomRpc, MathStateMachine>): Promise<boolean> {
+    await h.setup(2, { autoConnect: false });
+    let stopped = false;
+    await withFreshInitialSyncObserver(h, async (observer) => {
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdSpectateResponses(index))
+        );
+        try {
+            stopped = await initialLoadStops(h, observer);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+        }
+    });
+    return stopped;
 }
 
 /**

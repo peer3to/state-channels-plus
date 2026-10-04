@@ -48,7 +48,6 @@ import type {
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
-import { ethers } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -205,83 +204,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         eventHandler.onBlockCalldataPosted =
             original as typeof eventHandler.onBlockCalldataPosted;
         this.service.stubOriginals.delete("calldataPosting");
-        return true;
-    }
-
-    /**
-     * The local diamond serves the unfinalized part of every state proof with
-     * its first confirmation's block bytes replaced by bytes that do not
-     * decode (appended when that part is empty), so the replay callers
-     * (dispute audit, spectate sync) hand them to onBlockConfirmationStruct.
-     * With `structureInvalid`, the structure predicate the dispute strategy
-     * asks also judges that block invalid.
-     */
-    public stubUndecodableUnfinalizedBlock(structureInvalid: boolean): boolean {
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        if (!this.service.stubOriginals.has("undecodableUnfinalizedBlock")) {
-            this.service.stubOriginals.set(
-                "undecodableUnfinalizedBlock",
-                localDiamond.getUnfinalizedBlockConfirmationsFromStateProof
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "undecodableUnfinalizedBlock"
-        ) as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
-        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof = (async (
-            ...args: Parameters<typeof original>
-        ) => {
-            const confirmations = (await original(...args)).map((bc) => ({
-                signedBlock: {
-                    encodedBlock: String(bc.signedBlock.encodedBlock),
-                    signature: String(bc.signedBlock.signature)
-                },
-                signatures: Array.from(bc.signatures, String)
-            }));
-            const undecodable = ethers.id("undecodable block");
-            if (confirmations.length === 0)
-                confirmations.push({
-                    signedBlock: { encodedBlock: undecodable, signature: "0x" },
-                    signatures: []
-                });
-            else confirmations[0].signedBlock.encodedBlock = undecodable;
-            return confirmations;
-        }) as unknown as typeof original;
-
-        if (
-            structureInvalid &&
-            !this.service.stubOriginals.has("invalidBlockStructurePredicate")
-        ) {
-            this.service.stubOriginals.set(
-                "invalidBlockStructurePredicate",
-                localDiamond.isInvalidBlockStructureInStateProof
-            );
-            localDiamond.isInvalidBlockStructureInStateProof = Object.assign(
-                async () => true,
-                { staticCall: async () => true }
-            ) as unknown as typeof localDiamond.isInvalidBlockStructureInStateProof;
-        }
-        return true;
-    }
-
-    public restoreUndecodableUnfinalizedBlock(): boolean {
-        const original = this.service.stubOriginals.get(
-            "undecodableUnfinalizedBlock"
-        );
-        if (original === undefined) return false;
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof =
-            original as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
-        this.service.stubOriginals.delete("undecodableUnfinalizedBlock");
-        const predicate = this.service.stubOriginals.get(
-            "invalidBlockStructurePredicate"
-        );
-        if (predicate !== undefined) {
-            localDiamond.isInvalidBlockStructureInStateProof =
-                predicate as typeof localDiamond.isInvalidBlockStructureInStateProof;
-            this.service.stubOriginals.delete("invalidBlockStructurePredicate");
-        }
         return true;
     }
 
@@ -1359,6 +1281,23 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdChainMembershipRead(
+        atBlockNumber: number | null,
+        fail: boolean
+    ): boolean {
+        this.service.holdChainMembershipRead(atBlockNumber, fail);
+        return true;
+    }
+
+    public getHeldChainMembershipReadCount(): number {
+        return this.service.getHeldChainMembershipReadCount();
+    }
+
+    public releaseChainMembershipRead(): boolean {
+        this.service.releaseChainMembershipRead();
+        return true;
+    }
+
     public holdSyncWindowPersistence(): boolean {
         this.service.holdSyncWindowPersistence();
         return true;
@@ -2237,10 +2176,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Park `constructDispute` for `forkId` at its `getStateProof` await - the
+     * Park `constructDispute` for `forkId` at its `buildStateProof` await - the
      * first async boundary inside it, so a construction parked there has
      * started but has not yet read the stored fraud proofs. The park is scoped
-     * to a running `constructDispute`, so an unrelated `getStateProof` caller
+     * to a running `constructDispute`, so an unrelated `buildStateProof` caller
      * can never take it instead and leave the test's race unstaged.
      */
     public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
@@ -2249,7 +2188,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
             this.service.stubOriginals.set(
                 "constructDisputeStateProof",
-                agreementManager.getStateProof.bind(agreementManager)
+                agreementManager.buildStateProof.bind(agreementManager)
             );
         }
         if (!this.service.stubOriginals.has("constructDisputeEntry")) {
@@ -2260,7 +2199,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
-        ) as typeof agreementManager.getStateProof;
+        ) as typeof agreementManager.buildStateProof;
         const originalConstruct = this.service.stubOriginals.get(
             "constructDisputeEntry"
         ) as typeof disputeManager.constructDispute;
@@ -2289,10 +2228,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             });
         }) as typeof disputeManager.constructDispute;
 
-        agreementManager.getStateProof = (async (
-            requestedForkId: ForkId,
-            blockHeight: number
+        agreementManager.buildStateProof = (async (
+            ...args: Parameters<typeof agreementManager.buildStateProof>
         ) => {
+            const [requestedForkId] = args;
             if (
                 state.inside &&
                 requestedForkId === state.targetForkId &&
@@ -2301,8 +2240,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 state.entered += 1;
                 await state.gate;
             }
-            return originalStateProof(requestedForkId, blockHeight);
-        }) as typeof agreementManager.getStateProof;
+            return originalStateProof(...args);
+        }) as typeof agreementManager.buildStateProof;
         return true;
     }
 
@@ -2329,8 +2268,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         );
         if (originalStateProof === undefined) return false;
         const agreementManager = this.service.sm.agreementManager;
-        agreementManager.getStateProof =
-            originalStateProof as typeof agreementManager.getStateProof;
+        agreementManager.buildStateProof =
+            originalStateProof as typeof agreementManager.buildStateProof;
         this.service.stubOriginals.delete("constructDisputeStateProof");
 
         const originalConstruct = this.service.stubOriginals.get(
@@ -2546,8 +2485,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /** Make the dispute-window creation timestamp read throw. */
-    public stubFailDisputeWindowTimestampRead(): boolean {
-        this.service.failDisputeWindowTimestampRead();
+    public stubFailDisputeWindowTimestampRead(local = false): boolean {
+        this.service.failDisputeWindowTimestampRead(local);
+        return true;
+    }
+
+    public stubAnswerExpiredLocalDisputeWindow(): boolean {
+        this.service.answerExpiredLocalDisputeWindow();
         return true;
     }
 
@@ -2606,7 +2550,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /** Restore scheduling. Dropped subscription payloads are recovered by query. */
-    public restoreDisputeCommittedEvents(replay: boolean): boolean {
+    public restoreDisputeCommittedEvents(): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
         const original = this.service.stubOriginals.get(
             "disputeCommittedEvents"
@@ -2618,7 +2562,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         this.service.heldDisputeCommittedArgs.splice(0);
         this.service.passedDisputeCommittedEventKeys.clear();
         this.service.passFirstDisputeCommittedEvent = true;
-        void replay;
         return true;
     }
 
@@ -2903,13 +2846,36 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldMatchedNegotiationCount();
     }
 
+    public holdChannelOpenedHandler(): boolean {
+        this.service.holdChannelOpenedHandler();
+        return true;
+    }
+
+    public releaseChannelOpenedHandler(): number {
+        return this.service.releaseChannelOpenedHandler();
+    }
+
+    public getHeldChannelOpenedCount(): number {
+        return this.service.getHeldChannelOpenedCount();
+    }
+
     public failNextMatchedNegotiation(): boolean {
         this.service.failNextMatchedNegotiation();
         return true;
     }
 
-    public holdSpectateResponses(fail = false): boolean {
-        this.service.holdSpectateResponses(fail);
+    public failNextLocalReduction(): boolean {
+        this.service.failNextLocalReduction();
+        return true;
+    }
+
+    public failNextBlockReplay(): boolean {
+        this.service.failNextBlockReplay();
+        return true;
+    }
+
+    public holdSpectateResponses(fail = false, beforePayload = false): boolean {
+        this.service.holdSpectateResponses(fail, beforePayload);
         return true;
     }
 
@@ -3046,6 +3012,14 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public failMembershipReceipt(kind: HeldMembershipReceiptKind): boolean {
         this.service.failMembershipReceipt(kind);
+        return true;
+    }
+
+    public landMembershipSubmissionThenFail(
+        kind: HeldMembershipReceiptKind,
+        failure: "uncertain" | "alreadyExists"
+    ): boolean {
+        this.service.landMembershipSubmissionThenFail(kind, failure);
         return true;
     }
 

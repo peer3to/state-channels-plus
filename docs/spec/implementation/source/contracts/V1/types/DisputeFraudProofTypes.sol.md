@@ -19,11 +19,22 @@
 
 ## Responsibility and observable boundary
 
-The 17 dispute fraud-proof families' enum + structs.
+The 19 dispute fraud-proof families' payload structs (the enum is in [ProofTypes.sol](./ProofTypes.sol.md)).
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Block-pointing payloads address the last milestone.** `DisputeInvalidBlockInStateProofApplyFraudProof`
+   ([#L92](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L92)), `DisputeInvalidBlockStructure` ([#L119](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L119)) and `DisputeBlockAuthorNotParticipant`
+   ([#L123](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L123)) name `blockIndex` of the last milestone of the submitted proof; they carry no milestone
+   index and no walk evidence ([#L90](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L90)). Why: only the last milestone can hold the submitter's unfinal
+   tail, and the chain bounds the index with `isBlockChallengeEligible`, which reads no walk
+   ([StateProofFacet](../StateChannelDiamondProxy/StateProofFacet.sol.md),
+   [DisputeFraudProofFacet](../StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md)).
+2. **The balance payload names the latest state.** `DisputeInvalidBalanceInvariant` ([#L49](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L49)) carries
+   only `latestStateSnapshot` and its machine state; the snapshot must be the dispute's latest state
+   ([#L48](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L48)), so no walk evidence is needed.
+3. **The below-anchor payload is empty.** `DisputeStateProofBelowOnChainAnchor` ([#L131](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L131)) is `{ bool __; }`:
+   the chain reads the on-chain snapshot itself, and a Solidity struct cannot be empty.
 
 ## Inputs, outputs, state, and side effects
 

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: real dispute audits staged for the post-audit evidence comparison
 import type { EvidenceComparisonFault } from "./customRpc/harnessControl/services/stub/node/EvidenceComparisonRecorder";
+import type { DisputeSubmissionFailureSpec } from "./customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { Address, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -88,12 +89,18 @@ const EVIDENCE_UPLOAD_FAILURE_MESSAGE = "stubbed evidence upload failure";
  * the other. The auditor asked to leave, so its own dispute adds a
  * self-removal the window lacks: its first comparison answers "more
  * evidence". That comparison is held until the auditor's upload is armed to
- * fail once (a send failure that is no custom error: the upload is simply
- * lost), then released. The second disputer's upload waits at its send until
+ * fail once with `uploadFailure` (by default a send failure that is no
+ * custom error: the upload is simply lost), then released. The second disputer's upload waits at its send until
  * the auditor's first audit completed, then lands. Returns right after that
  * release, with the failed first upload.
  */
-export async function stageEvidenceUploadRetry(h: MathPeerTestHarness) {
+export async function stageEvidenceUploadRetry(
+    h: MathPeerTestHarness,
+    uploadFailure: Pick<
+        DisputeSubmissionFailureSpec,
+        "customError" | "message"
+    > = { message: EVIDENCE_UPLOAD_FAILURE_MESSAGE }
+) {
     await h.scenario.preDisputeSetup({ peerCount: 4 });
     const offender = await h.query.getNextPeerToWrite();
     const [firstDisputerIndex, secondDisputerIndex, auditorIndex] = h.peers
@@ -124,11 +131,7 @@ export async function stageEvidenceUploadRetry(h: MathPeerTestHarness) {
         auditorIndex,
         {
             forward: true,
-            failWith: {
-                message: EVIDENCE_UPLOAD_FAILURE_MESSAGE,
-                at: "send",
-                times: 1
-            }
+            failWith: { ...uploadFailure, at: "send", times: 1 }
         }
     );
     await recorder.releaseHeld("forward");

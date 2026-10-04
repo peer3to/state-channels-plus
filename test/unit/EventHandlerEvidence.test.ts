@@ -147,6 +147,30 @@ describe("Unit: EventHandler evidence comparison", function () {
         await TestSession.settleDetached();
     });
 
+    it("an evidence upload refused because the evidence period expired is contained: the audit ends without a failure and the next audit uploads again", async function () {
+        const h = TestSession.getHarness();
+        const { auditorIndex, firstUploads, auditorUploads } =
+            await stageEvidenceUploadRetry(h, {
+                customError: "RaceConditionDisputeEvidencePeriodExpired"
+            });
+        const auditor = h.getPeer(auditorIndex);
+
+        // the first audit found more evidence; the chain refused its upload
+        expect(firstUploads).to.have.length(1);
+        expect(firstUploads[0]).to.include({ waited: false });
+
+        // the refusal rolled the marker back: the next audit uploads again
+        await waitFor(async () => {
+            const uploads = await auditorUploads.submissions();
+            return uploads.length === 2 && uploads[1].waited;
+        }, h.event.protocolEventTimeoutMs());
+        const own = await waitForCommittedDisputeOf(h, 0, auditor.address);
+        expect(own.input.selfRemoval).to.equal(true);
+
+        // the refused upload was contained: no audit failed
+        await TestSession.settleDetached();
+    });
+
     it("a comparison dropped by a kill cannot erase its replacement when it settles later", async function () {
         const h = TestSession.getHarness();
         const { auditorIndex, recorder } =

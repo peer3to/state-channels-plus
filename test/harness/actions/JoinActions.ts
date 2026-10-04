@@ -14,10 +14,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { TestPeer } from "@test/harness/core/types";
-import {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Signer } from "ethers";
 
 export type AddPeerOptions = {
@@ -317,11 +314,12 @@ export class JoinActions<
         return peer;
     }
 
+    /** Collects the founders' confirmation and submits the join; returns the SDK's join answer. */
     async joinChannelWait(params: {
         joiner: TestPeer<TCustomRpc>;
         channelId?: JoinChannelStruct["channelId"];
         jcOverrides?: Partial<JoinChannelStruct>;
-    }): Promise<JoinChannelConfirmationStruct> {
+    }): Promise<boolean> {
         const channelId = params.channelId ?? this.harness.channelId;
         const joinChannel = await this.buildJoinChannel(
             params.joiner,
@@ -332,12 +330,11 @@ export class JoinActions<
             await params.joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             );
-        await params.joiner.p2pInstance.p2pSigner.joinChannel(
+        return params.joiner.p2pInstance.p2pSigner.joinChannel(
             prepared.confirmation,
             prepared.expectedSnapshotHash,
             prepared.expectedForkId
         );
-        return prepared.confirmation;
     }
 
     async buildJoinChannelConfirmation(

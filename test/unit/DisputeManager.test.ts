@@ -1,10 +1,22 @@
+import StateSnapshot from "@/models/StateSnapshot";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
+import {
+    assertForkChangeStopsDecision,
+    assertOldFinalEventCompletesReduction,
+    assertOldNonfinalEventStartsNoAdjudication,
+    assertSameForkExpiredEventSchedulesReduction
+} from "@test/fixtures/CurrentForkDisputeStaging";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
+import {
+    stageAuditorBehindOnChainAnchor,
+    storedProofBlock,
+    submitPendingJoin
+} from "@test/fixtures/DisputeAuditStaging";
 import {
     assertDisputeRefreshPolicy,
     assertBackgroundDisputeFailure,
@@ -25,6 +37,15 @@ import {
     killTimeoutCalldataRefutationWithScaledEstimate,
     killWithScaledEstimate
 } from "@test/fixtures/ReplayGasLimitStaging";
+import {
+    auditPlainProof,
+    constructOverMismatchedHeadState,
+    constructRecordingChainProofReads,
+    deleteStoredBlocks,
+    stageExitAndPendingJoin,
+    stageLeftChannel,
+    stageSameForkStartAboveExit
+} from "@test/fixtures/StateProofConstructionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -147,6 +168,13 @@ describe("Unit: DisputeManager", function () {
                         );
                     return {
                         verified,
+                        finalizedState:
+                            auditingData.latestFinalizedStateStateMachineState,
+                        latestState:
+                            sm.storage.stateMachineStates.getStateMachineState(
+                                auditingData.latestStateSnapshot.snapshotData
+                                    .stateMachineStateHash as Hash
+                            ),
                         forkId: String(dispute.input.forkId),
                         channelId: String(dispute.input.channelId),
                         disputer: String(dispute.input.disputer),
@@ -163,6 +191,9 @@ describe("Unit: DisputeManager", function () {
             );
 
             expect(r.verified).to.equal(true);
+            // the walked finalized state is the final head's state
+            expect(r.finalizedState).to.equal(r.latestState);
+            expect(r.finalizedState).to.not.equal("0x");
             expect(r.forkId).to.equal(forkId);
             expect(r.channelId).to.equal(r.channelIdField);
             expect(r.disputer.toLowerCase()).to.equal(
@@ -207,8 +238,6 @@ describe("Unit: DisputeManager", function () {
                             ) - 1,
                         milestoneCount:
                             dispute.input.stateProof.milestones.length,
-                        signedBlockCount:
-                            dispute.input.stateProof.signedBlocks.length,
                         fraudProofCount: fraudProofsToApply.length,
                         latestStateSnapshotHash:
                             dispute.input.latestStateSnapshotHash,
@@ -241,7 +270,6 @@ describe("Unit: DisputeManager", function () {
             expect(r.latestBlockHeight).to.equal(-1);
             expect(r.verified).to.equal(true);
             expect(r.milestoneCount).to.equal(0);
-            expect(r.signedBlockCount).to.equal(0);
             expect(r.fraudProofCount).to.equal(0);
             // the head is genesis -> the dispute pins the genesis snapshot
             expect(r.latestStateSnapshotHash).to.equal(r.genesisHash);
@@ -417,7 +445,7 @@ describe("Unit: DisputeManager", function () {
 
         // the snapshot causes of `createDispute - isPartial auditingData` stay
         // unreachable from constructDispute: a missing milestone snapshot
-        // already throws inside getStateProof ("Milestone built but
+        // already throws inside buildStateProof ("Milestone built but
         // corresponding snapshot not found") and the head snapshot is required
         // by the "missing state snapshot" guard above it. the one reachable
         // cause is an inbound run the peer's own head sits above and recovery
@@ -496,24 +524,6 @@ describe("Unit: DisputeManager", function () {
             expect(r.offenderSlashed).to.equal(true);
         });
 
-        it("latest block final by everyone → postedAuditingData false", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3); // fully-signed latest -> final
-            const forkId = h.activeForkId!;
-
-            const r = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const { dispute } =
-                        await sm.disputeManager.constructDispute(args.forkId);
-                    return { postedAuditingData: dispute.postedAuditingData };
-                },
-                { forkId }
-            );
-
-            expect(r.postedAuditingData).to.equal(false);
-        });
-
         it("unfinalized inbound join at the head → postedAuditingData true (calldata needed)", async function () {
             const h = TestSession.getHarness();
             // a pending inbound join leaves the head not-final-by-everyone, so
@@ -567,6 +577,53 @@ describe("Unit: DisputeManager", function () {
                 nextWriter.toLowerCase()
             );
         });
+
+        it("a stored force exit → the dispute carries selfRemoval", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
+
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+
+            expect(dispute.input.selfRemoval).to.equal(true);
+        });
+
+        it("head state bytes not hashing to the head snapshot's state hash → constructDispute throws", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+
+            const r = await constructOverMismatchedHeadState(h, 0);
+
+            expect(r.statesDiffer).to.equal(true);
+            expect(r.error).to.contain(
+                "latestStateSnapshot.stateMachineStateHash !== hash(latestStateMachineState)"
+            );
+        });
+
+        it("one construction builds the proof once at the stored head and signs it with no chain proof read", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+
+            const r = await constructRecordingChainProofReads(h, 0);
+
+            expect(r.error).to.equal(null);
+            expect(r.latestHeight).to.equal(2);
+            expect(r.carriesHeadProof).to.equal(true);
+            expect(r.chainReads).to.deep.equal([]);
+        });
+
+        it("buildStateProof throws → constructDispute rejects with that error, builds once and signs nothing", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight, remaining } = await stageLeftChannel(h);
+            await deleteStoredBlocks(h, remaining[0], [changeHeight]);
+
+            const r = await constructRecordingChainProofReads(h, remaining[0]);
+
+            expect(r.error).to.match(
+                /missing the participant-change block at height 2/
+            );
+            expect(r.chainReads).to.deep.equal([]);
+        });
     });
 
     describe("getAuditingData", function () {
@@ -575,42 +632,6 @@ describe("Unit: DisputeManager", function () {
         // via constructDispute, or an audited dispute whose fork was
         // spectate-synced first); an unknown forkId is a pre-sync condition.
         it.skip("unknown forkId → genesisStateSnapshot not found (defensive)", function () {});
-
-        it("own fully-synced fork proof → not partial, one milestoneSnapshot per proof milestone", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
-            const forkId = h.activeForkId!;
-
-            const r = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const height =
-                        Number(
-                            sm.storage.blocks.getNextBlockHeight(args.forkId)
-                        ) - 1;
-                    const stateProof = await sm.agreementManager.getStateProof(
-                        args.forkId,
-                        height
-                    );
-                    const { isPartial, auditingData } =
-                        await sm.disputeManager.getAuditingData(
-                            args.forkId,
-                            stateProof
-                        );
-                    return {
-                        isPartial,
-                        milestoneSnapshotCount:
-                            auditingData.milestoneSnapshots.length,
-                        proofMilestoneCount: stateProof.milestones.length
-                    };
-                },
-                { forkId }
-            );
-
-            expect(r.isPartial).to.equal(false);
-            expect(r.proofMilestoneCount).to.be.greaterThan(0);
-            expect(r.milestoneSnapshotCount).to.equal(r.proofMilestoneCount);
-        });
 
         it("a peer fed a proof for blocks it never stored → isPartial true", async function () {
             const h = TestSession.getHarness();
@@ -643,6 +664,294 @@ describe("Unit: DisputeManager", function () {
             expect(behind.isPartial).to.equal(true);
             // control: the peer that authored the proof reconstructs it whole
             expect(synced.isPartial).to.equal(false);
+        });
+
+        it("a pending join above an unposted exit → exact snapshots, inbound bounds up to the pinned hash, outbound bounds from the start", async function () {
+            const h = TestSession.getHarness();
+            const { remaining } = await stageExitAndPendingJoin(h);
+            const peer = h.getPeer(remaining[0]);
+
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(peer.index);
+            const genesis = Codec.decode(
+                (await h
+                    .control(peer)
+                    .dispute.getGenesisSnapshotStruct(h.activeForkId!)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const latest = auditingData.latestStateSnapshot.snapshotData;
+            const messageHash = (
+                block: (typeof auditingData.inboundMessageBlocks)[number]
+            ) => hash(Codec.encode(block, Type.MessageBlock));
+
+            // snapshots: the fork genesis, the head, each milestone's first block
+            expect(auditingData.genesisStateSnapshotData).to.deep.equal(
+                genesis.snapshotData
+            );
+            expect(
+                StateSnapshot.from(auditingData.latestStateSnapshot).hash
+            ).to.equal(dispute.input.latestStateSnapshotHash);
+            expect(
+                auditingData.milestoneSnapshots.map(
+                    (snapshot) => StateSnapshot.from(snapshot).hash
+                )
+            ).to.deep.equal(
+                dispute.input.stateProof.milestones.map(
+                    (milestone) =>
+                        Codec.decode(
+                            milestone.blockConfirmations[0].signedBlock
+                                .encodedBlock,
+                            Type.Block
+                        ).stateSnapshotHash
+                )
+            );
+
+            // inbound: above the head's inbound tip, up to the pinned hash
+            const inbound = auditingData.inboundMessageBlocks;
+            expect(inbound.length).to.be.greaterThan(0);
+            expect(inbound[0].previousBlockHash).to.equal(
+                latest.latestInboundMessageBlockHash
+            );
+            expect(
+                inbound.slice(1).map((block) => block.previousBlockHash)
+            ).to.deep.equal(inbound.slice(0, -1).map(messageHash));
+            expect(messageHash(inbound.at(-1)!)).to.equal(
+                dispute.input.latestInboundMessageBlockHash
+            );
+
+            // outbound: above the proof start (the fork genesis), up to the
+            // head's outbound tip
+            const outbound = auditingData.outboundMessageBlocks;
+            expect(outbound.length).to.be.greaterThan(0);
+            expect(outbound[0].previousBlockHash).to.equal(
+                genesis.snapshotData.latestOutboundMessageBlockHash
+            );
+            expect(
+                outbound.slice(1).map((block) => block.previousBlockHash)
+            ).to.deep.equal(outbound.slice(0, -1).map(messageHash));
+            expect(messageHash(outbound.at(-1)!)).to.equal(
+                latest.latestOutboundMessageBlockHash
+            );
+        });
+
+        it("an empty proof → the fork genesis is the latest snapshot and there are no milestone snapshots", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(0);
+            const genesis = Codec.decode(
+                (await h
+                    .control(h.getPeer(0))
+                    .dispute.getGenesisSnapshotStruct(h.activeForkId!)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+
+            expect(dispute.input.stateProof.milestones).to.have.length(0);
+            expect(auditingData.milestoneSnapshots).to.have.length(0);
+            expect(
+                StateSnapshot.from(auditingData.latestStateSnapshot).hash
+            ).to.equal(StateSnapshot.from(genesis).hash);
+            expect(auditingData.outboundMessageBlocks).to.have.length(0);
+        });
+
+        it("a missing latest-state snapshot → isPartial, the genesis stands in", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3, {
+                timeConfig: { chainFallbackTime: 60 }
+            });
+            // peer 2 holds blocks 0..2; peer 0's head milestone [2, 3, 4]
+            // starts at a block it holds and ends at one it never received
+            await h.network.blacklistAndDisconnectPeer(2);
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            const stateProof = dispute.input.stateProof;
+
+            const behind = await auditPlainProof(h, 2, { stateProof });
+            const author = await auditPlainProof(h, 0, { stateProof });
+
+            expect(behind.milestones).to.deep.equal(
+                stateProof.milestones.map(() => ({
+                    held: true,
+                    isGenesis: false
+                }))
+            );
+            expect(behind.isPartial).to.equal(true);
+            expect(behind.latestIsGenesis).to.equal(true);
+            expect(author).to.include({
+                isPartial: false,
+                latestIsGenesis: false
+            });
+        });
+
+        it("a plain proof holding the chain's start while the mirror lags it → the state of the start the chain's walk ends at", async function () {
+            const h = TestSession.getHarness();
+            const { auditorIndex, anchorHeight } =
+                await stageAuditorBehindOnChainAnchor(h);
+            const forkId = h.activeForkId!;
+            const [previous, anchor, next] = await Promise.all(
+                [anchorHeight - 1, anchorHeight, anchorHeight + 1].map(
+                    (height) =>
+                        storedProofBlock(h, auditorIndex, forkId, height)
+                )
+            );
+            // premise: the run's first block and the chain's start differ
+            expect(previous.state).to.not.equal(anchor.state);
+
+            const r = await auditPlainProof(h, auditorIndex, {
+                stateProof: {
+                    milestones: [
+                        {
+                            blockConfirmations: [
+                                previous.confirmation,
+                                anchor.confirmation,
+                                next.confirmation
+                            ]
+                        }
+                    ]
+                }
+            });
+
+            expect(r.isPartial).to.equal(false);
+            expect(r.finalizedState).to.equal(anchor.state);
+        });
+
+        it("a plain proof that verifies → its final state, not partial", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+
+            const r = await auditPlainProof(h, 0);
+
+            // the head proof [[2]] verifies final at the head
+            expect(r.headState).to.not.equal(null);
+            expect(r.finalizedState).to.equal(r.headState);
+            expect(r.isPartial).to.equal(false);
+        });
+
+        it("a plain proof the verification rejects → 0x final state, not partial", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+
+            // milestones out of height order, each block's snapshot held
+            const r = await auditPlainProof(h, 0, { descending: true });
+
+            expect(r.finalizedState).to.equal("0x");
+            expect(r.isPartial).to.equal(false);
+        });
+
+        it("a plain proof with a milestone snapshot the peer does not hold → isPartial, the genesis stands in, no verification", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+
+            const r = await auditPlainProof(h, 2, {
+                stateProof: dispute.input.stateProof
+            });
+
+            const missing = r.milestones.filter((milestone) => !milestone.held);
+            expect(missing.length).to.be.greaterThan(0);
+            expect(missing.every((milestone) => milestone.isGenesis)).to.equal(
+                true
+            );
+            expect(r.isPartial).to.equal(true);
+        });
+
+        it("a plain proof whose chain walk fails to read → getAuditingData throws it", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            // another peer's proof: the auditor builds nothing that could
+            // take the armed fault
+            const { dispute } = await h.dispute.fetchConstructedDispute(1);
+            // faults arm on observed reads only
+            await h.mirror.observe(0, "verifyMilestones");
+            await h.mirror.failNextChainRead(
+                0,
+                "verifyMilestones",
+                "transport"
+            );
+
+            const r = await auditPlainProof(h, 0, {
+                stateProof: dispute.input.stateProof
+            });
+
+            expect(r.threw).to.contain("ECONNREFUSED");
+            expect(r.isPartial).to.equal(null);
+        });
+
+        it("a same-fork on-chain proof start → the outbound range starts at its outbound tip, for a full-history peer and a peer installed from it", async function () {
+            const h = TestSession.getHarness();
+            const { remaining, start } = await stageSameForkStartAboveExit(h);
+            const forkId = h.activeForkId!;
+            const fullHistory = h.getPeer(remaining[0]);
+            const startTip = start.snapshotData
+                .latestOutboundMessageBlockHash as Hash;
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(fullHistory.index);
+            const genesis = Codec.decode(
+                (await h
+                    .control(fullHistory)
+                    .dispute.getGenesisSnapshotStruct(forkId)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const joiner = await h.join.addSpectatorWait();
+            await submitPendingJoin(h, joiner, remaining);
+
+            // premise: the exit sits at the start, and the full-history peer
+            // holds it; the installed pending participant holds no block
+            // below the start
+            expect(startTip).to.not.equal(
+                genesis.snapshotData.latestOutboundMessageBlockHash
+            );
+            expect(
+                await h
+                    .control(fullHistory)
+                    .query.getOutboundMessageBlock(startTip)
+                    .request()
+            ).to.not.equal(null);
+            expect(
+                await h
+                    .control(joiner)
+                    .query.getBlockByHeight(forkId, 0)
+                    .request()
+            ).to.equal(null);
+
+            // full history: nothing at or below the start is included
+            expect(
+                auditingData.latestStateSnapshot.snapshotData
+                    .latestOutboundMessageBlockHash
+            ).to.equal(startTip);
+            expect(auditingData.outboundMessageBlocks).to.deep.equal([]);
+
+            // installed from the start: complete, the disputer's exact bytes
+            const audited = await h
+                .control(joiner)
+                .dispute.getAuditingData(
+                    forkId,
+                    Codec.encode(
+                        dispute.input.stateProof,
+                        Type.StateProof
+                    ) as string,
+                    {
+                        disputeLatestInboundMessageBlockHash: dispute.input
+                            .latestInboundMessageBlockHash as Hash
+                    }
+                )
+                .request();
+            expect(audited.isPartial).to.equal(false);
+            expect(
+                Codec.decode(
+                    audited.encodedAuditingData,
+                    Type.DisputeAuditingData
+                ).outboundMessageBlocks
+            ).to.deep.equal([]);
+            expect(hash(audited.encodedAuditingData)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
         });
 
         // the inbound run the dispute names is rebuilt from the auditor's own
@@ -807,49 +1116,6 @@ describe("Unit: DisputeManager", function () {
                 expect(r.threw).to.not.contain("not found in storage");
                 await dropped.release();
             });
-        });
-
-        it("an empty state proof → latest state snapshot falls back to genesis, not partial", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0); // no blocks -> empty proof at height 0
-            const forkId = h.activeForkId!;
-
-            const r = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const stateProof = await sm.agreementManager.getStateProof(
-                        args.forkId,
-                        0
-                    );
-                    const { isPartial, auditingData } =
-                        await sm.disputeManager.getAuditingData(
-                            args.forkId,
-                            stateProof
-                        );
-                    const genesis = sm.storage.stateSnapshots
-                        .getGenesisSnapshotByForkId(args.forkId)!
-                        .toStruct();
-                    return {
-                        isPartial,
-                        milestoneCount: stateProof.milestones.length,
-                        signedBlockCount: stateProof.signedBlocks.length,
-                        latestStateHash: String(
-                            auditingData.latestStateSnapshot.snapshotData
-                                .stateMachineStateHash
-                        ),
-                        genesisStateHash: String(
-                            genesis.snapshotData.stateMachineStateHash
-                        )
-                    };
-                },
-                { forkId }
-            );
-
-            expect(r.milestoneCount).to.equal(0);
-            expect(r.signedBlockCount).to.equal(0);
-            // no block in the proof -> latest resolves to genesis, all present
-            expect(r.isPartial).to.equal(false);
-            expect(r.latestStateHash).to.equal(r.genesisStateHash);
         });
     });
 
@@ -2411,7 +2677,7 @@ describe("Unit: DisputeManager", function () {
     });
 
     describe("constructDispute → concurrency", function () {
-        it("fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes", async function () {
+        it("fraud proof stored while constructDispute is held at buildStateProof → lands in fraudProofsToApply and onChainSlashes", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2); // blocks 0..1, next = 2
             const observer = h.getPeer(0);
@@ -2459,6 +2725,98 @@ describe("Unit: DisputeManager", function () {
             // account for exactly one claimed slash - no more, no less
             expect(r.fraudProofCount).to.equal(1);
             expect(r.onChainSlashes).to.deep.equal([offender.address]);
+        });
+    });
+
+    describe("constructDispute → failure", function () {
+        it("failed escalation releases marker", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight, remaining } = await stageLeftChannel(h);
+            const disputer = h.getPeer(remaining[0]);
+            await deleteStoredBlocks(h, disputer.index, [changeHeight]);
+            await disputeOnHost(h, disputer.index);
+            const control = h.control(disputer);
+            expect(
+                await control.query.didIDispute(h.activeForkId!).request()
+            ).to.equal(false);
+            // the failed construction submitted nothing
+            expect(
+                await h.channelManager.getDisputeWindowCreationTimestamp(
+                    h.channelId,
+                    h.activeForkId!
+                )
+            ).to.equal(0n);
+            const tip = await control.query
+                .getLatestBlockHeight(h.activeForkId!)
+                .request();
+
+            // the released marker lets the peer sign again: its own stored
+            // copy of the next block carries its signature
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining
+            });
+            const next = await control.query
+                .getBlockByHeight(h.activeForkId!, Number(tip) + 1)
+                .request();
+            expect(
+                [next!.author, ...next!.confirmationSignerAddresses].map((a) =>
+                    a.toLowerCase()
+                )
+            ).to.include(disputer.address.toLowerCase());
+        });
+    });
+
+    // decisions on a committed dispute are made for the current fork only:
+    // the peer leaves the fork while the handler waits on one step
+    describe("dispute decisions → current fork", function () {
+        it("old nonfinal dispute starts no adjudication", async function () {
+            await assertOldNonfinalEventStartsNoAdjudication(
+                TestSession.getHarness()
+            );
+        });
+
+        it("same-fork expired data still schedules reduction", async function () {
+            await assertSameForkExpiredEventSchedulesReduction(
+                TestSession.getHarness()
+            );
+        });
+
+        it("old final event completes existing reduction", async function () {
+            await assertOldFinalEventCompletesReduction(
+                TestSession.getHarness()
+            );
+        });
+
+        it("fork change during expiry read stops decision", async function () {
+            await assertForkChangeStopsDecision(
+                TestSession.getHarness(),
+                "expiryRead",
+                ["isKillPeriodExpired"]
+            );
+        });
+
+        it("fork changes during held audit prevent evidence submission", async function () {
+            await assertForkChangeStopsDecision(
+                TestSession.getHarness(),
+                "audit",
+                ["isKillPeriodExpired", "validateDispute false"]
+            );
+        });
+
+        it("fork changes during final gas preparation prevent old-fork transaction", async function () {
+            // the kill read its window and prepared gas, then sent nothing
+            await assertForkChangeStopsDecision(
+                TestSession.getHarness(),
+                "gasPreparation",
+                [
+                    "isKillPeriodExpired",
+                    "validateDispute false",
+                    "isKillPeriodExpired",
+                    "getStateTransitionReplayGas",
+                    "killDispute"
+                ]
+            );
         });
     });
 });

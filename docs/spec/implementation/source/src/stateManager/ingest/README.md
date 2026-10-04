@@ -4,12 +4,22 @@
 
 ## Contents
 
+- [BlockIngestService.ts](./BlockIngestService.ts.md)
 - [BlockQueueManager.ts](./BlockQueueManager.ts.md)
 - [StoredBlockMergeService.ts](./StoredBlockMergeService.ts.md)
 - [ValidationService.ts](./ValidationService.ts.md)
 
 This subsystem owns queued block ingress and exact-peer block/fork recovery. Recovery remains separate from
 initial channel-load synchronization.
+
+## Dispute replay predecessor
+
+A dispute-replay entry carries its predecessor on the dispute's own chain
+([QueueStorage](../../storage/QueueStorage.ts.md)). [BlockIngestService](BlockIngestService.ts.md) skips the
+stored-block merge for it, sets the predecessor's state before validation and executes from the
+predecessor's snapshot; [ValidationService](ValidationService.ts.md) judges author membership, linkage
+and time from it. Live entries carry none and are judged from the stored history below their
+height ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
 
 ## Admission and source accounting
 

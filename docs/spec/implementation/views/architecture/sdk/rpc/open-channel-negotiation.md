@@ -79,6 +79,15 @@ publish a typed internal event to the active negotiation attempt. Negotiation th
 another ethers listener with separate filter lifetime, replay, ordering, or cleanup races. Its internal
 subscription is attempt-scoped and is removed on failure cleanup or successful opening.
 
+That typed event is the only completion trigger for a founder, in ordinary and targeted mode. It
+arrives after the handler installed the genesis, so the founder is already `PARTICIPATING` when the
+attempt completes, announces the channel, and joins its discovery topic. The submitter's successful
+receipt completes nothing and does not refresh the status: a founder marked `OPENED` early would act
+as an observer and wait for an initial sync from the other founder
+([OpenChannelNegotiationService](../../../../source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md)
+decision 11). A receipt that fails locally after the opening landed still takes the observer or
+retry path; that report's contradictions section records it.
+
 ## Failure ownership
 
 - Busy and rejected candidates are retried without punishment.

@@ -9,22 +9,14 @@
 
 ## Overview
 
-The suite pins the structural admission rules of `verifyStateProof` as auditors evaluate them
-through the mirrored canonical logic: `preDisputeSetupCalldataPath` yields a milestones-only
-proof, `stubConstructDispute` mutates peer 3's dispute, and peer 1's double-sign provides the
-trigger. The first case copies a real milestone block into `stateProof.signedBlocks` so both
-arrays are non-empty — the milestones-XOR-signedBlocks constraint rejects the proof and the
-dispute dies with `DisputeInvalidStateProof` (the copy keeps headers matching so the header
-check cannot fire first). The second empties `milestones[0].blockConfirmations`, which fails
-milestone verification the same way. The third appends an unfinalized milestone confirmation
-whose author signature belongs to a different signer, killed as
-`DisputeInvalidBlockStructure`. Oracles throughout: dispute initiated with auditing data,
-`onDisputeKilled` observed, the exact proof type stored by honest peers, and the window
-resolved. Header-mismatch and replay-level tampers are out of scope (Case 4 and the
-milestone-content suite). After the permutation atomization the tail-signature case carries
-the block-structure-check permutation; the facet's suffix-break splits target signed-block
-suffixes, not milestone confirmations, and the empty-confirmations case still matches no
-single-scenario ID, so that row stays unassigned.
+One structural rule of the state-proof walk, judged by auditors through the mirrored canonical
+logic. `preDisputeSetupCalldataPath` yields a proof with milestones, `stubConstructDispute` empties
+`milestones[0].blockConfirmations` in peer 3's dispute (and marks peer 3 malicious), and peer 1's
+double sign is the trigger. An empty milestone makes the walk invalid. Oracles: peer 3's dispute
+initiates with auditing data, peer 0 observes `onDisputeKilled`, the honest peers store
+`DisputeInvalidStateProof`, and the window resolves to a fork without the malicious peers.
+Header-mismatch, replay-level and tail-structure tampers are out of scope (Case 4, the
+milestone-content suite and Case 3).
 
 ## Tests and covered test IDs
 
@@ -33,8 +25,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                                                                               | Covers                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L59) (line 59) | —                                                                                                                                                                                                      |
-| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > invalid tail signature → DisputeInvalidBlockStructure`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L102) (line 102)                                       | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P8`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09.p8) |
-| [stateProof.milestones.length > 0 AND stateProof.signedBlocks.length > 0 → DisputeInvalidStateProof](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L6) (line 6)                                                                                                  | —                                                                                                                                                                                                      |
+| Test declaration                                                                                                                                                                                                                                                                                             | Covers                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L6) (line 6) | [`REQ-SP-7-70EMAT.T1.P17`](../../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p17) |

@@ -4,6 +4,10 @@ import {
     assertCommitCachePreserved,
     assertSpectatorCommit
 } from "@test/fixtures/CommitEligibilityFixture";
+import {
+    readPendingAuditorMembership,
+    stagePendingAuditorReplay
+} from "@test/fixtures/DisputeAuditStaging";
 import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -214,6 +218,62 @@ describe("Unit: BlockCommitService", function () {
 
             expect(await evaluate(next.index)).to.equal(false);
             expect(await evaluate(other.index)).to.equal(true);
+        });
+    });
+
+    // step 1 judges this node's live history: a dispute replay commits blocks
+    // of the dispute's chain, which never seat or count a pending auditor
+    describe("success → no status step during dispute replay", function () {
+        it("a pending auditor replaying a dispute tail that admits it → stays PENDING_PARTICIPANT, no force-join counting", async function () {
+            const h = TestSession.getHarness();
+            const { auditor, release, dispute, auditingData } =
+                await stagePendingAuditorReplay(h, true);
+            try {
+                const audit = await h.dispute.auditDispute(
+                    auditor.index,
+                    dispute,
+                    auditingData
+                );
+
+                expect(audit).to.include({
+                    outcome: "returned",
+                    isValid: true
+                });
+                expect(
+                    await readPendingAuditorMembership(h, auditor)
+                ).to.deep.equal({
+                    status: Status.PENDING_PARTICIPANT,
+                    countingFromHeight: null
+                });
+            } finally {
+                await release();
+            }
+        });
+
+        it("a pending auditor replaying a dispute tail that omits its join with the counting window open → stays PENDING_PARTICIPANT, no force-join counting", async function () {
+            const h = TestSession.getHarness();
+            const { auditor, release, dispute, auditingData } =
+                await stagePendingAuditorReplay(h, false);
+            try {
+                const audit = await h.dispute.auditDispute(
+                    auditor.index,
+                    dispute,
+                    auditingData
+                );
+
+                expect(audit).to.include({
+                    outcome: "returned",
+                    isValid: true
+                });
+                expect(
+                    await readPendingAuditorMembership(h, auditor)
+                ).to.deep.equal({
+                    status: Status.PENDING_PARTICIPANT,
+                    countingFromHeight: null
+                });
+            } finally {
+                await release();
+            }
         });
     });
 

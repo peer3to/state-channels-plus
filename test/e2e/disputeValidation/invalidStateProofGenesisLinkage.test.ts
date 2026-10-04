@@ -31,7 +31,6 @@ describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", f
 
         expect(
             dispute.input.stateProof.milestones.length === 0 &&
-                dispute.input.stateProof.signedBlocks.length === 0 &&
                 dispute.postedAuditingData === false,
             "expected a non-posted genesis dispute (empty stateProof)"
         ).to.equal(true);

@@ -7,16 +7,36 @@ contract ProofTypes {
     constructor(MilestoneProof memory a, StateProof memory b, FraudProof memory c, DisputeFraudProof memory d) {}
 }
 
+/// @notice A linked evidence run whose proven point is a normal snapshot anchor or its threshold-proven first block;
+/// a single last genesis-linked run may remain unfinal. Linkage alone does not finalize block 0 or the whole run.
 struct MilestoneProof {
     BlockConfirmation[] blockConfirmations;
 }
 
 /// @notice FraudProof of state finality within a fork
 struct StateProof {
-    /// @dev proves the last finalized block in the fork
+    /// @dev milestones only; the latest state is the last block of the last milestone; empty = the fork genesis
     MilestoneProof[] milestones;
-    /// @dev a list of signed blocks that cryptographically connect the last milestone in the milestones
-    SignedBlock[] signedBlocks;
+}
+
+/// @notice The input of one state-proof walk; the start is read from storage (or supplied by LocalDiamond).
+struct ProofWalkInput {
+    bytes32 channelId;
+    bytes32 forkId;
+    StateProof stateProof;
+    /// @dev read by a genesis start and by an empty proof, unless the on-chain snapshot is that genesis
+    SnapshotData genesisStateSnapshotData;
+    /// @dev one entry per milestone, read only when finality is checked
+    StateSnapshot[] milestoneSnapshots;
+}
+
+/// @notice The result of one state-proof walk. When `valid` is false, no other field is usable.
+struct ProofWalkResult {
+    bool valid;
+    /// @dev the start snapshot, the last threshold-proven snapshot, or the fork genesis for an empty proof
+    StateSnapshot finalizedSnapshot;
+    /// @dev the last milestone's unfinal tail starts here; its length means no tail
+    uint256 replayBlockIndex;
 }
 
 //Fraud FraudProof Types:
@@ -61,5 +81,6 @@ enum DisputeFraudProofType {
     DisputeInboundHashNotInChain,
     DisputeInvalidBlockStructure,
     DisputeBlockAuthorNotParticipant,
-    DisputeInboundAnchorBehindLatestState
+    DisputeInboundAnchorBehindLatestState,
+    DisputeStateProofBelowOnChainAnchor
 }

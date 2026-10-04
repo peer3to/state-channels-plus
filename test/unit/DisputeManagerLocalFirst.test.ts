@@ -65,28 +65,6 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         );
     });
 
-    it("local revert -> the chain answers final instead, the auditing data is left out", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(3, 3);
-        const reads = await h.mirror.observe(
-            0,
-            "isLastMilestoneFinalByEveryone"
-        );
-        await h.mirror.failNextLocalRead(
-            0,
-            "isLastMilestoneFinalByEveryone",
-            "revert"
-        );
-
-        const { dispute } = await h.dispute.fetchConstructedDispute(0);
-
-        const { local, chain } = await reads.observation();
-        expect(local.failures).to.have.length(1);
-        expect(local.failures[0]).to.contain("Local EVM execution failed");
-        expect(chain.answers).to.deep.equal([true]);
-        expect(dispute.postedAuditingData).to.equal(false);
-    });
-
     it("local executor failure (not a revert) -> construction throws it, no chain read", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);

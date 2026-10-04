@@ -317,8 +317,8 @@ answers the same question against a supplied state without mutating the live one
   every state machine: the validation pipeline checks `block.author == getNextToWrite()` on the
   pre-state before any execution
   (block-validation service leader check — a
-  wrong-author block never reaches `stateTransition`), and dispute replay repositions the machine
-  and applies the same check. State machines MAY additionally reject wrong-turn authors
+  wrong-author block never reaches `stateTransition`), and dispute replay sets the machine to the
+  replayed block's predecessor state on the dispute's own chain and applies the same check. State machines MAY additionally reject wrong-turn authors
   in-contract as defense in depth, but the protocol MUST NOT depend on in-contract checks.
   _(Corrected 2026-08-10 on engineer review; this requirement previously mandated in-contract
   rejection.)_ For this protocol version: the on-chain `BlockInvalidStateTransition` handler re-executes and

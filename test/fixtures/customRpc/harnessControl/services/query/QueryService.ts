@@ -1,8 +1,5 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
-import QueryRpcMethods, {
-    type BlockBundle,
-    type StateProofVerification
-} from "./QueryRpcMethods";
+import QueryRpcMethods, { type BlockBundle } from "./QueryRpcMethods";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import Block from "@/models/Block";
 import type P2PManager from "@/P2PManager";
@@ -67,90 +64,6 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         return this.storage.participantSetChanges
             .getChangePointsInRange(forkId)
             .map(Number);
-    }
-
-    async buildStateProofVerification(
-        forkId: ForkId,
-        blockHeight?: BlockHeight
-    ): Promise<StateProofVerification | null> {
-        const sm = this.sm;
-        const genesis =
-            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-        if (!genesis) return null;
-
-        const height =
-            blockHeight ??
-            Math.max(0, this.storage.blocks.getNextBlockHeight(forkId) - 1);
-        const proof = await sm.agreementManager.tryGetStateProof(
-            forkId,
-            height
-        );
-        if (!proof) return null;
-
-        let verified = false;
-        let isFinal: boolean | null = null;
-        let onChainFinalizedSnapshotHash: string | null = null;
-        if (proof.milestones.length > 0) {
-            const milestoneSnapshots = proof.milestones.map((m) =>
-                sm.agreementManager.getSnapshotFromMilestone(m)!.toStruct()
-            );
-            verified =
-                await sm.stateChannelManagerContract.verifyMilestones.staticCall(
-                    forkId,
-                    proof.milestones,
-                    milestoneSnapshots,
-                    genesis.toStruct()
-                );
-
-            const { isFinal: milestoneIsFinal, finalizedSnapshotHash } =
-                await sm.stateChannelManagerContract.isMilestoneFinal.staticCall(
-                    forkId,
-                    genesis.snapshotData,
-                    proof.milestones[0]
-                );
-            isFinal = milestoneIsFinal;
-            onChainFinalizedSnapshotHash = String(finalizedSnapshotHash);
-        } else if (proof.signedBlocks.length > 0) {
-            verified =
-                await sm.stateChannelManagerContract.areSignedBlocksLinkedAndVerified.staticCall(
-                    proof.signedBlocks
-                );
-        }
-
-        const milestoneConfirmationHeights = proof.milestones.map((milestone) =>
-            milestone.blockConfirmations.map((c) =>
-                Number(Block.fromBlockConfirmation(c).height)
-            )
-        );
-
-        const milestoneSnapshotHashes = proof.milestones.map((m) =>
-            String(sm.agreementManager.getSnapshotFromMilestone(m)!.hash)
-        );
-
-        const latestBlock =
-            sm.agreementManager.getLatestBlockFromStateProof(proof);
-        return {
-            blockHeight: Number(height),
-            milestoneCount: proof.milestones.length,
-            signedBlockCount: proof.signedBlocks.length,
-            latestProofHeight: latestBlock ? Number(latestBlock.height) : null,
-            milestoneConfirmationHeights,
-            milestoneSnapshotHashes,
-            verified,
-            isFinal,
-            onChainFinalizedSnapshotHash,
-            latestSnapshotHash: String(
-                sm.agreementManager.getLatestSnapshotFromStateProof(
-                    proof,
-                    forkId
-                ).hash
-            ),
-            finalizedSnapshotHash: String(
-                sm.agreementManager.getLatestFinalizedSnapshot(proof, forkId)
-                    .hash
-            ),
-            genesisSnapshotHash: String(genesis.hash)
-        };
     }
 
     /**

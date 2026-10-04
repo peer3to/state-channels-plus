@@ -29,7 +29,7 @@ One parser classifies a valid response before a valid request and returns undefi
 
 1. **`requestId` presence selects delivery semantics.** An omitted ID means fire-and-forget. Any present string, including `""`, obliges exactly one correlated response; a present non-string ID is malformed ([#L1](../../../../../../src/rpc/Rpc.ts#L1)).
 2. **Raw `BigInt` throws at the sender.** Params/results must be JSON-serializable; bigint-bearing structs cross as `Codec`-encoded strings, and `JSON.stringify`'s throw surfaces the offending method instead of silently coercing ([#L31](../../../../../../src/rpc/Rpc.ts#L31)).
-3. **Reject-by-`undefined` decoding.** Malformed frames yield `undefined` (never throw), so the dispatcher's disconnect consequence is a decision, not an exception path ([#L41](../../../../../../src/rpc/Rpc.ts#L42)).
+3. **Reject-by-`undefined` decoding.** Malformed frames yield `undefined` (never throw), so the dispatcher's disconnect consequence is a decision, not an exception path ([#L42](../../../../../../src/rpc/Rpc.ts#L42)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -75,7 +75,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                            | Gap / divergence |
 | ------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | **Here:** envelope/response shapes and strict decoders ([#L41](../../../../../../src/rpc/Rpc.ts#L42)). **Other files:** [ANetworkRpcService](network/ANetworkRpcService.ts.md) and [P2PManager](../P2PManager.ts.md) apply the consequences; [Codec](../utils/Codec.ts.md) carries bigint payloads. | None.            |
+| [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | **Here:** envelope/response shapes and strict decoders ([#L42](../../../../../../src/rpc/Rpc.ts#L42)). **Other files:** [ANetworkRpcService](network/ANetworkRpcService.ts.md) and [P2PManager](../P2PManager.ts.md) apply the consequences; [Codec](../utils/Codec.ts.md) carries bigint payloads. | None.            |
 
 ## Component test obligations
 

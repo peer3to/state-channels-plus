@@ -6,10 +6,7 @@ import {
     deployMathMachine
 } from "../fixtures/LocalEvmCallGas.fixture";
 import { ContractExecutor } from "@/evm";
-import {
-    isLocalEvmExecutionFailure,
-    isInvalidStateTransitionError
-} from "@/utils/evmErrorHandler";
+import { isInvalidStateTransitionError } from "@/utils/evmErrorHandler";
 import { EVM } from "@ethereumjs/evm";
 import {
     corruptNextSdkExecutorRequest,
@@ -43,7 +40,6 @@ describe("isInvalidStateTransitionError", function () {
                 () => undefined,
                 (e: unknown) => e
             );
-        expect(isLocalEvmExecutionFailure(error)).to.equal(true);
         expect(isInvalidStateTransitionError(error)).to.equal(true);
     });
 
@@ -90,7 +86,6 @@ describe("isInvalidStateTransitionError", function () {
                 (e: unknown) => e
             );
             expect(error).to.be.instanceOf(Error);
-            expect(isLocalEvmExecutionFailure(error)).to.equal(false);
             expect(isInvalidStateTransitionError(error)).to.equal(false);
         } finally {
             control.dispose();
@@ -163,7 +158,6 @@ describe("isInvalidStateTransitionError", function () {
                     (e: unknown) => e
                 );
             expect(error).to.be.instanceOf(Error);
-            expect(isLocalEvmExecutionFailure(error)).to.equal(false);
         } finally {
             control.dispose();
         }

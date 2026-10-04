@@ -3,12 +3,13 @@ import { Bytes } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
 
-// A truncated encodedBlock cannot be decoded by abi.decode on-chain.
-// hasStateProofHeaderMismatch.staticCall reverts; DisputeValidationService must
-// catch that revert and still produce a fireable DisputeInvalidStateProof.
+// A junk encodedBlock cannot be decoded on-chain.
+// hasStateProofHeaderMismatch treats it as no mismatch, and the structure
+// check of the last milestone yields a fireable DisputeInvalidBlockStructure
+// at the undecodable position.
 
 describe("E2E: dispute validation / stateProof / undecodableBlock", function () {
-    it("stateProof.milestones[-1].blockConfirmations[-1].signedBlock.encodedBlock = junk → DisputeInvalidStateProof", async function () {
+    it("stateProof.milestones[-1].blockConfirmations[-1].signedBlock.encodedBlock = junk → DisputeInvalidBlockStructure", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
         const forkId = h.activeForkId!;
@@ -36,7 +37,7 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInvalidStateProof
+                DisputeFraudProofType.DisputeInvalidBlockStructure
         });
         await h.dispute.resolveDisputeWait({
             forkId,

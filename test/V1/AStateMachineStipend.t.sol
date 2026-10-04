@@ -10,6 +10,7 @@ import {ErrorStateTransitionFrameOutOfGas} from "../../contracts/V1/StateChannel
 import "../../contracts/V1/types/DataTypes.sol";
 import "../../contracts/V1/types/ProofTypes.sol";
 import {BlockInvalidStateTransitionProof} from "../../contracts/V1/types/FraudProofTypes.sol";
+import {TimeoutCalldataPosted} from "../../contracts/V1/types/DisputeFraudProofTypes.sol";
 
 // The gas a caller attaches must never decide a transition's verdict. A transition runs only when
 // the caller can grant it its full budget, and is refused before it starts otherwise: even a
@@ -676,6 +677,48 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         _assertRefutationRejected(dispute, participants);
     }
 
+    // The auditor preflights a timeout refutation with the public `validateTimeoutCalldataPostedProof`; its answer must
+    // be the verdict the applied proof gets, for an honest posted block and for one built on a forged base.
+    function test_validateTimeoutCalldataPostedProof_agreesWithTheAppliedVerdict() public {
+        address[] memory participants = _deployGuarded();
+        (Dispute memory dispute, DisputeFraudProof[] memory proofs) = _stageTimeoutCalldataPosted(
+            diamond,
+            CHANNEL_ID,
+            TIMED_OUT_PK,
+            DISPUTER_PK,
+            _encodedState(participants),
+            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ())
+        );
+        assertTrue(_preflight(dispute, proofs), "the honest refutation preflights valid");
+        (bool ok,) = _submitRefutation(abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs)), GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertTimeoutKilled(dispute, participants);
+
+        participants = _deployGuarded();
+        bytes memory forgedState = _forgedState(participants);
+        StateSnapshot memory forgedSnapshot = _forgedSnapshot(forgedState);
+        (dispute, proofs) = _stageTimeoutCalldataPostedOn(
+            diamond,
+            CHANNEL_ID,
+            TIMED_OUT_PK,
+            DISPUTER_PK,
+            PostedBlockBase(forgedSnapshot, forgedState, keccak256(abi.encode(forgedSnapshot))),
+            abi.encodeCall(GasHungryMathStateMachine.guardedAdd, ())
+        );
+        assertFalse(_preflight(dispute, proofs), "the forged-base refutation preflights invalid");
+        (ok,) = _submitRefutation(abi.encodeCall(diamond.applyDisputeFraudProofs, (proofs)), GUARDED_FUNDED_GAS);
+        assertTrue(ok);
+        _assertRefutationRejected(dispute, participants);
+    }
+
+    /// the preflight answer for `proofs[0]`, read without keeping its replay's side effects
+    function _preflight(Dispute memory dispute, DisputeFraudProof[] memory proofs) internal returns (bool valid) {
+        TimeoutCalldataPosted memory proof = abi.decode(proofs[0].encodedProof, (TimeoutCalldataPosted));
+        uint256 snapshot = vm.snapshotState();
+        valid = diamond.validateTimeoutCalldataPostedProof{gas: GUARDED_FUNDED_GAS}(proof, dispute);
+        vm.revertToState(snapshot);
+    }
+
     // The latest proved block is signed as its canonical encoding plus one trailing zero word.
     // Solidity decodes those bytes to the same block, and the state proof links blocks by their
     // signed bytes, so an honest author builds the next block on the hash of those bytes, not on
@@ -706,8 +749,9 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertTrue(keccak256(nonCanonical) != keccak256(abi.encode(latestBlock)), "the signed bytes differ");
 
         StateProof memory stateProof;
-        stateProof.signedBlocks = new SignedBlock[](1);
-        stateProof.signedBlocks[0] =
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock =
             SignedBlock({encodedBlock: nonCanonical, signature: _sign(DISPUTER_PK, nonCanonical)});
 
         DisputeFraudProof[] memory proofs;

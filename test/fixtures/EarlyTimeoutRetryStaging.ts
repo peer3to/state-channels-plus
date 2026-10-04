@@ -333,3 +333,84 @@ export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
         }
     };
 }
+
+export const TIMEOUT_THRESHOLD_TIME_CONFIG = { evidenceTime: 8 };
+
+/**
+ * Two founders and a pending joiner whose on-chain join no block includes.
+ * The joiner is dispute-eligible on chain but in no snapshot's participant
+ * set, so it signs no block. Cut off at its latest height L, it waits out
+ * the timeout deadline of height L + 1 and posts a timeout dispute, with
+ * auditing data, that blames the author of L + 1: a block both founders
+ * signed. The joiner signed nothing above L, so no not-latest-state proof
+ * exists, and L + 1 meets the threshold of the participants of L and L + 1.
+ */
+export async function stageTimeoutThresholdDispute(h: MathPeerTestHarness) {
+    await h.lifecycle.start(2, 0, {
+        timeConfig: TIMEOUT_THRESHOLD_TIME_CONFIG
+    });
+    const { peer: joiner } = await h.join.addSpectatorAuthoring({
+        authoringPeerIndices: [0, 1],
+        minimumBlocks: 2,
+        maximumBlocks: 20
+    });
+    await h.assert.sync.peersInSyncWait();
+    // Only the joiner's tampered dispute may open the window.
+    await Promise.all(
+        [0, 1, joiner.index].map((index) =>
+            h.rpcStub.suppressTimeoutCheck(index)
+        )
+    );
+    await Promise.all(
+        [0, 1].map((index) => h.byzantine.stubPendingInboundInclusion(index))
+    );
+    await h.join.joinChannelWait({ joiner });
+    const forkId = h.activeForkId!;
+    const latestHeight = (await h
+        .control(joiner)
+        .query.getLatestBlockHeight(forkId)
+        .request())!;
+    await h.network.blacklistAndDisconnectPeer(joiner.index);
+
+    const author = await h.query.getNextPeerToWrite();
+    await h.transition.advanceState({
+        count: 1,
+        waitForPeers: [0, 1],
+        waitForFinalization: true
+    });
+    const height = latestHeight + 1;
+    const thresholdBlock = (await h
+        .control(h.getPeer(0))
+        .query.getBlockByHeight(forkId, height)
+        .request())!;
+    expect(thresholdBlock.author).to.equal(author.address);
+
+    const { previousTimestamp, timeConfig } = await h.execOnHost(
+        h.getPeer(0),
+        (sm, args) => ({
+            previousTimestamp: sm.storage.getPreviousBlockOrSnapshot({
+                forkId: args.forkId,
+                height: args.height
+            }).block!.currentTimestamp,
+            timeConfig: sm.timeConfig
+        }),
+        { forkId, height }
+    );
+    await h.event.waitUntilTimestamp(
+        previousTimestamp + timeoutWaitTime(timeConfig, height) + 1
+    );
+
+    await h.tamper.plantFreshTimeoutForParticipant(
+        joiner.index,
+        author.address
+    );
+    h.contextApi.captureOriginalFork();
+    h.event.resetEventSpies();
+    const posted = await h.tamper.postTamperedDispute(
+        joiner.index,
+        (dispute) => {
+            dispute.postedAuditingData = true;
+        }
+    );
+    return { joiner, author, forkId, height, posted };
+}

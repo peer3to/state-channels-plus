@@ -542,10 +542,13 @@ export class LoggerUtils {
         const thresholdAddresses = new Set<Address>(
             storage?.getParticipantsUnion(block.coordinates) || []
         );
-        const allSigners = block.allSignerAddresses;
-        const allSignersSet =
-            allSigners instanceof Set ? allSigners : new Set(allSigners || []);
-        const didntSign = difference(thresholdAddresses, allSignersSet);
+        // logs never throw: a malformed signature recovers no signer
+        let allSigners: Set<Address> | undefined;
+        try {
+            allSigners = block.allSignerAddresses;
+        } catch {
+            allSigners = undefined;
+        }
         return {
             author: String(block.author),
             blockHash: String(block.hash),
@@ -553,8 +556,10 @@ export class LoggerUtils {
             blockHeight: block.height,
             timestamp: block.timestamp,
             onChainTimestamp: block.onChainTimestamp,
-            allSigners: Array.from(allSignersSet),
-            didntSign: Array.from(didntSign),
+            allSigners: allSigners ? Array.from(allSigners) : "unrecoverable",
+            didntSign: allSigners
+                ? Array.from(difference(thresholdAddresses, allSigners))
+                : "unrecoverable",
             numberOfInboundMessageBlocks: block.messageBlocks?.length ?? 0,
             forkId: String(block.forkId),
             channelId: String(block.channelId)
@@ -779,21 +784,13 @@ export class LoggerUtils {
                 )
             })
         );
-        const signedBlocks = stateProof.signedBlocks.map((block) =>
-            this.getBlockMetadata(block)
-        );
         const milestonesCount = milestones.length;
-        const signedBlocksCount = signedBlocks.length;
         const latestBlockHeight =
-            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ??
-            signedBlocks.at(-1)?.blockHeight ??
-            0;
+            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ?? 0;
         return {
             latestBlockHeight,
             milestonesCount,
-            signedBlocksCount,
-            milestones,
-            signedBlocks
+            milestones
         };
     }
 
@@ -837,9 +834,7 @@ export class LoggerUtils {
                 if (sp) return this.getStateProofMetadata(sp);
                 return {
                     undecodable: true,
-                    milestonesCount: disputeInput.stateProof.milestones.length,
-                    signedBlocksCount:
-                        disputeInput.stateProof.signedBlocks.length
+                    milestonesCount: disputeInput.stateProof.milestones.length
                 };
             })()
         };

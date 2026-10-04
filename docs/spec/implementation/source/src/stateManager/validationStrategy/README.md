@@ -13,6 +13,15 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [DisputeValidationStrategy.ts](./DisputeValidationStrategy.ts.md)
 - [SpectatingValidationStrategy.ts](./SpectatingValidationStrategy.ts.md)
 
+## Dispute replay
+
+The dispute audit builds one [DisputeValidationStrategy](DisputeValidationStrategy.ts.md) per replayed
+block with the block's index in the last milestone and its predecessor on the dispute's own chain.
+The strategy builds every proof from that predecessor and never abstains: a reachable deviation
+is a fraud proof or continues, and an unreachable one throws. No strategy positions the state
+machine; [BlockIngestService](../ingest/BlockIngestService.ts.md) sets the predecessor's state before
+validation ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+
 ## Queue admission contributions
 
 | Source report | Contribution | Requirements |

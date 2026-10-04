@@ -70,8 +70,10 @@ export {
     getChecksumAddress
 };
 export { DisconnectPolicy } from "@/DisconnectPolicy";
-export { Status } from "@/types";
-export type { ChannelId } from "@/types";
+export { Status, isCommittedParticipantStatus, timeoutWaitTime } from "@/types";
+export type { ChannelId, TimeConfig } from "@/types";
+export type { default as P2pInstance } from "@/evm/P2pInstance";
+export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 export {
     EventBus,
     attachContractEvents,
@@ -83,6 +85,7 @@ export {
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
 export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
 export type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+export type { OwnJoinState } from "@/stateManager/membership/MembershipService";
 export type {
     SetupPayload,
     SerializedContract,
@@ -92,6 +95,7 @@ export type {
 export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
+export { errorMessage } from "@/utils/errorMessage";
 export {
     connectStateChannelManager,
     mergeStateChannelManagerAbi,

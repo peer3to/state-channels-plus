@@ -27,6 +27,13 @@ generation, return the encoded payload, or apply the unprovable-request conseque
 The request carries the explicit successor-proof permission to the existing proof generator. Unknown forks remain unprovable and exact requests remain exact. See [SpectateRpcMethods.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateRpcMethods.ts#L39).
 
 1. **Cut-on-unprovable implements the mutual-cooperation rule** — and is precisely where the [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f) refusal-penalty decision will land.
+2. **Two refusal shapes, one rule for each.** An `undefined` payload means the requester asked for a
+   target it should not have asked for: the handler blacklists the requester and throws
+   ([#L44-L50](../../../../../../../../../src/rpc/network/services/spectate/SpectateRpcMethods.ts#L44-L50)).
+   A throw from `generateSyncPayload` (a responder that is not ready, a dispute window it cannot
+   load, a window still in its kill period, missing reduce data) passes through unchanged: the
+   requester gets an error reply, an explicit refusal, and the responder records nothing against it
+   ([SpectateService](SpectateService.ts.md) decision 15).
 
 ## Inputs, outputs, state, and side effects
 

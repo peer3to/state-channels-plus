@@ -13,26 +13,43 @@ import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/Dat
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, TransactionResponse } from "ethers";
 
-type SnapshotSubmission = {
+/**
+ * Why a snapshot post cannot go out now: the fork's reduction has not landed,
+ * its challenge period runs, the chain holds an inbound message the latest
+ * snapshot has not consumed, or the fork itself is not the chain's yet.
+ */
+type SnapshotPostBlockReason =
+    | "reduction"
+    | "challenge-period"
+    | "inbound"
+    | "fork-not-posted";
+
+/** No update is needed, or one is blocked. */
+type SnapshotPostIdle =
+    | { kind: "nothing" }
+    | { kind: "blocked"; reason: SnapshotPostBlockReason };
+
+export type SnapshotSubmission =
+    | {
+          kind: "posted";
+          expectedSnapshot: StateSnapshot;
+          completion: Promise<boolean>;
+      }
+    | SnapshotPostIdle;
+
+/** One update call; `expectedSnapshot` is the chain's snapshot once it lands. */
+type SnapshotUpdateCall = {
+    kind: "ready";
+    callData: string;
     expectedSnapshot: StateSnapshot;
-    completion: Promise<boolean>;
-};
-
-type ForkSnapshotUpdatePreparation = {
-    canPost: boolean;
-    callData: string[];
-    expectedSnapshot?: StateSnapshot;
     outboundMessageBlocks: MessageBlockStruct[];
 };
 
-export type SameForkSnapshotUpdatePreparation = {
-    canPost: boolean;
-    callData: string[];
-    expectedSnapshot?: StateSnapshot;
-    milestoneProofs: MilestoneProofStruct[];
-    milestoneSnapshots: StateSnapshot[];
-    outboundMessageBlocks: MessageBlockStruct[];
-};
+type ForkSnapshotUpdatePreparation = SnapshotUpdateCall | SnapshotPostIdle;
+
+export type SameForkSnapshotUpdatePreparation =
+    | (SnapshotUpdateCall & { milestoneSnapshots: StateSnapshot[] })
+    | SnapshotPostIdle;
 
 export default class SnapshotUpdateService {
     private readonly logger: Logger;
@@ -49,82 +66,78 @@ export default class SnapshotUpdateService {
         options?: { forkAdoptionOnly?: boolean }
     ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId, options);
-        if (!submission) return undefined;
-
-        DetachedPromises.collect(submission.completion);
-        return submission.expectedSnapshot;
+        switch (submission.kind) {
+            case "posted":
+                DetachedPromises.collect(submission.completion);
+                return submission.expectedSnapshot;
+            case "nothing":
+            case "blocked":
+                return undefined;
+        }
     }
 
-    /** Resolves false only when the chain refused the post on a disputed fork. */
+    /**
+     * Resolves false when the chain refused the post on a disputed fork, and
+     * when the same-fork update cannot be posted because the chain holds an
+     * inbound message the latest snapshot has not consumed: only a dispute,
+     * whose replay applies that message, can move such a fork on.
+     */
     public async postStateSnapshotWait(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
     ): Promise<boolean> {
         const submission = await this.submitStateSnapshot(forkId, options);
-        return submission?.completion ?? true;
+        switch (submission.kind) {
+            case "posted":
+                return submission.completion;
+            case "nothing":
+                return true;
+            case "blocked":
+                return submission.reason !== "inbound";
+        }
     }
 
     private async submitStateSnapshot(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
-    ): Promise<SnapshotSubmission | undefined> {
+    ): Promise<SnapshotSubmission> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData: typeof forkData = options?.forkAdoptionOnly
-            ? { canPost: true, callData: [], outboundMessageBlocks: [] }
-            : await this.prepareUpdateSnapshotSameFork(
-                  forkId,
-                  forkData.expectedSnapshot
-              );
+        if (forkData.kind === "blocked") return forkData;
+        const sameForkData: SameForkSnapshotUpdatePreparation =
+            options?.forkAdoptionOnly
+                ? { kind: "nothing" }
+                : await this.prepareUpdateSnapshotSameFork(
+                      forkId,
+                      forkData.kind === "ready"
+                          ? forkData.expectedSnapshot
+                          : undefined
+                  );
+        if (sameForkData.kind === "blocked") return sameForkData;
 
-        const callData = [...forkData.callData, ...sameForkData.callData];
-        const expectedSnapshot =
-            sameForkData.expectedSnapshot ?? forkData.expectedSnapshot;
-
-        // Preparation always runs to completion. `canPost` only controls
-        // whether the resulting calldata is currently eligible for submission.
-        if (!forkData.canPost || !sameForkData.canPost) return undefined;
-
-        if (callData.length === 0) {
-            this.logger.debug("No state snapshot updates needed");
-            return undefined;
-        }
+        // the fork update lands first; the same-fork update chains onto it
+        const calls = [forkData, sameForkData].filter(
+            (data) => data.kind === "ready"
+        );
+        const expectedSnapshot = calls.at(-1)?.expectedSnapshot;
         if (!expectedSnapshot) {
-            throw new Error(
-                "State snapshot calldata was prepared without an expected snapshot"
-            );
+            this.logger.debug("No state snapshot updates needed");
+            return { kind: "nothing" };
         }
+        const callData = calls.map((call) => call.callData);
 
         this.logger.info(
             `Posting state snapshot on-chain for fork ${LoggerUtils.formatHash(forkId)}`,
             {
                 expectedSnapshot:
                     LoggerUtils.getSnapshotMetadata(expectedSnapshot),
-                forkData: {
-                    canPost: forkData.canPost,
-                    snapshot: forkData.expectedSnapshot
-                        ? LoggerUtils.getSnapshotMetadata(
-                              forkData.expectedSnapshot
-                          )
-                        : "N/A",
-                    outboundMessageBlocks: forkData.outboundMessageBlocks
-                        ? forkData.outboundMessageBlocks.map(
-                              LoggerUtils.getMessageBlockMetadata
-                          )
-                        : "N/A"
-                },
-                sameForkData: {
-                    canPost: sameForkData.canPost,
-                    snapshot: sameForkData.expectedSnapshot
-                        ? LoggerUtils.getSnapshotMetadata(
-                              sameForkData.expectedSnapshot
-                          )
-                        : "N/A",
-                    outboundMessageBlocks: sameForkData.outboundMessageBlocks
-                        ? sameForkData.outboundMessageBlocks.map(
-                              LoggerUtils.getMessageBlockMetadata
-                          )
-                        : "N/A"
-                }
+                updates: calls.map((call) => ({
+                    snapshot: LoggerUtils.getSnapshotMetadata(
+                        call.expectedSnapshot
+                    ),
+                    outboundMessageBlocks: call.outboundMessageBlocks.map(
+                        LoggerUtils.getMessageBlockMetadata
+                    )
+                }))
             }
         );
 
@@ -197,7 +210,7 @@ export default class SnapshotUpdateService {
                 });
                 throw error;
             });
-        return { expectedSnapshot, completion };
+        return { kind: "posted", expectedSnapshot, completion };
     }
 
     /**
@@ -244,11 +257,7 @@ export default class SnapshotUpdateService {
                         forkId: currentForkId
                     }
                 );
-                return {
-                    canPost: true,
-                    callData: [],
-                    outboundMessageBlocks: []
-                };
+                return { kind: "nothing" };
             }
 
             while (isDisputed) {
@@ -268,11 +277,7 @@ export default class SnapshotUpdateService {
                         "State snapshot fork update is waiting for reduction",
                         { forkId: currentForkId }
                     );
-                    return {
-                        canPost: false,
-                        callData: [],
-                        outboundMessageBlocks: []
-                    };
+                    return { kind: "blocked", reason: "reduction" };
                 }
 
                 const challengePeriodExpired =
@@ -288,11 +293,7 @@ export default class SnapshotUpdateService {
                             reducedForkId: existingReducedResult.reducedForkId
                         }
                     );
-                    return {
-                        canPost: false,
-                        callData: [],
-                        outboundMessageBlocks: []
-                    };
+                    return { kind: "blocked", reason: "challenge-period" };
                 }
 
                 this.logger.verbose(
@@ -358,8 +359,8 @@ export default class SnapshotUpdateService {
             );
 
             return {
-                canPost: true,
-                callData: [forkCalldata],
+                kind: "ready",
+                callData: forkCalldata,
                 expectedSnapshot: genesisSnapshot,
                 outboundMessageBlocks
             };
@@ -409,78 +410,48 @@ export default class SnapshotUpdateService {
             // than the raw current on-chain snapshot.
             // The fallback supports callers that prepare raw same-fork calldata
             // without first running the combined snapshot-post preparation.
-            let preparationBaseSnapshot =
+            const preparationBaseSnapshot =
                 baseSnapshot ??
                 StateSnapshot.from(
                     await this.stateManager.stateChannelManagerContract.getStateSnapshot(
                         this.stateManager.channelId
                     )
                 );
-            let canPost = true;
 
             // A locally reduced fork can have finalized milestones before its
-            // fork snapshot reaches the chain. Use that fork's genesis as the
-            // prospective base so callers can inspect the prepared update, but
-            // keep canPost false: without preceding fork-update calldata this
-            // same-fork update cannot yet be submitted independently.
+            // fork snapshot reaches the chain. Without preceding fork-update
+            // calldata this same-fork update cannot be submitted.
             if (preparationBaseSnapshot.forkID !== forkId) {
-                const resolvedBaseForkId = preparationBaseSnapshot.forkID;
-                canPost = false;
-                const genesisSnapshot =
-                    this.stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                        forkId
-                    );
-                if (!genesisSnapshot) {
-                    throw new Error(
-                        `Genesis snapshot unavailable for fork ${forkId}`
-                    );
-                }
-                preparationBaseSnapshot = genesisSnapshot;
                 this.logger.debug(
-                    "Preparing same-fork snapshot update from the local fork genesis",
+                    "Same-fork snapshot update is waiting for its fork snapshot",
                     {
                         requestedForkId: forkId,
-                        resolvedBaseForkId
+                        resolvedBaseForkId: preparationBaseSnapshot.forkID
                     }
                 );
+                return { kind: "blocked", reason: "fork-not-posted" };
             }
 
             const latestBlockHeight =
                 this.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
-            if (latestBlockHeight < 0) {
-                return {
-                    canPost,
-                    callData: [],
-                    milestoneProofs: [],
-                    milestoneSnapshots: [],
-                    outboundMessageBlocks: []
-                };
-            }
-            const stateProof =
-                await this.stateManager.agreementManager.getStateProof(
+            if (latestBlockHeight < 0) return { kind: "nothing" };
+            // final state only (no unfinal tail); the run holding the
+            // on-chain start maps to a snapshot at or below it, never newer
+            const { stateProof, milestoneSnapshots: proofSnapshots } =
+                await this.stateManager.agreementManager.buildStateProof(
                     forkId,
-                    latestBlockHeight
+                    latestBlockHeight,
+                    { stopAtThresholdCompletion: true }
                 );
             const milestoneProofs: MilestoneProofStruct[] = [];
             const milestoneSnapshots: StateSnapshot[] = [];
 
-            for (const milestoneProof of stateProof.milestones) {
-                if (milestoneProof.blockConfirmations.length === 0) {
-                    throw new Error("Empty milestone proof found");
-                }
-
-                const snapshot =
-                    this.stateManager.agreementManager.getSnapshotFromMilestone(
-                        milestoneProof
-                    );
-                if (!snapshot) {
-                    throw new Error(
-                        "Milestone built but corresponding snapshot not found"
-                    );
-                }
-
+            for (const [i, milestoneProof] of stateProof.milestones.entries()) {
+                // the builder throws without a threshold milestone's snapshot
+                const snapshot = proofSnapshots[i]!;
+                // the chain's recency rule, run on the local diamond
                 if (
-                    await this.stateManager.stateChannelManagerContract.isSnapshotNewer(
+                    await this.stateManager.diamondStateMachine.localDiamondContract.isSnapshotNewer.staticCall(
                         snapshot.toStruct(),
                         preparationBaseSnapshot.toStruct()
                     )
@@ -490,44 +461,8 @@ export default class SnapshotUpdateService {
                 }
             }
 
-            if (milestoneSnapshots.length === 0) {
-                return {
-                    canPost,
-                    callData: [],
-                    milestoneProofs,
-                    milestoneSnapshots,
-                    outboundMessageBlocks: []
-                };
-            }
-
-            const latestSnapshot = milestoneSnapshots.at(-1)!;
-            if (latestSnapshot.hash === preparationBaseSnapshot.hash) {
-                return {
-                    canPost,
-                    callData: [],
-                    milestoneProofs,
-                    milestoneSnapshots,
-                    outboundMessageBlocks: []
-                };
-            }
-
-            // A same-fork update only applies within one fork.
-            if (preparationBaseSnapshot.forkID !== latestSnapshot.forkID) {
-                this.logger.debug(
-                    "prepareUpdateSnapshotSameFork - base and latest snapshot on different forks, skipping",
-                    {
-                        baseForkId: preparationBaseSnapshot.forkID,
-                        latestForkId: latestSnapshot.forkID
-                    }
-                );
-                return {
-                    canPost: false,
-                    callData: [],
-                    milestoneProofs: [],
-                    milestoneSnapshots: [],
-                    outboundMessageBlocks: []
-                };
-            }
+            const latestSnapshot = milestoneSnapshots.at(-1);
+            if (!latestSnapshot) return { kind: "nothing" };
 
             const channelBalance =
                 await this.stateManager.stateChannelManagerContract.getChannelBalance(
@@ -547,13 +482,7 @@ export default class SnapshotUpdateService {
                             latestSnapshot.latestInboundMessageBlockHash
                     }
                 );
-                return {
-                    canPost: false,
-                    callData: [],
-                    milestoneProofs: [],
-                    milestoneSnapshots: [],
-                    outboundMessageBlocks: []
-                };
+                return { kind: "blocked", reason: "inbound" };
             }
 
             const outboundMessageBlocks =
@@ -581,10 +510,9 @@ export default class SnapshotUpdateService {
                 );
 
             return {
-                canPost,
-                callData: [sameForkCalldata],
+                kind: "ready",
+                callData: sameForkCalldata,
                 expectedSnapshot: latestSnapshot,
-                milestoneProofs,
                 milestoneSnapshots,
                 outboundMessageBlocks
             };

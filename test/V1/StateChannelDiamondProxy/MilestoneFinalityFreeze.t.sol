@@ -58,8 +58,8 @@ function _addresses(address first, address second, address third) pure returns (
     addresses[2] = third;
 }
 
-/// StateProofFacet and StateSnapshotFacet both declare `_verifyMilestones`, so the
-/// predicate's `isMilestoneFinal` self-call is routed like the proxy fallback does.
+/// StateProofFacet is reached through the fallback, so the predicate's `isMilestoneFinal`
+/// self-call and the linkage delegatecall are routed like the proxy fallback does.
 contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerificationFacet, StateSnapshotFacet {
     constructor() {
         evidenceTime = 10;
@@ -166,6 +166,10 @@ contract MilestoneFinalityFreezeHarness is DisputeFraudProofFacet, DisputeVerifi
         );
         channelBalances[channelId].latestInboundMessageBlockHash = hash;
         channelBalances[channelId].latestInboundMessageBlockHeight = height;
+    }
+
+    function seedSnapshot(bytes32 channelId, StateSnapshot memory snapshot) external {
+        stateSnapshots[channelId] = snapshot;
     }
 
     function chainForkId(bytes32 channelId) external view returns (bytes32) {
@@ -346,30 +350,44 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
     }
 
     function test_disputeInvalidStateProof_noCalldata_frozenSet_slashesDisputer() public {
-        SnapshotData memory genesis;
-        genesis.participants = _addresses(a, b);
-        genesis.latestInboundMessageBlockHash = H0;
-        genesis.latestInboundMessageBlockHeight = 1;
-        bytes32 genesisForkId = keccak256(abi.encode(genesis));
+        SnapshotData memory genesisData;
+        genesisData.participants = _addresses(a, b);
+        genesisData.latestInboundMessageBlockHash = H0;
+        genesisData.latestInboundMessageBlockHeight = 1;
+        bytes32 genesisForkId = keccak256(abi.encode(genesisData));
+        StateSnapshot memory genesis = StateSnapshot({
+            snapshotData: genesisData,
+            forkId: genesisForkId,
+            blockHeight: 0,
+            timestamp: block.timestamp
+        });
+        harness.seedSnapshot(CHANNEL_ID, genesis);
 
-        Dispute memory dispute =
-            _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, genesisForkId, _keys(PK_A, PK_B)));
+        // an earlier run [0, 1] whose block 1 does not link to block 0, then a last milestone signed by everyone
+        SignedBlock memory blockZero =
+            _makeSignedGenesisBlock(PK_A, CHANNEL_ID, genesisForkId, 1, keccak256(abi.encode(genesis)));
+        MilestoneProof memory unlinkedRun;
+        unlinkedRun.blockConfirmations = new BlockConfirmation[](2);
+        unlinkedRun.blockConfirmations[0].signedBlock = blockZero;
+        unlinkedRun.blockConfirmations[1].signedBlock =
+            _makeSignedBlock(PK_A, CHANNEL_ID, genesisForkId, 1, 2, keccak256("not the genesis block"));
+        MilestoneProof memory lastMilestone = _milestone(CHANNEL_ID, genesisForkId, _keys(PK_A, PK_B));
+        Dispute memory dispute = _dispute(H0, 1, new address[](0), lastMilestone);
         dispute.input.forkId = genesisForkId;
-        SignedBlock[] memory signedBlocks = new SignedBlock[](2);
-        signedBlocks[0] = _makeSignedGenesisBlock(PK_A, CHANNEL_ID, genesisForkId, 1, bytes32(0));
-        signedBlocks[1] = _makeSignedBlock(PK_A, CHANNEL_ID, genesisForkId, 1, 2, keccak256("not the genesis block"));
-        dispute.input.stateProof.signedBlocks = signedBlocks;
+        dispute.input.stateProof.milestones = new MilestoneProof[](2);
+        dispute.input.stateProof.milestones[0] = unlinkedRun;
+        dispute.input.stateProof.milestones[1] = lastMilestone;
         assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "final against the frozen set");
         harness.seedWindow(CHANNEL_ID, genesisForkId, dispute);
 
         DisputeInvalidStateProof memory payload;
-        payload.auditingData.genesisStateSnapshotData = genesis;
+        payload.auditingData.genesisStateSnapshotData = genesisData;
         vm.prank(b);
         harness.applyDisputeFraudProofs(
             _proof(DisputeFraudProofType.DisputeInvalidStateProof, abi.encode(payload), dispute)
         );
 
-        assertTrue(harness.isSlashed(CHANNEL_ID, a), "unlinked signed blocks slash the disputer");
+        assertTrue(harness.isSlashed(CHANNEL_ID, a), "an unlinked earlier run slashes the disputer");
         assertFalse(harness.isSlashed(CHANNEL_ID, b), "valid proof keeps the submitter");
     }
 

@@ -24,6 +24,11 @@ TypeScript mirrors of Solidity enums (proof types, message types) — kept in lo
 ## Key design decisions
 
 1. **Enum drift is a protocol bug**, so the mirrors live in one file with the contract names.
+2. **New values are appended last.** `DisputeStateProofBelowOnChainAnchor` is the last
+   `DisputeFraudProofType` member ([#L30](../../../../../../src/types/sol-enums.ts#L30)): SDK value 218, Solidity index 18 through
+   `toSolidityDisputeFraudProofType` ([#L35](../../../../../../src/types/sol-enums.ts#L35)), the same position as in the contract enum
+   ([ProofTypes.sol](../../contracts/V1/types/ProofTypes.sol.md)). Why: appending keeps every existing value and its encoded
+   `proofType` byte unchanged.
 
 ## Inputs, outputs, state, and side effects
 

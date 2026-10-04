@@ -1,3 +1,4 @@
+import { stageAuditorOfflineThroughKillPeriod } from "@test/fixtures/OfflineAuditorStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -65,7 +66,7 @@ describe("Dispute commit reduction schedule", function () {
                 remainingMs,
                 "the recovery must land inside the kill period"
             ).to.be.greaterThan(2000);
-            await restoreCommits(false);
+            await restoreCommits();
             // One recovery pass answers null while a commitment's log is not
             // yet readable; retry inside the window.
             await waitFor(
@@ -93,5 +94,40 @@ describe("Dispute commit reduction schedule", function () {
         expect(await h.control(node).query.getForkId().request()).to.not.equal(
             forkId
         );
+    });
+
+    it("a commit recovered after its kill period expired → audited in full: the replay stores the head state the peer missed, the confirmation is kept, nothing is killed", async function () {
+        const h = TestSession.getHarness();
+        // the fork stays current on every peer: no reduction runs
+        const {
+            forkId,
+            offlineIndex: missedIndex,
+            restoreCommits,
+            headState,
+            waitUntilKillPeriodExpired
+        } = await stageAuditorOfflineThroughKillPeriod(h, "everyPeer");
+        const missed = h.control(h.getPeer(missedIndex));
+        expect(await headState(), "the peer missed the head").to.equal(null);
+        await waitUntilKillPeriodExpired();
+
+        await h.network.reconnectPeers([missedIndex]);
+        await restoreCommits();
+        // one recovery pass answers null while a commitment's log is not
+        // yet readable
+        await waitFor(async () => {
+            const recovered = await missed.dispute
+                .recoverCommittedDisputes(forkId)
+                .request();
+            return recovered !== null && recovered > 0;
+        }, h.event.protocolEventTimeoutMs());
+        await h.assert.storage.storedDisputeConfirmationsWait({
+            peerIndices: [missedIndex],
+            forkId
+        });
+
+        expect(await headState()).to.not.equal(null);
+        expect(
+            h.event.getEventCallCount(missedIndex, "onDisputeKilled")
+        ).to.equal(0);
     });
 });

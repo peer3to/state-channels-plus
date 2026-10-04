@@ -1,6 +1,7 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {StateProofStaging} from "../harness/StateProofStaging.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
@@ -32,6 +33,8 @@ import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondPro
 import {
     DisputeBlockAuthorNotParticipant,
     DisputeInvalidBlockStructure,
+    DisputeInvalidStateProof,
+    DisputeStateProofBelowOnChainAnchor,
     TimeoutCalldataPosted
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
@@ -90,10 +93,14 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 
     function handleBlockAuthorNotParticipant(bytes memory encodedProof, Dispute memory dispute)
         external
-        view
         returns (address)
     {
         return _handleDisputeBlockAuthorNotParticipant(encodedProof, dispute);
+    }
+
+    /// the chain snapshot a block challenge's region is established against
+    function seedSnapshot(bytes32 channelId, StateSnapshot memory snapshot) external {
+        stateSnapshots[channelId] = snapshot;
     }
 
     /// Exposes the internal slash-window read so the shrink behaviour can be asserted directly.
@@ -593,28 +600,37 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(afterAll[1], second);
     }
 
-    function test_isInvalidBlockStructure_validSignedOnlyChain_returnsFalse() public {
+    // the structure predicate addresses the submitted block index of the last milestone
+    function test_isInvalidBlockStructure_validOneMilestoneChain_returnsFalse() public {
         StateProof memory stateProof = _twoBlockStateProof();
         assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 0));
         assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 2), "past the milestone");
     }
 
     function test_isInvalidBlockStructure_invalidSignature_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1].signature = hex"00";
+        stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
     function test_isInvalidBlockStructure_brokenLink_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1] = _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256("wrong"));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256("wrong"));
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
     function test_isInvalidBlockStructure_skippedHeight_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1] =
-            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 2, 2, keccak256(stateProof.signedBlocks[0].encodedBlock));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            2,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
@@ -779,7 +795,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         // The signature and block chain are structurally valid. The dedicated
         // proof is needed because the author is absent from both snapshots.
-        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
 
@@ -788,26 +805,25 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
             _disputeBlockAuthorNotParticipantProof();
         proof.resultingStateSnapshot.snapshotData.stateMachineStateHash = keccak256("forged");
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
     }
 
     function test_disputeBlockAuthorNotParticipant_authorInEitherSnapshot_rejected() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-        proof.previousStateSnapshot.snapshotData.participants[0] = signer;
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.previousBlockHash = keccak256(abi.encode(proof.previousStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        address signer = vm.addr(1);
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        previousSnapshot.snapshotData.participants[0] = signer;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
 
-        (dispute, proof, signer) = _disputeBlockAuthorNotParticipantProof();
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
-        invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        (previousSnapshot, resultingSnapshot) = _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = signer;
+        (dispute, proof,) = _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
     }
 
@@ -818,16 +834,14 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         // the author is not a participant and the proof is valid - matching the
         // off-chain author gate so an honest auditor is never slashed.
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
         // stale: the resulting snapshot belongs to a later height, not this block
-        proof.resultingStateSnapshot.blockHeight = 5;
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        resultingSnapshot.blockHeight = 5;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
 
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
@@ -840,18 +854,36 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         // not a participant and the proof is valid - matching the off-chain
         // author gate so an honest auditor is never slashed.
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
         // stale: the resulting snapshot belongs to a different fork, not this block's
-        proof.resultingStateSnapshot.forkId = keccak256("other-fork");
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        resultingSnapshot.forkId = keccak256("other-fork");
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
 
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_indexOutsideUnfinalTail_rejected() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof();
+        // control: with the chain snapshot at block 0's height, block 1 is in the unfinal tail and the proof holds
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+
+        // the chain snapshot at block 1's height makes block 1 finalized history: the same proof is rejected
+        StateSnapshot memory atBlockOne = abi.decode(abi.encode(proof.previousStateSnapshot), (StateSnapshot));
+        atBlockOne.blockHeight = 1;
+        harness.seedSnapshot(CHANNEL_ID, atBlockOne);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "final block");
+
+        // an index past the last milestone is not eligible either
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        proof.blockIndex = 2;
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "past the run");
     }
 
     function test_blockInvalidStateTransition_wrongTurnWithCorrectSnapshot_slashesSigner() public {
@@ -908,13 +940,23 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]));
     }
 
+    /// one milestone of two linked blocks
     function _twoBlockStateProof() internal pure returns (StateProof memory stateProof) {
-        stateProof.signedBlocks = new SignedBlock[](2);
-        stateProof.signedBlocks[0] = _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 0, 1, bytes32(0));
-        stateProof.signedBlocks[1] =
-            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256(stateProof.signedBlocks[0].encodedBlock));
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 0, 1, bytes32(0));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            1,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
     }
 
+    /// a one-milestone dispute whose second block is unsigned, so the structure proof at (0, 1) holds
     function _structurallyInvalidDispute(bytes32 forkId, address disputer)
         internal
         pure
@@ -923,15 +965,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         dispute.input.channelId = CHANNEL_ID;
         dispute.input.forkId = forkId;
         dispute.input.disputer = disputer;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
-        dispute.input.stateProof.signedBlocks[0].signature = hex"00";
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        SignedBlock memory first = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = first;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, forkId, 1, 2, keccak256(first.encodedBlock));
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
     }
 
     function _structuralProof(Dispute memory dispute) internal pure returns (DisputeFraudProof memory proof) {
         proof.dispute = dispute;
         proof.proofType = DisputeFraudProofType.DisputeInvalidBlockStructure;
-        proof.encodedProof = abi.encode(DisputeInvalidBlockStructure({blockIndexInUnfinalizedPartOfStateProof: 0}));
+        DisputeInvalidBlockStructure memory payload;
+        payload.blockIndex = 1;
+        proof.encodedProof = abi.encode(payload);
         proof.participant = dispute.input.disputer;
     }
 
@@ -1007,34 +1055,64 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         pure
         returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer)
     {
-        signer = vm.addr(1);
-        StateSnapshot memory previousSnapshot;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        return _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+    }
+
+    /// participants that exclude the signer on both sides; the resulting snapshot is block 1's own
+    function _authorNotParticipantSnapshots()
+        internal
+        pure
+        returns (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot)
+    {
         previousSnapshot.snapshotData.participants = new address[](1);
         previousSnapshot.snapshotData.participants[0] = address(0xA1);
-        StateSnapshot memory resultingSnapshot;
+        // the chain snapshot of this fork that block 0 commits: the challenged block 1 is after it
+        previousSnapshot.forkId = FORK_ID;
         resultingSnapshot.snapshotData.participants = new address[](1);
         resultingSnapshot.snapshotData.participants[0] = address(0xA2);
         // the resulting snapshot is this block's own -> coordinate-bound
         resultingSnapshot.forkId = FORK_ID;
-        resultingSnapshot.blockHeight = 0;
+        resultingSnapshot.blockHeight = 1;
+    }
+
+    /// a one-milestone dispute [block 0 committing `previousSnapshot`, the signer's block 1 committing
+    /// `resultingSnapshot`]; the proof names block 1 with block 0 as its predecessor, and the chain snapshot
+    /// `previousSnapshot` as the anchor its eligibility is decided from
+    function _disputeBlockAuthorNotParticipantProof(
+        StateSnapshot memory previousSnapshot,
+        StateSnapshot memory resultingSnapshot
+    ) internal pure returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) {
+        signer = vm.addr(1);
+        Block memory previousBlock;
+        previousBlock.transaction.header.channelId = CHANNEL_ID;
+        previousBlock.transaction.header.participant = vm.addr(2);
+        previousBlock.transaction.header.forkId = FORK_ID;
+        previousBlock.stateSnapshotHash = keccak256(abi.encode(previousSnapshot));
+        bytes memory encodedPreviousBlock = abi.encode(previousBlock);
+        SignedBlock memory signedPreviousBlock =
+            SignedBlock({encodedBlock: encodedPreviousBlock, signature: _sign(2, encodedPreviousBlock)});
 
         Block memory invalidBlock;
         invalidBlock.transaction.header.channelId = CHANNEL_ID;
         invalidBlock.transaction.header.participant = signer;
         invalidBlock.transaction.header.forkId = FORK_ID;
-        invalidBlock.transaction.header.transactionCnt = 0;
-        invalidBlock.previousBlockHash = keccak256(abi.encode(previousSnapshot));
+        invalidBlock.transaction.header.transactionCnt = 1;
+        invalidBlock.previousBlockHash = keccak256(encodedPreviousBlock);
         invalidBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
         bytes memory encodedBlock = abi.encode(invalidBlock);
         dispute.input.channelId = CHANNEL_ID;
         dispute.input.forkId = FORK_ID;
         dispute.input.disputer = address(0xD1);
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] =
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = signedPreviousBlock;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
             SignedBlock({encodedBlock: encodedBlock, signature: _sign(1, encodedBlock)});
         proof = DisputeBlockAuthorNotParticipant({
-            blockIndexInUnfinalizedPartOfStateProof: 0,
-            previousBlock: SignedBlock({encodedBlock: "", signature: ""}),
+            blockIndex: 1,
+            previousBlock: signedPreviousBlock,
             previousStateSnapshot: previousSnapshot,
             resultingStateSnapshot: resultingSnapshot
         });
@@ -1667,5 +1745,517 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
     function _chainHead(MessageBlock[] memory blocks) internal pure returns (bytes32 head) {
         head = blocks.length == 0 ? bytes32(0) : keccak256(abi.encode(blocks[blocks.length - 1]));
+    }
+}
+
+/// The block-pointing challenge wrappers address a block index of the last milestone; only a block at or after its
+/// unfinal tail start and above the on-chain anchor can punish the dispute submitter, and the balance allegation is
+/// judged on the dispute's latest state. Every allegation runs through `applyDisputeFraudProofs` with its real inner
+/// evidence.
+// test naming: test_<canonical case in camel case>
+contract StateProofChallengeBoundaryTest is StateProofStaging {
+    function setUp() public {
+        _stageGenesisChannel();
+    }
+
+    // ---- block-challenge eligibility: one row per case ----
+
+    uint256 private constant ELIGIBILITY_CASES = 12;
+
+    function test_blockChallengeEligibility() public {
+        for (uint256 c = 0; c < ELIGIBILITY_CASES; c++) {
+            harness.seedSnapshot(CHANNEL, genesis);
+            (MilestoneProof[] memory milestones, uint256 blockIndex, bool isEligible) = _eligibilityCase(c);
+            (Dispute memory dispute,) = _dispute(milestones, new StateSnapshot[](0), false);
+            assertEq(_isEligible(dispute, blockIndex), isEligible, string.concat("case ", vm.toString(c)));
+        }
+    }
+
+    /// eligibility case `c`: its proof, the challenged index of the last milestone and the expected answer
+    function _eligibilityCase(uint256 c)
+        private
+        returns (MilestoneProof[] memory m, uint256 blockIndex, bool isEligible)
+    {
+        uint256[] memory both = _signers(ALICE_KEY, BOB_KEY);
+        if (c <= 1) {
+            // the anchor 5 is inside the last run [3, 7]: the tail starts at offset 2 + 1
+            _seedAnchor(ANCHOR_HEIGHT);
+            return (_one(_run(3, 5, bytes32(0), _signers(ALICE_KEY))), c == 0 ? 2 : 3, c == 1);
+        }
+        if (c <= 3) {
+            // one milestone from genesis block 0: the tail starts at 0, also when block 0 is threshold-final
+            uint256[] memory zeroSigners = c == 2 ? _signers(ALICE_KEY) : both;
+            return (_one(_genesisRun(3, genesisData.participants, zeroSigners)), 0, true);
+        }
+        if (c <= 5) {
+            // a later milestone: its first block is threshold-final, the tail starts at 1
+            m = _two(
+                _genesisRun(1, genesisData.participants, both), _thresholdRun(3, 3, genesisData.participants, both)
+            );
+            return (m, c - 4, c == 5);
+        }
+        if (c <= 7) {
+            // one milestone not starting at block 0: the tail starts at 1
+            return (_one(_thresholdRun(3, 3, genesisData.participants, both)), c - 6, c == 7);
+        }
+        if (c == 8) {
+            // above the anchor 5 the tail starts at 1, but block 1 claims height 4: not above the anchor
+            _seedAnchor(ANCHOR_HEIGHT);
+            m = _one(_run(6, 2, bytes32(0), _signers(ALICE_KEY)));
+            Block memory below = _decode(m[0], 1);
+            below.transaction.header.transactionCnt = ANCHOR_HEIGHT - 1;
+            _replaceBlock(m[0], 1, below, _signers(ALICE_KEY));
+            return (m, 1, false);
+        }
+        if (c == 9) {
+            // an on-chain snapshot of another fork is no anchor: its height does not bound the tail
+            StateSnapshot memory otherFork = _snapshot(10, genesisData.participants);
+            otherFork.forkId = keccak256("other-fork");
+            harness.seedSnapshot(CHANNEL, otherFork);
+            return (_one(_thresholdRun(3, 3, genesisData.participants, both)), 1, true);
+        }
+        if (c == 10) {
+            // past the last run
+            return (_one(_thresholdRun(3, 2, genesisData.participants, both)), 2, false);
+        }
+        // the empty proof holds no block
+        return (new MilestoneProof[](0), 0, false);
+    }
+
+    // ---- block challenges against the last milestone's unfinal tail ----
+
+    function test_unfinalGenesisZeroIsEligible() public {
+        MilestoneProof memory run = _genesisRun(3, genesisData.participants, _signers(ALICE_KEY));
+        // block 0 is dated before its genesis; only its author signed it, so it is still unfinal
+        _redateAt(run, 0, GENESIS_TIMESTAMP - 1, _signers(ALICE_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(_snapshot(0, genesisData.participants)), false);
+        _commit(dispute);
+
+        assertTrue(_isEligible(dispute, 0));
+        SignedBlock memory noPredecessor;
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            _applyProof(_invalidTimestamp(run.blockConfirmations[0].signedBlock, noPredecessor, genesis), 0)
+        );
+        _assertKilled(dispute);
+    }
+
+    function test_embeddedBlockHashMismatchRejects() public {
+        StateSnapshot memory anchor = _seedAnchor(ANCHOR_HEIGHT);
+        MilestoneProof memory run = _run(4, 4, bytes32(0), _signers(ALICE_KEY));
+        _backdateAt(run, 3, _signers(ALICE_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        // a different backdated block 7: its own block proof holds, but it is not the submitted block
+        MilestoneProof memory other = _run(4, 4, bytes32(0), _signers(ALICE_KEY));
+        _redateAt(other, 3, _decode(other, 2).transaction.header.timestamp - 2, _signers(ALICE_KEY));
+        assertTrue(_isEligible(dispute, 3), "the position itself is eligible");
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            _applyProof(_invalidTimestampAt(other, 3), 3)
+        );
+        _assertRejected(dispute);
+    }
+
+    function test_structureChallengeNeedsNoValidWalk() public {
+        // the earlier run misses B's signature and the last run's block 6 is unlinked: a malformed block is never
+        // honest history, so the structure allegation needs no walk
+        MilestoneProof memory earlier = _thresholdRun(1, 2, genesisData.participants, _signers(ALICE_KEY));
+        MilestoneProof memory last = _thresholdRun(4, 3, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _breakLinkAt(last, 2);
+        StateSnapshot[] memory snapshots =
+            _entries(_snapshot(1, genesisData.participants), _snapshot(4, genesisData.participants));
+        (Dispute memory dispute,) = _dispute(_two(earlier, last), snapshots, false);
+        _commit(dispute);
+
+        assertFalse(_walk(dispute.input.stateProof.milestones, snapshots).valid, "the whole proof is invalid");
+        (bool found, uint256 blockIndex) =
+            _diamond().findFirstInvalidBlockStructureInStateProof(dispute.input.stateProof);
+        assertTrue(found);
+        assertEq(blockIndex, 2);
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(2));
+        _assertKilled(dispute);
+    }
+
+    function test_postedDataAllRequiredHopsValidPermitsActualTailChallenge() public {
+        (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) =
+            _exitHopProof(_signers(ALICE_KEY, BOB_KEY), 3);
+        _backdateAt(milestones[1], 2, _signers(ALICE_KEY));
+        (Dispute memory dispute,) = _dispute(milestones, snapshots, true);
+        _commit(dispute);
+
+        assertTrue(_isEligible(dispute, 2));
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
+            _applyProof(_invalidTimestampAt(milestones[1], 2), 2)
+        );
+        _assertKilled(dispute);
+    }
+
+    function test_postedDataFailingRequiredHopSupportsInvalidStateProofCounter() public {
+        // B's exit lacks B's own signature: the required hop fails
+        (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) = _exitHopProof(_signers(ALICE_KEY), 3);
+        (Dispute memory dispute, DisputeAuditingData memory auditingData) = _dispute(milestones, snapshots, true);
+        _commit(dispute);
+
+        // the hash-bound posted data proves the invalid state proof itself
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeInvalidStateProof,
+            abi.encode(DisputeInvalidStateProof({auditingData: auditingData}))
+        );
+        _assertKilled(dispute);
+    }
+
+    function test_challengeReusesSubmittedSignaturesWithoutDuplicateSignaturePayload() public {
+        // the posted snapshots carry no signatures: the walk counts the confirmations the dispute submitted
+        (MilestoneProof[] memory signedExit, StateSnapshot[] memory snapshots) =
+            _exitHopProof(_signers(ALICE_KEY, BOB_KEY), 1);
+        (MilestoneProof[] memory unsignedExit,) = _exitHopProof(_signers(ALICE_KEY), 1);
+        (Dispute memory honest, DisputeAuditingData memory auditingData) = _dispute(signedExit, snapshots, true);
+        (Dispute memory dispute,) = _dispute(unsignedExit, snapshots, true);
+        // one challenge payload for both: the honest posting, with the state the honest walk ends at
+        auditingData.latestStateSnapshot = snapshots[1];
+        honest.input.disputeAuditingDataHash = keccak256(abi.encode(auditingData));
+        dispute.input.disputeAuditingDataHash = honest.input.disputeAuditingDataHash;
+
+        // the same payload: B's submitted exit signature alone decides
+        assertTrue(_diamond().verifyStateProof(honest, auditingData), "B signed its exit");
+        _commit(dispute);
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeInvalidStateProof,
+            abi.encode(DisputeInvalidStateProof({auditingData: auditingData}))
+        );
+        _assertKilled(dispute);
+    }
+
+    function test_invalidFullProofAloneDoesNotProveBlockOffense() public {
+        // B's exit lacks B's signature: the whole proof is invalid, yet every block of the last run is well formed
+        (MilestoneProof[] memory milestones, StateSnapshot[] memory snapshots) = _exitHopProof(_signers(ALICE_KEY), 3);
+        (Dispute memory dispute,) = _dispute(milestones, snapshots, false);
+        _commit(dispute);
+
+        assertFalse(_walk(milestones, snapshots).valid, "the whole proof is invalid");
+        assertTrue(_isEligible(dispute, 2), "an unfinal tail block");
+        (bool found,) = _diamond().findFirstInvalidBlockStructureInStateProof(dispute.input.stateProof);
+        assertFalse(found, "no block offense");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(2));
+        _assertRejected(dispute);
+    }
+
+    function test_wrongChallengerSnapshotRejectsDespiteEarlierProofDefect() public {
+        // the earlier run misses B's signature; the last run's block 5 commits a valid balance state
+        (StateSnapshot memory latest,) = _balanceSnapshot(5, genesisData.participants, 0, 0);
+        MilestoneProof memory earlier = _thresholdRun(1, 2, genesisData.participants, _signers(ALICE_KEY));
+        MilestoneProof memory last = _thresholdRun(4, 2, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _commitAt(last, 1, keccak256(abi.encode(latest)), _signers(ALICE_KEY));
+        StateSnapshot[] memory snapshots =
+            _entries(_snapshot(1, genesisData.participants), _snapshot(4, genesisData.participants));
+        (Dispute memory dispute,) = _dispute(_two(earlier, last), snapshots, false);
+        _commit(dispute);
+        assertFalse(_walk(dispute.input.stateProof.milestones, snapshots).valid, "the earlier proof defect");
+
+        // the challenger's snapshot 5 breaks the invariant, but block 5 does not commit it
+        (StateSnapshot memory wrong, bytes memory wrongState) = _balanceSnapshot(5, genesisData.participants, 25, 0);
+        assertFalse(harness.verifyBalanceInvariantCheckSnapshot(CHANNEL, wrong.snapshotData, wrongState));
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBalanceInvariant, _balanceProof(wrong, wrongState));
+        _assertRejected(dispute);
+    }
+
+    // ---- the input-only structure predicate ----
+
+    function test_compactThresholdFirstBlockHasNoStructureOffense() public {
+        MilestoneProof memory run = _thresholdRun(98, 3, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(_snapshot(98, genesisData.participants)), false);
+        _commit(dispute);
+
+        assertFalse(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0), "no gap offense");
+        (bool found,) = _diamond().findFirstInvalidBlockStructureInStateProof(dispute.input.stateProof);
+        assertFalse(found);
+        assertFalse(_isEligible(dispute, 0), "the final first block");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(0));
+        _assertRejected(dispute);
+    }
+
+    function test_unauthenticFirstBlockIsAStructureOffense() public {
+        MilestoneProof memory run = _thresholdRun(98, 2, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        _badAuthorAt(run, 0);
+        assertTrue(_diamond().isInvalidBlockStructureInStateProof(StateProof(_one(run)), 0), "wrong author");
+        run.blockConfirmations[0].signedBlock.encodedBlock = hex"1234";
+        assertTrue(_diamond().isInvalidBlockStructureInStateProof(StateProof(_one(run)), 0), "malformed encoding");
+    }
+
+    function test_singletonThresholdFirstBlockHasNoStructureOffense() public {
+        // one milestone of one threshold-final block 98: it needs no predecessor
+        MilestoneProof memory run = _thresholdRun(98, 1, genesisData.participants, _signers(ALICE_KEY, BOB_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(_snapshot(98, genesisData.participants)), false);
+        _commit(dispute);
+
+        assertFalse(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0), "no gap offense");
+        assertFalse(_isEligible(dispute, 0), "the final first block");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(0));
+        _assertRejected(dispute);
+    }
+
+    function test_normalAnchorFirstBlockHasNoStructureOffense() public {
+        StateSnapshot memory anchor = _seedAnchor(ANCHOR_HEIGHT);
+        // the run starts at the anchor block 5, which commits the anchor and does not link to block 4
+        MilestoneProof memory run = _run(ANCHOR_HEIGHT, 3, keccak256("unlinked"), _signers(ALICE_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        assertTrue(_walk(dispute.input.stateProof.milestones, _entries(anchor)).valid, "the anchor run");
+        assertFalse(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0), "no gap offense");
+        assertFalse(_isEligible(dispute, 0), "the anchor block");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(0));
+        _assertRejected(dispute);
+    }
+
+    function test_unfinalGenesisFirstBlockChecksAuthenticity() public {
+        MilestoneProof memory run = _genesisRun(3, genesisData.participants, _signers(ALICE_KEY));
+        assertFalse(_diamond().isInvalidBlockStructureInStateProof(StateProof(_one(run)), 0), "control: authentic");
+        // only A signed block 0, so it is unfinal; B's signature replaces its author's
+        _badAuthorAt(run, 0);
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(_snapshot(0, genesisData.participants)), false);
+        _commit(dispute);
+
+        assertTrue(_isEligible(dispute, 0), "the unfinal tail starts at block 0");
+        assertTrue(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0), "wrong author");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(0));
+        _assertKilled(dispute);
+    }
+
+    // ---- the on-chain anchor bounds the challenge ----
+
+    function test_anchor5PermitsBrokenLinkBlock6StructureChallenge() public {
+        StateSnapshot memory anchor = _seedAnchor(ANCHOR_HEIGHT);
+        // the last run [4, 7] holds the anchor 5; block 6 does not link to it
+        MilestoneProof memory run = _run(ANCHOR_HEIGHT - 1, 4, keccak256("block 3"), _signers(ALICE_KEY));
+        _breakLinkAt(run, 2);
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        assertTrue(_isEligible(dispute, 2), "block 6 is above the anchor");
+        assertTrue(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 2), "broken link");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(2));
+        _assertKilled(dispute);
+    }
+
+    function test_anchor5PermitsBadAuthorBlock6StructureChallenge() public {
+        StateSnapshot memory anchor = _seedAnchor(ANCHOR_HEIGHT);
+        // the last run [4, 7] holds the anchor 5; B signed block 6, whose header names A
+        MilestoneProof memory run = _run(ANCHOR_HEIGHT - 1, 4, keccak256("block 3"), _signers(ALICE_KEY));
+        _badAuthorAt(run, 2);
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        assertTrue(_isEligible(dispute, 2), "block 6 is above the anchor");
+        assertTrue(_diamond().isInvalidBlockStructureInStateProof(dispute.input.stateProof, 2), "wrong author");
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBlockStructure, _structureProof(2));
+        _assertKilled(dispute);
+    }
+
+    function test_faultyBlockCannotSupplyIndispensableThresholdEvidence() public {
+        // no posted data: the invalid-state-proof counter needs the last milestone final by everyone. The earlier
+        // run [1, 2] does not link.
+        uint256[] memory both = _signers(ALICE_KEY, BOB_KEY);
+        MilestoneProof memory earlier = _thresholdRun(1, 2, genesisData.participants, both);
+        _breakLinkAt(earlier, 1);
+        MilestoneProof memory last = _thresholdRun(4, 2, genesisData.participants, both);
+        (Dispute memory control,) = _dispute(_two(earlier, last), new StateSnapshot[](0), false);
+        assertTrue(harness.isLastMilestoneFinalByEveryone(control), "control: block 4 establishes the boundary");
+        assertFalse(_diamond().isStateProofLinked(CHANNEL, forkId, control.input.stateProof, genesisData));
+
+        // block 4 still carries A's and B's signatures, but B's is its block signature while its header names A
+        MilestoneProof memory faulty = _thresholdRun(4, 2, genesisData.participants, both);
+        _badAuthorAt(faulty, 0);
+        faulty.blockConfirmations[0].signatures[0] =
+            _sign(ALICE_KEY, faulty.blockConfirmations[0].signedBlock.encodedBlock);
+        (Dispute memory dispute,) = _dispute(_two(earlier, faulty), new StateSnapshot[](0), false);
+        _commit(dispute);
+        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "a faulty block supplies no threshold");
+
+        DisputeInvalidStateProof memory payload;
+        payload.auditingData.genesisStateSnapshotData = genesisData;
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidStateProof, abi.encode(payload));
+        _assertRejected(dispute);
+    }
+
+    // ---- the below-anchor counter ----
+
+    function test_emptyGenesisWithPositiveAnchorIsCountered() public {
+        // the chain advanced to the normal snapshot 5: the empty proof's genesis claim is behind it
+        _seedAnchor(ANCHOR_HEIGHT);
+        (Dispute memory dispute,) = _dispute(new MilestoneProof[](0), new StateSnapshot[](0), false);
+        _commit(dispute);
+
+        assertTrue(_walk(new MilestoneProof[](0), new StateSnapshot[](0)).valid, "the walk accepts the genesis claim");
+        _apply(
+            dispute,
+            DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor,
+            abi.encode(DisputeStateProofBelowOnChainAnchor({__: false}))
+        );
+        _assertKilled(dispute);
+    }
+
+    // ---- the balance state is the dispute's latest state ----
+
+    function test_exitAnchorInsideLastRunRejectsOldBalanceSnapshot() public {
+        (StateSnapshot memory anchor,, StateSnapshot memory older, bytes memory olderState, MilestoneProof memory run) =
+            _stageMissedExit();
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        // snapshot 4 is not the latest state
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBalanceInvariant, _balanceProof(older, olderState));
+        _assertRejected(dispute);
+    }
+
+    function test_exitAnchorInsideLastRunJudgesMatchingBalanceState() public {
+        (StateSnapshot memory anchor, bytes memory anchorState,,, MilestoneProof memory run) = _stageMissedExit();
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        assertTrue(harness.verifyBalanceInvariantCheckSnapshot(CHANNEL, anchor.snapshotData, anchorState));
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBalanceInvariant, _balanceProof(anchor, anchorState));
+        _assertRejected(dispute);
+    }
+
+    function test_wrongSelectedStateHashRejects() public {
+        (StateSnapshot memory anchor,,, bytes memory olderState, MilestoneProof memory run) = _stageMissedExit();
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        // the latest snapshot 5 with the machine-state bytes of snapshot 4
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBalanceInvariant, _balanceProof(anchor, olderState));
+        _assertRejected(dispute);
+    }
+
+    function test_unfinalLatestInvalidBalanceProvesFraud() public {
+        (StateSnapshot memory anchor,,,,) = _stageMissedExit();
+        // the unfinal tail block 6 claims deposits the chain never received
+        (StateSnapshot memory six, bytes memory sixState) = _balanceSnapshot(6, genesisData.participants, 25, 20);
+        MilestoneProof memory run = _run(ANCHOR_HEIGHT, 2, bytes32(0), _signers(ALICE_KEY));
+        _commitAt(run, 0, keccak256(abi.encode(anchor)), _signers(ALICE_KEY));
+        _commitAt(run, 1, keccak256(abi.encode(six)), _signers(ALICE_KEY));
+        (Dispute memory dispute,) = _dispute(_one(run), _entries(anchor), false);
+        _commit(dispute);
+
+        _apply(dispute, DisputeFraudProofType.DisputeInvalidBalanceInvariant, _balanceProof(six, sixState));
+        _assertKilled(dispute);
+    }
+}
+
+/// Participants may dispute with different valid suffix lengths of one history: the reduction takes the longest
+/// proved view, whatever the order the disputes are committed in, and two different blocks one author signed at the
+/// same height are a slashable double-sign.
+// test naming: test_<canonical case in camel case>
+contract NonFinalSuffixReductionTest is StateProofStaging {
+    function setUp() public {
+        _stageGenesisChannel();
+    }
+
+    uint256 private constant REDUCTION_CASES = 4;
+
+    function test_reductionTakesTheLongestProvedSuffix() public {
+        for (uint256 c = 0; c < REDUCTION_CASES; c++) {
+            (Dispute[] memory disputes, bool hasBlock, uint256 height, bytes32 commitment) = _reductionCase(c);
+            ReduceOutput memory out = harness.reduce(disputes);
+            string memory label = string.concat("case ", vm.toString(c));
+            assertEq(out.latestBlock.transaction.header.participant != address(0), hasBlock, label);
+            assertEq(out.latestBlock.transaction.header.transactionCnt, height, label);
+            assertEq(out.latestBlock.stateSnapshotHash, commitment, label);
+        }
+    }
+
+    /// reduction case `c`: the committed views, and whether the output holds a block, its height and its commitment.
+    /// A's shorter view [3, 4] and B's longer view [3, 6] are of the same history: [3, 4] is the predecessor.
+    function _reductionCase(uint256 c)
+        private
+        view
+        returns (Dispute[] memory disputes, bool hasBlock, uint256 height, bytes32 commitment)
+    {
+        disputes = new Dispute[](2);
+        if (c == 0) {
+            disputes[0] = _view(3, 2);
+            disputes[1] = _view(3, 4);
+        } else if (c == 1) {
+            // concurrent views committed in the other order
+            disputes[0] = _view(3, 4);
+            disputes[1] = _view(3, 2);
+        } else if (c == 2) {
+            // a view that proves only the genesis never displaces a proved block
+            disputes[0] = _view(3, 2);
+            disputes[1] = _genesisView();
+            return (disputes, true, 4, _hashAt(4));
+        } else {
+            // only genesis views: the output holds no block
+            disputes[0] = _genesisView();
+            disputes[1] = _genesisView();
+            return (disputes, false, 0, bytes32(0));
+        }
+        return (disputes, true, 6, _hashAt(6));
+    }
+
+    function test_conflictingSameHeightCommitmentsExposeADoubleSign() public {
+        MilestoneProof memory honest = _run(3, 2, keccak256("block 2"), _signers(ALICE_KEY));
+        // A also signed another block 4, committing another state
+        MilestoneProof memory conflicting = _run(3, 2, keccak256("block 2"), _signers(ALICE_KEY));
+        _commitAt(conflicting, 1, keccak256("another state"), _signers(ALICE_KEY));
+        SignedBlock memory honestFour = honest.blockConfirmations[1].signedBlock;
+        SignedBlock memory conflictingFour = conflicting.blockConfirmations[1].signedBlock;
+
+        assertEq(harness.judgeFraudProof(CHANNEL, _doubleSign(honestFour, conflictingFour)), alice, "A double-signed");
+        // the same signed block twice is no conflict
+        assertEq(harness.judgeFraudProof(CHANNEL, _doubleSign(honestFour, honestFour)), address(0), "duplicate");
+        // the conflicting block signed by B is not A's commitment
+        SignedBlock memory signedByBob = SignedBlock({
+            encodedBlock: conflictingFour.encodedBlock,
+            signature: _sign(BOB_KEY, conflictingFour.encodedBlock)
+        });
+        assertEq(harness.judgeFraudProof(CHANNEL, _doubleSign(honestFour, signedByBob)), address(0), "other signer");
+
+        // the reduction still answers one block for the two equal-height views, in either order
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = _view(honest);
+        disputes[1] = _view(conflicting);
+        bytes32 first = keccak256(abi.encode(harness.reduce(disputes).latestBlock));
+        disputes[0] = _view(conflicting);
+        disputes[1] = _view(honest);
+        ReduceOutput memory out = harness.reduce(disputes);
+        assertEq(keccak256(abi.encode(out.latestBlock)), first, "order-independent");
+        assertEq(out.latestBlock.transaction.header.transactionCnt, 4);
+    }
+
+    /// A's dispute on this fork carrying the one milestone `run`
+    function _view(MilestoneProof memory run) private view returns (Dispute memory dispute) {
+        (dispute,) = _dispute(_one(run), new StateSnapshot[](0), false);
+    }
+
+    /// A's view of `count` linked blocks from `firstHeight`
+    function _view(uint256 firstHeight, uint256 count) private view returns (Dispute memory) {
+        return _view(_run(firstHeight, count, keccak256("block 2"), _signers(ALICE_KEY)));
+    }
+
+    /// a view that proves only the fork genesis
+    function _genesisView() private view returns (Dispute memory dispute) {
+        (dispute,) = _dispute(new MilestoneProof[](0), new StateSnapshot[](0), false);
+    }
+
+    function _doubleSign(SignedBlock memory block1, SignedBlock memory block2)
+        private
+        view
+        returns (FraudProof memory)
+    {
+        return FraudProof({
+            proofType: FraudProofType.BlockDoubleSign,
+            participant: alice,
+            encodedProof: abi.encode(BlockDoubleSignProof({block1: block1, block2: block2}))
+        });
     }
 }

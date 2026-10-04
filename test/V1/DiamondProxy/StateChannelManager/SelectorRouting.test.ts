@@ -7,6 +7,7 @@ import {
     facetRoutingSpec,
     facetSelectorCollisions,
     interfaceFunctions,
+    proxyOwnedFunctions,
     proxyShadowedRoutedFunctions
 } from "@test/fixtures/ProxySelectorRoutingFixture";
 import {
@@ -139,6 +140,29 @@ describe("StateChannelManagerProxy selector routing", function () {
             facetRoutingSpec("FraudProofFacet"),
             consumerFacetAddress
         );
+    });
+
+    it("production cannot select trusted start", async function () {
+        const declared = interfaceFunctions().map((fragment) => fragment.name);
+        expect(declared).to.not.include("verifyMilestonesFromTrustedStart");
+        expect(
+            proxyOwnedFunctions().map(({ fragment }) => fragment.name)
+        ).to.not.include("verifyMilestonesFromTrustedStart");
+        // the ordinary verification entries keep their routes and read chain storage
+        for (const name of [
+            "verifyStateProof",
+            "verifyMilestones",
+            "isStateProofLinked",
+            "getAnchorSnapshot",
+            "isBlockChallengeEligible"
+        ] as const) {
+            expect(
+                await diamond.facetAddressForSelector(
+                    diamond.interface.getFunction(name).selector
+                ),
+                name
+            ).to.equal(facetAddresses.StateProofFacet);
+        }
     });
 
     it("has no selector defined by two facets", async function () {

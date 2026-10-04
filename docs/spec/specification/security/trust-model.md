@@ -107,7 +107,10 @@ availability failures, but it does NOT remove the assumption: correct operation 
 if every available endpoint is unavailable, dishonest, or malicious. A dishonest endpoint can feed
 a client a false chain view, suppress events, or censor its transactions; the protocol cannot
 detect this from inside the client. The assumption also inherits A1: it is only as strong as the
-resilience and decentralization of the underlying chain.
+resilience and decentralization of the underlying chain. A client accepts a state proof that verifies
+from its own latest threshold-final state without asking the chain; it relies on the chain only for an
+invalid verdict, and an unreachable chain makes a verification fail with an error, never an
+invalid verdict ([`REQ-SP-9-7MWKY8`](../disputes/state-proofs.md#req-sp-9-7mwky8)).
 
 **Intended:** Redundancy across independent providers as an availability improvement, explicitly
 documented as not removing the honesty assumption.
@@ -184,7 +187,7 @@ participant sets under this full-mesh topology.
 | Equivocation / double-signing        | `BlockDoubleSign` fraud proof over two conflicting signed blocks → slash.                                                                                                                                                                           |
 | Forged history                       | `WrongGenesis`, `InvalidTimestamp`, `ForgedInboundMessageBlock` fraud proofs reject blocks chaining from bad genesis, violating timing rules, or citing non-persisted inbound messages.                                                             |
 | Unavailability / griefing by silence | Deterministic author timeouts feed the dispute game; the channel progresses without the silent participant ([../protocol/disputes.md](../disputes/disputes.md)).                                                                                    |
-| Fraudulent disputes                  | Fraud-proof claims disprove disputes claiming a non-latest state, bad output, invalid state proof, broken balance invariant, or unjustified timeout.                                                                                                |
+| Fraudulent disputes                  | Fraud-proof claims disprove disputes claiming a non-latest state, a state below the same-fork on-chain snapshot, bad output, invalid state proof, broken balance invariant, or unjustified timeout.                                                 |
 | Spam / bogus proofs                  | Non-overwritable block-calldata commitments, the dispute-window kill period, and self-slashing of submitters of invalid proofs. Rate limiting at the P2P layer is NOT designed yet — see [security-assessment](../../audit/security-assessment.md). |
 | Value creation / theft               | Balance-algebra underflow rejection, settlement capped at deposits, `DisputeInvalidBalanceInvariant` on-chain.                                                                                                                                      |
 

@@ -795,16 +795,15 @@ describe("Unit: ValidationService", function () {
             );
         });
 
-        it("the peer's own stored block replayed verbatim → doubleSignDetected → DISPUTE against the honest author", async function () {
+        it("the peer's own stored block replayed verbatim under dispute replay → no conflict, SUCCESS, no double-sign proof against its honest author", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
 
-            // feed block 1 back verbatim. checkConflictingBlock keys only on
-            // (author,height), no content compare -> an identical replay is
-            // flagged a double-sign of its own honest author. prod gates this
-            // via BlockStorage equal-block dedup, so it's an in-isolation edge.
+            // feed block 1 back verbatim: an identical stored block is no
+            // conflict. live ingest merges it before validation; dispute
+            // replay re-judges it from its predecessor
             const stored = await h
                 .control(observer)
                 .query.getBlockByHeight(forkId, 1)
@@ -812,13 +811,15 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .validation.runBlockValidation(stored!.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    stored!.encodedBlockConfirmation,
+                    { strategy: "dispute" }
+                )
                 .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.BlockDoubleSign)
-            );
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(r.fraudProofType).to.equal(null);
         });
 
         it("conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT", async function () {
@@ -1618,117 +1619,10 @@ describe("Unit: ValidationService", function () {
     });
 
     // the dispute strategy runs during dispute auditing (replaying a dispute's
-    // state-proof blocks). it skips the disputed-fork/future gates and setStates
-    // before the leader check. deviation hooks -> disputeValidation/*.
+    // state-proof blocks). it skips the disputed-fork/future gates and judges
+    // each block from its predecessor (the probe: the stored block below it).
+    // deviation hooks -> disputeValidation/*.
     describe("DisputeValidationStrategy divergences", function () {
-        it("linked parent whose snapshot is missing → rejects with the missing-snapshot error", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const observer = h.getPeer(0);
-            const forkId = h.activeForkId!;
-
-            // a parent the peer holds, pointing at a snapshot it does not
-            const parentHeight = 20;
-            const encodedParent = await factory.buildAndEncodeBlock(
-                observer.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: parentHeight
-                    }
-                }
-            );
-            const { hash: parentHash } = await h
-                .control(observer)
-                .validation.storeBlockFixture(encodedParent)
-                .request();
-
-            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
-                header: {
-                    channelId: h.channelId,
-                    forkId,
-                    transactionCnt: parentHeight + 1
-                },
-                previousBlockHash: parentHash
-            });
-
-            const error = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request()
-                .then(
-                    () => null,
-                    (e: unknown) => String(e)
-                );
-            expect(error).to.match(
-                /Missing previous snapshot for dispute validation strategy/
-            );
-        });
-
-        it("linked parent whose snapshot references a missing state → rejects with the missing-state error", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const observer = h.getPeer(0);
-            const forkId = h.activeForkId!;
-
-            // the snapshot resolves (and keeps the author a participant), but
-            // its state machine state does not
-            const snapshot = factory.stateSnapshot({
-                forkId,
-                snapshotData: {
-                    participants: [observer.address as Address]
-                }
-            });
-            const { hash: snapshotHash } = await h
-                .control(observer)
-                .validation.storeStateSnapshotFixture(
-                    Codec.encode(
-                        snapshot.toStruct(),
-                        Type.StateSnapshot
-                    ) as string
-                )
-                .request();
-
-            const parentHeight = 30;
-            const encodedParent = await factory.buildAndEncodeBlock(
-                observer.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: parentHeight
-                    },
-                    stateSnapshotHash: snapshotHash
-                }
-            );
-            const { hash: parentHash } = await h
-                .control(observer)
-                .validation.storeBlockFixture(encodedParent)
-                .request();
-
-            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
-                header: {
-                    channelId: h.channelId,
-                    forkId,
-                    transactionCnt: parentHeight + 1
-                },
-                previousBlockHash: parentHash
-            });
-
-            const error = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request()
-                .then(
-                    () => null,
-                    (e: unknown) => String(e)
-                );
-            expect(error).to.match(
-                /Missing previous state machine state for dispute validation strategy/
-            );
-        });
-
         // no test: these hooks need a real committed dispute to build fraud-proof
         // evidence against - beyond unit scope, covered in disputeValidation/* e2e.
         it.skip("deviation hooks build dispute evidence (see disputeValidation/*)", function () {});
@@ -1767,16 +1661,19 @@ describe("Unit: ValidationService", function () {
                 }
             });
 
-            const r = await h
+            const error = await h
                 .control(observer)
                 .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request();
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
 
-            // the hook throws on this strategy, so reaching a later guard is
-            // proof the gate was skipped rather than merely quiet
-            expect(r.firedHooks).to.not.include("blockForkIsDisputed");
-            expect(r.firedHooks).to.include(
-                "blockIsNotLinkedAndIsNotFirstBlock"
+            // both hooks throw on this strategy, so the later unlinked one
+            // is proof the gate was skipped rather than merely quiet
+            expect(error).to.match(
+                /blockIsNotLinkedAndIsNotFirstBlock should not be called/
             );
 
             await race.release({ replayEvents: false, runHeldTasks: false });
@@ -1809,27 +1706,27 @@ describe("Unit: ValidationService", function () {
                 "blockIsNotNextAndIsInTheFuture"
             );
 
-            const r = await h
+            // dispute replay walks a proof's blocks, so height ordering against
+            // active storage is not its concern: the block reaches the linkage
+            // check, whose hook throws on this strategy
+            const error = await h
                 .control(observer)
                 .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request();
-
-            // dispute replay walks a proof's blocks, so height ordering against
-            // active storage is not its concern
-            expect(r.firedHooks).to.not.include(
-                "blockIsNotNextAndIsInTheFuture"
-            );
-            expect(r.firedHooks).to.include(
-                "blockIsNotLinkedAndIsNotFirstBlock"
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
+            expect(error).to.match(
+                /blockIsNotLinkedAndIsNotFirstBlock should not be called/
             );
         });
 
-        it("a valid linked next block by the leader passes setState + leader check → SUCCESS", async function () {
+        it("a valid linked next block by the leader passes the leader check → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            // real next block, off-wire. under the dispute strategy it flows
-            // through the setState-then-leader branch the block strategy lacks.
+            // real next block, off-wire, judged from the stored head
             const { observer, authored } =
                 await h.transition.authorNextBlockOffWireWait();
 
@@ -1848,98 +1745,52 @@ describe("Unit: ValidationService", function () {
             expect(r.firedHooks).to.deep.equal([]);
         });
 
-        it("a linked block authored by the wrong leader in the restored state → invalidStateTransitionDetected", async function () {
+        it("an outsider-authored block whose resulting snapshot is not held → blockAuthorIsNotParticipant continues to the leader check, which alleges the invalid transition", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
+            // no block is final by everyone: peer 0's proof is one run from
+            // block 0, which the chain makes challengeable at index 0
+            await h.scenario.preDisputeSetupDisconnectedPeer();
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
-
-            const nextHeight = 2;
-            const [nextWriter, prevBlock] = await Promise.all([
-                h.control(observer).query.getNextToWrite().request(),
-                h.control(observer).query.getBlockByHeight(forkId, 1).request()
-            ]);
-            const nonLeader = h.peers.find((p) => p.address !== nextWriter)!;
-
-            const encoded = await factory.buildAndEncodeBlock(
-                nonLeader.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: nextHeight
-                    },
-                    previousBlockHash: prevBlock!.hash
-                }
-            );
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            const head = await h
+                .control(observer)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            const outsider = ethers.Wallet.createRandom();
+            const encoded = await factory.buildAndEncodeBlock(outsider, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: head!.height + 1,
+                    participant: outsider.address as Address
+                },
+                previousBlockHash: head!.hash
+            });
 
             const r = await h
                 .control(observer)
-                .validation.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, {
+                    strategy: "dispute",
+                    encodedDispute: Codec.encode(
+                        dispute,
+                        Type.Dispute
+                    ) as string
+                })
                 .request();
 
-            // reaching the leader check at all means the previous snapshot and
-            // state resolved and setState ran first
             expect(r.firedHooks).to.deep.equal([
+                "blockAuthorIsNotParticipant",
                 "invalidStateTransitionDetected"
             ]);
-        });
-
-        it("repositions the state machine to the block's predecessor before the leader check", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-
-            // a real valid next block, authored off-wire; the observer's live
-            // machine is still positioned at the block's predecessor
-            const { observer, authored, forkId } =
-                await h.transition.authorNextBlockOffWireWait();
-
-            // mis-position the observer's machine at genesis - a different valid
-            // stored state whose next writer differs from the block's leader
-            const { correctLeader, wrongLeader } = await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const correctLeader =
-                        await sm.diamondStateMachine.getNextToWrite();
-                    const genesis =
-                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
-                            args.forkId
-                        )!;
-                    const genesisState =
-                        sm.storage.stateMachineStates.getStateMachineState(
-                            genesis.stateMachineStateHash
-                        )!;
-                    await sm.diamondStateMachine.setState(genesisState);
-                    const wrongLeader =
-                        await sm.diamondStateMachine.getNextToWrite();
-                    return { correctLeader, wrongLeader };
-                },
-                { forkId }
-            );
-
-            // preconditions that make the preload observable: the block's real
-            // leader is the predecessor's next writer, and genesis names another
-            expect(authored!.author).to.equal(correctLeader);
-            expect(
-                wrongLeader,
-                "genesis must name a different next writer"
-            ).to.not.equal(correctLeader);
-
-            // only prepareStateMachineForLeaderCheck's setState can move the
-            // machine back to the predecessor; without it getNextToWrite returns
-            // wrongLeader and the leader check flags the block instead
-            const r = await h
-                .control(observer)
-                .validation.runBlockValidation(
-                    authored!.encodedBlockConfirmation,
-                    {
-                        strategy: "dispute"
-                    }
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.fraudProofType).to.equal(
+                String(
+                    toSolidityFraudProofType(
+                        FraudProofType.BlockInvalidStateTransition
+                    )
                 )
-                .request();
-
-            expect(r.resultName).to.equal("SUCCESS");
-            expect(r.firedHooks).to.deep.equal([]);
+            );
         });
     });
 

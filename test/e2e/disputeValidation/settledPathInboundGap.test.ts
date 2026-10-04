@@ -5,13 +5,11 @@ import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions"
 import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import { expect } from "chai";
 
-// On the settled path (postedAuditingData = false) the disputer posts no
-// auditing data, so every auditor rebuilds it from its own inbound store. An
-// auditor missing the inbound block the dispute names used to walk into the gap:
-// getAuditingData -> MessageBlockStorage threw, the throw escaped
+// An auditor missing the inbound run a dispute names used to walk into the
+// gap: getAuditingData -> MessageBlockStorage threw, the throw escaped
 // onDisputeCommitted, EventSyncService cached the rejected log forever, and
-// every later reduce replayed it into abort(). The audit now recovers the log
-// on demand, and a gap that survives recovery is an abstain, never a throw.
+// every later reduce replayed it into abort(). The audit now loads the run
+// through the event service, which recovers a missed delivery from chain logs.
 
 describe("E2E: dispute validation / inbound run gap", function () {
     const TIME_CONFIG = INBOUND_GAP_TIME_CONFIG;
@@ -85,75 +83,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
         await dropped.release();
     });
 
-    it("unrecoverable inbound log → the auditor abstains, stays participating, converges once the event lands", async function () {
-        const h = TestSession.getHarness();
-        await h.setup(3, { timeConfig: TIME_CONFIG });
-        await h.lifecycle.openChannel();
-        const forkId = h.activeForkId!;
-        await h.transition.advanceState({
-            count: 2,
-            waitForFinalization: true
-        });
-        await h.assert.sync.peersInSyncWait();
-
-        const offenderIndex = (await h.query.getNextPeerToWrite()).index;
-        const [disputerIndex, laggingIndex] = h.peers
-            .map((peer) => peer.index)
-            .filter((index) => index !== offenderIndex);
-
-        // the handler itself is held, so recovery re-dispatches into the same
-        // hold and cannot heal the gap -> the audit must abstain
-        const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-        await h.scenario.stageInboundGap({
-            laggingIndex: laggingIndex,
-            observePeerIndices: [disputerIndex, offenderIndex]
-        });
-
-        h.event.resetEventSpies();
-        h.contextApi.captureOriginalFork();
-
-        await h.byzantine.submitInvalidStateTransitionBlock(offenderIndex);
-
-        await h.assert.dispute.initiatedAndCommitedWait({
-            peersIndices: [disputerIndex],
-            expectedCount: 1,
-            initiatedWithAuditingData: false
-        });
-
-        // the healthy auditor reduces the disputed fork
-        await h.assert.sync.forkChangedWait({
-            originalForkId: forkId,
-            honestPeerIndices: [disputerIndex]
-        });
-
-        // nothing threw, and abstaining is not an accusation
-        expect(
-            await TestSession.consumeFirstDetachedError(
-                h.event.protocolEventTimeoutMs()
-            )
-        ).to.equal(undefined);
-        await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
-
-        // an inbound gap it cannot help having must not have evicted it
-        expect(
-            await h
-                .control(h.getPeer(laggingIndex))
-                .query.getStatus()
-                .request(),
-            "lagging peer must still be participating"
-        ).to.equal(Status.PARTICIPATING);
-
-        // the missing chain event lands - the peer now holds the whole inbound
-        // chain again and reduces on its own
-        await held.release();
-
-        await h.assert.sync.forkChangedWait({
-            originalForkId: forkId,
-            honestPeerIndices: [laggingIndex]
-        });
-    });
-
-    it("final dispute over an unrecoverable gap → reduction deferred, then settles on the final dispute's fork", async function () {
+    it("final dispute over a recoverable gap → the lagging auditor recovers the run and settles on the final dispute's fork", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { timeConfig: TIME_CONFIG });
         await h.lifecycle.openChannel();
@@ -177,17 +107,18 @@ describe("E2E: dispute validation / inbound run gap", function () {
             .map((peer) => peer.index)
             .filter((index) => index !== maliciousPeerIndex);
 
-        const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-        await h.scenario.stageInboundGap({
+        const dropped = await h.rpcStub.dropInboundMessageLogs(laggingIndex);
+        const inboundHeadHash = await h.scenario.stageInboundGap({
             laggingIndex: laggingIndex,
             observePeerIndices: [finalAuthorIndex, maliciousPeerIndex]
         });
+        await dropped.waitUntilDropped();
 
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 
         // a threshold-final dispute drives the final-genesis branch on the
-        // lagging peer, which used to rethrow on a partial rebuild
+        // lagging peer, which rebuilds the run from chain logs
         const submitted = await h.dispute.submitFinalDispute({
             maliciousPeerIndex,
             finalAuthorPeerIndex: finalAuthorIndex
@@ -195,14 +126,25 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [finalAuthorIndex]
+            honestPeerIndices: [finalAuthorIndex, laggingIndex]
         });
 
+        // the reduction derives the final dispute's own output, not some
+        // other fork
         expect(
-            await TestSession.consumeFirstDetachedError(
-                h.event.protocolEventTimeoutMs()
-            )
-        ).to.equal(undefined);
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getForkId()
+                .request(),
+            "the lagging peer must settle on the final dispute's fork"
+        ).to.equal(submitted.finalResolution.forkId);
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getInboundMessageBlock(inboundHeadHash)
+                .request(),
+            "lagging peer must hold the recovered inbound head"
+        ).to.not.equal(null);
         expect(
             await h
                 .control(h.getPeer(laggingIndex))
@@ -210,37 +152,28 @@ describe("E2E: dispute validation / inbound run gap", function () {
                 .request(),
             "lagging peer must still be participating"
         ).to.equal(Status.PARTICIPATING);
-
-        await held.release();
-
-        await h.assert.sync.forkChangedWait({
-            originalForkId: forkId,
-            honestPeerIndices: [laggingIndex]
-        });
-
-        // the deferred reduce must derive the final dispute's own output, not
-        // some other fork - otherwise the attempt stands down as superseded and
-        // never installs anything
         expect(
-            await h
-                .control(h.getPeer(laggingIndex))
-                .query.getForkId()
-                .request(),
-            "the deferred reduction must settle on the final dispute's fork"
-        ).to.equal(submitted.finalResolution.forkId);
+            await TestSession.consumeFirstDetachedError(
+                h.event.protocolEventTimeoutMs()
+            )
+        ).to.equal(undefined);
+
+        await dropped.release();
     });
 
-    it("posted auditing data with an emptied inbound run → the auditor still rebuilds locally, nobody is slashed", async function () {
+    it("posted auditing data with an emptied inbound run → the auditor rebuilds the run from chain logs, nobody is slashed", async function () {
         const h = TestSession.getHarness();
         const attackerIndex = 0;
         const laggingIndex = 1;
 
         // a pending inbound join leaves the head not-final-by-everyone, so a
-        // dispute has to post its auditing data - and the held peer never
-        // stores the inbound head that dispute names
+        // dispute has to post its auditing data - and the lagging peer loses
+        // the join's chain event delivery, so it never stores the inbound head
+        // that dispute names
         const { releaseLaggingInbound } =
             await h.scenario.preDisputeSetupCalldataPath({
-                laggingInboundPeerIndex: laggingIndex
+                laggingInboundPeerIndex: laggingIndex,
+                laggingInbound: "dropped"
             });
         const forkId = h.activeForkId!;
 
@@ -265,9 +198,22 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
         await h.assert.dispute.committedWait({ expectedCount: 1 });
 
-        // the truncated posted run is harmless: the auditor verifies the output
-        // against its own rebuild, so the honest verdict is unaffected and the
-        // gap accuses nobody
+        // every peer that is not the attacker converges on the reduced fork
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            honestPeerIndices: [laggingIndex, 2, 3]
+        });
+
+        // the truncated posted run is harmless: the auditor rebuilds the run
+        // from chain events, so the honest verdict is unaffected and the gap
+        // accuses nobody
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getInboundMessageBlock(inboundHeadHash)
+                .request(),
+            "lagging peer must hold the recovered inbound head"
+        ).to.not.equal(null);
         expect(
             await TestSession.consumeFirstDetachedError(
                 h.event.protocolEventTimeoutMs()
@@ -283,11 +229,5 @@ describe("E2E: dispute validation / inbound run gap", function () {
         ).to.equal(Status.PARTICIPATING);
 
         await releaseLaggingInbound?.();
-
-        // every peer that is not the attacker converges on the reduced fork
-        await h.assert.sync.forkChangedWait({
-            originalForkId: forkId,
-            honestPeerIndices: [laggingIndex, 2, 3]
-        });
     });
 });

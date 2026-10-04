@@ -400,6 +400,58 @@ describe("E2E: Targeted channel join", function () {
         ).to.deep.equal([channelId, channelId, channelId, channelId]);
     });
 
+    it("a targeted submitting founder waits for its own genesis and never runs an observer initial sync", async function () {
+        const { h, channelId, targeted } = await unopened(
+            "target-founder-genesis-first"
+        );
+        // The higher address signs second and submits the opening.
+        const [submitter, other] = [...h.peers].sort((a, b) =>
+            BigInt(a.address) > BigInt(b.address) ? -1 : 1
+        );
+        const releaseGenesis = await h.rpcStub.holdChannelOpenedHandler(
+            submitter.index
+        );
+        let submitterSettled = false;
+        try {
+            const submitterConnect = targeted
+                .connect(submitter, channelId, { autoOpen: true })
+                .finally(() => {
+                    submitterSettled = true;
+                });
+            expect(
+                await targeted.connect(other, channelId, { autoOpen: true })
+            ).to.equal(true);
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(submitter)
+                        .stub.getHeldChannelOpenedCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            // The window covers the submitter's opening receipt poll.
+            await sleep(testTime.agreementTime * 1_050);
+            expect(submitterSettled).to.equal(false);
+            expect(await status(h, submitter.index)).to.equal(
+                Status.NOT_OPENED
+            );
+
+            await releaseGenesis();
+            expect(await submitterConnect).to.equal(true);
+            expect(await status(h, submitter.index)).to.equal(
+                Status.PARTICIPATING
+            );
+        } finally {
+            await releaseGenesis();
+        }
+        const submitterStatuses = (
+            submitter.eventSpies.onStatusChanged?.getCalls() ?? []
+        ).map((call) => call.args[1]);
+        expect(submitterStatuses).to.not.include(Status.OPENED);
+        expect(submitter.eventSpies.onAbort?.called).to.equal(false);
+        expect(other.eventSpies.onAbort?.called).to.equal(false);
+    });
+
     it("target open at the post-match recheck skips negotiation initialization", async function () {
         const { h, channelId, targeted } = await unopened(
             "target-post-match-open",

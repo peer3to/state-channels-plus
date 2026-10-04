@@ -3,10 +3,11 @@ import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
 import { Block, StateSnapshot } from "@/models";
-import { Status } from "@/types";
+import { Status, timeoutWaitTime } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import {
     Address,
+    BlockHeight,
     ChannelId,
     ChecksumAddress,
     ForkId,
@@ -14,6 +15,7 @@ import {
 } from "@/types/types";
 import {
     addressesEqual,
+    DetachedPromises,
     getChecksumAddress,
     Logger,
     union,
@@ -42,12 +44,27 @@ export enum SourceEligibility {
  * that peers refuse to include, and exiting once I have left the participant
  * set.
  */
+/**
+ * This runtime's own join. "none": no join is tracked (none submitted,
+ * seated, or dropped). "open": not observed on chain and its authorization
+ * can still admit it; the chain is past the deadline in about
+ * `secondsUntilExpiry`. "landed": observed, or listed on chain. "expired":
+ * the authorization expired and the chain does not list the signer, so the
+ * join never landed and never can.
+ */
+export type OwnJoinState =
+    | { state: "none" }
+    | { state: "open"; secondsUntilExpiry: number }
+    | { state: "landed" }
+    | { state: "expired" };
+
 export default class MembershipService {
     private readonly logger: Logger;
     private eligibilityRefresh?: Promise<boolean>;
     private onChainEligibility: Set<ChecksumAddress> = new Set();
     private offChainEligibility: Set<ChecksumAddress> = new Set();
     private readonly knownSlashes: Set<ChecksumAddress> = new Set();
+    private forceJoinDeadline?: ReturnType<typeof setTimeout>;
 
     constructor(
         private readonly stateManager: StateManager,
@@ -117,6 +134,13 @@ export default class MembershipService {
             if (message.messageType !== id("JOIN_CHANNEL_MESSAGE")) continue;
             const join = Codec.decode(message.data, Type.JoinChannel);
             this.onChainEligibility.add(getChecksumAddress(join.participant));
+            if (
+                addressesEqual(
+                    join.participant,
+                    this.stateManager.signerAddress
+                )
+            )
+                this.onOwnJoinObserved();
         }
     }
 
@@ -224,9 +248,17 @@ export default class MembershipService {
             );
         }
 
+        const { deadlineTimestamp } = Codec.decode(
+            String(confirmation.signedJoinChannel.encodedJoinChannel),
+            Type.JoinChannel
+        );
         const joinSubmissionHeight =
             sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1;
+        this.resetJoinTracking();
         sm.storage.forceJoin.setJoinSubmissionBlockHeight(joinSubmissionHeight);
+        sm.storage.forceJoin.setJoinAuthorizationDeadline(
+            Number(deadlineTimestamp)
+        );
         this.logger.info(
             "joinChannel - recorded force join submission height",
             { joinSubmissionHeight }
@@ -354,16 +386,176 @@ export default class MembershipService {
         participants: Address[]
     ): Promise<void> {
         const sm = this.stateManager;
-        const joinSubmissionHeight =
-            sm.storage.forceJoin.getJoinSubmissionBlockHeight();
-        if (joinSubmissionHeight === undefined) return;
-        const N = participants.length + 1;
-        const fireOnBlockHeight = joinSubmissionHeight + N;
+        const forceJoin = sm.storage.forceJoin;
+        if (forceJoin.getJoinSubmissionBlockHeight() === undefined) return;
+        // A fast table authors N turns before its writers even observe the
+        // join: count only blocks this joiner commits once its own Clock is
+        // agreementTime past observing the join on chain. Block timestamps
+        // play no part.
+        const countingStartsAt = forceJoin.getCountingStartsAt();
         if (
-            block.height < fireOnBlockHeight ||
-            sm.storage.forceJoin.hasDisputeStarted()
+            countingStartsAt === undefined ||
+            Clock.getTimeInSeconds() < countingStartsAt
         )
             return;
+        let countingFromHeight = forceJoin.getCountingFromHeight();
+        if (countingFromHeight === undefined) {
+            countingFromHeight = block.height;
+            forceJoin.setCountingFromHeight(countingFromHeight);
+        }
+        const N = participants.length + 1;
+        const fireOnBlockHeight = countingFromHeight + N;
+        if (block.height < fireOnBlockHeight || forceJoin.hasBoundFired())
+            return;
+        await this.startForceJoinDispute(`block ${block.height}`);
+    }
+
+    /**
+     * The block bound needs blocks; a table whose writers author none would
+     * hold the join forever. The deadline gives the join the same N turns,
+     * each the full window a writer gets before it can be timed out, so an
+     * honest table that is merely slow still includes the join first.
+     */
+    private async armForceJoinDeadline(
+        joinSubmissionHeight: BlockHeight
+    ): Promise<void> {
+        const sm = this.stateManager;
+        const N = (await sm.diamondStateMachine.getParticipants()).length + 1;
+        this.cancelForceJoinDeadline();
+        this.forceJoinDeadline = sm.timeoutManager.scheduleTask(
+            async () => {
+                this.forceJoinDeadline = undefined;
+                if (
+                    sm.status !== Status.PENDING_PARTICIPANT ||
+                    sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
+                        joinSubmissionHeight ||
+                    sm.storage.forceJoin.hasBoundFired()
+                )
+                    return;
+                // Only a chain read that could not decide waits another
+                // deadline; a started or refused dispute ends both bounds.
+                if (
+                    (await this.startForceJoinDispute("deadline")) ===
+                    "deferred"
+                ) {
+                    await this.armForceJoinDeadline(joinSubmissionHeight);
+                }
+            },
+            N * timeoutWaitTime(sm.timeConfig, joinSubmissionHeight + 1) * 1000,
+            "force join deadline"
+        );
+    }
+
+    /**
+     * Both force-join bounds start once this joiner observes its own join as
+     * an inbound message on chain, never at submission or receipt: before
+     * that, the peers that must include it cannot have seen it either. The
+     * block bound starts counting agreementTime later; the deadline is armed
+     * now.
+     */
+    private onOwnJoinObserved(): void {
+        const sm = this.stateManager;
+        const forceJoin = sm.storage.forceJoin;
+        const joinSubmissionHeight = forceJoin.getJoinSubmissionBlockHeight();
+        if (
+            joinSubmissionHeight === undefined ||
+            forceJoin.getCountingStartsAt() !== undefined ||
+            sm.status !== Status.PENDING_PARTICIPANT
+        )
+            return;
+        sm.leaveChannelService.onOwnJoinObserved();
+        forceJoin.setCountingStartsAt(
+            Clock.getTimeInSeconds() + sm.timeConfig.agreementTime
+        );
+        DetachedPromises.observe(
+            this.armForceJoinDeadline(joinSubmissionHeight),
+            (error: unknown) =>
+                this.logger.warn("Force join deadline could not be armed", {
+                    error: errorMessage(error)
+                })
+        );
+    }
+
+    /** Whether this pending joiner observed its own join on chain (its force-join bounds started). */
+    public isOwnJoinObserved(): boolean {
+        return (
+            this.stateManager.storage.forceJoin.getCountingStartsAt() !==
+            undefined
+        );
+    }
+
+    /** A pending join that never reached the chain is dropped: back to SYNCED. */
+    public abandonUnobservedJoin(): void {
+        const sm = this.stateManager;
+        this.resetJoinTracking();
+        if (sm.status === Status.PENDING_PARTICIPANT)
+            sm.setStatus(Status.SYNCED);
+    }
+
+    /**
+     * The installed state seats this signer, by a block or by a reduction
+     * genesis: its join ended, and a pending leave proceeds as a member's.
+     */
+    public onJoinSeated(): void {
+        this.resetJoinTracking();
+        this.stateManager.leaveChannelService.onOwnJoinObserved();
+    }
+
+    /** The join authorization's deadline, or undefined when no join of this runtime is tracked. */
+    public getJoinAuthorizationDeadline(): number | undefined {
+        return this.stateManager.storage.forceJoin.getJoinAuthorizationDeadline();
+    }
+
+    /**
+     * Whether this runtime's tracked join can still land: the contract admits
+     * a join only in a block whose timestamp is at most the authorization
+     * deadline, so it can while the latest chain block is not past it.
+     */
+    public async isJoinAuthorizationOpen(): Promise<boolean> {
+        const deadline = this.getJoinAuthorizationDeadline();
+        if (deadline === undefined) return false;
+        return (await Clock.getBlockchainTime()).timestamp <= deadline;
+    }
+
+    /** The state of this runtime's tracked join; see {@link OwnJoinState}. */
+    public async getOwnJoinState(): Promise<OwnJoinState> {
+        const deadline = this.getJoinAuthorizationDeadline();
+        if (deadline === undefined) return { state: "none" };
+        if (this.isOwnJoinObserved()) return { state: "landed" };
+        if (await this.isJoinAuthorizationOpen()) {
+            return {
+                state: "open",
+                secondsUntilExpiry: Math.max(
+                    deadline + 1 - Clock.getTimeInSeconds(),
+                    1
+                )
+            };
+        }
+        if (await this.isSignerOnChain()) return { state: "landed" };
+        return { state: "expired" };
+    }
+
+    private resetJoinTracking(): void {
+        this.cancelForceJoinDeadline();
+        this.stateManager.storage.forceJoin.clear();
+    }
+
+    private cancelForceJoinDeadline(): void {
+        if (!this.forceJoinDeadline) return;
+        this.stateManager.timeoutManager.cancelTask(this.forceJoinDeadline);
+        this.forceJoinDeadline = undefined;
+    }
+
+    /**
+     * Starts the force-join dispute. "deferred": a chain read could not
+     * decide yet. "refused": the fork's evidence window expired; the bounds
+     * end without a retry, and the next observed dispute's more-evidence
+     * flow carries the pending join.
+     */
+    private async startForceJoinDispute(
+        trigger: string
+    ): Promise<"started" | "deferred" | "refused"> {
+        const sm = this.stateManager;
 
         let onChainParticipantUnion: Address[];
         try {
@@ -373,18 +565,18 @@ export default class MembershipService {
                 "Force join dispute deferred: on-chain membership could not be read",
                 {
                     forkId: sm.forkId,
-                    blockHeight: block.height,
+                    trigger,
                     error: errorMessage(error)
                 }
             );
-            return;
+            return "deferred";
         }
         if (!this.includesSigner(onChainParticipantUnion)) {
             this.logger.info(
                 "Force join dispute deferred: local pending membership is not on chain",
-                { forkId: sm.forkId, blockHeight: block.height }
+                { forkId: sm.forkId, trigger }
             );
-            return;
+            return "deferred";
         }
 
         let disputeWindowCreationTimestamp: number;
@@ -400,11 +592,11 @@ export default class MembershipService {
                 "Force join dispute deferred: dispute window could not be read",
                 {
                     forkId: sm.forkId,
-                    blockHeight: block.height,
+                    trigger,
                     error: errorMessage(error)
                 }
             );
-            return;
+            return "deferred";
         }
         if (disputeWindowCreationTimestamp !== 0) {
             let chainTimestamp: number;
@@ -415,35 +607,39 @@ export default class MembershipService {
                     "Force join dispute deferred: chain time could not be read",
                     {
                         forkId: sm.forkId,
-                        blockHeight: block.height,
+                        trigger,
                         error: errorMessage(error)
                     }
                 );
-                return;
+                return "deferred";
             }
             if (
                 chainTimestamp >=
                 disputeWindowCreationTimestamp + sm.timeConfig.evidenceTime
             ) {
+                sm.storage.forceJoin.setBoundFired();
+                this.cancelForceJoinDeadline();
                 this.logger.info(
-                    "Force join dispute deferred: dispute evidence window expired",
+                    "Force join dispute refused: dispute evidence window expired; not retried",
                     {
                         forkId: sm.forkId,
-                        blockHeight: block.height,
+                        trigger,
                         disputeWindowCreationTimestamp,
                         chainTimestamp
                     }
                 );
-                return;
+                return "refused";
             }
         }
 
-        sm.storage.forceJoin.setDisputeStarted();
+        sm.storage.forceJoin.setBoundFired();
+        this.cancelForceJoinDeadline();
         this.logger.info(
-            "Force join dispute triggered: N turns passed without inclusion",
-            { N, forkId: sm.forkId, blockHeight: block.height }
+            "Force join dispute triggered: the join was not included in time",
+            { forkId: sm.forkId, trigger }
         );
         sm.disputeManager.requestDispute(sm.forkId);
+        return "started";
     }
 
     public async startMaybeExitOnChain(

@@ -328,7 +328,7 @@ describe("E2E: final dispute resolution", function () {
                     .request()
             ).to.equal(staged.finalResolution.genesisTimestamp);
         } finally {
-            await releaseHeld(false).catch(() => {});
+            await releaseHeld().catch(() => {});
         }
     });
 

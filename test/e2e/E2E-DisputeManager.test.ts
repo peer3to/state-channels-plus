@@ -370,7 +370,7 @@ describe("E2E: Dispute Manager", function () {
             // The missed peer↔connected-peer bans are reversed after the
             // dispute commits so the missed peer can recover its event.
             await h.network.reconnectPeers([missedPeerIndex]);
-            await restoreEvents(false);
+            await restoreEvents();
             const missedPeer = h.getPeer(missedPeerIndex);
             const recoveredCount = await h
                 .control(missedPeer)

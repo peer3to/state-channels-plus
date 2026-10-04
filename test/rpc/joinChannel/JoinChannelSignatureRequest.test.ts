@@ -74,13 +74,11 @@ describe("JoinChannel signature requests", function () {
 
     it("excludes an on-chain-slashed participant from collection", async function () {
         const h = TestSession.getHarness();
-        const { killer, spammer, spectator } =
-            await h.scenario.stageUnkilledSpamDispute({
-                addSpectatorBeforeDispute: true
-            });
-        if (!spectator) {
-            throw new Error("Expected a spectator joiner");
-        }
+        const { killer, spammer } = await h.scenario.stageUnkilledSpamDispute();
+        // Only committed participants follow a dispute; a spectator aborts on
+        // it. The collector is the participant that is neither the killer (0)
+        // nor the spammer (1), collecting a top-up authorization.
+        const collector = h.getPeer(2);
 
         await h.execOnHost(
             killer,
@@ -107,9 +105,9 @@ describe("JoinChannel signature requests", function () {
 
         const chainTime = await Clock.getBlockchainTime();
         const prepared =
-            await spectator.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+            await collector.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 {
-                    participant: spectator.address,
+                    participant: collector.address,
                     channelId: h.channelId,
                     balance: { amount: 500n, data: "0x00" },
                     deadlineTimestamp: BigInt(chainTime.timestamp + 120)
@@ -128,6 +126,39 @@ describe("JoinChannel signature requests", function () {
         );
         expect(confirmationSigners).to.have.deep.members(thresholdSet);
         expect(confirmationSigners).to.not.include(spammer.address);
+    });
+
+    it("prepares a join authorization that expires the configured join lifetime after chain time", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, {
+            configOverrides: { JOIN_CHANNEL_DEADLINE_SECONDS: 45 }
+        });
+        const joiner = await h.join.addSpectatorWait();
+        const chainTimeBefore = (await Clock.getBlockchainTime()).timestamp;
+
+        const encodedJoinChannel = await h.execOnHost(
+            h.getPeer(joiner.index),
+            async (sm) => {
+                const prepared =
+                    await sm.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
+                        { amount: 500n, data: "0x00" }
+                    );
+                return String(
+                    prepared.confirmation.signedJoinChannel.encodedJoinChannel
+                );
+            },
+            {}
+        );
+        const chainTimeAfter = (await Clock.getBlockchainTime()).timestamp;
+
+        const { deadlineTimestamp } = Codec.decode(
+            String(encodedJoinChannel),
+            Type.JoinChannel
+        );
+        expect(Number(deadlineTimestamp)).to.be.within(
+            chainTimeBefore + 45,
+            chainTimeAfter + 45
+        );
     });
 
     it("rejects collector identity and deadline failures before requesting signatures", async function () {

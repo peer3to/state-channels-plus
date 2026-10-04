@@ -42,6 +42,43 @@ The following concrete reports explain the current design:
 
 They are implementation evidence under this subject, not independent specifications.
 
+Three mechanisms of this subject map to these owners:
+
+- **Own dispute provable on chain** ([`REQ-DISPUTE-PIPE-13-W73B2F` (Proof construction from the local start)](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-w73b2f)). [DisputeManager](../../source/src/disputeManager/DisputeManager.ts.md)
+  builds its own dispute with `AgreementManager.buildStateProof` at its latest height
+  ([AgreementManager](../../source/src/agreementManager/AgreementManager.ts.md)): the compact proof from the
+  local proof start (change milestones, the latest threshold milestone, then the unfinal tail). A
+  height below the start or a missing or unlinked required block throws. The auditing data takes
+  the walk evidence from the builder; a proof given as a plain struct gets it from
+  `describeStateProof`. The finalized snapshot comes from the chain's own walk, so the posted
+  finalized state is the one the chain binds (D1) even when the local start lags; a chain read
+  error throws (it never marks the data partial). A same-fork snapshot advance
+  ([SnapshotUpdateService](../../source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)) builds with
+  `stopAtThresholdCompletion` (no unfinal tail) and posts only milestones newer than its base; the
+  chain accepts the post only when the walk proves the new snapshot by threshold
+  ([StateSnapshotFacet](../../source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)).
+- **Structure verdict, walk and replay** ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+  [DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md) runs
+  `findFirstInvalidBlockStructureInStateProof` on the local diamond. The check reads only the
+  proof's last milestone, so it needs no snapshot. A dispute whose latest claim is below the
+  chain's same-fork non-genesis snapshot (read with the chain's `getAnchorSnapshot`, never the
+  mirror's) gets a `DisputeStateProofBelowOnChainAnchor` proof. Posted auditing data is then
+  judged by the chain's `verifyStateProof` alone (a flagged deviation from local-first); a read
+  error throws out of the audit with no proof. Only material at or above the walk's start is
+  persisted. The replay covers the last milestone from the first block the chain's
+  `isBlockChallengeEligible` admits, each block judged from its predecessor on the dispute's own
+  chain ([DisputeValidationStrategy](../../source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md),
+  [BlockIngestService](../../source/src/stateManager/ingest/BlockIngestService.ts.md),
+  [FraudProofService](../../source/src/stateManager/utils/FraudProofService.ts.md)); every replayed
+  snapshot and state is stored by hash.
+- **Full audit, no abstention** ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+  Every audit ends in a verdict or an internal failure: the auditor recovers missing chain events
+  through [EventSyncService](../../source/src/stateManager/eventSync/EventSyncService.ts.md)
+  (`loadSynchronizedInboundRun`) and throws when data is still missing (no fork genesis, replay
+  base not held, inbound run not recoverable). A dispute observed after its kill period expired is
+  audited in full by [EventHandler](../../source/src/eventHandlers/EventHandler.ts.md) (verdict
+  logged, no kill) before it is persisted. The final-dispute path is unchanged.
+
 ## System integration test plan
 
 | Integration test ID                                                                         | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Specification test IDs                    | Setup and stimulus                                                                           | Expected result                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -57,10 +94,12 @@ The detailed reports above currently own the source analysis. This table remains
 
 ## Conformance traceability
 
-| Requirement / invariant                                                                                        | Implementation status | Implementation evidence              | Gap / divergence |
-| -------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------ | ---------------- |
-| [`INV-DISPUTE-PIPE-1-BN0K81`](../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-DISPUTE-PIPE-1-HRBFP7`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-DISPUTE-PIPE-4-3YVDSA`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa) | Covered               | Detailed reports under System design | None.            |
+| Requirement / invariant                                                                                          | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                                                                                                                   | Gap / divergence |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-DISPUTE-PIPE-1-BN0K81`](../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)   | Covered               | Detailed reports under System design                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-DISPUTE-PIPE-1-HRBFP7`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)   | Covered               | Detailed reports under System design                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)   | Covered               | Detailed reports under System design                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)   | Covered               | Detailed reports under System design                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-DISPUTE-PIPE-4-3YVDSA`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)   | Covered               | Detailed reports under System design                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)   | Covered               | [DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md), [DisputeValidationStrategy](../../source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md), [FraudProofService](../../source/src/stateManager/utils/FraudProofService.ts.md), [LocalDiamond](../../source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) | None.            |
+| [`REQ-DISPUTE-PIPE-13-W73B2F`](../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-w73b2f) | Covered               | [AgreementManager](../../source/src/agreementManager/AgreementManager.ts.md), [DisputeManager](../../source/src/disputeManager/DisputeManager.ts.md), [SnapshotUpdateService](../../source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)                                                                                                                                   | None.            |

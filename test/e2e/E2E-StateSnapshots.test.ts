@@ -428,7 +428,6 @@ describe("E2E: State Snapshots", function () {
 
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
-                dispute.input.stateProof.signedBlocks = [];
             });
             const snapshotBefore = await h.query.getOnChainSnapshotHash();
 

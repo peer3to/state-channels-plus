@@ -38,7 +38,7 @@ export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
  * input alone exceeds that limit cannot be replayed on-chain either). The
  * requirement is a funding baseline, not a bound on the surrounding work of a
  * dispute call (proof checks, state restoration); a local out-of-gas there
- * falls back to the chain.
+ * is fatal, like every other local failure.
  */
 export function localEvmCallGasLimit(
     disputeExecutionGasLimit: bigint,
@@ -56,7 +56,10 @@ export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
     // Canonical calls and simulations share one mutex so a simulation's
-    // checkpoint/revert cannot overlap a canonical write.
+    // checkpoint/revert cannot overlap a canonical write. Every call starts on
+    // its own macrotask: a worker port delivers queued requests in one task,
+    // and calls that each found the mutex free would otherwise run back to
+    // back there and block the event loop for their summed time.
     private readonly mutex: Mutex;
 
     /**
@@ -92,6 +95,7 @@ export default class ContractExecutor extends AContractExecutor {
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "deploy",
+            acquireAsMacroTask: true,
             logMeta: LoggerUtils.getContractCallMetadata(data)
         });
 
@@ -108,6 +112,7 @@ export default class ContractExecutor extends AContractExecutor {
     ): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "executeCall",
+            acquireAsMacroTask: true,
             logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
         });
 
@@ -124,6 +129,7 @@ export default class ContractExecutor extends AContractExecutor {
     ): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "simulateCall",
+            acquireAsMacroTask: true,
             logMeta: LoggerUtils.getContractCallMetadata(data, contractAddress)
         });
 

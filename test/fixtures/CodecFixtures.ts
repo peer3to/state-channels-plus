@@ -83,8 +83,7 @@ export const codecValues = {
     balance: () => ({ amount: 43n, data: factory.hexString(5) }),
     signedBlock: () => factory.signedBlock(),
     stateProof: () => ({
-        milestones: [{ blockConfirmations: [factory.blockConfirmation()] }],
-        signedBlocks: [factory.signedBlock()]
+        milestones: [{ blockConfirmations: [factory.blockConfirmation()] }]
     }),
     syncPayload: () => ({
         disputeWindows: [
@@ -142,6 +141,7 @@ export const codecValues = {
         latestStateMachineState: factory.hexString(4)
     }),
     booleanProof: () => ({ __: true }),
+    disputeStateProofBelowOnChainAnchorProof: () => ({ __: false }),
     timeoutThresholdProof: () => ({
         thresholdBlock: factory.blockConfirmation(),
         latestStateSnapshot: snapshot(),
@@ -170,14 +170,12 @@ export const codecValues = {
             participant: factory.randomAddress(),
             encodedProof: factory.hexString(4)
         },
-        blockIndexInUnfinalizedPartOfStateProof: 2n
+        blockIndex: 2n
     }),
     invalidDisputeReasonProof: () => ({ latestStateSnapshot: snapshot() }),
-    disputeInvalidBlockStructureProof: () => ({
-        blockIndexInUnfinalizedPartOfStateProof: 2n
-    }),
+    disputeInvalidBlockStructureProof: () => ({ blockIndex: 2n }),
     disputeBlockAuthorNotParticipantProof: () => ({
-        blockIndexInUnfinalizedPartOfStateProof: 2n,
+        blockIndex: 2n,
         previousBlock: factory.signedBlock(),
         previousStateSnapshot: snapshot(),
         resultingStateSnapshot: snapshot()

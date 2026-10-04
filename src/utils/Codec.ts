@@ -41,6 +41,7 @@ import {
     DisputeInvalidBlockInStateProofApplyFraudProofEthersType,
     DisputeBlockAuthorNotParticipantProofEthersType,
     DisputeInvalidBlockStructureProofEthersType,
+    DisputeStateProofBelowOnChainAnchorProofEthersType,
     MessageBlockEthersType,
     BalanceEthersType,
     SignedBlockEthersType,
@@ -84,7 +85,8 @@ import {
     DisputeInboundHashNotInChainStruct,
     DisputeInvalidBlockStructureStruct,
     DisputeBlockAuthorNotParticipantStruct,
-    DisputeInboundAnchorBehindLatestStateStruct
+    DisputeInboundAnchorBehindLatestStateStruct,
+    DisputeStateProofBelowOnChainAnchorStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeStruct,
@@ -126,7 +128,8 @@ export type DisputeFraudStruct =
     | DisputeInboundHashNotInChainStruct
     | DisputeInvalidBlockStructureStruct
     | DisputeBlockAuthorNotParticipantStruct
-    | DisputeInboundAnchorBehindLatestStateStruct;
+    | DisputeInboundAnchorBehindLatestStateStruct
+    | DisputeStateProofBelowOnChainAnchorStruct;
 
 type StructType =
     | FraudStruct
@@ -287,6 +290,10 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeInboundAnchorBehindLatestState,
             DisputeInboundAnchorBehindLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor,
+            DisputeStateProofBelowOnChainAnchorProofEthersType
         ]
     ]);
 
@@ -519,6 +526,10 @@ export class Codec {
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeInboundAnchorBehindLatestState
     ): DisputeInboundAnchorBehindLatestStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor
+    ): DisputeStateProofBelowOnChainAnchorStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

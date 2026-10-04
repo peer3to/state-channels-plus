@@ -188,7 +188,8 @@ class StateManager<
         this.agreementManager = new AgreementManager(
             this.storage,
             this.eventSyncService,
-            this.logger
+            this.logger,
+            this.self
         );
         this.disputeManager = new DisputeManager(
             this.channelId,

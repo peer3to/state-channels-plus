@@ -48,7 +48,7 @@ the `BlockDoubleSign` fraud proof slashes the signer
 
 This invariant is what makes the rest of this document safe: votes can be counted across blocks
 (§4) because no participant can validly vote for two competing histories, and a non-final suffix
-can be carried forward (§7, [state-proofs.md §6](../disputes/state-proofs.md)) because extending it never
+can be carried forward (§7, [state-proofs.md §10](../disputes/state-proofs.md)) because extending it never
 requires trusting an unbacked claim.
 
 ## 4. Virtual voting
@@ -123,12 +123,15 @@ Finality arrives by exactly one of three routes:
   requires signatures from the union of the block's previous and resulting participant sets, so a
   membership-changing block needs both the old set and the joiner/leaver where applicable
   ([state-proofs.md §5](../disputes/state-proofs.md)).
-- On-chain (milestones): `_isMilestoneFinalWithExpectedParticipants` requires
-  `thresholdCount == expectedParticipants.length`, where the expected set is the union of the
-  previous snapshot's participants, the resulting snapshot's participants, and joiners derived
-  from the inbound-message interval committed between the two snapshots' inbound hashes — not the
-  chain's live pending set
-  (`the corresponding state-proof verification operation`).
+- On-chain (milestones): the state-proof walk requires every distinct expected signer of a
+  threshold milestone's first block, where the expected set is the union of the last verified
+  snapshot's participants (the walk start's set, or the resulting set of the last proven
+  milestone), the milestone's resulting snapshot's participants, and joiners derived from the
+  inbound-message interval committed between the two snapshots' inbound hashes — not the chain's
+  live pending set. The genesis has no block: block 0 is final only with this union of the genesis
+  set and block 0's resulting set, and its link to the genesis alone finalizes nothing. The run
+  that holds a normal on-chain walk start needs no threshold, because that snapshot is already
+  final ([state-proofs.md §4](../disputes/state-proofs.md)).
 - On-chain (disputes): a threshold-final dispute confirmation requires signatures from
   `getOnChainThresholdSet` = (snapshot participants ∪ pending participants) − on-chain-slashed
   (`common adjudication logic`),
@@ -186,7 +189,7 @@ thresholds:
   evidence (milestones, state proofs) always requires the complete normal threshold: a proof MUST
   have the same validity before and after any later slash, so later adjudication can never relax
   or invalidate the signatures a past transition required
-  ([state-proofs.md §4](../disputes/state-proofs.md)). Join admission is likewise a
+  ([state-proofs.md §5](../disputes/state-proofs.md)). Join admission is likewise a
   point-in-time chain decision and uses the same slash-excluding eligibility set — a slashed
   participant cannot veto later admissions
   ([cross-layer-messages.md §4](../settlement/cross-layer-messages.md)). The historic threshold is
@@ -198,7 +201,7 @@ block if and only if: both blocks are on the same `forkId`; the chain between th
 (`previousBlockHash == keccak256(previous encodedBlock)` at every step); the author signature on
 each carrying block is authentic and matches the block's declared author; and the signer counts at
 most once per threshold set. These are exactly the checks the milestone verifier applies
-([state-proofs.md §7](../disputes/state-proofs.md)).
+([state-proofs.md §4](../disputes/state-proofs.md)).
 
 ## 7. Non-final transitions are carried forward
 

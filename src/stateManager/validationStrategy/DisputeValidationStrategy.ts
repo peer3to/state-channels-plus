@@ -2,15 +2,17 @@ import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
 import DisputeFraudProofService from "../dispute/DisputeFraudProofService";
+import type DisputeValidationService from "../dispute/DisputeValidationService";
 import FraudProofService from "../utils/FraudProofService";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 
 import Storage from "@/storage";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import type {
+    BlockPredecessor,
+    QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult, Hash, Signature } from "@/types";
 import { Logger } from "@/utils";
-import type { LocalDiamondContract } from "@/utils/localDiamond";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -25,8 +27,14 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     constructor(
         private readonly storage: Storage,
         private readonly dispute: DisputeStruct,
-        private readonly blockIndexInUnfinalizedPartOfStateProof: number,
-        private readonly localDiamondContract: LocalDiamondContract,
+        /** the replayed block's position in the dispute's last milestone */
+        private readonly blockIndex: number,
+        /** what the replayed block is judged from, on the dispute's own chain */
+        private readonly predecessor: BlockPredecessor,
+        private readonly disputeValidation: Pick<
+            DisputeValidationService,
+            "isBlockChallengeEligible"
+        >,
         logger: Logger
     ) {
         super();
@@ -47,39 +55,40 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         return false;
     }
 
-    private createDisputeInvalidBlockInStateProofApplyFraudProof(
-        fraudProofHash: Hash
-    ): void {
-        const fraudProof =
-            this.storage.fraudProofs.getFraudProofByHash(fraudProofHash)!;
-        this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
-            this.dispute,
-            fraudProof,
-            this.blockIndexInUnfinalizedPartOfStateProof
-        );
+    /**
+     * Stores a block allegation. The replay starts at the first block the
+     * chain makes eligible, so an ineligible one is an invariant violation.
+     */
+    private async allege(store: () => void): Promise<BlockValidationResult> {
+        const isEligible =
+            await this.disputeValidation.isBlockChallengeEligible(
+                this.dispute,
+                this.blockIndex
+            );
+        if (!isEligible)
+            throw new Error(
+                `Dispute replay judged block ${this.blockIndex}, which the chain does not make challengeable`
+            );
+        store();
+        return BlockValidationResult.DISPUTE;
     }
 
-    private async handleInvalidBlockStructure(): Promise<BlockValidationResult> {
-        const isInvalid =
-            await this.localDiamondContract.isInvalidBlockStructureInStateProof.staticCall(
-                this.dispute.input.stateProof,
-                this.blockIndexInUnfinalizedPartOfStateProof
+    private async applyFraudProof(
+        fraudProofHash: Hash | undefined
+    ): Promise<BlockValidationResult> {
+        if (!fraudProofHash)
+            throw new Error(
+                "Dispute replay built no fraud proof from its predecessor"
             );
-        // Reaching this strategy hook means the off-chain replay observed an
-        // authentication or linkage deviation. That observation alone cannot
-        // kill a dispute: the committed stateProof must satisfy the canonical
-        // Solidity fraud-proof predicate that will also run on-chain. A local
-        // linkage deviation can, for example, come from a missing local
-        // baseline while the blocks committed inside the proof remain linked.
-        // In that case this proof type does not apply, so SUCCESS means
-        // "continue replay", not "the dispute is valid". A later transition,
-        // snapshot, or other authoritative check must make the final decision.
-        if (!isInvalid) return BlockValidationResult.SUCCESS;
-        this.disputeFraudProofService.createDisputeInvalidBlockStructure(
-            this.dispute,
-            this.blockIndexInUnfinalizedPartOfStateProof
+        const fraudProof =
+            this.storage.fraudProofs.getFraudProofByHash(fraudProofHash)!;
+        return this.allege(() =>
+            this.disputeFraudProofService.createDisputeInvalidBlockInStateProofApplyFraudProof(
+                this.dispute,
+                fraudProof,
+                this.blockIndex
+            )
         );
-        return BlockValidationResult.DISPUTE;
     }
 
     public async interpretFinalValidationResult(
@@ -87,38 +96,22 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     ): Promise<boolean> {
         switch (blockValidationResult) {
             case BlockValidationResult.SUCCESS:
+            case BlockValidationResult.DUPLICATE:
                 // do nothing, do not disconnect
                 return true;
-            case BlockValidationResult.NOT_READY:
-                throw new Error(
-                    "NOT_READY result in DisputeValidationStrategy"
-                );
-            case BlockValidationResult.DUPLICATE:
-                return true;
-            case BlockValidationResult.NOT_ENOUGH_TIME:
-                throw new Error(
-                    "NOT_ENOUGH_TIME result in DisputeValidationStrategy"
-                );
-            case BlockValidationResult.DISCONNECT:
-                throw new Error(
-                    "DISCONNECT result in DisputeValidationStrategy"
-                );
-            case BlockValidationResult.BROADCAST:
-                throw new Error(
-                    "BROADCAST result in DisputeValidationStrategy"
-                );
             case BlockValidationResult.DISPUTE:
                 return false;
             default:
                 throw new Error(
-                    "Unknown BlockValidationResult in DisputeValidationStrategy"
+                    `${BlockValidationResult[blockValidationResult] ?? "Unknown BlockValidationResult"} result in DisputeValidationStrategy`
                 );
         }
     }
     public async authenticateBlockFailed(
         _block: BlockConfirmationStruct
     ): Promise<BlockValidationResult> {
-        return this.handleInvalidBlockStructure();
+        // the canonical structure check of the last milestone already passed
+        return BlockValidationResult.SUCCESS;
     }
     public async wrongChannel(_block: Block): Promise<BlockValidationResult> {
         throw new Error(
@@ -151,21 +144,19 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             // (a union member) packaged this block into the stateProof — kill
             // the dispute with evidence against the submitter. No transport
             // punishment: these blocks are replayed from a proof, not gossiped.
-            if (!participantSnapshots) {
-                this.logger.debug(
-                    "Skipping dispute outsider-author proof because participant snapshots are unavailable",
-                    { blockHash: block.hash, path: "signature-union" }
+            // The ingest pipeline always passes the snapshots it executed.
+            if (!participantSnapshots)
+                throw new Error(
+                    "DisputeValidationStrategy - notAllSingersAreParticipants needs the executed participant snapshots"
                 );
-                return BlockValidationResult.SUCCESS;
-            }
-            this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
-                this.dispute,
-                block,
-                participantSnapshots.previous,
-                participantSnapshots.resulting,
-                this.blockIndexInUnfinalizedPartOfStateProof
+            return this.allege(() =>
+                this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+                    this.dispute,
+                    this.predecessor,
+                    participantSnapshots.resulting,
+                    this.blockIndex
+                )
             );
-            return BlockValidationResult.DISPUTE;
         }
         // Stray confirmation signatures don't invalidate the replayed block.
         block.removeConfirmationSignatures(unexpectedSignatures);
@@ -187,33 +178,21 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         const block = entry.block;
-        const previousStateSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
-        );
         const resultingStateSnapshot =
             this.storage.stateSnapshots.getStateSnapshotByHash(
                 block.stateSnapshotHash
             );
-        if (!previousStateSnapshot || !resultingStateSnapshot) {
-            this.logger.debug(
-                "Skipping dispute outsider-author proof because participant snapshots are unavailable",
-                {
-                    blockHash: block.hash,
-                    path: "early-author",
-                    previousSnapshotFound: previousStateSnapshot !== undefined,
-                    resultingSnapshotFound: resultingStateSnapshot !== undefined
-                }
-            );
-            return BlockValidationResult.SUCCESS;
-        }
-        this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
-            this.dispute,
-            block,
-            previousStateSnapshot,
-            resultingStateSnapshot,
-            this.blockIndexInUnfinalizedPartOfStateProof
+        // the resulting snapshot is not held yet: the replay executes the
+        // block and the participant-union check judges the author
+        if (!resultingStateSnapshot) return BlockValidationResult.SUCCESS;
+        return this.allege(() =>
+            this.disputeFraudProofService.createDisputeBlockAuthorNotParticipant(
+                this.dispute,
+                this.predecessor,
+                resultingStateSnapshot,
+                this.blockIndex
+            )
         );
-        return BlockValidationResult.DISPUTE;
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
@@ -227,10 +206,12 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     public async invalidStateTransitionDetected(
         block: Block
     ): Promise<BlockValidationResult> {
-        const hash =
-            this.fraudProofService.createInvalidStateTransitionProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        return BlockValidationResult.DISPUTE;
+        return this.applyFraudProof(
+            this.fraudProofService.createInvalidStateTransitionProof(
+                block,
+                this.predecessor
+            )
+        );
     }
     public async wrongGenesisDetected(
         entry: QueuedBlockEntry
@@ -248,26 +229,27 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         ) {
             throw new Error("Unexpected genesisSnapshot missing");
         }
-        const hash = this.fraudProofService.createWrongGenesisProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        return BlockValidationResult.DISPUTE;
+        return this.applyFraudProof(
+            this.fraudProofService.createWrongGenesisProof(block)
+        );
     }
     public async forgedInboundMessageBlockDetected(
         block: Block,
         messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
-        const hash =
+        return this.applyFraudProof(
             this.fraudProofService.createForgedInboundMessageBlockProof(
                 block,
                 messageBlock
-            );
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        return BlockValidationResult.DISPUTE;
+            )
+        );
     }
     public async conflictingButNotLinkedBlockDetected(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.handleInvalidBlockStructure();
+        // The block extends another history than the one stored at its
+        // height; the replay judges it from its own predecessor.
+        return BlockValidationResult.SUCCESS;
     }
     public async blockForkIsDisputed(
         _entry: QueuedBlockEntry
@@ -287,54 +269,34 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
             "DisputeValidationStrategy - blockIsNotNextAndIsInTheFuture should not be called"
         );
     }
+    public async blockIsBelowInstalledHistory(
+        _entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult> {
+        // Guarded by enforcesLiveForkAndOrderingGates: dispute replay never
+        // reaches the below-history gate (it walks a proof out of live order).
+        throw new Error(
+            "DisputeValidationStrategy - blockIsBelowInstalledHistory should not be called"
+        );
+    }
     public async blockIsNotLinkedAndIsNotFirstBlock(
         _entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        return this.handleInvalidBlockStructure();
-    }
-    public async prepareStateMachineForLeaderCheck(
-        entry: QueuedBlockEntry,
-        diamondStateMachine: ADiamondStateMachine
-    ): Promise<void> {
-        // Dispute replay is not positioned at the block's predecessor (it walks
-        // a proof out of live order), so load the previous snapshot's state
-        // before the leader check. A missing snapshot/state is a bug on this
-        // path, not a peer fault - fail loudly rather than mis-proving.
-        const block = entry.block;
-        const previousSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
+        // The replay judges each block from the previous block of the
+        // structure-checked run, so a replayed block is always linked.
+        throw new Error(
+            "DisputeValidationStrategy - blockIsNotLinkedAndIsNotFirstBlock should not be called"
         );
-        if (!previousSnapshot) {
-            this.logger.error(
-                "DISPUTE Strategy - prepareStateMachineForLeaderCheck - missing previous snapshot",
-                { blockHash: block.hash }
-            );
-            throw new Error(
-                "Missing previous snapshot for dispute validation strategy"
-            );
-        }
-        const previousState =
-            this.storage.stateMachineStates.getStateMachineState(
-                previousSnapshot.stateMachineStateHash
-            );
-        if (!previousState) {
-            this.logger.error(
-                "DISPUTE Strategy - prepareStateMachineForLeaderCheck - missing previous state machine state",
-                { blockHash: block.hash }
-            );
-            throw new Error(
-                "Missing previous state machine state for dispute validation strategy"
-            );
-        }
-        await diamondStateMachine.setState(previousState);
     }
     public async objectiveInvalidTimestampDetected(
         block: Block
     ): Promise<BlockValidationResult> {
         // TODO - think about this - can this change over time? i.e. can onChainTimestamp or the presence of calldata change things
-        const hash = this.fraudProofService.createInvalidTimestampProof(block);
-        this.createDisputeInvalidBlockInStateProofApplyFraudProof(hash);
-        return BlockValidationResult.DISPUTE;
+        return this.applyFraudProof(
+            this.fraudProofService.createInvalidTimestampProof(
+                block,
+                this.predecessor
+            )
+        );
     }
     public async subjectiveInvalidTimestampDetected(
         _block: Block

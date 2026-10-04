@@ -24,20 +24,20 @@ facet writes.
 
 It implements itself only what needs its own storage or composition: `open` (unanimous opening
 with composable atomic deposits and genesis snapshot storage,
-[#L189](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189)),
+[#L191](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L191)),
 `postBlockCalldata` (commitment keyed channel/sender/fork/height with the too-late guard,
 author-only, no overwrite, unverified-by-design,
-[#L156](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L156)),
+[#L158](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L158)),
 the `onlySelf` composables `depositAssetsComposable`
-([#L279](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L279)),
+([#L281](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L281)),
 `withdrawAssetsComposable`
-([#L323](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L323))
+([#L325](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L325))
 and `executeStateTransition`
-([#L329](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L329)),
+([#L331](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L331)),
 `multicall` (delegatecall loop against itself, first-revert bubbling,
-[#L345](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L345)),
+[#L347](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L347)),
 the read-only routing introspection `facetAddressForSelector`
-([#L144](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L144)),
+([#L146](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L146)),
 and the timing-config constructor with zero-means-default sentinels
 ([#L33](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L33)).
 After a successful opening stores its genesis snapshot, `open` appends the channel ID to the
@@ -45,11 +45,11 @@ enumerable open-channel set before emitting `ChannelOpened`. Failed and duplicat
 change the set.
 
 Every other operation of the diamond reaches its facet through the non-payable `fallback()`
-([#L131](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L131)),
+([#L133](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L133)),
 which delegatecalls the facet chosen by the internal routing table `_facetForSelector`
-([#L388](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L388))
+([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390))
 with raw `msg.data`. Unrouted selectors resolve to the integrator's consumer facet
-([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)) —
+([#L392](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L392)) —
 the fallback of last resort. The proxy does not inherit
 [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md); that abstract contract is
 the caller-side declaration of the same surface.
@@ -66,7 +66,7 @@ the caller-side declaration of the same surface.
 2. **The constructor calls `_registerRoute(Facet.fn.selector, facetAddress)`, never a literal hash.**
    The compiler derives every selector. The helper rejects an exact duplicate and rejects a route
    target without deployed code before deployment
-   ([#L380](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L380)).
+   ([#L382](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L382)).
 3. **Lookup is constant-time and routing is constructor-only.** A configured route returns its
    code-bearing address; only an unconfigured selector reaches the consumer. The map is
    chosen for scalable routing and future governance-controlled upgradeability, which requires a
@@ -82,18 +82,18 @@ the caller-side declaration of the same surface.
    several operations in one frame; everything else is a facet's. The bodies are unchanged by the
    refactor except that `open` now calls the internal `_isChannelOpen` moved into
    [StateChannelCommon](./StateChannelCommon.sol.md) instead of its own former public view
-   ([#L192](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L192)).
+   ([#L194](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194)).
 6. **Unrouted selectors keep falling through to the consumer facet.** This is unchanged behaviour,
    deliberately preserved: the integrator's custom operations are reachable at the manager address.
    It is also the reason an unowned selector is not rejected — see
    [Missing behavior](#missing-behavior)
-   ([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)).
+   ([#L392](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L392)).
 7. **`facetAddressForSelector` makes the deployed surface enumerable.** The only new externally
    reachable function is this `view`; it lets a caller (and the routing test) reconcile every facet
    ABI against the deployed routing table. Because the proxy's own declared functions dispatch
    before the fallback, they are deliberately absent from the table and the introspection reports
    the consumer facet for them
-   ([#L144](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L144)).
+   ([#L146](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L146)).
 8. **Calldata posting stores a commitment, not truth.** The block is unverified at posting; the
    sender vouches and junk is later slashable against the commitment
    ([data-availability.md](../../../../../specification/security/data-availability.md)).
@@ -104,13 +104,13 @@ the caller-side declaration of the same surface.
     stays an invalid transition for the caller, but a machine frame that refused to judge an
     out-of-gas below its full stipend, or that ran out of gas outright (empty returndata), is not a
     verdict: the sender under-funded the transaction. `_requireFundedReplay` re-raises the refusal or
-    `ErrorStateTransitionFrameOutOfGas` ([#L366](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L366)), so
+    `ErrorStateTransitionFrameOutOfGas` ([#L368](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L368)), so
     the fraud-proof facets never read a caller's gas choice as fraud
     ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
     The machine judges only when it runs on its full stipend (`AStateMachine` refuses to judge an
     out-of-gas below it), so an honest sender must fund that stipend at the bottom of the call
     chain. The constructor routes `getStateTransitionReplayGas`
-    ([#L106](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L106))
+    ([#L108](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L108))
     to [UtilityFacet](./UtilityFacet.sol.md): the gas the replay call chain needs so the replay gets
     its full stipend.
 11. **Block authenticity has no external route.** The public `isBlockAuthentic` wrapper and its
@@ -120,6 +120,18 @@ the caller-side declaration of the same surface.
     [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) and decodes the block with its own decoder; the contracts
     expose no decoding entry point to it (decoding parity is open,
     [`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
+
+12. **The state-proof walk entries are routed; the trusted start is not.** The constructor routes
+    `isStateProofLinked` ([#L82](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L82)), `verifyMilestones` ([#L85](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L85)), `getAnchorSnapshot`
+    ([#L86](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L86)) and `isBlockChallengeEligible` ([#L87](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L87)) with the other [StateProofFacet](./StateProofFacet.sol.md) entries ([#L80](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80)–[#L88](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L88)),
+    so the SDK prover, the auditor and spectator sync read the one anchor, the one block-challenge bound and the one walk at the
+    manager address ([`REQ-SP-8-9PK9TS`](../../../../../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts)). The former
+    signed-block linkage, anchor, base and skip-index routes are deleted with their functions.
+    `LocalDiamond.verifyMilestonesFromTrustedStart` is declared only on [LocalDiamond](./LocalDiamond.sol.md); no route
+    and no proxy function reaches it, so production cannot select a trusted start. The routes need no
+    new permutation: [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p9) resolves every function of the state-proof facet's compiled ABI, and
+    [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P25`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p25), [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p27) and [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28`](StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p28) reconcile their interface declarations
+    generically. The trusted-start exclusion is [`UNIT-TEST-LOCAL-DIAMOND-3-P3AT2P.P4`](LocalDiamond.sol.md#unit-test-local-diamond-3-p3at2p.p4).
 
 ## Inputs, outputs, state, and side effects
 
@@ -198,7 +210,7 @@ None demonstrated.
   ([`FIND-SECURITY-4-02DYWZ`](../../../../../audit/open-findings.md#find-security-4-02dywz)).
   `open` verifies the unanimous signatures and copies `OpenChannel.deadlineTimestamp` into each
   composed join, but never compares it with chain time
-  ([#L220-L234](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L220-L234)).
+  ([#L222-L236](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L222-L236)).
   The direct join path does check its deadline. A counterparty that kept the opening signatures
   can therefore open the channel after the signed window, unless the integrator's deposit adapter
   rejects it. No requirement states that `open` must enforce the deadline, so this is not a
@@ -209,7 +221,7 @@ None demonstrated.
   externally reachable operation with no owning group cannot affect channel state. An unrouted
   selector is delegatecalled into the integrator's consumer facet in this contract's storage
   context, so the guarantee rests entirely on the integrator's facet
-  ([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)).
+  ([#L392](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L392)).
 - **No module-identity verification.** Route registration proves that the target has code, but does
   not prove that the code implements the expected facet selectors or storage semantics.
 - **No facet replacement and no namespaced storage** — the remaining parts of the intended Diamond
@@ -224,14 +236,14 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Gap / divergence                                                                                                                                                                                                  |
 | ---------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the fallback delegatecalls the routed facet with raw `msg.data`, so every route executes against this contract's layout ([#L131](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L131)). **Other files:** [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md) defines the layout every facet inherits.                                                                                                                                                                                                                                                                     | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Covered               | **Here:** the routing table resolves every routed operation at this one address ([#L388](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L388)); input/output encoding is untouched because raw calldata is forwarded. **Other files:** [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md) declares the same surface for callers; each facet report owns its operations' semantics.                                                                                                                                                                                         | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) | Covered               | **Here:** `onlySelf` on `depositAssetsComposable` ([#L279](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L279)), `withdrawAssetsComposable` ([#L323](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L323)) and `executeStateTransition` ([#L329](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L329)). **Other files:** the modifier lives on [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md); facets self-call through the interface type.                                                 | None.                                                                                                                                                                                                             |
-| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Partial               | **Here:** the constructor names every required routed module, registers 59 compiler-derived selectors, rejects duplicate selectors and codeless route targets, and remains below EIP-170. **Other files:** the architecture view records compiled-size and size-gate evidence.                                                                                                                                                                                                                                                                                                                                                             | The constructor does not verify that code-bearing targets implement the expected module semantics.                                                                                                                |
-| [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Partial               | **Here:** `_facetForSelector` assigns each externally reachable protocol operation to exactly one owning facet ([#L388](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L388)), and `facetAddressForSelector` publishes that assignment for reconciliation ([#L144](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L144)). **Other files:** each facet report owns its group's semantics; [AConsumerFacet](./AConsumerFacet.sol.md) is the integrator surface reached by unrouted selectors.                                                              | An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here. |
+| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the fallback delegatecalls the routed facet with raw `msg.data`, so every route executes against this contract's layout ([#L133](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L133)). **Other files:** [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md) defines the layout every facet inherits.                                                                                                                                                                                                                                                                     | None.                                                                                                                                                                                                             |
+| [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Covered               | **Here:** the routing table resolves every routed operation at this one address ([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)); input/output encoding is untouched because raw calldata is forwarded. **Other files:** [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md) declares the same surface for callers; each facet report owns its operations' semantics.                                                                                                                                                                                         | None.                                                                                                                                                                                                             |
+| [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) | Covered               | **Here:** `onlySelf` on `depositAssetsComposable` ([#L281](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L281)), `withdrawAssetsComposable` ([#L325](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L325)) and `executeStateTransition` ([#L331](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L331)). **Other files:** the modifier lives on [StateChannelManagerStorage](./StateChannelManagerStorage.sol.md); facets self-call through the interface type.                                                 | None.                                                                                                                                                                                                             |
+| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Partial               | **Here:** the constructor names every required routed module, registers 60 compiler-derived selectors, rejects duplicate selectors and codeless route targets, and remains below EIP-170. **Other files:** the architecture view records compiled-size and size-gate evidence.                                                                                                                                                                                                                                                                                                                                                             | The constructor does not verify that code-bearing targets implement the expected module semantics.                                                                                                                |
+| [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Partial               | **Here:** `_facetForSelector` assigns each externally reachable protocol operation to exactly one owning facet ([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)), and `facetAddressForSelector` publishes that assignment for reconciliation ([#L146](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L146)). **Other files:** each facet report owns its group's semantics; [AConsumerFacet](./AConsumerFacet.sol.md) is the integrator surface reached by unrouted selectors.                                                              | An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here. |
 | [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)     | Covered               | **Here:** the stable manager boundary routes `joinChannel`/`topUpBalance` into the join facet with the initiating caller and shared manager storage preserved ([#L78](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L78)). **Other files:** [JoinChannelFacet](./JoinChannelFacet.sol.md) implements them.                                                                                                                                                                                                                                                                                       | None.                                                                                                                                                                                                             |
-| [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)     | Covered               | **Here:** `depositAssetsComposable` confines adapter calls with `onlySelf`, rolls back atomic failures, filters non-atomic failures, rejects an all-failed batch, and appends only successful deposits ([#L279](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L279)).                                                                                                                                                                                                                                                                                                                            | None.                                                                                                                                                                                                             |
-| [`REQ-ENFSM-1-DKJCY2`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)    | Covered               | **Here:** `executeStateTransition` re-raises the machine's stipend refusal and treats an empty-returndata machine frame as `ErrorStateTransitionFrameOutOfGas` ([#L329](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L329), [#L366](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L366)), so an under-funded replay fails the call without a verdict. **Other files:** [AStateMachine](../AStateMachine.sol.md) performs the stipend check; [ContractExecutor](../../../src/evm/contractExecutor/ContractExecutor.ts.md) keeps mirror replays funded. | None.                                                                                                                                                                                                             |
+| [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)     | Covered               | **Here:** `depositAssetsComposable` confines adapter calls with `onlySelf`, rolls back atomic failures, filters non-atomic failures, rejects an all-failed batch, and appends only successful deposits ([#L281](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L281)).                                                                                                                                                                                                                                                                                                                            | None.                                                                                                                                                                                                             |
+| [`REQ-ENFSM-1-DKJCY2`](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)    | Covered               | **Here:** `executeStateTransition` re-raises the machine's stipend refusal and treats an empty-returndata machine frame as `ErrorStateTransitionFrameOutOfGas` ([#L331](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L331), [#L368](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L368)), so an under-funded replay fails the call without a verdict. **Other files:** [AStateMachine](../AStateMachine.sol.md) performs the stipend check; [ContractExecutor](../../../src/evm/contractExecutor/ContractExecutor.ts.md) keeps mirror replays funded. | None.                                                                                                                                                                                                             |
 
 ## Component test obligations
 

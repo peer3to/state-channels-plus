@@ -151,6 +151,108 @@ describe("E2E: lobby matching", function () {
         await h.assert.sync.blockHeight({ expectedHeight: 0 });
     });
 
+    it("announces a lobby-opened channel so a later spectator syncs from its founders", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-announced-spectator");
+        const [first, second, spectator] = h.peers;
+
+        const results = await Promise.all(
+            [first, second].map((peer) =>
+                peer.p2pInstance.p2pSigner.joinLobby(topic)
+            )
+        );
+        const channelId = results[0]!.channelId;
+        expect(results[1]!.channelId).to.equal(channelId);
+
+        await spectator.p2pInstance.p2pSigner.connectToChannel(channelId);
+        await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+
+        expect(
+            await h.control(spectator).query.getChannelId().request()
+        ).to.equal(channelId);
+        expect(
+            await h
+                .control(spectator)
+                .query.isConnectedTo(first.address)
+                .request()
+        ).to.equal(true);
+    });
+
+    it("a lobby founder announces only after its own genesis is installed, so neither founder waits for an initial sync or aborts", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-founder-genesis-first");
+        const [first, second] = h.peers;
+        const releaseGenesis = await h.rpcStub.holdChannelOpenedHandler(
+            first.index
+        );
+        let firstSettled = false;
+        try {
+            const firstJoin = first.p2pInstance.p2pSigner
+                .joinLobby(topic)
+                .finally(() => {
+                    firstSettled = true;
+                });
+            const secondResult =
+                await second.p2pInstance.p2pSigner.joinLobby(topic);
+            expect(
+                await h.control(second).query.getStatus().request()
+            ).to.equal(Status.PARTICIPATING);
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(first)
+                        .stub.getHeldChannelOpenedCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            // The open is on chain, but the first founder has not installed
+            // its genesis: it has not completed the lobby or announced.
+            expect(firstSettled).to.equal(false);
+            expect(await h.control(first).query.getStatus().request()).to.equal(
+                Status.NOT_OPENED
+            );
+
+            await releaseGenesis();
+            const firstResult = await firstJoin;
+            expect(firstResult!.channelId).to.equal(secondResult!.channelId);
+            expect(await h.control(first).query.getStatus().request()).to.equal(
+                Status.PARTICIPATING
+            );
+        } finally {
+            await releaseGenesis();
+        }
+        expect(first.eventSpies.onAbort?.called).to.equal(false);
+        expect(second.eventSpies.onAbort?.called).to.equal(false);
+    });
+
+    it("admits a normal join into a lobby-opened channel through its founders", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-announced-joiner");
+        const [first, second, joiner] = h.peers;
+        const results = await Promise.all(
+            [first, second].map((peer) =>
+                peer.p2pInstance.p2pSigner.joinLobby(topic)
+            )
+        );
+        const channelId = results[0]!.channelId;
+
+        await joiner.p2pInstance.p2pSigner.connectToChannel(channelId);
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        expect(
+            await joiner.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                shouldJoin: true,
+                balance: { amount: 500n, data: "0x" }
+            })
+        ).to.equal(true);
+
+        expect(
+            await h.channelManager.getPendingParticipants(channelId)
+        ).to.include(joiner.address);
+    });
+
     it("keeps two caller-supplied lobby topics isolated", async function () {
         const h = TestSession.getHarness();
         await h.setup(4, { autoConnect: false });
@@ -590,6 +692,90 @@ describe("E2E: lobby matching", function () {
         } finally {
             await advertiserExpiry.release(false);
             await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("settles a cancellation requested during the commit when the advertiser rejects that commit", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-cancel-during-rejected-commit");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const releaseCommit = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit"
+        );
+        // Neither bound may end the held commit: only its rejection can.
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () => (await selectorTimeout.heldCount()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            // A hostile advertiser: its reservation no longer matches the
+            // commit, so the real endpoint answers "rejected" once released.
+            await h.execOnHost(
+                h.peers[advertiserIndex],
+                async (stateManager) => {
+                    const lobby =
+                        stateManager.p2pManager.localRpc.lobbyMatchingService;
+                    const reservation = lobby["reservation"];
+                    if (!reservation) throw new Error("No lobby reservation");
+                    reservation.advertiserChallenge = `0x${"77".repeat(32)}`;
+                    return true;
+                }
+            );
+            const cancelling = h
+                .control(h.peers[selectorIndex])
+                .network.leaveLobby(topic)
+                .request();
+            await waitFor(
+                () =>
+                    h.execOnHost(
+                        h.peers[selectorIndex],
+                        async (stateManager) =>
+                            stateManager.p2pManager.localRpc
+                                .lobbyMatchingService["pendingCancellation"] !==
+                            undefined
+                    ),
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            await releaseCommit();
+
+            expect(await cancelling).to.equal(true);
+            const selectorLobby = await h
+                .control(h.peers[selectorIndex])
+                .query.getLobbyAvailability()
+                .request();
+            expect(selectorLobby.matching).to.equal(false);
+            expect(selectorLobby.topicJoined).to.equal(false);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getNegotiationAttempt()
+                    .request()
+            ).to.equal(null);
+        } finally {
+            await releaseCommit();
+            await selectorTimeout.release(false);
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([0, 1], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -1436,13 +1622,12 @@ describe("E2E: lobby matching", function () {
                     .request()
             ).to.equal(false);
             // The lower peer lost its committed partner mid-negotiation: one
-            // strike, and its own signed attempt keeps observing too.
-            expect(
-                await h
-                    .control(lower)
-                    .query.getStrikes(higher.address)
-                    .request()
-            ).to.equal(1);
+            // strike, and its own signed attempt keeps observing too. The
+            // lower side sees the close only when it reaches its own runtime.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: lower,
+                target: higher
+            });
 
             await h.control(higher).stub.releaseOpeningSubmission().request();
             await waitFor(

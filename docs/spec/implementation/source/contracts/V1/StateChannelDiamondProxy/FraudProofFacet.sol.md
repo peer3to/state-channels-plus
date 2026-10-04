@@ -36,11 +36,18 @@ Fraud-proof targets must still belong to the current chain snapshot or eligible 
 3. **The wrong-genesis handler reports a missing dispute window under its own name.** The
    submitter picks `originForkId`, so the window lookup can land on a slot that was never
    created. The handler checks window existence before the kill-period deadline
-   ([#L310](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L310)), because the kill-period helper derives its deadline from a
+   ([#L313](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L313)), because the kill-period helper derives its deadline from a
    zero `lastEvidenceSubmissionTimestamp` and would otherwise report a deadline that reads as
    long past for a call refused precisely because nothing has expired. The existence check
    raises `RaceConditionDisputeWindowNotOpen(channelId, originForkId)` — the same name and
    operand pair the dispute-upload path already uses for a window that is not open.
+4. **The resulting snapshot reads the loaded state.** `executeStateTransition` leaves the transitioned
+   state loaded in the state machine, so the inbound messages of the fraud block are applied to it with
+   `_processInboundMessages` and the participants are read from it, with no further `setState`
+   ([#L188-L196](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L188-L196)). Why: each
+   `setState` of a large application state costs most of the dispute-execution budget; the result is
+   unchanged because `_setState` and `getState` are exact inverses
+   ([`INV-CON-5-T1B2EG`](../../../../views/architecture/contracts/state-machine-base.md#inv-con-5-t1b2eg)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -86,7 +93,7 @@ which lets only successful proofs of real misconduct append to the slash set.
   ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
   The forged-inbound handler treats absence from the live inbound map as forgery and exempts only
   the current snapshot head
-  ([#L351-L362](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L351-L362)).
+  ([#L354-L365](../../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L354-L365)).
   Snapshot adoption deletes earlier genuine heads, so an honest block that includes one of them
   satisfies the proof.
 

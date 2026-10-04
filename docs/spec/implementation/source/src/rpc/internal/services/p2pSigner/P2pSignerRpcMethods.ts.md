@@ -5,12 +5,13 @@
 
 ## Responsibility and observable boundary
 
-Declares only the public p2pSigner endpoints: `sendTransaction`, `callView`, `connectToChannel`, `cancelConnectToChannel`, `leaveChannel`, `joinLobby`, `leaveLobby`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`, `getChannelStatus`, `setIsLeader`, `disconnectFromPeers`, `signMessage`, `signTypedData`. Each receiver uses its service for dependencies and retains its invocation sender.
+Declares only the public p2pSigner endpoints: `sendTransaction`, `callView`, `connectToChannel`, `cancelConnectToChannel`, `leaveChannel`, `joinLobby`, `leaveLobby`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`, `getChannelStatus`, `getOwnJoinState`, `setIsLeader`, `disconnectFromPeers`, `signMessage`, `signTypedData`. Each receiver uses its service for dependencies and retains its invocation sender.
 
 ## Key design decisions
 
 - Endpoint declarations are the concrete source of bound remote argument/result types ([`P2pSignerRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L9)).
 - Domain work delegates through the service; helpers are not added to the routable receiver ([`P2pSignerRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L9)).
+- `getOwnJoinState` is a read-only endpoint: it forwards to the local signer, which asks `MembershipService.getOwnJoinState`, and returns the serializable `OwnJoinState` union (`none`, `open` with `secondsUntilExpiry`, `landed`, `expired`) unchanged ([`P2pSignerRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L125)). A client uses it to decide whether an uncertain join can still land before it walks away.
 
 The signing endpoint decodes the tagged message before invoking the signer; encoded byte messages are not signed as hex text.
 

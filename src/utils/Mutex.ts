@@ -1,6 +1,12 @@
 import type { Logger } from "./logging/Logger";
 
-export type MutexLockOptions = { taskName?: string; logMeta?: any };
+export type MutexLockOptions = {
+    taskName?: string;
+    logMeta?: any;
+    // Acquire a free mutex on a later macrotask too, so callers that lock in
+    // one task (a batch of port messages) each run in their own task.
+    acquireAsMacroTask?: boolean;
+};
 export type MutexUnlockOptions = { scheduleNextAsMacroTask?: boolean };
 
 export class Mutex {
@@ -39,6 +45,10 @@ export class Mutex {
 
             if (this.isLocked) {
                 this.queue.push(acquire);
+            } else if (options?.acquireAsMacroTask) {
+                // held from now so later callers queue behind this one
+                this.isLocked = true;
+                this.scheduleMacroTask(acquire);
             } else {
                 acquire();
             }

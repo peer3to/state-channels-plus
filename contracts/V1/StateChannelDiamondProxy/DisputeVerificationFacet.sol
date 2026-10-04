@@ -5,7 +5,6 @@ import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
 import "./UtilityFacet.sol";
-import "hardhat/console.sol";
 
 contract DisputeVerificationFacet is StateChannelCommon {
     function computeDisputeOutputSnapshotData(
@@ -15,13 +14,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
         MessageBlock[] memory inboundMessageBlocks
     ) public returns (SnapshotData memory) {
         address[] memory removals = _calculateRemovals(disputeInput);
-        DisputeOutputState memory disputeOutputState = generateDisputeOutputState(
+        (DisputeOutputState memory disputeOutputState, address[] memory participants) = _generateDisputeOutputState(
             latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
         );
 
         bytes32 stateMachineStateHash = keccak256(disputeOutputState.encodedModifiedState);
-        // _getStateMachineParticipants fails
-        address[] memory participants = _getStateMachineParticipants(disputeOutputState.encodedModifiedState);
         Balance memory totalDeposits = disputeOutputState.totalDeposits;
         Balance memory totalWithdrawals = disputeOutputState.totalWithdrawals;
         bytes32 latestOutboundBlockHash = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
@@ -52,7 +49,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         MessageBlock[] memory inboundMessageBlocks
     ) public returns (DisputeOutputState memory outputState) {
         address[] memory removals = _calculateRemovals(disputeInput);
-        return generateDisputeOutputState(
+        (outputState,) = _generateDisputeOutputState(
             latestStateMachineState, disputeInput.onChainSlashes, removals, inboundMessageBlocks, latestStateSnapshot
         );
     }
@@ -351,7 +348,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             );
         }
 
-        DisputeOutputState memory outputState = generateDisputeOutputState(
+        (DisputeOutputState memory outputState, address[] memory participants) = _generateDisputeOutputState(
             encodedStateMachineState,
             reducedOutput.slashedParticipants,
             removals,
@@ -369,7 +366,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             SnapshotData({
                 originForkId: forkId,
                 stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-                participants: _getStateMachineParticipants(outputState.encodedModifiedState),
+                participants: participants,
                 latestInboundMessageBlockHash: reducedOutput.latestInboundMessageBlockHash, // Verified in _verifyInboundMessageBlocks
                 latestInboundMessageBlockHeight: reducedOutput.latestInboundMessageBlockHeight,
                 latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
@@ -383,30 +380,33 @@ contract DisputeVerificationFacet is StateChannelCommon {
     }
 
     // Doesn't do any checks and just applies all slashes, removals and joins to a specific stateMachineState and generates the outputStateMachineState - similar logic to playTransaction in the typescript code - this is done to help the backer generate a correct output state while forging the dispute
-    function generateDisputeOutputState(
+    function _generateDisputeOutputState(
         bytes memory encodedStateMachineState,
         address[] memory slashParticipants,
         address[] memory removeParticipants,
         MessageBlock[] memory inboundMessageBlocks,
         StateSnapshot memory latestStateSnapshot
-    ) public returns (DisputeOutputState memory outputState) {
-        outputState.totalDeposits = latestStateSnapshot.snapshotData.totalDeposits;
+    ) internal returns (DisputeOutputState memory outputState, address[] memory participants) {
         outputState.totalWithdrawals = latestStateSnapshot.snapshotData.totalWithdrawals;
 
+        // Load the state once: joins, slashes and removals all modify the loaded state,
+        // and the output state and its participants are read from it once at the end.
+        stateMachineImplementation.setState(encodedStateMachineState);
+
         // Apply joins
-        (outputState.encodedModifiedState, outputState.totalDeposits) =
-            _applyInboundMessages(encodedStateMachineState, inboundMessageBlocks, outputState.totalDeposits);
+        outputState.totalDeposits = _processInboundMessages(
+            encodedStateMachineState, inboundMessageBlocks, latestStateSnapshot.snapshotData.totalDeposits
+        );
 
         // Apply slashes
         // fails
-        ExitChannel[] memory slashExitChannels;
-        (outputState.encodedModifiedState, slashExitChannels) =
-            _applySlashesToStateMachine(outputState.encodedModifiedState, slashParticipants);
+        ExitChannel[] memory slashExitChannels = _applySlashesToStateMachine(slashParticipants);
 
         // Apply removals
-        ExitChannel[] memory removalExitChannels;
-        (outputState.encodedModifiedState, removalExitChannels) =
-            _removeParticipantsFromStateMachine(outputState.encodedModifiedState, removeParticipants);
+        ExitChannel[] memory removalExitChannels = _removeParticipantsFromStateMachine(removeParticipants);
+
+        outputState.encodedModifiedState = stateMachineImplementation.getState();
+        participants = stateMachineImplementation.getParticipants();
 
         // Combine exit channels and calculate totals
         ExitChannel[] memory allExitChannels =
@@ -435,7 +435,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         outboundMessageBlock.timestamp = 0; // timestamp is not relevant, but more importantly this needs to be deterministic
         outputState.outboundMessageBlock = outboundMessageBlock;
 
-        return outputState;
+        return (outputState, participants);
     }
 
     function _calculateTotalWithdrawals(Balance memory totalWithdrawals, ExitChannel[] memory exitChannels)
@@ -496,32 +496,24 @@ contract DisputeVerificationFacet is StateChannelCommon {
         bytes memory encodedStateMachineState
     ) public returns (bool) {
         ChannelBalance storage channelBalance = channelBalances[channelId];
-        console.log("BALANCE 1");
         Balance memory onChainDeposits = _resolveTotalDeposits(channelId, snapshotData.latestInboundMessageBlockHash);
         Balance memory onChainWithdrawals = channelBalance.totalWithdrawals;
         if (snapshotData.stateMachineStateHash != keccak256(encodedStateMachineState)) return false;
-        console.log("BALANCE 2");
         //on-chain deposits have to match latestState deposits since deposits only happen on-chain
         if (!stateMachineImplementation.areBalancesEqual(snapshotData.totalDeposits, onChainDeposits)) return false;
-        console.log("BALANCE 3");
         //total withdrawals >= on-chain withdrawals since on-chain withdrawals are already processed
         if (stateMachineImplementation.isBalanceLesserThan(snapshotData.totalWithdrawals, onChainWithdrawals)) {
             return false;
         }
-        console.log("BALANCE 4");
         stateMachineImplementation.setState(encodedStateMachineState);
         Balance memory stateMachineBalance = stateMachineImplementation.getTotalStateBalance(); // The state is already set
         // totalDeposits == totalWithdrawals + stateMachineBalance
-        console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
-        console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
-        console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
         if (
             !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
             )
         ) return false;
-        console.log("BALANCE 5");
         return true;
     }
 
@@ -573,63 +565,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return _shrinkAddressArray(_removals, removalCount);
     }
 
-    function checkDisputeAuditingDataCommitment(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        pure
-        returns (bool)
-    {
-        return dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData));
-    }
-
-    // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-    //     public
-    //     view
-    //     returns (bool)
-    // {
-    //     // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
-
-    //     // Check dispute commits to genesisStateSnapshot
-    //     if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
-
-    //     // Check latestStateSnapshot
-    //     (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-    //     if (
-    //         hasBlock
-    //             && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-    //                 || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
-    //     ) {
-    //         return false;
-    //     }
-    //     if (
-    //         !hasBlock
-    //             && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
-    //     ) {
-    //         return false;
-    //     }
-
-    //     // Check milestones
-    //     Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
-    //     if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
-    //     for (uint256 i = 0; i < milestoneBlocks.length; i++) {
-    //         if (
-    //             milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
-    //         ) {
-    //             return false;
-    //         }
-    //     }
-
-    //     // Check latest stateMachineState
-    //     if (
-    //         disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
-    //             != keccak256(disputeAuditingData.latestStateStateMachineState)
-    //     ) return false;
-
-    //     // Check outbound message blocks
-    //     if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
-
-    //     return true;
-    // }
-
     function isDisputeOutputCorrect(
         Dispute memory dispute,
         StateSnapshot memory latestStateSnapshot,
@@ -652,12 +587,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return (keccak256(abi.encode(outputSnapshotData)) == dispute.outputSnapshotDataHash);
     }
 
-    function _applySlashesToStateMachine(bytes memory encodedState, address[] memory slashedParticipants)
+    // Slashes on the state already loaded in the state machine.
+    function _applySlashesToStateMachine(address[] memory slashedParticipants)
         internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory exitChannels)
+        returns (ExitChannel[] memory exitChannels)
     {
         ExitChannel[] memory _exitChannels = new ExitChannel[](slashedParticipants.length);
-        stateMachineImplementation.setState(encodedState);
         uint256 slashCount = 0;
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             bool success;
@@ -669,16 +604,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         exitChannels = _shrinkExitChannelArray(_exitChannels, slashCount);
-
-        return (stateMachineImplementation.getState(), exitChannels);
     }
 
-    function _removeParticipantsFromStateMachine(bytes memory encodedState, address[] memory participants)
+    // Removes participants from the state already loaded in the state machine.
+    function _removeParticipantsFromStateMachine(address[] memory participants)
         internal
-        returns (bytes memory encodedModifiedState, ExitChannel[] memory)
+        returns (ExitChannel[] memory)
     {
         ExitChannel[] memory _exitChannels = new ExitChannel[](participants.length);
-        stateMachineImplementation.setState(encodedState);
         uint256 removalCount = 0;
         for (uint256 i = 0; i < participants.length; i++) {
             bool success;
@@ -689,8 +622,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
             }
         }
 
-        ExitChannel[] memory exitChannels = _shrinkExitChannelArray(_exitChannels, removalCount);
-
-        return (stateMachineImplementation.getState(), exitChannels);
+        return _shrinkExitChannelArray(_exitChannels, removalCount);
     }
 }

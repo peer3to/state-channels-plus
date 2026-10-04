@@ -1,4 +1,12 @@
 import { Status } from "@/types";
+import {
+    freshSpectatorStopsOnEach,
+    freshSpectatorStopsOnSilence
+} from "@test/fixtures/AbortDuringInitialSyncStaging";
+import {
+    forgeSyncPayloads,
+    stageAnchoredSyncPayload
+} from "@test/fixtures/HistoricSyncStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -155,5 +163,30 @@ describe("E2E: Spectate stale-proof guard", function () {
                 .query.isBlacklisted(responder.address)
                 .request()
         ).to.equal(true, "participant should blacklist the responder");
+    });
+
+    it("a fresh spectator stops entirely on a lineage, genesis, outbound-range or finality failure", async function () {
+        const h = TestSession.getHarness();
+        const { payload, onChainSnapshot } = await stageAnchoredSyncPayload(h);
+        const stopped = await freshSpectatorStopsOnEach(
+            h,
+            forgeSyncPayloads(payload, onChainSnapshot, [
+                "lineage",
+                "genesis",
+                "preGenesisOutbound",
+                "finality"
+            ]),
+            [0, 1, 2]
+        );
+        expect(stopped.lineage).to.equal(true);
+        expect(stopped.genesis).to.equal(true);
+        expect(stopped.preGenesisOutbound).to.equal(true);
+        expect(stopped.finality).to.equal(true);
+    });
+
+    it("a fresh spectator whose initial sync outlives its round-trip bound stops entirely", async function () {
+        expect(
+            await freshSpectatorStopsOnSilence(TestSession.getHarness())
+        ).to.equal(true);
     });
 });

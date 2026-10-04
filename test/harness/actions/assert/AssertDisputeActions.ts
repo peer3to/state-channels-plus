@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: dispute assertion helpers shared by E2E cases; evidence belongs to the calling test declarations
 import type { ForkId } from "@/types/types";
 import { addressesEqual } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -110,6 +111,25 @@ export class AssertDisputeActions<
             expectedCounts,
             timeoutMs,
             { mode }
+        );
+    }
+
+    /**
+     * Returns once the chain reports `forkId`'s kill period expired, as
+     * `peerIndex` reads it. Evidence can extend the period, so the wait
+     * spans one evidence period past the latest read end.
+     */
+    async killPeriodExpiredWait(
+        forkId: ForkId,
+        peerIndex: number = 0
+    ): Promise<void> {
+        await waitFor(
+            async () =>
+                (await this.harness.query.killPeriod(forkId, peerIndex))
+                    .isExpired,
+            this.harness.event.evidencePeriodWaitMs(2) +
+                this.harness.event.protocolEventTimeoutMs(),
+            500
         );
     }
 

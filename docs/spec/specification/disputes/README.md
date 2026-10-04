@@ -52,7 +52,7 @@ execution.
 | --- | --- |
 | [fraud-proofs.md](./fraud-proofs.md) | The immediate objective-violation path, proof categories, and the on-chain slash set it feeds. |
 | [disputes.md](./disputes.md) | The dispute game: valid inputs, window lifecycle, reduction rules, timeout precedence, successor forks, anti-griefing. |
-| [state-proofs.md](./state-proofs.md) | Finality anchors, milestone hops across membership changes, genesis anchoring, the permitted non-final suffix. |
+| [state-proofs.md](./state-proofs.md) | The walk start and the one walk, finality anchors, milestone hops across membership changes, the genesis start, the below-anchor counter, verification by a node, the challenge region, the permitted non-final tail. |
 | [dispute-processing.md](./dispute-processing.md) | The off-chain audit pipeline: intake binding, ordered verification, deterministic reduction, atomic recovery. |
 
 ## Interaction contracts

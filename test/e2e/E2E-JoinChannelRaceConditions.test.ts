@@ -205,8 +205,7 @@ describe("E2E: Join channel race conditions", function () {
                 .control(h.getPeer(0))
                 .transition.prepareUpdateSnapshotSameFork(h.activeForkId!)
                 .request();
-            expect(prepared.canPost).to.equal(true);
-            expect(prepared.callData.length).to.be.greaterThan(0);
+            expect(prepared.kind).to.equal("ready");
 
             for (const peerIndex of [0, 1, 2]) {
                 await h.byzantine.stubPendingInboundInclusion(peerIndex);
@@ -250,20 +249,37 @@ describe("E2E: Join channel race conditions", function () {
             // Existing peers open a dispute on the latest fork
             await h.tamper.postTamperedDispute(0, async () => {});
 
-            expect(
-                await joiner.p2pInstance.p2pSigner.joinChannel(
+            // The joiner is still a SYNCED spectator: its join is not on
+            // chain, so it is no participant and aborts on the dispute.
+            await h.event.waitForPeers("onAbort", [joiner.index], 1);
+
+            // The chain gate rejects the prepared join on the disputed fork.
+            const channelManager = h.channelManager.connect(joiner.signer);
+            let revertError: unknown;
+            try {
+                const tx = await channelManager.joinChannel(
                     confirmation,
                     expectedSnapshotHash,
                     expectedForkId
-                )
-            ).to.equal(false);
-
-            expect(
-                await h
-                    .control(h.getPeer(joiner.index))
-                    .query.getStatus()
-                    .request()
-            ).to.equal(Status.OPENED);
+                );
+                await tx.wait();
+                expect.fail(
+                    "expected joinChannel to revert: the pinned fork is disputed"
+                );
+            } catch (e) {
+                revertError = e;
+            }
+            const customError = expectDecodedError(
+                revertError,
+                "RaceConditionJoinChannelForkDisputed",
+                "joinChannel must reject a join on the disputed fork by name"
+            );
+            expect(customError.errorDescription.args.channelId).to.equal(
+                h.channelId
+            );
+            expect(customError.errorDescription.args.forkId).to.equal(
+                expectedForkId
+            );
 
             const onChainParticipantUnion = await h
                 .control(h.getPeer(0))

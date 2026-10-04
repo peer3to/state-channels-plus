@@ -115,34 +115,34 @@ export class DisputeOrchestrator<
         );
     }
 
-    /** Run the real persistDisputeDataWithoutAudit on `peerIndex`. */
-    async persistDisputeData(
+    /** Run the real dispute audit on `peerIndex`; what it stored. */
+    async auditPersistence(
         peerIndex: number,
         dispute: DisputeStruct,
-        options: {
-            auditingData?: DisputeAuditingDataStruct;
-            includeUnfinalizedBlocks: boolean;
-            /** Applied host-side after decode; "" is not ABI-encodable. */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
+        auditingData?: DisputeAuditingDataStruct
     ): Promise<PersistDisputeDataProjection> {
-        return this.harness
-            .control(this.harness.getPeer(peerIndex))
-            .dispute.persistDisputeDataWithoutAudit(
-                Codec.encode(dispute, Type.Dispute) as string,
-                {
-                    encodedAuditingData: options.auditingData
-                        ? (Codec.encode(
-                              options.auditingData,
-                              Type.DisputeAuditingData
-                          ) as string)
-                        : undefined,
-                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks,
-                    latestFinalizedStateStateMachineStateOverride:
-                        options.latestFinalizedStateStateMachineStateOverride
-                }
-            )
-            .request();
+        return (
+            this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .dispute.auditDisputePersistence(
+                    Codec.encode(dispute, Type.Dispute) as string,
+                    {
+                        encodedAuditingData: auditingData
+                            ? (Codec.encode(
+                                  auditingData,
+                                  Type.DisputeAuditingData
+                              ) as string)
+                            : undefined
+                    }
+                )
+                // the audit replays blocks, as in auditDispute
+                .request({
+                    timeoutMs:
+                        this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 3
+                })
+        );
     }
 
     async submitFinalDispute(options: {

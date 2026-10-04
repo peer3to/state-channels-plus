@@ -23,7 +23,11 @@ Free-function block field accessors used across facets.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **No snapshot-commitment helper here.** The former `_doesBlockCommitToSnapshot` is deleted: the
+   state-proof walk compares a block's `stateSnapshotHash` with the start or milestone snapshot itself
+   ([StateChannelCommon](../StateChannelCommon.sol.md)), and `_isSnapshotLinkedToBlock` in the shared base
+   covers the other callers. The file keeps the field accessors and `_isBlockAuthorParticipant`
+   ([#L35](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol#L35)); other behavior-shaping decisions live with its consumers.
 
 ## Inputs, outputs, state, and side effects
 

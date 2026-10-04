@@ -72,7 +72,7 @@ describe("E2E: Participant Lifecycle", function () {
                             lastInboundMessageBlockHeight:
                                 snapshot.snapshotData
                                     .latestInboundMessageBlockHeight,
-                            stateProof: { milestones: [], signedBlocks: [] },
+                            stateProof: { milestones: [] },
                             onChainSlashes: [args.leaver],
                             disputeAuditingDataHash: ethers.ZeroHash,
                             disputer: args.leaver,
@@ -352,6 +352,49 @@ describe("E2E: Participant Lifecycle", function () {
                         .request()
                 ).to.equal(false);
             }
+        });
+
+        it("terminal leaves of both founders settle when their exits close the channel", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0);
+            const channelId = h.channelId;
+            const exits: Promise<unknown>[] = [];
+            for (const peer of h.peers) {
+                peer.p2pInstance.events.on(
+                    "p2pEventHooks",
+                    "onLeaveTurn",
+                    () => {
+                        exits.push(
+                            peer.p2pInstance.p2pContractInstance.leaveChannel()
+                        );
+                    }
+                );
+            }
+
+            const leaves = h.peers.map((peer) =>
+                peer.p2pInstance.leaveChannel()
+            );
+            await h.transition.advanceState();
+            await waitFor(
+                () => Promise.resolve(exits.length === 2),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            await Promise.all(exits);
+            // Both leavers stop writing; their runtimes dispose once the
+            // leaves settle.
+            for (const peer of h.peers) {
+                h.contextApi.markAfkPeer({ afkPeerIndex: peer.index });
+            }
+
+            await Promise.all(leaves);
+
+            expect(
+                await h.channelManager.getOpenChannelIds(0, 100)
+            ).to.not.include(channelId);
+            expect(
+                await h.channelManager.getParticipants(channelId)
+            ).to.deep.equal([]);
         });
     });
 

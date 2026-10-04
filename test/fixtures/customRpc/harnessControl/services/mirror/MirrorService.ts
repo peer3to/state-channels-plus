@@ -18,14 +18,18 @@ import {
 
 /**
  * The local-first reads: each runs on the local diamond first and may be
- * confirmed by the same read on the chain (see `preferLocal`).
+ * confirmed by the same read on the chain (see `preferLocal`); also the
+ * proof walk and its start, read on either side.
  */
 export const MIRROR_READS = [
     "isLastMilestoneFinalByEveryone",
     "isCorrectLatestState",
     "verifyBalanceInvariantCheckSnapshot",
+    "validateTimeoutCalldataPostedProof",
+    "isStateProofLinked",
     "verifyStateProof",
-    "validateTimeoutCalldataPostedProof"
+    "verifyMilestones",
+    "getAnchorSnapshot"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type MirrorRead = (typeof MIRROR_READS)[number];
@@ -35,16 +39,31 @@ export type MirrorRead = (typeof MIRROR_READS)[number];
  * shows that no chain read happens.
  */
 export const LOCAL_ONLY_READS = [
-    "hasStateProofHeaderMismatch"
+    "hasStateProofHeaderMismatch",
+    "findFirstInvalidBlockStructureInStateProof"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type LocalOnlyRead = (typeof LOCAL_ONLY_READS)[number];
 
+/** The local tiers' walk from a supplied start: the chain has no such read. */
+const LOCAL_WALK =
+    "verifyMilestonesFromTrustedStart" satisfies keyof LocalDiamondContract;
+
+/** The per-allegation block-challenge eligibility read: the chain alone answers it. */
+const CHAIN_ELIGIBILITY =
+    "isBlockChallengeEligible" satisfies keyof StateChannelManagerInterface;
+
 /** Every read the service can observe. */
-export type ObservableRead = MirrorRead | LocalOnlyRead;
+export type ObservableRead =
+    | MirrorRead
+    | LocalOnlyRead
+    | typeof LOCAL_WALK
+    | typeof CHAIN_ELIGIBILITY;
 const OBSERVABLE_READS: readonly ObservableRead[] = [
     ...MIRROR_READS,
-    ...LOCAL_ONLY_READS
+    ...LOCAL_ONLY_READS,
+    LOCAL_WALK,
+    CHAIN_ELIGIBILITY
 ];
 
 /**
@@ -77,7 +96,7 @@ export type MirrorUpdate = (typeof MIRROR_UPDATES)[number];
 /** What one side answered for one read, in call order. */
 export type MirrorReadSide = {
     reads: number;
-    /** The boolean answer, or null for a struct answer. */
+    /** The boolean answer (a walk's `valid`), or null for another struct answer. */
     answers: (boolean | null)[];
     /** Messages of failed reads. */
     failures: string[];
@@ -109,6 +128,20 @@ const emptySide = (): MirrorReadSide => ({
     failures: [],
     failureCodes: []
 });
+
+/** A peer's real connection to the executor runtime of its local diamond. */
+export function localExecutorConnection(sm: { diamondStateMachine: unknown }) {
+    // Structural checks: importing these classes as values here closes an
+    // import cycle through @/evm in some test entry orders.
+    const machine = sm.diamondStateMachine as Partial<EvmDiamondStateMachine>;
+    if (!machine.contractExecutor)
+        throw new Error("The local diamond does not run on an executor");
+    const executor = machine.contractExecutor as RpcContractExecutor;
+    if (!("contractExecutorRemoteRoot" in executor))
+        throw new Error("The executor is not behind a runtime connection");
+    // private: the executor client's connection to its runtime root
+    return executor["contractExecutorRemoteRoot"];
+}
 
 /**
  * Host-side control of the local mirror versus the chain for the local-first
@@ -159,18 +192,18 @@ export class MirrorService extends ANetworkRpcService<
             observation: { local: emptySide(), chain: emptySide() },
             restore: () => {}
         };
-        const restoreLocal = this.wrapStaticCall(
-            local,
-            read,
-            (original, args) =>
-                this.localRead(entry, local, read, original, args)
-        );
-        const restoreChain = this.wrapStaticCall(
-            chain,
-            read,
-            (original, args) =>
-                this.chainRead(entry, chain, read, original, args)
-        );
+        const restoreLocal =
+            read === CHAIN_ELIGIBILITY
+                ? () => {}
+                : this.wrapStaticCall(local, read, (original, args) =>
+                      this.localRead(entry, local, read, original, args)
+                  );
+        const restoreChain =
+            read === LOCAL_WALK
+                ? () => {}
+                : this.wrapStaticCall(chain, read, (original, args) =>
+                      this.chainRead(entry, chain, read, original, args)
+                  );
         entry.restore = () => {
             restoreLocal();
             restoreChain();
@@ -380,7 +413,9 @@ export class MirrorService extends ANetworkRpcService<
     ): Promise<unknown> {
         try {
             const answer = await run();
-            side.answers.push(typeof answer === "boolean" ? answer : null);
+            const value =
+                (answer as { valid?: unknown } | null)?.valid ?? answer;
+            side.answers.push(typeof value === "boolean" ? value : null);
             return answer;
         } catch (error) {
             side.failures.push(
@@ -450,17 +485,7 @@ export class MirrorService extends ANetworkRpcService<
 
     /** This peer's real connection to its contract executor runtime. */
     private executorConnection() {
-        // Structural checks: importing these classes as values here closes an
-        // import cycle through @/evm in some test entry orders.
-        const machine = this.sm
-            .diamondStateMachine as Partial<EvmDiamondStateMachine>;
-        if (!machine.contractExecutor)
-            throw new Error("The local diamond does not run on an executor");
-        const executor = machine.contractExecutor as RpcContractExecutor;
-        if (!("contractExecutorRemoteRoot" in executor))
-            throw new Error("The executor is not behind a runtime connection");
-        // private: the executor client's connection to its runtime root
-        return executor["contractExecutorRemoteRoot"];
+        return localExecutorConnection(this.sm);
     }
 
     /** Send the read to an RPC endpoint that refuses the connection. */

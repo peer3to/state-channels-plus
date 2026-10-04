@@ -38,34 +38,6 @@ export interface BlockBundle {
 }
 
 /**
- * Projection of an assembled state proof plus the on-chain verifier verdicts
- * (verifyMilestones / isMilestoneFinal / areSignedBlocksLinkedAndVerified).
- */
-export interface StateProofVerification {
-    /** The block height the proof was assembled at. */
-    blockHeight: number;
-    milestoneCount: number;
-    signedBlockCount: number;
-    /** Height of the proof's latest block, or null for an empty proof. */
-    latestProofHeight: number | null;
-    /** Per milestone: the block height each of its confirmations covers. */
-    milestoneConfirmationHeights: number[][];
-    /** getSnapshotFromMilestone(milestone).hash, one per milestone. */
-    milestoneSnapshotHashes: string[];
-    /** On-chain verdict for the proof's carrier (false for an empty proof). */
-    verified: boolean;
-    /** On-chain isMilestoneFinal for the first milestone; null when no milestone. */
-    isFinal: boolean | null;
-    /** Snapshot hash isMilestoneFinal finalized; null when no milestone. */
-    onChainFinalizedSnapshotHash: string | null;
-    /** TS extractor: getLatestSnapshotFromStateProof. */
-    latestSnapshotHash: string;
-    /** TS extractor: getLatestFinalizedSnapshot. */
-    finalizedSnapshotHash: string;
-    genesisSnapshotHash: string;
-}
-
-/**
  * Read-only peer-state queries for the test harness. Every method returns a
  * serializable projection (status, hash, height, address) — never a live
  * `Block`/transport/profile instance, which cannot cross the runtime port.
@@ -321,13 +293,6 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
     }
 
     // ===== AgreementManager queries =====
-
-    public async getStateProofVerification(
-        forkId: ForkId,
-        blockHeight?: BlockHeight
-    ): Promise<StateProofVerification | null> {
-        return this.service.buildStateProofVerification(forkId, blockHeight);
-    }
 
     public getLatestSignedBlockByParticipant(
         forkId: ForkId,

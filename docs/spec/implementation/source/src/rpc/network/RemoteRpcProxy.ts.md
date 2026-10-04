@@ -28,12 +28,12 @@ proxy even when the service came from another JavaScript module graph.
 1. **Normal string property access exposes only services.** Accessing an ordinary or missing string
    property throws. Symbol reads pass through for JavaScript inspection, while `then` always reads as
    `undefined` so Promise assimilation cannot treat the proxy as a thenable
-   ([#L33](../../../../../../../src/rpc/createRpcProxy.ts#L36)). This `get` boundary is a trusted local
+   ([#L36](../../../../../../../src/rpc/createRpcProxy.ts#L36)). This `get` boundary is a trusted local
    calling API, not a reflective object sandbox: property enumeration, descriptors, and `in` retain
    ordinary JavaScript proxy behavior.
-2. **Service identity is structural at runtime.** The proxy retains `ANetworkRpcService` for compile-time mapping but recognizes the public service operations instead of requiring one constructor object ([#L1](../../../../../../../src/rpc/network/RemoteRpcProxy.ts#L1), [#L41](../../../../../../../src/rpc/network/RemoteRpcProxy.ts#L38)).
+2. **Service identity is structural at runtime.** The proxy retains `ANetworkRpcService` for compile-time mapping but recognizes the public service operations instead of requiring one constructor object ([#L1](../../../../../../../src/rpc/network/RemoteRpcProxy.ts#L1), [#L38](../../../../../../../src/rpc/network/RemoteRpcProxy.ts#L38)).
 3. **The cache is per service name.** Repeated access to one service returns its existing methods
-   proxy, while different service names receive different proxies ([#L49](../../../../../../../src/rpc/createRpcProxy.ts#L27)).
+   proxy, while different service names receive different proxies ([#L27](../../../../../../../src/rpc/createRpcProxy.ts#L27)).
 
 ## Inputs, outputs, state, and side effects
 

@@ -139,7 +139,7 @@ export async function stageTimeoutCalldataPostedDispute(
  * latest state = the fork's genesis snapshot), then two finalized blocks and
  * a same-fork snapshot post. The dispute is now stale: the chain's current
  * snapshot is no longer the genesis one, so the empty-proof genesis check
- * (`isCorrectLatestState`, also inside `verifyStateProof`) answers "incorrect"
+ * (`isCorrectLatestState`) answers "incorrect"
  * on the mirror and on the chain alike. Serving the auditor's chain reads
  * from before the snapshot post then gives a chain view on which the same
  * dispute is correct.
@@ -148,7 +148,6 @@ export async function stageStaleGenesisDispute(h: MathPeerTestHarness) {
     await h.lifecycle.start(3, 0);
     const constructed = await h.dispute.fetchConstructedDispute(0);
     expect(constructed.dispute.input.stateProof.milestones).to.deep.equal([]);
-    expect(constructed.dispute.input.stateProof.signedBlocks).to.deep.equal([]);
     await h.transition.advanceState({ count: 2, waitForFinalization: true });
     const snapshot = await h.transition.postSnapshotWait();
     expect(snapshot, "the same-fork snapshot post must land").to.not.equal(

@@ -623,6 +623,12 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
                 commit.status !== "acknowledged"
             ) {
                 this.settleSelection();
+                // A cancel that waited on this commit settles here, as on the
+                // failed-commit path; nothing else would resolve it.
+                if (this.pendingCancellation) {
+                    await this.cleanup();
+                    return;
+                }
                 void this.selectNextCandidate();
                 return;
             }

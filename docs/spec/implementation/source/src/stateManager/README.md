@@ -9,6 +9,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 - [block/BlockCommitService.ts](./block/BlockCommitService.ts.md)
 - [ingest/BlockQueueManager.ts](./ingest/BlockQueueManager.ts.md)
+- [DisputeFraudProofService.ts](./dispute/DisputeFraudProofService.ts.md)
 - [DisputeValidationService.ts](./dispute/DisputeValidationService.ts.md)
 - [EventSyncService.ts](./eventSync/EventSyncService.ts.md)
 - [StateManager.ts](./StateManager.ts.md)

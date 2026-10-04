@@ -1,10 +1,6 @@
 import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
 import type { Address, Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -443,61 +439,18 @@ describe("Unit: BlockIngestService", function () {
     });
 
     describe("onBlockConfirmationStruct → undecodable bytes under the dispute strategy", function () {
-        // The dispute audit replays the unfinalized part of a state proof
-        // through onBlockConfirmationStruct. Bytes the client cannot decode are
-        // judged by the canonical Solidity structure predicate over the
-        // dispute's own state proof, never by a local decode throw.
-        it("an undecodable replayed block whose state-proof structure is invalid → false + one DisputeInvalidBlockStructure, no throw", async function () {
+        // The dispute audit replays the last milestone's tail through
+        // onBlockConfirmationStruct after the canonical structure check of
+        // that milestone passed, so a local decode failure is never a verdict.
+        it("an undecodable replayed block → true, no proof, no throw", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            // no milestones -> the unfinalized part is signedBlocks
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
-            const replayed = dispute.input.stateProof.signedBlocks[0];
-            replayed.encodedBlock = factory.hash(); // bytes that do not decode as a block
-            const auditor = h.getPeer(1);
-            expect(
-                await h
-                    .control(auditor)
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([]);
-
-            const probe = await h
-                .control(auditor)
-                .validation.runBlockConfirmationStructUnderDispute(
-                    Codec.encode(
-                        { signedBlock: replayed, signatures: [] },
-                        Type.BlockConfirmation
-                    ) as string,
-                    Codec.encode(dispute, Type.Dispute) as string
-                )
-                .request();
-
-            expect(probe).to.deep.equal({ accepted: false, threw: null });
-            expect(
-                await h
-                    .control(auditor)
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([
-                String(
-                    toSolidityDisputeFraudProofType(
-                        DisputeFraudProofType.DisputeInvalidBlockStructure
-                    )
-                )
-            ]);
-        });
-
-        it("an undecodable replayed block whose state-proof structure is valid → true, no proof, no throw", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
-            // the state proof keeps its honest first block, which the
-            // contracts decode; only the client's copy does not decode
+            await h.lifecycle.start(3, 2);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // the state proof keeps its honest block, which the contracts
+            // decode; only the client's copy does not decode
             const replayed = {
-                ...dispute.input.stateProof.signedBlocks[0],
+                ...dispute.input.stateProof.milestones.at(-1)!
+                    .blockConfirmations[0].signedBlock,
                 encodedBlock: factory.hash()
             };
             const auditor = h.getPeer(1);
@@ -513,7 +466,6 @@ describe("Unit: BlockIngestService", function () {
                 )
                 .request();
 
-            // SUCCESS continues the replay: this proof type does not apply
             expect(probe).to.deep.equal({ accepted: true, threw: null });
             expect(
                 await h
@@ -521,6 +473,49 @@ describe("Unit: BlockIngestService", function () {
                     .query.getDisputeFraudProofTypes()
                     .request()
             ).to.deep.equal([]);
+        });
+    });
+
+    describe("onBlockConfirmation → dispute replay judges from its predecessor", function () {
+        it("a stored block replayed under the dispute strategy → no stored merge: positioned at its predecessor, re-judged and executed, the machine ends at its state", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const head = await h
+                .control(observer)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            // single-use: mis-position the machine at the genesis; only the
+            // replay's positioning and execution bring it to the head state
+            const headState = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const headState = String(
+                        await sm.diamondStateMachine.getState()
+                    );
+                    await sm.diamondStateMachine.setState(
+                        sm.storage.getGenesisStateMachineState(args.forkId)!
+                    );
+                    return headState;
+                },
+                { forkId }
+            );
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockIngest(head!.encodedBlockConfirmation, {
+                    strategy: "dispute"
+                })
+                .request();
+
+            expect(r).to.include({ keepConnection: true, threw: null });
+            expect(r.firedHooks).to.deep.equal([]);
+            expect(
+                await h.execOnHost(observer, async (sm) =>
+                    String(await sm.diamondStateMachine.getState())
+                )
+            ).to.equal(headState);
         });
     });
 

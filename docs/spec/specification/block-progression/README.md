@@ -19,7 +19,7 @@ system.
   and replay/recovery; signature additions for known blocks; inbound message blocks due for
   inclusion.
 - **Public outputs.** Committed local history and events describing it; counter-signatures broadcast
-  to peers; milestones and signed suffixes consumed as state-proof material; escalation triggers into
+  to peers; milestones and their non-final tails consumed as state-proof material; escalation triggers into
   the disputes system; block-calldata publication when the cooperative window expires.
 - **Calls.** Protocol model (execute transitions, compare commitments, select the next author, check
   timestamps); peer communication (broadcast confirmations, request missing data); settlement (apply

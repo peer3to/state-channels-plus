@@ -39,6 +39,13 @@ reject unsafe or unsupported ranges rather than silently clamping to a behavior 
 - Secrets may be referenced by configuration but must not be logged, serialized to peers, or committed.
 - Some defaults are development conveniences and are not automatically safe production parameters.
 - Configuration that affects protocol interpretation must be agreed or discoverably compatible.
+- Some values are local choices that peers need not agree on. The join authorization lifetime (120 seconds
+  by default) is one: each joiner sets the deadline of its own join from chain time plus this lifetime, and
+  countersigners only check that the deadline has not passed. It bounds how long a submitted join can still
+  land, and so how long the joiner stays pending for an unseen join and how long its terminal leave waits
+  ([`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)). A
+  value too short for one round of signature collection and submission fails joins; a long value keeps an
+  unseen join, and a leave that waits for it, pending longer.
 
 ## Security considerations
 

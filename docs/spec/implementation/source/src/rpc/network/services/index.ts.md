@@ -25,7 +25,11 @@ Service/RpcMethods re-exports incl. the WebRTC bridge installer and negotiation 
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+The file is declarative; behavior-shaping decisions live with its consumers. One re-export names
+its owner: `DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS` comes from [config](../../../utils/config.ts.md)
+([#L27](../../../../../../../../src/rpc/network/services/index.ts#L27)), where the configurable join
+deadline `JOIN_CHANNEL_DEADLINE_SECONDS` takes it as its default, so the service barrel and the
+configuration share one value.
 
 ## Inputs, outputs, state, and side effects
 

@@ -19,11 +19,26 @@
 
 ## Responsibility and observable boundary
 
-Proof carrier structs (FraudProof, DisputeFraudProof, state-proof elements).
+Proof carrier structs (FraudProof, DisputeFraudProof, state-proof elements), the state-proof walk input and
+result, and the fraud-proof type enums.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **A state proof is milestones only.** `StateProof` ([#L17](../../../../../../../contracts/V1/types/ProofTypes.sol#L17)) holds only `MilestoneProof[] milestones`;
+   the latest state is the last block of the last milestone and an empty proof is the fork genesis. The former
+   trailing signed-block list is deleted, so there is one proof shape for the walk, the fraud proofs and the SDK
+   codec. The `MilestoneProof` comment ([#L10](../../../../../../../contracts/V1/types/ProofTypes.sol#L10)) states the milestone rule: a linked run whose proven
+   point is a normal snapshot anchor or its threshold-proven first block, where only a single last genesis-linked
+   run may stay unfinal; linkage alone finalizes neither block 0 nor the whole run (engineer decision, 2026-10-04).
+2. **The walk has a typed input and result.** `ProofWalkInput` ([#L23](../../../../../../../contracts/V1/types/ProofTypes.sol#L23)) carries the channel, fork, proof,
+   the genesis data (read by a genesis start and by an empty proof, unless the on-chain snapshot is that genesis) and one milestone snapshot per milestone
+   (read only when finality is checked). `ProofWalkResult` ([#L34](../../../../../../../contracts/V1/types/ProofTypes.sol#L34)) reports `valid`,
+   the `finalizedSnapshot` and `replayBlockIndex`, where the last milestone's unfinal tail starts; its
+   length means no tail, and an empty proof reports 0 ([#L39](../../../../../../../contracts/V1/types/ProofTypes.sol#L39)). When `valid` is false no other
+   field is usable. The walk that
+   fills it is in [StateChannelCommon](../StateChannelDiamondProxy/StateChannelCommon.sol.md).
+3. **`DisputeFraudProofType` grows only at the end.** `DisputeStateProofBelowOnChainAnchor` is appended last
+   ([#L85](../../../../../../../contracts/V1/types/ProofTypes.sol#L85)), so the encoded values of the existing types do not change; the SDK enum mirrors this order.
 
 ## Inputs, outputs, state, and side effects
 

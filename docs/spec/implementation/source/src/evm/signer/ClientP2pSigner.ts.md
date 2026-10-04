@@ -30,6 +30,8 @@ The client-side signer facade in isolated deployments: forwards signing/collecti
 
 Channel IDs use the shared validation-only bytes32 check. Existing normalization, option decoding and public errors remain at their original boundaries. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L1).
 
+`getOwnJoinState` forwards one port request and returns the host's `OwnJoinState` answer unchanged; the client decides nothing about the join itself. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L282).
+
 1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
 
 Message signing preserves text versus byte input through the shared tagged message serializer, so the host signs the same bytes as the public ethers caller.

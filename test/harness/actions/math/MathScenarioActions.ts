@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
+import Clock from "@/Clock";
 import { Status, TimeConfig } from "@/types";
 import { ForkId, Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
@@ -10,6 +11,7 @@ import {
     HarnessOptions,
     TestPeer
 } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import { MathPeerTestHarness } from "test-harness";
@@ -411,7 +413,6 @@ export class MathScenarioActions extends ScenarioActions {
         spammerIndex?: number;
         peerCount?: number;
         beforeDispute?: () => Promise<void>;
-        addSpectatorBeforeDispute?: boolean;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -422,32 +423,13 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
-        spectator: TestPeer<HarnessControlRpc> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
-        const addSpectatorBeforeDispute =
-            options?.addSpectatorBeforeDispute ?? false;
         await this.preDisputeSetup({
             peerCount: options?.peerCount,
-            transitionCount: addSpectatorBeforeDispute ? 0 : undefined,
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });
-        const spectator = addSpectatorBeforeDispute
-            ? (
-                  await this.harness.join.addSpectatorAuthoring({
-                      authoringPeerIndices: [0, 1, 2],
-                      minimumBlocks: 2,
-                      maximumBlocks: 20,
-                      waitForFinalization: true
-                  })
-              ).peer
-            : undefined;
-        if (spectator) {
-            await this.harness.assert.sync.peersInSyncWait();
-            this.harness.event.resetEventSpies();
-            this.harness.contextApi.captureOriginalFork();
-        }
         const forkId = this.harness.activeForkId!;
         await options?.beforeDispute?.();
 
@@ -473,8 +455,7 @@ export class MathScenarioActions extends ScenarioActions {
         return {
             forkId,
             spammer: this.harness.getPeer(spammerIndex),
-            killer: this.harness.getPeer(killerIndex),
-            spectator
+            killer: this.harness.getPeer(killerIndex)
         };
     }
 
@@ -491,6 +472,13 @@ export class MathScenarioActions extends ScenarioActions {
          * peers alone wait on the join.
          */
         laggingInboundPeerIndex?: number;
+        /**
+         * How the lagging peer misses the join's chain event. `"held"` (the
+         * default) holds the handler, so nothing heals the gap until release.
+         * `"dropped"` loses the subscribed delivery only, so the event service
+         * recovers the log from chain on demand.
+         */
+        laggingInbound?: "held" | "dropped";
     }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
         const timeConfig = {
             evidenceTime: 12,
@@ -503,10 +491,17 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig
         });
         const laggingIndex = options?.laggingInboundPeerIndex;
+        const dropInbound = options?.laggingInbound === "dropped";
         const held =
-            laggingIndex === undefined
+            laggingIndex === undefined || dropInbound
                 ? undefined
                 : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
+        const dropped =
+            laggingIndex === undefined || !dropInbound
+                ? undefined
+                : await this.harness.rpcStub.dropInboundMessageLogs(
                       laggingIndex
                   );
         const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
@@ -520,17 +515,27 @@ export class MathScenarioActions extends ScenarioActions {
                           .filter((index) => index !== laggingIndex)
         });
 
+        // the subscription delivers independently of the observers the join
+        // waits on -> wait until the gap is staged
+        await dropped?.waitUntilDropped();
+
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
         return {
             releaseLaggingInbound: held
                 ? () => held.release({ replay: true })
-                : undefined
+                : dropped?.release
         };
     }
 
     async setupTwoLeaversAcrossMilestones(options?: {
         forceExitPeerIndex?: number;
+        /**
+         * Joins seated after both exits settled. Each exit posts its snapshot,
+         * which prunes a state proof's history to it, so only these joins add
+         * change-point milestones above the on-chain anchor.
+         */
+        joinersAboveAnchor?: number;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -589,6 +594,32 @@ export class MathScenarioActions extends ScenarioActions {
             excludePeerIndices: leavers,
             maximumBlocks: 20
         });
+        const joiners: number[] = [];
+        for (let i = 0; i < (options?.joinersAboveAnchor ?? 0); i++) {
+            const { peer: joiner } =
+                await this.harness.join.addSpectatorAuthoring({
+                    authoringPeerIndices: [0, 1, 3],
+                    minimumBlocks: 1,
+                    maximumBlocks: 20
+                });
+            await this.harness.join.joinChannelWait({ joiner });
+            await this.harness.transition.keepAuthoringUntilPeersStatus({
+                peerIndices: [joiner.index],
+                status: Status.PARTICIPATING,
+                waitForPeers: [0, 1, 3],
+                maximumBlocks: 20
+            });
+            joiners.push(joiner.index);
+        }
+        if (joiners.length > 0) {
+            // Blocks everyone signs after the last join, so the latest
+            // milestone starts above that join's change point instead of
+            // sharing its first block (and snapshot) with it.
+            await this.harness.transition.advanceState({
+                count: 3,
+                waitForPeers: [0, 1, 3, ...joiners]
+            });
+        }
         // The writer slot never idled past its deadline, so no honest peer
         // posted a timeout dispute that would throttle the caller's upload.
         this.harness.assert.dispute.noDisputes();
@@ -643,7 +674,15 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.transition.advanceState({ waitForSync: false });
     }
 
-    async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
+    /**
+     * A synced spectator with a threshold-signed join authorization. With
+     * `joinAuthorizationSeconds`, the authorization expires that many
+     * seconds after the chain's latest block instead of the default.
+     */
+    async syncSpectatorAndPrepareJoin(
+        initialTransitions: number = 4,
+        options: { joinAuthorizationSeconds?: number } = {}
+    ) {
         const h = this.harness;
         await h.lifecycle.start(3, 0, {
             timeConfig: {
@@ -664,12 +703,48 @@ export class MathScenarioActions extends ScenarioActions {
         const stateSnapshot = await h.channelManager.getStateSnapshot(
             h.channelId
         );
+        const joinDeadline =
+            options.joinAuthorizationSeconds === undefined
+                ? undefined
+                : (await Clock.getBlockchainTime()).timestamp +
+                  options.joinAuthorizationSeconds;
         const preparedJoin = await h.join.buildJoinChannelConfirmation({
             joiner,
-            channelId: h.channelId
+            channelId: h.channelId,
+            jcOverrides:
+                joinDeadline === undefined
+                    ? undefined
+                    : { deadlineTimestamp: BigInt(joinDeadline) }
         });
 
-        return { joiner, stateSnapshot, ...preparedJoin };
+        return { joiner, stateSnapshot, joinDeadline, ...preparedJoin };
+    }
+
+    /**
+     * Returns once the chain holds a block whose timestamp is past
+     * `timestamp`. An idle chain mints none, so once that time has passed
+     * founder 0 sends one plain transaction to mint it.
+     */
+    async chainBlockPastWait(timestamp: number): Promise<void> {
+        const founder = this.harness.getPeer(0);
+        const waitSeconds = Math.max(0, timestamp - Clock.getTimeInSeconds());
+        await waitFor(
+            async () => {
+                if ((await Clock.getBlockchainTime()).timestamp > timestamp)
+                    return true;
+                if (Clock.getTimeInSeconds() > timestamp) {
+                    await (
+                        await founder.p2pInstance.chainSigner.sendTransaction({
+                            to: founder.address,
+                            value: 0n
+                        })
+                    ).wait();
+                }
+                return false;
+            },
+            waitSeconds * 1000 + this.harness.event.protocolEventTimeoutMs(),
+            500
+        );
     }
     async spectatorPromotedViaJoinChannelWait(options?: {
         initialPeers?: number;

@@ -1,5 +1,6 @@
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
+import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -150,11 +151,8 @@ class DisputeManager {
                 fraudProofsToApply
             );
 
-            // Without fraud proofs no gas limit is passed: the chain signer
-            // sends each upload with its estimate plus headroom (see
-            // GAS_ESTIMATE_HEADROOM_PERCENT for the concurrent-dispute race
-            // this protects against). A fraud-proof replay must also be
-            // funded upfront (see replayGasLimit).
+            // Without fraud proofs the signer adds its estimate headroom
+            // (GAS_ESTIMATE_HEADROOM_PERCENT); a replay is funded upfront.
 
             // check if multicall is needed
             if (fraudProofsToApply.length > 0) {
@@ -165,24 +163,17 @@ class DisputeManager {
                         { channelId: this.channelId }
                     )
                 ).data;
-                // 2) upload dispute
-                let uploadDisputeCalldata: string;
-                if (shouldPostAuditingData) {
-                    // with calldata
-                    uploadDisputeCalldata = (
-                        await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
-                            disputeConfirmation,
-                            auditingData
-                        )
-                    ).data!;
-                } else {
-                    // without calldata
-                    uploadDisputeCalldata = (
-                        await this.stateChannelManagerContract.uploadDispute.populateTransaction(
-                            disputeConfirmation
-                        )
-                    ).data!;
-                }
+                // 2) upload dispute, with or without calldata
+                const uploadDisputeCalldata = (
+                    shouldPostAuditingData
+                        ? await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
+                              disputeConfirmation,
+                              auditingData
+                          )
+                        : await this.stateChannelManagerContract.uploadDispute.populateTransaction(
+                              disputeConfirmation
+                          )
+                ).data;
                 const calls = [fraudProofCalldata, uploadDisputeCalldata];
                 txResponse = await this.stateChannelManagerContract.multicall(
                     calls,
@@ -344,18 +335,10 @@ class DisputeManager {
     }
 
     /**
-     * Gas limit for a transaction that may replay a transition as fraud
-     * proof: the signer's estimate (with its headroom) plus the manager's
-     * replay requirement. The state machine refuses a replay unless its full
-     * budget is available when the replay starts, but an estimator that
-     * reports the gas a run spends (the peer3 hardhat fork) counts only what
-     * the transition used, never the unused budget that must be free, and the
-     * work before the replay (proof checks, setting the machine's state) can
-     * exceed any fixed margin. Adding the requirement to the estimate covers
-     * both. A searching estimator already includes the requirement, so there
-     * the limit asks for more than needed, which is safe. Callers estimate
-     * through getFunction, the contract's own method, so an estimate is never
-     * taken from a replaced or wrapped method property.
+     * The estimate plus the manager's replay requirement: a replay needs its
+     * full budget free at its start, which a run-spend estimator (the peer3
+     * hardhat fork) never counts. Callers estimate through getFunction, so a
+     * wrapped method property is never estimated.
      */
     private async replayGasLimit(estimate: Promise<bigint>): Promise<bigint> {
         let replayGas = this.stateTransitionReplayGas;
@@ -374,16 +357,10 @@ class DisputeManager {
     }
 
     /**
-     * Whether this node should add its own dispute to the window of `forkId`.
-     * A node that already disputed the fork has committed its evidence. Otherwise
-     * the comparison runs once per disputed fork: reduction merges evidence
-     * monotonically, so a dispute of ours that adds nothing to the first audited
-     * dispute adds nothing once more disputes land. That holds only while the
-     * compared dispute stays in the window, so a kill drops the cached answer
-     * (forgetEvidenceComparison). Concurrent audits share the in-flight comparison; a
-     * failed or incomplete one (own auditing data only partly rebuilt) is not
-     * kept, and a positive answer stays positive so a failed upload is retried
-     * by the next audit.
+     * Whether to add our own dispute to the window of `forkId`, compared once
+     * per disputed fork (reduction merges evidence monotonically) until a kill
+     * (forgetEvidenceComparison). Concurrent audits share the comparison; a
+     * failed or partial one is not kept.
      */
     public shouldAddOwnEvidence(
         forkId: ForkId,
@@ -426,10 +403,7 @@ class DisputeManager {
                 .dispute;
         } catch (error) {
             if (!(error instanceof PartialAuditingDataError)) throw error;
-            // we cannot rebuild our own auditing data -> we have no more
-            // evidence to give now. the caller falls through to scheduling the
-            // reduction instead of dying on the throw, and the next audit
-            // retries once the data may have been recovered
+            // no evidence to give now; the next audit retries
             this.logger.warn(
                 "No more evidence: own auditing data could not be rebuilt locally",
                 {
@@ -506,16 +480,25 @@ class DisputeManager {
                 return;
             }
             const disputeFraudProofs = [disputeFraudProof];
+            const gasLimit = await this.replayGasLimit(
+                this.stateChannelManagerContract
+                    .getFunction("applyDisputeFraudProofs")
+                    .estimateGas(disputeFraudProofs)
+            );
+            // last check after every await: no evidence for a fork we left
+            if (
+                !this.stateManager.isActiveFork(dispute.input.forkId as ForkId)
+            ) {
+                this.logger.info(
+                    `killDispute no-op: dispute ${formattedHash} is not on the current fork`,
+                    { disputeMeta, currentForkId: this.stateManager.forkId }
+                );
+                return;
+            }
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs(
                     disputeFraudProofs,
-                    {
-                        gasLimit: await this.replayGasLimit(
-                            this.stateChannelManagerContract
-                                .getFunction("applyDisputeFraudProofs")
-                                .estimateGas(disputeFraudProofs)
-                        )
-                    }
+                    { gasLimit }
                 );
 
             await txResponse.wait();
@@ -571,15 +554,14 @@ class DisputeManager {
     ): Promise<ConstructDisputeResult> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
-
         // StateProof, LatestStateSnapshot
         const [
-            stateProof,
+            builtStateProof,
             latestStateSnapshot,
             _onChainSlashes,
             _participants
         ] = await Promise.all([
-            this.agreementManager.getStateProof(forkId, latestBlockHeight),
+            this.agreementManager.buildStateProof(forkId, latestBlockHeight),
             this.storage.getStateSnapshot({
                 forkId,
                 height: latestBlockHeight
@@ -610,10 +592,8 @@ class DisputeManager {
         let onChainSlashes = new Set<Address>(_onChainSlashes);
         const participants = new Set<Address>(_participants);
 
-        //sanity check
-        if (!latestStateSnapshot) {
+        if (!latestStateSnapshot)
             throw new Error("createDispute - missing state snapshot");
-        }
 
         const latestStateMachineState =
             this.storage.stateMachineStates.getStateMachineState(
@@ -671,7 +651,7 @@ class DisputeManager {
         // the bound every auditor recomputes with
         const { isPartial, auditingData } = await this.getAuditingData(
             forkId,
-            stateProof,
+            builtStateProof,
             { disputeLatestInboundMessageBlockHash: inboundHead.hash }
         );
         if (isPartial)
@@ -693,7 +673,7 @@ class DisputeManager {
             channelId: this.channelId,
             forkId: forkId,
             latestStateSnapshotHash: latestStateSnapshot.hash,
-            stateProof: stateProof,
+            stateProof: builtStateProof.stateProof,
             onChainSlashes: Array.from(onChainSlashes),
             disputeAuditingDataHash: disputeAuditingDataHash,
             disputer: disputer,
@@ -763,8 +743,7 @@ class DisputeManager {
             postedAuditingData
         };
 
-        // ****** TODO - run auditing as a sanity check *******
-
+        // TODO - run auditing as a sanity check
         // TODO - Dispute model (like block), so it's easy doing operations on it
 
         const signedDispute = await SignatureUtils.signDispute(
@@ -780,9 +759,7 @@ class DisputeManager {
         };
         this.logger.debug("CONSTRUCTED DISPUTE:", {
             dispute: LoggerUtils.getDisputeMetadata(dispute),
-            auditingData: auditingData
-                ? LoggerUtils.getAuditingMetadata(auditingData)
-                : undefined
+            auditingData: LoggerUtils.getAuditingMetadata(auditingData)
         });
         return {
             dispute,
@@ -793,9 +770,15 @@ class DisputeManager {
         };
     }
 
+    /**
+     * The auditing data of `proof`, byte-equal to what its disputer committed.
+     * The finalized state is the state of the snapshot the chain's walk ends
+     * at: verifyStateProof binds it there, and the local mirror can lag the
+     * chain's start.
+     */
     public async getAuditingData(
         forkId: ForkId,
-        stateProof: StateProofStruct,
+        proof: StateProofStruct | BuiltStateProof,
         options?: {
             disputeLatestInboundMessageBlockHash?: Hash;
         }
@@ -812,16 +795,35 @@ class DisputeManager {
                 "getDisputeAuditingData - genesisStateSnapshot not found"
             );
 
+        const built =
+            "milestones" in proof
+                ? await this.agreementManager.describeStateProof(forkId, proof)
+                : proof;
+        const { stateProof } = built;
+
         // milestoneSnapshots
-        const milestoneSnapshots: StateSnapshot[] = [];
-        for (const milestone of stateProof.milestones) {
-            const snapshot =
-                this.agreementManager.getSnapshotFromMilestone(milestone);
-            if (!snapshot) {
-                isPartial = true;
-                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the solidity length requirement in `verifyMilestone`
-            } else milestoneSnapshots.push(snapshot);
-        }
+        const milestoneSnapshots = built.milestoneSnapshots.map((snapshot) => {
+            if (snapshot) return snapshot;
+            isPartial = true;
+            return genesisStateSnapshot; // this is just to push something to satisfy the solidity length requirement in `verifyMilestone`
+        });
+        const walk = isPartial
+            ? undefined
+            : await this.stateChannelManagerContract.verifyMilestones.staticCall(
+                  {
+                      channelId: this.channelId,
+                      forkId,
+                      stateProof,
+                      genesisStateSnapshotData:
+                          genesisStateSnapshot.snapshotData,
+                      milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
+                          snapshot.toStruct()
+                      )
+                  }
+              );
+        const finalizedSnapshot = walk?.valid
+            ? StateSnapshot.from(walk.finalizedSnapshot)
+            : undefined;
 
         // latestStateSnapshot
         const latestBlock =
@@ -838,17 +840,13 @@ class DisputeManager {
                 latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
             } else latestStateSnapshot = snapshot;
         }
-        const latestFinalizedStateSnapshot =
-            this.agreementManager.getLatestFinalizedSnapshot(
-                stateProof,
-                forkId
-            );
-        // latestFinalizedStateStateMachineState
-        let latestFinalizedStateStateMachineState =
-            this.storage.stateMachineStates.getStateMachineState(
-                latestFinalizedStateSnapshot.stateMachineStateHash
-            );
-        if (!latestFinalizedStateStateMachineState) {
+        // latestFinalizedStateStateMachineState ("0x" when the walk rejects)
+        let latestFinalizedStateStateMachineState = finalizedSnapshot
+            ? this.storage.stateMachineStates.getStateMachineState(
+                  finalizedSnapshot.stateMachineStateHash
+              )
+            : "0x";
+        if (latestFinalizedStateStateMachineState === undefined) {
             isPartial = true;
             latestFinalizedStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
         }
@@ -874,16 +872,18 @@ class DisputeManager {
             else isPartial = true;
         }
 
-        // outbound message blocks
-        const outboundMessageBlocks =
-            this.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    latestStateSnapshot.snapshotData
-                        .latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    genesisStateSnapshot.snapshotData
-                        .latestOutboundMessageBlockHash
-            });
+        // outbound message blocks above the start (older exits are on chain);
+        // a partial rebuild's substituted genesis gives wrong bounds, as above
+        const outboundMessageBlocks = isPartial
+            ? []
+            : this.storage.outboundMessages.getMessageBlocksInRange({
+                  upperBlockHash:
+                      latestStateSnapshot.snapshotData
+                          .latestOutboundMessageBlockHash,
+                  lowerBlockHash:
+                      built.startSnapshot.snapshotData
+                          .latestOutboundMessageBlockHash
+              });
 
         const auditingData = {
             isPartial,

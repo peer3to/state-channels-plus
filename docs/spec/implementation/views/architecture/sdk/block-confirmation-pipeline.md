@@ -55,14 +55,14 @@ directly:
 2. **Block-calldata chain events.**
    [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L8) →
    [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L107) →
-   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L290):
+   [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L285):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires
    `onPostedCalldata`, then calls
    [`BlockQueueManager.ingestPostedBlock`](../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L217)
    with the block and its `onChainTimestamp`. The work item carries the
    timestamp, so
-   [`StateManager.getActiveValidationStrategy`](../../../../../../src/stateManager/StateManager.ts#L529)
+   [`StateManager.getActiveValidationStrategy`](../../../../../../src/stateManager/StateManager.ts#L530)
    selects `CalldataCommittedStrategy` for a committed participant (spectating
    for an observer), at ingest and again under the mutex at execution.
    `DisputeManager` (after any failed dispute upload) and
@@ -79,7 +79,10 @@ directly:
    [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L498),
    which wraps the confirmation into a **sourceless** entry (no transport to
    punish) and may inject an explicit strategy
-   ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)).
+   ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L22)).
+   Dispute replay also passes the block's predecessor on the dispute's own chain
+   ([`BlockIngestService.onBlockConfirmationStruct`](../../../../../../src/stateManager/ingest/BlockIngestService.ts#L41-L71)),
+   which every later check judges the block from.
 
 ## 3. Pipeline overview
 
@@ -190,7 +193,7 @@ in order:
       calldata on-chain, an objective fault. **Open question:** the code returns
       `DISPUTE` but builds no fraud proof and initiates no dispute at this site
       (two TODOs in
-      [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15));
+      [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L14));
       the required proof type and escalation context are unresolved.
 2. **Channel gate.** A wrong channel is rejected before source admission or stored merging.
 3. **Source admission and stored duplicate.** Network copies require an authenticated transport source
@@ -277,31 +280,38 @@ Pre-checks under the mutex:
   Non-dispute strategies: a block on a known-stale fork is dropped; an
   unrecognized fork restores the entry for the queue-timeout sync probe. The
   dispute strategy is exempt — it replays disputed/other-fork blocks by design.
-- **Stored block** → merge path (§4.1).
+- **Stored block** → merge path (§4.1), except for a dispute-replay entry: it carries its
+  predecessor on the dispute's own chain and is re-judged and re-executed from it.
+- **Replay positioning.** For a dispute-replay entry the VM is set to the predecessor's state
+  before validation; live entries execute in order and already hold the predecessor state.
 - **Authenticity** re-checked (`block.isAuthentic` on the entry's block, the same signature rule
   as intake; replay adapters enter here without intake).
 
-Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ingest/ValidationService.ts#L78)
+Then [`ValidationService.validateBlockConfirmation`](../../../../../../src/stateManager/ingest/ValidationService.ts#L73)
 runs the ordered predicate chain. Each failure routes to a strategy hook that
-returns a `BlockValidationResult`; §9 gives the per-strategy actions.
+returns a `BlockValidationResult`; §9 gives the per-strategy actions. "Previous" below is the
+entry's predecessor for dispute replay, else the stored history below the block's height
+(`ValidationService.previousOf`). A hook's `SUCCESS` continues the chain; the author check no
+longer stops on it.
 
-| #   | Predicate             | Definition (code)                                                                                                                                                                                                                                                                                                                       | Failure hook                                                                                                              |
-| --- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Correct channel       | `block.channelId == stateManager.channelId`                                                                                                                                                                                                                                                                                             | `wrongChannel`                                                                                                            |
-| 2   | Channel open          | current `forkId != ZeroHash` (genesis applied)                                                                                                                                                                                                                                                                                          | `channelNotOpened`                                                                                                        |
-| 3   | Author is participant | With a local previous snapshot: `LocalDiamond.isBlockAuthorParticipant(block, previousSnapshot, declaredResultingSnapshot-or-empty)` — author in previous participants or in the block's declared resulting snapshot bound to its coordinates. Without a local anchor: fallback to on-chain `getParticipants ∪ getPendingParticipants`. | `blockAuthorIsNotParticipant`                                                                                             |
-| 4   | No conflicting block  | Existing block at same `(forkId, height)`: same author → **double sign**; incoming linked to our stored predecessor → **invalid state transition** (the author extended an agreed history with a different block); stored conflict at height 0 → **wrong genesis**; else conflicting-but-not-linked (malformed, unattributable).        | `doubleSignDetected` / `invalidStateTransitionDetected` / `wrongGenesisDetected` / `conflictingButNotLinkedBlockDetected` |
-| 5   | Fork not disputed     | only when `strategy.enforcesLiveForkAndOrderingGates`                                                                                                                                                                                                                                                                                   | `blockForkIsDisputed`                                                                                                     |
-| 6   | Not in the future     | `height ≤ getNextBlockHeight(forkId)`; gated as #5                                                                                                                                                                                                                                                                                      | `blockIsNotNextAndIsInTheFuture`                                                                                          |
-| 7   | Linked                | height 0: `previousBlockHash == genesisSnapshot.hash`; else `previousBlockHash == storedBlock(height−1).hash`                                                                                                                                                                                                                           | `wrongGenesisDetected` (h=0) / `blockIsNotLinkedAndIsNotFirstBlock`                                                       |
-| 8   | Author is next leader | `strategy.prepareStateMachineForLeaderCheck` (live: no-op, VM already at predecessor; dispute replay: load previous snapshot's state first), then `getNextToWrite() == block.author`                                                                                                                                                    | `invalidStateTransitionDetected`                                                                                          |
-| 9   | Time logic            | §6.1                                                                                                                                                                                                                                                                                                                                    | `objectiveInvalidTimestampDetected` / `subjectiveInvalidTimestampDetected`                                                |
+| #   | Predicate             | Definition (code)                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Failure hook                                                                                                              |
+| --- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Correct channel       | `block.channelId == stateManager.channelId`                                                                                                                                                                                                                                                                                                                                                                                                                                            | `wrongChannel`                                                                                                            |
+| 2   | Channel open          | current `forkId != ZeroHash` (genesis applied)                                                                                                                                                                                                                                                                                                                                                                                                                                         | `channelNotOpened`                                                                                                        |
+| 3   | Author is participant | With a previous snapshot: `LocalDiamond.isBlockAuthorParticipant(block, previousSnapshot, declaredResultingSnapshot-or-empty)` — author in previous participants or in the block's declared resulting snapshot. Without one: fallback to on-chain `getParticipants ∪ getPendingParticipants`.                                                                                                                                                                                          | `blockAuthorIsNotParticipant`                                                                                             |
+| 4   | No conflicting block  | Existing block at same `(forkId, height)` with the same hash → no conflict (dispute replay re-judges a stored block). Otherwise: same author → **double sign**; incoming linked to our stored block below → **invalid state transition** (the author extended an agreed history with a different block); stored conflict at height 0 → **wrong genesis**; else conflicting-but-not-linked (unattributable; dispute replay continues, since the block extends the dispute's own chain). | `doubleSignDetected` / `invalidStateTransitionDetected` / `wrongGenesisDetected` / `conflictingButNotLinkedBlockDetected` |
+| 5   | Fork not disputed     | only when `strategy.enforcesLiveForkAndOrderingGates`                                                                                                                                                                                                                                                                                                                                                                                                                                  | `blockForkIsDisputed`                                                                                                     |
+| 6   | Not in the future     | `height ≤ getNextBlockHeight(forkId)`; gated as #5                                                                                                                                                                                                                                                                                                                                                                                                                                     | `blockIsNotNextAndIsInTheFuture`                                                                                          |
+| 7   | Linked                | height 0: `previousBlockHash == genesisSnapshot.hash`; else `previousBlockHash == previous block hash` (the predecessor's block for dispute replay, else `storedBlock(height−1)`)                                                                                                                                                                                                                                                                                                      | `wrongGenesisDetected` (h=0) / `blockIsNotLinkedAndIsNotFirstBlock`                                                       |
+| 8   | Author is next leader | `getNextToWrite() == block.author` with the VM at the predecessor's state (live: already there; dispute replay: set by `BlockIngestService` before validation)                                                                                                                                                                                                                                                                                                                         | `invalidStateTransitionDetected`                                                                                          |
+| 9   | Time logic            | §6.1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `objectiveInvalidTimestampDetected` / `subjectiveInvalidTimestampDetected`                                                |
 
 ### 6.1 Time validation
 
-[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L485); the
+[`validateTimeLogic`](../../../../../../src/stateManager/ingest/ValidationService.ts#L510); the
 protocol time model is specified in [../protocol/time.md](../../../../specification/protocol-model/time.md).
-`previousTimestamp` is the predecessor block's _relevant_ timestamp for this
+The predecessor is the previous block of §6 (the dispute-replay predecessor, else the stored
+block below). `previousTimestamp` is the predecessor block's _relevant_ timestamp for this
 author (block timestamp if the author signed the predecessor, otherwise
 `max(onChainTimestamp, timestamp)` when posted on-chain), or the genesis
 snapshot timestamp; `previousOriginalTimestamp` is the predecessor's raw
@@ -350,7 +360,8 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
    `processInboundMessage`; `totalDeposits` accumulates via the state machine's
    balance algebra. Failure throws (restores VM).
 6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L498)
-   derives the committed `SnapshotData` from the previous snapshot: state hash
+   derives the committed `SnapshotData` from the previous snapshot the caller passes (the
+   predecessor's snapshot under dispute replay): state hash
    = `keccak(stateAfterInbound)`, participants = post-transition set, inbound
    tip/height and `totalDeposits` advanced by the carried inbound blocks,
    outbound tip/height and `totalWithdrawals` advanced by a newly built
@@ -371,12 +382,24 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 [`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L498), in code
 order:
 
-1. **Status promotion.** `SYNCED`/`PENDING_PARTICIPANT` → `PARTICIPATING` when
+1. **Status promotion** (never under dispute replay, whose block is on the dispute's chain).
+   `SYNCED`/`PENDING_PARTICIPANT` → `PARTICIPATING` when
    the resulting participants include us (join landed); a pending participant
-   not yet included checks the force-join trigger: `N+1` blocks after the
-   recorded join-submission height (`N` = current participant count) fires
-   `disputeManager.dispute(forkId)` exactly once
+   not yet included checks the force-join trigger. Blocks count only after a
+   grace: once the joiner observes its own join as an inbound message on
+   chain, counting starts `agreementTime` later, and only a block whose own
+   timestamp is at or after that time counts; the first such block is the
+   counting start height. `N+1` blocks after the counting start height
+   (`N` = current participant count) request the force-join dispute exactly
+   once
    ([../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)).
+   A separate force-join deadline, armed when the joiner observes its own
+   join (never at submission or receipt), starts the same single dispute when
+   no block includes the join. A dispute window whose evidence period ended
+   refuses the dispute; the refusal ends both bounds and nothing retries it
+   ([MembershipService](../../../source/src/stateManager/membership/MembershipService.ts.md)).
+   Promotion calls `MembershipService.onJoinSeated`, which clears the
+   force-join tracking and cancels the deadline.
 2. **Persist snapshot + state first** — `shouldSignBlock` reads the resulting
    participants from storage.
 3. **Sign if appropriate** (never under `DisputeValidationStrategy`):
@@ -416,17 +439,19 @@ order:
    its escalation logic belongs to the dispute pipeline
    ([dispute-pipeline.md](./dispute-pipeline.md) §3.1).
 
-**Agreement tracking.** [`AgreementManager`](../../../../../../src/agreementManager/AgreementManager.ts#L20)
+**Agreement tracking.** [`AgreementManager`](../../../../../../src/agreementManager/AgreementManager.ts#L72)
 interprets the stored data: `didEveryoneSignBlock` checks the block's signer
-set against its participant union; `getStateProof` builds milestones at each
-participant-set change point plus the latest height — a milestone collects
-consecutive block confirmations until the threshold set (previous milestone's
+set against its participant union; [`buildStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L112) builds, from the local proof
+start (the same-fork non-genesis on-chain snapshot, else the fork genesis), one milestone at each
+participant-set change point above the start plus the latest threshold milestone — a milestone
+collects one linked run of block confirmations until the threshold set (previous milestone's
 participants ∪ the lowest block's resulting participants) is covered by the
 accumulated signers, which is exactly the **virtual-vote** rule: a signature on
 a later block counts for every ancestor
-([../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md)). When no milestone
-can be built, the proof falls back to the linked `signedBlocks` suffix from the
-last finality anchor.
+([../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md)). The unfinal
+blocks above the latest threshold milestone are appended to it as its replay tail; without any
+milestone the proof is one run from the start block
+([AgreementManager report](../../../source/src/agreementManager/AgreementManager.ts.md)).
 
 ## 9. Validation strategies and result semantics
 
@@ -437,12 +462,12 @@ spectating strategies only `DISCONNECT` and `DISPUTE` return `false`; the
 dispute strategy treats `NOT_READY`/`NOT_ENOUGH_TIME`/`DISCONNECT`/`BROADCAST`
 as impossible (throws).
 
-| Strategy                                                                                                                    | Active when                                                      | Distinctive behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L23)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L31) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`. |
-| [`SpectatingValidationStrategy`](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21) | Uncommitted live arrivals and every synchronization proof replay | Historical subjective timestamps are accepted. Committed peers delegate fraud and disputed-fork reactions to the live strategy. An uncommitted spectator cannot dispute: **provable participant fraud → `stateManager.abort()`** and stop following (fail-closed spectate; see [`OQ-10-04YNC4`](../../../../specification/open-questions.md#oq-10-04ync4)); junk with nobody to slash → drop sender and keep spectating (the DoS vector must never force an abort).                                                                                                                |
-| [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L15)       | Block entered from a `BlockCalldataPosted` event                 | Delegates everything to `BlockValidationStrategy`; only authenticity failure differs (`DISPUTE`, open question §4.1). Confirmation carries only the author's signature; hooks that presuppose extra signers throw as unreachable.                                                                                                                                                                                                                                                                                                                                                  |
-| [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)       | Injected per replayed block of a dispute's state proof           | `enforcesLiveForkAndOrderingGates = false` (audits a fixed proof, out of live order, on a disputed fork). Deviations become **dispute fraud proofs** that kill the dispute (see [dispute-pipeline.md](./dispute-pipeline.md) §5); observations that only reflect missing local baselines return `SUCCESS` to continue replay. Double signs found during replay store an ordinary fraud proof but do **not** abort the replay (the dispute may still be honest).                                                                                                                    |
+| Strategy                                                                                                                    | Active when                                                      | Distinctive behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`BlockValidationStrategy`](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L25)           | Status `PENDING_PARTICIPANT` or `PARTICIPATING` (live arrivals)  | Full live gates. Objective faults (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) build a fraud proof via [`FraudProofService`](../../../../../../src/stateManager/utils/FraudProofService.ts#L32) and call `disputeManager.dispute(forkId)` → `DISPUTE`. Unattributable malformedness (bad linkage, unknown-genesis height-0 block, non-participant author) → disconnect/blacklist suppliers. Not-yet-ready situations (channel not open, disputed fork with a possibly-honest supplier, future block) → restore to queue, `NOT_READY`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| [`SpectatingValidationStrategy`](../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L23) | Uncommitted live arrivals and every synchronization proof replay | Historical subjective timestamps are accepted. Committed peers delegate fraud and disputed-fork reactions to the live strategy. An uncommitted spectator cannot dispute: **provable participant fraud → `stateManager.abort()`** and stop following (fail-closed spectate; see [`OQ-10-04YNC4`](../../../../specification/open-questions.md#oq-10-04ync4)); junk with nobody to slash → drop sender and keep spectating (the DoS vector must never force an abort).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| [`CalldataCommittedStrategy`](../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L14)       | Block entered from a `BlockCalldataPosted` event                 | Delegates everything to `BlockValidationStrategy`; only authenticity failure differs (`DISPUTE`, open question §4.1). Confirmation carries only the author's signature; hooks that presuppose extra signers throw as unreachable.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| [`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L22)       | Injected per replayed block of a dispute's state proof           | `enforcesLiveForkAndOrderingGates = false` (audits a fixed proof, out of live order, on a disputed fork). Built per replayed block with its `blockIndex` in the last milestone and its predecessor on the dispute's own chain; every proof is built from that predecessor. Deviations become **dispute fraud proofs** that kill the dispute (see [dispute-pipeline.md](./dispute-pipeline.md) §5), each stored only when the chain's `isBlockChallengeEligible` places the block in the last milestone's unfinal tail; an ineligible allegation, a missing proof, an unlinked block and a union check without executed snapshots throw (an honest auditor never abstains). A conflicting block of another history and an outsider author whose resulting snapshot is not held continue to the later checks. Double signs found during replay store an ordinary fraud proof but do **not** abort the replay (the dispute may still be honest). Commit stores the block without the status step, signing or gossip. |
 
 ## 10. Assumptions, constraints & dependencies
 

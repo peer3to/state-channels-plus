@@ -135,6 +135,12 @@ transactions within configured windows, and the required data fits chain transac
 guarantees availability only after publication; it does not guarantee cheap, immediate, or censorship-free
 inclusion before the chain's own liveness assumptions take effect.
 
+A dispute's data obligation is judged on its own, before and apart from state-proof verification: a dispute
+that omits its auditing data is killable when its last milestone is not final by everyone, while a failed
+finality check of the whole proof without posted data is not by itself a data-availability offense
+([fraud-proofs.md §3](../disputes/fraud-proofs.md)). A verifier that fails to read the data it needs raises an
+error, never an invalid verdict ([`REQ-SP-9-7MWKY8`](../disputes/state-proofs.md#req-sp-9-7mwky8)).
+
 ## Security considerations
 
 Unavailable data can prevent honest validation, recovery, or dispute participation and may threaten funds.

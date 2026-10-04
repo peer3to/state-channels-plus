@@ -505,7 +505,8 @@ a shallower fraud-proof call path in the contracts, recorded for a separate revi
 only for the answer that would make the node act ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys);
 [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) defers to it).
 [localDiamond.ts](../implementation/source/src/utils/localDiamond.ts.md) owns `preferLocal`;
-[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md) owns the revert marker it falls back on.
+[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md) owns the local EVM failure marker. Since 2026-10-04 (engineer decision) a local revert or failure is an error that
+propagates, with no chain fallback and no retry; only an adverse local answer is confirmed on chain.
 Per decision: the audit accepts a clearing local answer and confirms a fraud-proof answer on-chain
 ([DisputeValidationService.ts](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md));
 construction posts auditing data on a local "not final" and confirms a local "final"
@@ -711,3 +712,145 @@ against a peer that was only mid-handshake. It does not, and no code change was 
 shutdown `StateManager.stop()` sets `isDisposed` before `localRpc.dispose()` runs, and
 `HandshakeAdmissionPolicy.onExpired` returns early when the state manager is disposed. The settled
 handshake wait therefore never leads to an expiry warning or a retry disconnect.
+
+## 2026-10-03 — Milestone-only state proofs, join wait, force-join bounds, founders, and sync refusals
+
+This section is the current assessment of the SDK changes made for the autonomous poker client. They are
+recorded as [`FIND-LOBBY-2-4ZYPB5`](open-findings.md#find-lobby-2-4zypb5), [`FIND-LEAVE-5-PRK7EX`](open-findings.md#find-leave-5-prk7ex), [`FIND-LEAVE-6-3N4FHR`](open-findings.md#find-leave-6-3n4fhr), [`FIND-SYNC-4-S75SP4`](open-findings.md#find-sync-4-s75sp4),
+[`FIND-DISPUTE-4-B29QGY`](open-findings.md#find-dispute-4-b29qgy), [`FIND-JOIN-2-9SRZJS`](open-findings.md#find-join-2-9srzjs), [`FIND-LEAVE-4-WDH0XC`](open-findings.md#find-leave-4-wdh0xc), and [`FIND-LOBBY-4-BKEF02`](open-findings.md#find-lobby-4-bkef02).
+
+**State proofs: one walk from one start.** A state proof is milestones only. [StateChannelCommon](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+owns the one walk `_walkStateProof` and its anchor `_getAnchorSnapshot` (the walk can start from the same-fork on-chain
+snapshot when `_canStartFromOnChainSnapshot` holds, that is when it is not the fork genesis, recognized by its data;
+else it starts from the genesis) for
+[`REQ-SP-8-9PK9TS`](../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts). Milestones wholly below the start are dropped; the run holding the start
+commits it at its height with no threshold; every other kept milestone proves its first block by the union threshold of
+the last verified set; genesis block 0 links by its previous-block hash and may stay unfinal only as the sole
+milestone; an empty proof is the genesis. When the on-chain snapshot is the fork genesis, the walk uses it and reads
+no supplied genesis data; the supplied data must hash to the fork ID only when the genesis is not on chain. The walk
+returns validity, the finalized snapshot, and the replay start of the last milestone (its length when there is no
+tail). [StateProofFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
+routes `verifyMilestones`, `isStateProofLinked`, `verifyStateProof` (no up-front genesis check), `getAnchorSnapshot`,
+`isBlockChallengeEligible` and the input-only structure check of the last milestone; [LocalDiamond](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) adds the unrouted
+`verifyMilestonesFromTrustedStart`. [StateSnapshotFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
+adopts a same-fork snapshot only when the walk is valid and its finalized snapshot equals it (`isSnapshotNewer`
+already rejects the on-chain snapshot, so the match implies a threshold proof).
+[DisputeFraudProofFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) adds the
+`DisputeStateProofBelowOnChainAnchor` counter, addresses block allegations by their index in the last milestone and
+accepts them through `isBlockChallengeEligible`, which runs no walk (index at or after the tail start, height above a
+usable anchor), and judges the balance on the dispute's latest state with no walk ([`REQ-SP-10-AM67R2`](../specification/disputes/state-proofs.md#req-sp-10-am67r2)).
+
+**Prover and verifier.** [AgreementManager](../implementation/source/src/agreementManager/AgreementManager.ts.md) is the one owner:
+`buildStateProof` builds a compact proof from the local diamond's start (change milestones, the latest threshold
+milestone and the unfinal tail; `-1` is the empty proof; a height below the start or missing required history throws),
+`describeStateProof` gives the walk evidence, and `verifyStateProof` (no chain-only option) answers `valid` or `invalid` (every error throws) through
+three tiers: the latest local threshold-final point, the local diamond's start, the chain
+([`REQ-SP-9-7MWKY8`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8)). A local success is final; only the chain answers invalid. [DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md)
+builds once per dispute with no chain pre-check and no rebuild, and starts the auditing data's outbound range at the proof
+start ([`REQ-DISPUTE-PIPE-13-W73B2F` (Proof construction from the local start)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-w73b2f)). [SnapshotUpdateService](../implementation/source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)
+builds up to threshold completion and posts only a threshold-final snapshot.
+
+**Auditor.** [DisputeValidationService](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md) checks data
+availability before verification, stores the below-anchor counter for a claim below the same-fork on-chain snapshot,
+verifies through the AgreementManager tiers (a verification error propagates out of the audit; since the no-abstention
+change below, posted data is verified by the chain only), replays only the last milestone
+from the walk's replay start (since the no-abstention change: from the chain's tail start), asks the chain's `isBlockChallengeEligible` once before it stores a block allegation, and
+checks the balance of the posted latest state with one local-first read ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)). The structure check is input-only and needs no
+chain read. [DisputeFraudProofService](../implementation/source/src/stateManager/dispute/DisputeFraudProofService.ts.md) addresses
+every block allegation by its index in the last milestone. [FraudProofService](../implementation/source/src/stateManager/utils/FraudProofService.ts.md)
+finds the predecessor through `previousBlockHash` (storage, then the proof); since the no-abstention change below a
+dispute replay passes the predecessor explicitly and only live gossip abstains when it is missing.
+[LocalDiamond](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) refuses an older
+snapshot ([`REQ-MIRROR-5-YSFRKG` (Mirror snapshot never goes back)](../specification/enforcement/local-mirror.md#req-mirror-5-ysfrkg)).
+
+**Membership.** [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md)
+starts both force-join bounds only when the joiner observes its own join on chain. The block bound counts blocks by
+their own `block.timestamp` from `agreementTime` after that observation. A start that the chain refuses for an
+expired evidence period ends both bounds with no retry; only a deferred check re-arms. `getOwnJoinState` is the
+single owner of the join state (`none`, `open`, `landed`, `expired`), and the join authorization deadline comes
+from the confirmation ([ForceJoinStorage](../implementation/source/src/storage/ForceJoinStorage.ts.md)).
+[LeaveChannelService](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md) waits for an
+unobserved join until the chain is past that deadline, then leaves as a member or drops the join and returns to
+`SYNCED` ([`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)). [StateApplicationService](../implementation/source/src/stateManager/snapshotUpdate/StateApplicationService.ts.md)
+keeps an unlisted pending joiner pending while its authorization is open. `JOIN_CHANNEL_DEADLINE_SECONDS` sets the
+authorization lifetime ([config.ts](../implementation/source/src/utils/config.ts.md)).
+
+**Negotiation and sync.** [OpenChannelNegotiationService](../implementation/source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md)
+completes an ordinary or targeted founder attempt only after the founder handled its own `ChannelOpened`; a
+receipt success never refreshes the status. The receipt-failure path still treats a founder whose opening landed
+as an observer ([`FIND-LOBBY-3-8TFTB5`](open-findings.md#find-lobby-3-8tftb5)); the report records it as a contradiction of [`REQ-NEG-2-ED48TZ` (Chain-observed completion)](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz).
+[SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) refuses with
+an error reply, never a blacklist, while a walked dispute window's kill period runs or its window or reduce data
+is missing. [P2PManager](../implementation/source/src/P2PManager.ts.md) keeps one initial sync request and aborts
+on any failure, an explicit refusal included; the refusal retry was reverted (human review 2, HR-8). [P2pRuntimeClientRoot](../implementation/source/src/rpc/internal/roots/P2pRuntimeClientRoot.ts.md)
+sends `onAbort` on an unexpected host port closure, and
+[LobbyMatchingService](../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md)
+settles a pending cancel when the advertiser rejects the commit.
+
+Demonstrated contradictions and limits: the balance-invariant check still compares withdrawals with the current chain
+value, now only for the dispute's latest state, which is never below the same-fork on-chain snapshot ([`FIND-BALANCE-1-S6SP4N`](open-findings.md#find-balance-1-s6sp4n), mitigated); since 2026-10-04 every local or chain
+verification error propagates, as [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys) and [`REQ-SP-9-7MWKY8`](../specification/disputes/state-proofs.md#req-sp-9-7mwky8) now require; the mirror's older-snapshot guard misses a fork two or more reductions back and
+the genesis write ([`FIND-MIRROR-2-5RR4G4`](open-findings.md#find-mirror-2-5rr4g4), [`FIND-MIRROR-3-VYWGPF`](open-findings.md#find-mirror-3-vywgpf)); the force-join and join-wait state is in
+memory only ([`FIND-JOIN-3-WSQWQB`](open-findings.md#find-join-3-wsqwqb)); the dormant outbound-range check in `DisputeVerificationFacet` still starts at
+the genesis ([`OQ-SPEC-GENESIS-1-TKNMPM` (Fork genesis dependency after a peer moves ahead)](../specification/open-questions.md#oq-spec-genesis-1-tknmpm)). Not done on purpose (engineer decision): no stored anchor block hash, no chain reconfirmation of a local verification
+success, and no age check on the local tiers.
+
+## 2026-10-04 — Engineer implementation decisions
+
+The engineer approved the implemented behavior where it differs from the plan-34 text. Decisions 1 to 4 change
+requirements and are recorded in [specification.md](specification.md) (balance check on the dispute's latest state,
+block-challenge eligibility without a walk, no "unavailable" verification result, stale sync proofs penalized);
+the stale-served-state item below implements decision 4. Decisions 5 to 7 are implementation-only and change no
+requirement:
+
+- **Omitted-data storage check (decision 5), superseded by decision 10.** The check and its skip are deleted: an
+  honest auditor now audits every dispute in full (see the next section).
+- **Fraud-block snapshot from the loaded state.** [FraudProofFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md)
+  `_handleBlockInvalidStateTransition` applies the fraud block's inbound messages to the state that
+  `executeStateTransition` left loaded (`_processInboundMessages`) and reads the participants from it, with no
+  second `setState`; `_applyInboundMessages` and `_getStateMachineParticipants` are deleted, so FraudProofFacet is
+  not at its earlier version.
+- **Stale served state and failed initial sync.** Following decision 4, [SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+  rejects a served state below the walk's start ("served state below the proof start") before it stores anything,
+  and stores a run holding the start only from the start up. [P2PManager](../implementation/source/src/P2PManager.ts.md)
+  treats an initial sync that throws as a failed initial sync, so the observer aborts and no peer is judged.
+- **Proof-type comments.** The `MilestoneProof` and `DisputeAuditingData.milestoneSnapshots` comments describe a
+  milestone-only proof and one snapshot entry per milestone ([ProofTypes.sol](../implementation/source/contracts/V1/types/ProofTypes.sol.md),
+  [DisputeTypes.sol](../implementation/source/contracts/V1/types/DisputeTypes.sol.md)).
+
+## 2026-10-04 — Honest auditors never abstain, posted finalized state, sync and initial-sync decisions (decisions 8-13)
+
+**Full audit (decisions 10, 11).** [DisputeValidationService](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
+has no abstain or skip path. It replays the last milestone's tail on the dispute's own chain: the tail starts at the
+first index the chain makes challenge-eligible (binary search over `isBlockChallengeEligible`), the base is the
+predecessor block with its snapshot and state read by hash, already-held tail blocks are fast-forwarded, and each
+replayed block carries its explicit predecessor. Missing chain events are recovered through
+[EventSyncService](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md) `loadSynchronizedInboundRun`; data still missing after recovery, a missing replay
+base or a missing fork genesis is an internal failure (throw), never a verdict. The verified material the auditor
+lacked (blocks, snapshots, states) is persisted by hash so it can reduce later. The positioning hook
+`prepareStateMachineForLeaderCheck` and the abstaining strategy paths are deleted; the predecessor travels with the
+queue entry ([QueueStorage](../implementation/source/src/storage/QueueStorage.ts.md), [BlockIngestService](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md),
+[ValidationService](../implementation/source/src/stateManager/ingest/ValidationService.ts.md), [DisputeValidationStrategy](../implementation/source/src/stateManager/validationStrategy/DisputeValidationStrategy.ts.md),
+[FraudProofService](../implementation/source/src/stateManager/utils/FraudProofService.ts.md), [SnapshotAssemblyService](../implementation/source/src/stateManager/block/SnapshotAssemblyService.ts.md)).
+[BlockCommitService](../implementation/source/src/stateManager/block/BlockCommitService.ts.md) skips its membership step during a dispute replay.
+[EventHandler](../implementation/source/src/eventHandlers/EventHandler.ts.md) audits an expired-kill-period dispute in full, logs the verdict, kills
+nothing, then persists and schedules reduction. Posted-data verification is chain-only, a flagged deviation from
+local-first verification ([`OQ-IMPL-POSTED-VERIFY-1-N00BC3`](../implementation/open-questions.md#oq-impl-posted-verify-1-n00bc3)).
+
+**Posted finalized state (D1).** [StateProofFacet](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
+`verifyStateProof` also requires the posted finalized state to hash to the walk's finalized snapshot's state
+commitment; [DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md) takes the finalized snapshot from the chain's own walk
+so an honest disputer posts that state. The honest-posting race is the deferred
+[`OQ-SPEC-POSTED-STATE-RACE-1-1ZM6XN`](../specification/open-questions.md#oq-spec-posted-state-race-1-1zm6xn) (decision 12).
+
+**Sync (decisions 8, 9).** [SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) rejects a served state below the
+proof start and penalises the responder; [P2PManager](../implementation/source/src/P2PManager.ts.md) aborts on a failed initial sync, also when it throws.
+
+**Alternate histories (decision 13).** A double sign alone never kills a valid dispute; a dispute that becomes
+threshold-final when slashing leaves one threshold signer closes the window; otherwise reduction builds on the longest
+valid chain.
+
+Residual items: the reduce-data reschedule branch of [ReductionExecutor](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md) has no
+test (an auditing peer's audit throws before it can store a dispute without its inbound run); a lagging mirror whose
+replay base is only the unposted chain anchor throws; the timeout checks still read the auditor's own history at the
+dispute's heights.

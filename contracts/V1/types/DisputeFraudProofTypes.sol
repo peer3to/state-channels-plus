@@ -21,7 +21,8 @@ contract DisputeFraudProofTypes {
         DisputeInboundHashNotInChain memory r,
         DisputeInvalidBlockStructure memory s,
         DisputeBlockAuthorNotParticipant memory t,
-        DisputeInboundAnchorBehindLatestState memory u
+        DisputeInboundAnchorBehindLatestState memory u,
+        DisputeStateProofBelowOnChainAnchor memory v
     ) {}
 }
 
@@ -44,6 +45,7 @@ struct DisputeInvalidStateProof {
     DisputeAuditingData auditingData;
 }
 
+/// @dev `latestStateSnapshot` must be the dispute's latest state
 struct DisputeInvalidBalanceInvariant {
     StateSnapshot latestStateSnapshot;
     bytes latestStateMachineState;
@@ -86,9 +88,11 @@ struct TimeoutCalldataPosted {
     SignedBlock previousBlockcalldata;
 }
 
+// The block-pointing wrappers locate the challenged block at `blockIndex` of the last milestone; only that milestone
+// is challengeable (see `StateProofFacet.isBlockChallengeEligible`).
 struct DisputeInvalidBlockInStateProofApplyFraudProof {
     FraudProof fraudProof;
-    uint256 blockIndexInUnfinalizedPartOfStateProof;
+    uint256 blockIndex;
 }
 
 struct DisputeLastMilestoneNotFinalAndNoAuditingData {
@@ -114,12 +118,17 @@ struct DisputeInboundAnchorBehindLatestState {
 }
 
 struct DisputeInvalidBlockStructure {
-    uint256 blockIndexInUnfinalizedPartOfStateProof;
+    uint256 blockIndex;
 }
 
 struct DisputeBlockAuthorNotParticipant {
-    uint256 blockIndexInUnfinalizedPartOfStateProof;
+    uint256 blockIndex;
     SignedBlock previousBlock;
     StateSnapshot previousStateSnapshot;
     StateSnapshot resultingStateSnapshot;
+}
+
+// The dispute's latest claimed block is below the same-fork non-genesis on-chain snapshot, which the chain reads itself.
+struct DisputeStateProofBelowOnChainAnchor {
+    bool __;
 }

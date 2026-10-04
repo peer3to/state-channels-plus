@@ -25,10 +25,10 @@ correlation state and returns the remote handler's value.
 
 ## Key design decisions
 
-1. **Delivery is the caller's choice, constrained by type.** The typed proxy exposes fire-and-forget verbs only for `void` methods and `request` only for value-returning ones — misuse is a compile error, not a runtime surprise ([#L7](../../../../../../../src/rpc/network/RpcHandler.ts#L10)).
-2. **Omitting the target means loopback self.** Local invocation uses the same envelope and dispatch path as remote calls — one code path, trusted transport ([#L12](../../../../../../../src/rpc/network/RpcHandler.ts#L15)).
-3. **Address targets resolve to the live transport** via the profile manager, so callers survive transport churn ([#L70](../../../../../../../src/rpc/network/RpcHandler.ts#L81)).
-4. **Transport overloads use the public transport shape.** Direct transport targets loaded through another module graph remain distinct from request options and addresses without relying on constructor identity ([#L61](../../../../../../../src/rpc/network/RpcHandler.ts#L72), [#L91](../../../../../../../src/rpc/network/RpcHandler.ts#L110), [#L125](../../../../../../../src/rpc/network/RpcHandler.ts#L144)).
+1. **Delivery is the caller's choice, constrained by type.** The typed proxy exposes fire-and-forget verbs only for `void` methods and `request` only for value-returning ones — misuse is a compile error, not a runtime surprise ([#L10](../../../../../../../src/rpc/network/RpcHandler.ts#L10)).
+2. **Omitting the target means loopback self.** Local invocation uses the same envelope and dispatch path as remote calls — one code path, trusted transport ([#L15](../../../../../../../src/rpc/network/RpcHandler.ts#L15)).
+3. **Address targets resolve to the live transport** via the profile manager, so callers survive transport churn ([#L81](../../../../../../../src/rpc/network/RpcHandler.ts#L81)).
+4. **Transport overloads use the public transport shape.** Direct transport targets loaded through another module graph remain distinct from request options and addresses without relying on constructor identity ([#L72](../../../../../../../src/rpc/network/RpcHandler.ts#L72), [#L110](../../../../../../../src/rpc/network/RpcHandler.ts#L110), [#L144](../../../../../../../src/rpc/network/RpcHandler.ts#L144)).
 
 ## Inputs, outputs, state, and side effects
 

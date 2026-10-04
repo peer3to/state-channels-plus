@@ -44,7 +44,10 @@ operational limits. It hosts every other system without changing their observabl
   join initiation before the chain reflects it, because it is the more protective state; `SYNCED`
   is deferred until the node has observed that the chain lists it in neither set — a locally
   applied state that drops the signer (a reduced fork it computed itself) keeps the current status
-  until the chain's snapshot confirms the removal.
+  until the chain's snapshot confirms the removal. One exception keeps a pending joiner protective: a
+  `PENDING_PARTICIPANT` whose join neither the state nor the chain lists stays pending while its join
+  authorization is still open, because the join can still land; once the chain is past the
+  authorization deadline it is lowered to `SYNCED`.
 - **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
   a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
   after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.

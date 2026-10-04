@@ -267,7 +267,10 @@ export async function assertPromotionBeforeReceiverApplication(
         .control(newcomer)
         .stub.observeAdmission({ holdGossip: true })
         .request();
-    await h.control(newcomer).stub.holdSpectateResponses().request();
+    // hold before the payload: the newcomer builds its proof only after it
+    // holds the receiver's signature on the insertion, so its served state
+    // is not below the receiver's own final point (a stale sync proof)
+    await h.control(newcomer).stub.holdSpectateResponses(false, true).request();
     await h.control(receiver).stub.observeAdmission().request();
     try {
         await h.transition.insertParticipantOffChain(newcomer.address, 5n, {
@@ -335,6 +338,18 @@ export async function assertPromotionBeforeReceiverApplication(
             ).to.equal(0);
         }
         await application.release();
+        await waitFor(
+            async () =>
+                ((
+                    await h
+                        .control(newcomer)
+                        .query.getLatestSignedBlockByParticipant(
+                            h.activeForkId!,
+                            receiver.address
+                        )
+                        .request()
+                )?.height ?? -1) >= insertion.height
+        );
         await h.control(newcomer).stub.releaseSpectateResponses().request();
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
         await waitFor(

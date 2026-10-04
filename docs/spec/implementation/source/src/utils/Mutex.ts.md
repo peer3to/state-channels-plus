@@ -19,12 +19,21 @@
 
 ## Responsibility and observable boundary
 
-The async mutex serializing state-transition application (the StateManager execution boundary):
-FIFO waiters, named tasks for diagnostics.
+The async mutex serializing state-transition application (the StateManager execution boundary)
+and local EVM calls ([ContractExecutor](../evm/contractExecutor/ContractExecutor.ts.md)): FIFO
+waiters, named tasks for diagnostics, and optional macrotask scheduling of an acquisition or of the
+next waiter.
 
 ## Key design decisions
 
 1. **One tiny primitive carries the concurrency model** — the pipeline's serialized regime is exactly this lock's holders.
+2. **A caller may acquire a free mutex on a later macrotask** (`acquireAsMacroTask`,
+   [#L8](../../../../../../src/utils/Mutex.ts#L8)). The mutex is marked held at once, so later callers
+   queue behind this one, and the holder starts on a `setTimeout(0)` task
+   ([#L48](../../../../../../src/utils/Mutex.ts#L48)). Rationale: callers that all lock in one task (a
+   worker port delivers a batch of queued requests in one task) would otherwise run back to back in
+   that task and block the event loop for their summed time. Without the option a free mutex is
+   acquired synchronously, as before.
 
 ## Inputs, outputs, state, and side effects
 
@@ -50,7 +59,8 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- FIFO fairness; single holder.
+- FIFO fairness; single holder. A macrotask acquisition holds the mutex from the `lock` call, so
+  it keeps FIFO order with later callers.
 
 ## Specification contradictions
 
@@ -74,9 +84,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                    | Obligation    | Public entry and setup                                | Oracle and forbidden effects                                    | Required permutations                                                                                                                                                                                                                                                       |
-| --------------------------------------------------------------- | ------------- | ----------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-mutex-1-yqgdqh"></a>`UNIT-TEST-MUTEX-1-YQGDQH` | Serialization | Contend, throw inside critical sections, verify order | Exclusive FIFO; throws release; no deadlock on reentry attempts | <a id="unit-test-mutex-1-yqgdqh.p1"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P1` — contention order; <a id="unit-test-mutex-1-yqgdqh.p2"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P2` — throw releases; <a id="unit-test-mutex-1-yqgdqh.p3"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P3` — unlock discipline |
+| Unit test ID                                                    | Obligation    | Public entry and setup                                | Oracle and forbidden effects                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------- | ------------- | ----------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-mutex-1-yqgdqh"></a>`UNIT-TEST-MUTEX-1-YQGDQH` | Serialization | Contend, throw inside critical sections, verify order | Exclusive FIFO; throws release; no deadlock on reentry attempts | <a id="unit-test-mutex-1-yqgdqh.p1"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P1` — contention order; <a id="unit-test-mutex-1-yqgdqh.p2"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P2` — throw releases; <a id="unit-test-mutex-1-yqgdqh.p3"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P3` — unlock discipline; <a id="unit-test-mutex-1-yqgdqh.p4"></a>`UNIT-TEST-MUTEX-1-YQGDQH.P4` — a lock with `acquireAsMacroTask` on a free mutex starts its holder only after a timer queued before that lock call has run |
 
 ## Related source reports
 

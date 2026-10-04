@@ -71,8 +71,8 @@ boundary's contract is therefore twofold:
 
 - **What it guarantees.** A frame reaching a handler has passed the frame-size cap, envelope-shape
   verification, service and method existence checks, and the service's guards
-  ([`NetworkRpcRouter.onRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L40),
-  [`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35)). Request/response replies are
+  ([`NetworkRpcRouter.onRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L78),
+  [`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L67)). Request/response replies are
   correlated, time-bounded, and only settled by the addressed peer.
 - **What it does not guarantee.** Nothing about the *semantic* validity of parameters. The
   envelope is untrusted JSON; every handler remains responsible for decoding and validating its
@@ -92,7 +92,7 @@ A service (a subclass of [`ANetworkRpcService`](../../../../../../../src/rpc/net
 internal helpers, and business logic — e.g.
 [`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9)
 owns the per-peer acknowledgment maps, and
-[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L36) owns the in-flight
+[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L37) owns the in-flight
 sync set and the whole payload-generation/verification machinery. It pairs with an **RpcMethods**
 class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes *only* the
 deliberately public, remotely callable methods. The dispatcher instantiates the RpcMethods class
@@ -105,7 +105,7 @@ belong there; everything else stays on the service. A method on an RpcMethods cl
 every connected peer — putting it there *is* the act of opening a protocol entry point, and it
 then carries the full ingress obligations of §4.
 
-[`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35) resolves endpoints from
+[`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L67) resolves endpoints from
 function-valued own properties on the methods instance and function-valued data properties on its
 application prototype chain. It stops before [`ANetworkRpcMethods.prototype`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4),
 or `Object.prototype`, rejects `constructor`, and reads descriptors without executing accessors. Application subclasses
@@ -119,8 +119,8 @@ helpers and stored callbacks belong on the service or in JavaScript `#private` f
 instantiates the six built-in services as public properties (`initHandshakeService`,
 `webRTCSetupService`, `stateTransitionService`, `spectateService`, `isForkDisputedService`,
 `joinChannelService`); the property name is the wire-visible service name (`rpc.service`).
-Network root composition is explicit; service recognition is structural: [`NetworkRpcRouter.onRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L40) resolves
-`rpc.service` with [`hasRpcService`](../../../../../../../src/utils/ObjectChecks.ts#L27), which
+Network root composition is explicit; service recognition is structural: [`NetworkRpcRouter.onRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L78) resolves
+`rpc.service` with [`hasRpcService`](../../../../../../../src/utils/ObjectChecks.ts#L30), which
 accepts a root property exposing the complete public service operations used by dispatch. There is no explicit
 service registry or allowlist — a property of the root either is a service (dispatchable) or is
 not (frame rejected, sender disconnected).
@@ -167,7 +167,7 @@ The delivery handle exposed for a method depends on its declared return type
 | `void` / `Promise<void>` | `FireAndForgetRpcHandler` | `.broadcast()`, `.sendOne(target?)`, `.sendMultiple(targets)` |
 | any value | `RequestRpcHandler<T>` | `.request(target?, {timeoutMs?})` → `Promise<T>` |
 
-- **Broadcast** ([`NetworkRpcRouter.broadcastRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L43)) sends the envelope to
+- **Broadcast** ([`NetworkRpcRouter.broadcastRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L18)) sends the envelope to
   every open connection. No `requestId` — no replies.
 - **One-way send** (`sendOne`/`sendMultiple`, [`RpcHandler`](../../../../../../../src/rpc/network/RpcHandler.ts#L38))
   targets a transport or an EVM address (resolved via `ProfileManager`). A target with no open
@@ -187,7 +187,7 @@ Integrators extend the boundary by subclassing `MainRpcService` and shipping the
 [`CustomRpcManifest`](../../../../../../../src/rpc/network/registry.ts#L24) (`{module, exportName?, options?}`) via
 `p2pSetup(options.customRpcManifest)` ([architecture.md](../architecture.md) §1.1). The host side
 resolves the manifest with
-[`resolveCustomRpcConstructor`](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L5) (dynamic module
+[`resolveCustomRpcConstructor`](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L8) (dynamic module
 load; throws unless the export is a constructor) and passes the constructor into
 [`P2PManager`](../../../../../../../src/P2PManager.ts#L40), which instantiates it in place of the base root and
 derives `remoteRpc` from it. Typing flows through the `TCustomRpc extends MainRpcService`
@@ -208,7 +208,7 @@ one path into node services is `P2pInstance.hostRpc`
 mirrors the host's `remoteRpc` surface exactly (`RemoteRpcProxyType<TCustomRpc>`). A chained call
 `hostRpc.<service>.<method>(...params).<delivery>(...args)` is captured verbatim, forwarded over
 the runtime port as a bound `hostRpc.invoke(...).request()` call, and replayed by the host on its live `remoteRpc`
-([`HostRpcService.invoke`](../../../../../../../src/rpc/internal/services/hostRpc/HostRpcService.ts#L16)); for `request` the host
+([`HostRpcService.invoke`](../../../../../../../src/rpc/internal/services/hostRpc/HostRpcService.ts#L26)); for `request` the host
 awaits and returns the result.
 
 Target semantics are those of §2.4, evaluated on the host: **no target → loopback to the local
@@ -249,20 +249,20 @@ explicit validation before it affects the internal system
 ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §2).
 
 Under [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), bigint-bearing values MUST cross the RPC boundary as canonical
-`Codec.encode` strings, never raw JSON. [`serializeRpc`](../../../../../../../src/rpc/Rpc.ts#L38) enforces this
+`Codec.encode` strings, never raw JSON. [`serializeRpc`](../../../../../../../src/rpc/Rpc.ts#L41) enforces this
 mechanically: `JSON.stringify` throws on a raw `BigInt`, surfacing the offending method instead of
 silently coercing to a lossy number, and the test harness deliberately installs no
 `BigInt.prototype.toJSON` shim.
 
 Type safety at the caller and Byzantine safety at the receiver are complementary requirements, not
 substitutes. Examples of the split done right:
-[`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
+[`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L24)
 rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
 past the skew comparison);
-[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L98)
+[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L160)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
-[`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)
+[`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L150)
 recovers and cross-checks the embedded signature, channel, deadline, fork, and snapshot before
 producing its own signature.
 
@@ -282,7 +282,7 @@ injected callback). Services declare `this.guards = [...]` in their constructors
 declaration order**, short-circuiting on the first failure. Ordering is therefore meaningful and
 part of a service's contract (cheap/structural guards should precede expensive ones).
 
-Placement in the dispatch path ([`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35)):
+Placement in the dispatch path ([`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L67)):
 guards run **before the method-existence check** — an unauthenticated peer probing a guarded
 service hits the guard consequence even for nonexistent methods, and learns nothing about the
 service's method names.
@@ -290,7 +290,7 @@ service's method names.
 **Trusted-transport exception.** Guards are skipped entirely when `transport.isTrusted` — true
 only for [`LoopbackTransport`](../../../../../../../src/transport/LoopbackTransport.ts#L13) (self-delivery,
 §2.4/§3); every network transport reports `false`
-([`NetworkTransport.isTrusted`](../../../../../../../src/transport/NetworkTransport.ts#L49)).
+([`NetworkTransport.isTrusted`](../../../../../../../src/transport/NetworkTransport.ts#L61)).
 
 **Rejection behavior.** On guard failure the RPC is consumed (never dispatched). For
 request-style frames the dispatcher additionally sends `{ok: false, error: "RPC request rejected
@@ -326,12 +326,12 @@ failure `runRPC` *always* sends the `"rejected by guard"` error response when a 
 present — including in the queue-and-wait case — so a request-style RPC arriving during handshake
 negotiation is rejected immediately at the caller, and when the queued copy is later replayed its
 (second) response carries an already-settled `requestId` and is silently dropped by the caller's
-[`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L168). The retry queue therefore only benefits
+[`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L147). The retry queue therefore only benefits
 fire-and-forget RPCs; whether request-style RPCs should instead be held without an early error
 (or never queued) is undecided. A secondary wrinkle: in the non-negotiating branch `onFailure`
 disconnects the transport *before* `runRPC` attempts to send that error response on it.
 (Divergence class: decision pending; observed in
-[`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35) +
+[`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L67) +
 [`HandshakeCompletedGuard`](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L44).)
 
 ### 5.3 Requirements for future guards
@@ -439,7 +439,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
 
 ### 6.5 Correlation, timeout, cancellation, disconnect, and error semantics
 
-[`ARpcRouter.sendRpcRequest`](../../../../../../../src/rpc/router/ARpcRouter.ts#L113):
+[`ARpcRouter.sendRpcRequest`](../../../../../../../src/rpc/router/ARpcRouter.ts#L101):
 
 - **Correlation.** `requestId` is a router-local monotonically increasing counter rendered as a
   string; the pending-request table maps it to `{resolve, reject, transport, timeout}`.
@@ -451,7 +451,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
   in-flight request, and the remote handler is never cancelled (its late response is silently
   dropped, below).
 - **Addressed-peer rule ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).** Only the peer the request was sent to may settle it.
-  [`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L168) compares peer *identity*
+  [`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L147) compares peer *identity*
   ([`NetworkTransport.isSamePeer`](../../../../../../../src/transport/ATransport.ts#L31), checksum-address based) —
   not transport object identity — so a WebRTC upgrade still settles pending requests; a response
   from any other peer **blacklists and disconnects the responder**.
@@ -496,7 +496,7 @@ patterns:
   ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1).
 - **Replay-as-violation.** A duplicate handshake ack and a duplicate dispute-acknowledgment
   request are protocol violations → disconnect + blacklist
-  ([`InitHandshakeRpcMethods.onInitHandshakeAck`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L114),
+  ([`InitHandshakeRpcMethods.onInitHandshakeAck`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L123),
   [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6)).
 - **Concurrency-limited.** Spectate allows one in-flight sync per peer (`inFlightByPeerAddress`).
 
@@ -596,7 +596,8 @@ whether an unauthenticated ban must survive a new SDK peer handle or process res
 | Block confirmation invalid but tolerated (duplicate, wrong fork, unknown sender…) | pipeline strategies | Ignore (entry dropped or queued; connection kept) — see [block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9 |
 | Provable equivocation / invalid transition in ingested blocks | pipeline, not RPC layer | Fraud-proof / dispute work ([dispute-pipeline.md](../dispute-pipeline.md)); the RPC layer itself never constructs proofs |
 | Unprovable spectate request | `spectateService` responder | Disconnect + blacklist requester + request error |
-| Spectate sync failure (outgoing, any cause) | `spectateService` caller | Disconnect + blacklist responder — **[`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n)**, over-broad |
+| Spectate responder not ready (own state not installed, dispute window unavailable, kill period not expired, reduce data unavailable) | `spectateService` responder | Error reply (explicit refusal); no cut of the requester |
+| Spectate sync failure (outgoing, any cause) | `spectateService` caller | Counted close on the responder (`allowRetry()`), no verdict; an initial load aborts ([`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n) tracks the remaining conflation) |
 | Fork-not-disputed / duplicate dispute-ack request | `isForkDisputedService` responder | Disconnect + blacklist + request error |
 | Dispute-ack rejection/error/timeout (outgoing) | `isForkDisputedService` caller | Disconnect + blacklist |
 | Join-signature validation failure | `joinChannelService` | Request error only; connection kept |

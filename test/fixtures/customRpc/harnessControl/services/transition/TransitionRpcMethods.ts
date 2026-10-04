@@ -3,6 +3,7 @@ import type { TransitionService } from "./TransitionService";
 import { Block } from "@/models";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
+import type { SameForkSnapshotUpdatePreparation } from "@/stateManager/snapshotUpdate/SnapshotUpdateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -12,7 +13,7 @@ import { Codec, Type } from "@/utils";
  * bigints, so they cross the port `Codec.encode`d as `Type.StateSnapshot`.
  */
 export interface SameForkSnapshotUpdate {
-    canPost: boolean;
+    kind: SameForkSnapshotUpdatePreparation["kind"];
     callData: string[];
     encodedExpectedSnapshot?: string;
     encodedMilestoneSnapshots: string[];
@@ -55,15 +56,19 @@ export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> 
             await this.service.sm.snapshotUpdateService[
                 "prepareUpdateSnapshotSameFork"
             ](forkId);
+        if (data.kind !== "ready")
+            return {
+                kind: data.kind,
+                callData: [],
+                encodedMilestoneSnapshots: []
+            };
         return {
-            canPost: data.canPost,
-            callData: data.callData,
-            encodedExpectedSnapshot: data.expectedSnapshot
-                ? (Codec.encode(
-                      data.expectedSnapshot.toStruct(),
-                      Type.StateSnapshot
-                  ) as string)
-                : undefined,
+            kind: data.kind,
+            callData: [data.callData],
+            encodedExpectedSnapshot: Codec.encode(
+                data.expectedSnapshot.toStruct(),
+                Type.StateSnapshot
+            ) as string,
             encodedMilestoneSnapshots: data.milestoneSnapshots.map(
                 (s) => Codec.encode(s.toStruct(), Type.StateSnapshot) as string
             )

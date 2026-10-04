@@ -5,6 +5,7 @@ import {
     assertReductionCache
 } from "@test/fixtures/StateApplicationEligibilityFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 // unsafeSetLatestState is driven through transition.runSetLatestState (the
@@ -69,6 +70,92 @@ describe("Unit: StateApplicationService", function () {
             forkId
         });
         expect(status).to.equal(Status.SYNCED);
+    });
+
+    it("a pending joiner whose unlisted join can still land stays PENDING_PARTICIPANT, and the join landing later starts its force-join bounds", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+        const joiner = h.getPeer(prepared.joiner.index);
+        const forkId = h.activeForkId!;
+        const releaseSubmission = await h.rpcStub.holdMembershipSubmission(
+            joiner.index,
+            "joinChannel"
+        );
+        try {
+            // PENDING_PARTICIPANT, the join not yet on chain
+            const join = joiner.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(joiner)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+
+            expect(
+                await h.transition.runSetLatestState({
+                    peerIndex: joiner.index,
+                    forkId
+                })
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            await releaseSubmission();
+            expect(await join).to.equal(true);
+            await waitFor(
+                async () =>
+                    (await h.execOnHost(
+                        joiner,
+                        async (sm) =>
+                            sm.storage.forceJoin.getCountingStartsAt() ?? null
+                    )) !== null,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+        } finally {
+            await releaseSubmission();
+        }
+    });
+
+    it("a pending joiner whose unlisted join authorization expired is lowered to SYNCED", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0, {
+            joinAuthorizationSeconds: 3
+        });
+        const joiner = h.getPeer(prepared.joiner.index);
+        const forkId = h.activeForkId!;
+        const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+            joiner.index,
+            "joinChannel"
+        );
+        try {
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(false);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+            await h.scenario.chainBlockPastWait(prepared.joinDeadline!);
+
+            expect(
+                await h.transition.runSetLatestState({
+                    peerIndex: joiner.index,
+                    forkId
+                })
+            ).to.equal(Status.SYNCED);
+        } finally {
+            await restore();
+        }
     });
 
     it("an older snapshot timestamp shortens the scheduled timeout check by exactly that offset", async function () {

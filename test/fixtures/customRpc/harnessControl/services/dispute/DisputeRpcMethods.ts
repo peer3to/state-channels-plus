@@ -112,20 +112,12 @@ export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
         return this.service.runDisputeValidation(encodedDispute, options);
     }
 
-    /** Run the real persistDisputeDataWithoutAudit; storage presence projection. */
-    public persistDisputeDataWithoutAudit(
+    /** Run the real dispute audit; storage presence projection. */
+    public auditDisputePersistence(
         encodedDispute: string,
-        options: {
-            encodedAuditingData?: string;
-            includeUnfinalizedBlocks: boolean;
-            /** Post-decode override; "" is not ABI-encodable (see service). */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
-    ): PersistDisputeDataProjection {
-        return this.service.persistDisputeDataWithoutAudit(
-            encodedDispute,
-            options
-        );
+        options?: { encodedAuditingData?: string }
+    ): Promise<PersistDisputeDataProjection> {
+        return this.service.auditDisputePersistence(encodedDispute, options);
     }
 
     /**

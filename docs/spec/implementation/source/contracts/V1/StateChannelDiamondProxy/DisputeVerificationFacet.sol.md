@@ -28,28 +28,56 @@ paths), kill, output helpers, and the balance-invariant check.
 
 ## Key design decisions
 
-`reduceAndFinalize` admits only current snapshot participants and eligible joins inside the unconsumed inbound interval, excluding on-chain-slashed signers, through the shared bounded eligibility owner. See [reduceAndFinalize](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L199) and [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e).
+`reduceAndFinalize` admits only current snapshot participants and eligible joins inside the unconsumed inbound interval, excluding on-chain-slashed signers, through the shared bounded eligibility owner. See [reduceAndFinalize](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L237) and [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 
-Slash and removal application append exits only for successful hooks. An already departed target produces no new exit, balance change or withdrawal, even if the chain snapshot still grants eligibility. See [DisputeVerificationFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L653).
+Slash and removal application append exits only for successful hooks. An already departed target produces no new exit, balance change or withdrawal, even if the chain snapshot still grants eligibility. See [DisputeVerificationFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L590).
 
 1. **Immediate finalization by construction:** every commit path back-dates the reduction timestamp so the challenge period is pre-expired — gas traded for latency; the challenge entry point is dormant scaffolding for the optimistic design (spec-flagged open question).
 2. **The empty-timeout fold cancellation lives here:** a dispute without a timeout resets the candidate (height 0 beats real heights). For a slash-carrying dispute this is intended slash precedence (engineer decision 2026-08-14, [`INV-DIS-7-9GGZSD`](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)); the slash-free case remains the open specification question [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../../specification/open-questions.md#oq-9-xr1mfs).
 3. **The commitment-set guard reports both commitment sets, from a revert branch.** Both
    commitment checks
-   ([#L207](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L207),
-   [#L270](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L270))
+   ([#L205](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L205),
+   [#L269](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L269))
    raise `ErrorDisputeCommitmentNotAvailable(channelId, forkId, committedDisputeHashes, submittedDisputeHashes)`
    — the chain's committed hashes before the caller's submitted hashes, matching the required-side-first
    order used across the error vocabulary. The hashes, not their counts: the mismatch is usually a
    substituted dispute at equal length, which a pair of counts cannot express at all. The submitted
    side is produced by
-   [`_disputeCommitmentHashes`](../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L125),
+   [`_disputeCommitmentHashes`](../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L81),
    the same per-dispute hash `areDisputesCommitted` compares with, so the reported set cannot drift
    from the set that was actually tested. They use `if (!…) revert` rather than `require` because the
    committed list is a storage read `areDisputesCommitted` performs internally and the submitted
    hashes are worth computing only once the comparison has failed, and error arguments are evaluated
    eagerly: inside `require` the happy path would hash every submitted dispute a second time.
 4. **Slash eligibility spans every signer that ever joined.** `reduce` filters on-chain slashes through the snapshot participants plus the unbounded inbound JOIN walk, not the bounded pending set of `getPendingParticipants`: once a reduction for the fork is mined, the channel snapshot lists only the survivors, and a reducer that computes late must still fold the same slashes or its genesis diverges from the one on chain (observed as honest reducers aborting on `Block hash … not found in storage` while building the fork-snapshot calldata).
+
+5. **The dispute outbound-range check is dead code.** `_verifyDisputeOutboundMessageBlocks`
+   ([#L454](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L454)) has no caller: the commented-out auditing-data check
+   that once called it is deleted. It starts the outbound range at the fork genesis's outbound head, so it
+   would not accept a range that starts at a same-fork on-chain snapshot if it were called again
+   ([`OQ-SPEC-GENESIS-1-TKNMPM` (Fork genesis dependency after a peer moves ahead)](../../../../../specification/open-questions.md#oq-spec-genesis-1-tknmpm)).
+6. **The balance invariant compares withdrawals with the current chain value.**
+   `verifyBalanceInvariantCheckSnapshot` ([#L493-L517](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L493-L517)) compares the state's deposits with the
+   on-chain deposits at the state's own inbound head, but its withdrawals with the channel's current
+   `totalWithdrawals` ([#L505](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L505)).
+   The balance-invariant fraud proof passes the dispute's latest state here
+   ([DisputeFraudProofFacet](./DisputeFraudProofFacet.sol.md) decision 7), final or not. Whether that state can
+   still be older than a recorded on-chain exit is the open audit question of
+   [`FIND-BALANCE-1-S6SP4N`](../../../../../audit/open-findings.md#find-balance-1-s6sp4n).
+7. **The output-state builder is internal.** `_generateDisputeOutputState` ([#L383](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L383))
+   applies slashes, removals and inbound messages without checks; only `computeDisputeOutputSnapshotData`,
+   `computeDisputeOutputState` and the reduction call it, so it has no selector and no route.
+8. **The output computation loads the state once.** `_generateDisputeOutputState` calls the state
+   machine's `setState` once ([#L394](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L394)),
+   applies inbound messages, slashes and removals to the loaded state, and reads the output state and
+   its participants once ([#L408-L409](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L408-L409)).
+   `computeDisputeOutputSnapshotData` and `reduceOutputToSnapshotData` take the participants from that
+   read. Why: one `setState` of a large application state costs most of the dispute-execution budget
+   (about 9M gas for an 18KB poker state against a 10M budget), so the earlier four loads and three
+   reads per output did not fit. The result is unchanged because `_setState` and `getState` are exact
+   inverses ([`INV-CON-5-T1B2EG`](../../../../views/architecture/contracts/state-machine-base.md#inv-con-5-t1b2eg)). The former
+   auditing-data commitment helper is deleted; [StateProofFacet](./StateProofFacet.sol.md) `verifyStateProof`
+   owns that hash check. The debug console logging is removed from this facet.
 
 ## Inputs, outputs, state, and side effects
 
@@ -80,7 +108,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-See conformance rows.
+See conformance rows. The balance-invariant check of decision 6 stays under audit ([`FIND-BALANCE-1-S6SP4N`](../../../../../audit/open-findings.md#find-balance-1-s6sp4n)).
 
 ## Missing behavior
 
@@ -97,9 +125,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`INV-ENFDIS-1-1K65DT`](../../../../../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt) | Covered               | **Here:** commitment-exact positional matching + on-chain recompute + challenge-only replacement.                                                                                                                                                                                                                                                                                                                 | Kill-order perturbation of the committed set feeds [`OQ-4-JGDCNX`](../../../../../verification/open-questions.md#oq-4-jgdcnx) (order-independence unproven).                                                                                                            |
 | [`INV-DIS-7-9GGZSD`](../../../../../specification/disputes/disputes.md#inv-dis-7-9ggzsd)                | Covered               | **Here:** timeout applied only with an empty slash set.                                                                                                                                                                                                                                                                                                                                                           | None.                                                                                                                                                                                                                                                                   |
 | [`INV-DIS-8-1GY6Q5`](../../../../../specification/disputes/disputes.md#inv-dis-8-1gy6q5)                | Contradicts           | **Here:** min-height fold.                                                                                                                                                                                                                                                                                                                                                                                        | Empty-timeout struct (height 0) suppresses real timeouts. Slash-carrying case intended (slash precedence, decision 2026-08-14); slash-free case still cancels order-dependently — open per [`OQ-9-XR1MFS`](../../../../../specification/open-questions.md#oq-9-xr1mfs). |
-| [`REQ-SM-8-8CHSQ8`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)      | Covered               | **Here:** [\_applySlashesToStateMachine](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L653) and the removal fold append returned exits only on success and add their amounts once to withdrawals. **Other files:** AStateMachine records the exit in its separate buffer, which this consumer never reads.                                                             | Successful removal now records its exit through the same wrapper contract as slashing; hooks retain their balance semantics. The dispute consumer reads returned exits once.                                                                                            |
-| [`REQ-SM-10-JD8TSF`](../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)    | Covered               | **Here:** [\_applySlashesToStateMachine](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L653) owns its part of absent-target handling: application hooks return false and reduction emits exits only for successful changes. **Other files:** [MathStateMachine.sol.md](../examples/MathStateMachine/MathStateMachine.sol.md) supplies application membership semantics. | Absent and repeated targets leave state, balances, messages and withdrawals unchanged, including stale chain membership.                                                                                                                                                |
-| [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)                | Covered               | **Here:** [reduceAndFinalize admission](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L199) uses bounded chain eligibility. **Other files:** [StateChannelCommon](./StateChannelCommon.sol.md) owns the shared snapshot/eligible-join union and slash exclusion.                                                                                                        | None for admission; the reduction slash fold remains unbounded so late reducers reproduce the same result.                                                                                                                                                              |
+| [`REQ-SM-8-8CHSQ8`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)      | Covered               | **Here:** [\_applySlashesToStateMachine](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L590) and the removal fold append returned exits only on success and add their amounts once to withdrawals. **Other files:** AStateMachine records the exit in its separate buffer, which this consumer never reads.                                                             | Successful removal now records its exit through the same wrapper contract as slashing; hooks retain their balance semantics. The dispute consumer reads returned exits once.                                                                                            |
+| [`REQ-SM-10-JD8TSF`](../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)    | Covered               | **Here:** [\_applySlashesToStateMachine](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L590) owns its part of absent-target handling: application hooks return false and reduction emits exits only for successful changes. **Other files:** [MathStateMachine.sol.md](../examples/MathStateMachine/MathStateMachine.sol.md) supplies application membership semantics. | Absent and repeated targets leave state, balances, messages and withdrawals unchanged, including stale chain membership.                                                                                                                                                |
+| [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)                | Covered               | **Here:** [reduceAndFinalize admission](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L197) uses bounded chain eligibility. **Other files:** [StateChannelCommon](./StateChannelCommon.sol.md) owns the shared snapshot/eligible-join union and slash exclusion.                                                                                                        | None for admission; the reduction slash fold remains unbounded so late reducers reproduce the same result.                                                                                                                                                              |
 
 ## Component test obligations
 

@@ -2,15 +2,24 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
+import {
+    stageAnchoredSyncPayload,
+    withHeldFreshRequester
+} from "@test/fixtures/HistoricSyncStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ZeroHash } from "ethers";
+import { id, ZeroHash } from "ethers";
 
+/**
+ * The source holds a computed successor whose genesis is not installed and
+ * keeps its own fork behind it; the observer requests the source fork, the
+ * successor, or the latest state (no fork) and syncs to the successor.
+ */
 export async function assertComputedSuccessorSync(
     h: MathPeerTestHarness,
-    requestSuccessor: boolean
+    requested: "source" | "successor" | "latest"
 ): Promise<void> {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
     const source = h.getPeer(0);
@@ -48,17 +57,26 @@ export async function assertComputedSuccessorSync(
                 { forkId: successor }
             )
         ).to.equal(false);
+        // the source's own fork is behind the latest fork it derives
+        expect(await h.control(source).query.getForkId().request()).to.equal(
+            sourceForkId
+        );
         const accepted = await h.execOnHost(
             observer,
             async (sm, args) =>
                 sm.p2pManager.localRpc.spectateService.sync(
                     args.source,
                     sm.channelId,
-                    args.forkId
+                    args.forkId ?? undefined
                 ),
             {
                 source: source.address,
-                forkId: requestSuccessor ? successor : sourceForkId
+                forkId:
+                    requested === "successor"
+                        ? successor
+                        : requested === "source"
+                          ? sourceForkId
+                          : null
             }
         );
         expect(accepted).to.equal(true);
@@ -648,4 +666,469 @@ export async function applySyncPayloadServedBeforeAdoption(
     } finally {
         await stub.restoreRecordedSyncRejections().request();
     }
+}
+
+/**
+ * Peer 2 applies peer 0's payload for a disputed, not chain-final source fork
+ * twice, so its local `reduceAndFinalize` runs: first with that reduction
+ * failing at the executor connection, then with the window claiming a
+ * reduced fork its reduction does not produce (a revert). Returns the first
+ * apply's thrown message, the second verdict, the rejections after each and
+ * the responder blacklist after each.
+ */
+export async function applyDisputedSyncPayloadWithFailingReduction(
+    h: MathPeerTestHarness
+) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const source = h.getPeer(0);
+    const control = h.control(observer);
+    const response = await h.execOnHost(
+        observer,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: source.address, forkId: sourceForkId }
+    );
+    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
+        [sourceForkId]
+    );
+    const apply = (encodedSyncPayload: string) =>
+        h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            { source: source.address, forkId: sourceForkId, encodedSyncPayload }
+        );
+    const blacklisted = () =>
+        control.query.isBlacklisted(source.address).request();
+    await control.stub.recordSyncRejections().request();
+    try {
+        await control.stub.failNextLocalReduction().request();
+        const thrown = await apply(String(response.encodedSyncPayload)).then(
+            () => "",
+            (error: unknown) =>
+                error instanceof Error ? error.message : String(error)
+        );
+        const afterThrow = {
+            rejections: await control.stub
+                .restoreRecordedSyncRejections()
+                .request(),
+            blacklisted: await blacklisted()
+        };
+        await control.stub.recordSyncRejections().request();
+        payload.disputeWindows[0].reducedForkId = id(
+            "not the fork this reduction produces"
+        );
+        const accepted = await apply(
+            Codec.encode(payload, Type.SyncPayload) as string
+        );
+        return {
+            thrown,
+            afterThrow,
+            accepted,
+            afterRevert: {
+                rejections: await control.stub
+                    .restoreRecordedSyncRejections()
+                    .request(),
+                blacklisted: await blacklisted()
+            }
+        };
+    } finally {
+        await control.stub.restoreRecordedSyncRejections().request();
+    }
+}
+
+/**
+ * Peer 0 serves a payload for the disputed source fork and `forge` alters its
+ * one window. The reduction then lands on chain only (the chain snapshot
+ * stays on the source fork), so the window is chain-final but not adopted,
+ * and peer 2 applies the payload. Returns the verdict and the rejections.
+ */
+async function applyForgedChainFinalWindow(
+    h: MathPeerTestHarness,
+    forge: (
+        window: SyncPayload["disputeWindows"][number],
+        sourceForkId: ForkId
+    ) => Promise<void>
+): Promise<{ accepted: boolean; rejections: string[] }> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const source = h.getPeer(0);
+    const response = await h.execOnHost(
+        observer,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: source.address, forkId: sourceForkId }
+    );
+    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
+        [sourceForkId]
+    );
+    await forge(payload.disputeWindows[0], sourceForkId);
+
+    expect(
+        await h.scenario.finalizeReductionOnChainOnly(1, sourceForkId)
+    ).to.equal(true);
+    expect(
+        StateSnapshot.from(await h.channelManager.getStateSnapshot(h.channelId))
+            .forkID
+    ).to.equal(sourceForkId);
+
+    const stub = h.control(observer).stub;
+    await stub.recordSyncRejections().request();
+    try {
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                forkId: sourceForkId,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+        return {
+            accepted,
+            rejections: await stub.restoreRecordedSyncRejections().request()
+        };
+    } finally {
+        await stub.restoreRecordedSyncRejections().request();
+    }
+}
+
+/**
+ * A chain-final, not adopted window (see `applyForgedChainFinalWindow`) whose
+ * reduction-input inbound list gets a forged successor of its last block.
+ * Returns the verdict, the rejections, the forged block's hash and the
+ * reduced fork.
+ */
+export async function applyChainFinalWindowWithForgedInbound(
+    h: MathPeerTestHarness
+): Promise<{
+    accepted: boolean;
+    rejections: string[];
+    forgedHash: string;
+    reducedForkId: ForkId;
+}> {
+    let forgedHash = "";
+    let reducedForkId = "" as ForkId;
+    const outcome = await applyForgedChainFinalWindow(h, async (window) => {
+        const last = window.inboundMessageBlocksAppliedInReduce.at(-1);
+        const snapshotData = window.latestStateSnapshot.snapshotData;
+        const forged = {
+            previousBlockHash: last
+                ? hash(Codec.encode(last, Type.MessageBlock))
+                : String(snapshotData.latestInboundMessageBlockHash),
+            blockHeight:
+                BigInt(
+                    last?.blockHeight ??
+                        snapshotData.latestInboundMessageBlockHeight
+                ) + 1n,
+            messages: [],
+            totalBalance: snapshotData.totalDeposits,
+            timestamp: BigInt(window.latestStateSnapshot.timestamp)
+        };
+        window.inboundMessageBlocksAppliedInReduce.push(forged);
+        forgedHash = hash(Codec.encode(forged, Type.MessageBlock));
+        reducedForkId = window.reducedForkId as ForkId;
+    });
+    return { ...outcome, forgedHash, reducedForkId };
+}
+
+/**
+ * A chain-final, not adopted window (see `applyForgedChainFinalWindow`) whose
+ * reduction-input snapshot is replaced by the source fork's real genesis with
+ * a later timestamp: same snapshot data, so it still claims to be that fork's
+ * genesis. Returns the verdict, the rejections, the real and forged genesis
+ * hashes and the genesis peer 2 stores for the source fork afterwards.
+ */
+export async function applyChainFinalWindowWithForgedGenesis(
+    h: MathPeerTestHarness
+): Promise<{
+    accepted: boolean;
+    rejections: string[];
+    realGenesisHash: string;
+    forgedGenesisHash: string;
+    storedGenesisHash: string | null;
+}> {
+    // peers exist once the staging inside the apply starts
+    const query = () => h.control(h.getPeer(2)).query;
+    let realGenesisHash = "";
+    let forgedGenesisHash = "";
+    let sourceForkId = "" as ForkId;
+    const outcome = await applyForgedChainFinalWindow(
+        h,
+        async (window, forkId) => {
+            sourceForkId = forkId;
+            realGenesisHash = String(
+                await query().getGenesisSnapshotHash(forkId).request()
+            );
+            const stored = await query()
+                .getStateSnapshotStructByHash(realGenesisHash)
+                .request();
+            const real = StateSnapshot.from(
+                Codec.decode(stored!.encodedSnapshot, Type.StateSnapshot)
+            );
+            const encodedState = await query()
+                .getStateMachineState(real.stateMachineStateHash)
+                .request();
+            const forged = StateSnapshot.from({
+                ...real.toStruct(),
+                timestamp: BigInt(real.timestamp) + 1n
+            });
+            expect(forged.isGenesis).to.equal(true);
+            forgedGenesisHash = String(forged.hash);
+            window.latestStateSnapshot = forged.toStruct();
+            window.latestEncodedStateMachineState = encodedState!;
+        }
+    );
+    const storedGenesisHash = await query()
+        .getGenesisSnapshotHash(sourceForkId)
+        .request();
+    return {
+        ...outcome,
+        realGenesisHash,
+        forgedGenesisHash,
+        storedGenesisHash: storedGenesisHash && String(storedGenesisHash)
+    };
+}
+
+/**
+ * `requester` asks `responder` for the latest state (no fork), then syncs
+ * from it. Returns the error reply ("" when served) and the sync verdict.
+ */
+export async function requestLatestFrom(
+    h: MathPeerTestHarness,
+    requester: ReturnType<MathPeerTestHarness["getPeer"]>,
+    responder: string
+): Promise<{ refusal: string; synced: boolean }> {
+    return await h.execOnHost(
+        requester,
+        async (sm, { source }) => {
+            let refusal = "";
+            try {
+                await sm.p2pManager.remoteRpc.spectateService
+                    .onSpectateRequest({ channelId: sm.channelId })
+                    .request(source);
+            } catch (error) {
+                refusal =
+                    error instanceof Error ? error.message : String(error);
+            }
+            const synced = await sm.p2pManager.localRpc.spectateService.sync(
+                source,
+                sm.channelId
+            );
+            return { refusal, synced };
+        },
+        { source: responder },
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
+}
+
+/**
+ * Peer 0 builds its payload at each malformed requested height, then at its
+ * valid latest height. Returns per height whether a payload came back.
+ */
+export async function generateAtMalformedHeights(h: MathPeerTestHarness) {
+    return await h.execOnHost(h.getPeer(0), async (sm) => {
+        const service = sm.p2pManager.localRpc.spectateService;
+        const servedAt = async (height: number) =>
+            (await service.generateSyncPayload(
+                sm.channelId,
+                sm.forkId,
+                height
+            )) !== undefined;
+        return {
+            negative: await servedAt(-1),
+            fractional: await servedAt(1.5),
+            unsafe: await servedAt(Number.MAX_SAFE_INTEGER + 1),
+            notANumber: await servedAt(Number.NaN),
+            latest: await servedAt(
+                sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1
+            )
+        };
+    });
+}
+
+/**
+ * The chain anchor sits above the fork genesis; a held fresh spectator has
+ * no installed state. Participant 1 asks it for the latest state. Returns the
+ * error reply, the requester's verdict and whether the spectator blacklisted
+ * the requester.
+ */
+export async function requestLatestFromUninstalledResponder(
+    h: MathPeerTestHarness
+) {
+    const { forkId } = await stageAnchoredSyncPayload(h);
+    const requester = h.getPeer(1);
+    return await withHeldFreshRequester(h, async (responder) => {
+        const { refusal, synced } = await requestLatestFrom(
+            h,
+            requester,
+            responder.address
+        );
+        return {
+            forkId: String(forkId),
+            refusal,
+            synced,
+            requesterBlacklisted: await h
+                .control(responder)
+                .query.isBlacklisted(requester.address)
+                .request()
+        };
+    });
+}
+
+/**
+ * Participant 0 asks participant 1, whose answer is held, for its exact
+ * block. Returns the verdict once the round-trip bound passed, the strikes
+ * and blacklist on the responder, and the requester's status.
+ */
+export async function participantSyncOutlivesRoundTrip(h: MathPeerTestHarness) {
+    await h.lifecycle.start(2, 2);
+    const requester = h.getPeer(0);
+    const responder = h.getPeer(1);
+    const release = await h.rpcStub.holdSpectateResponses(responder.index);
+    try {
+        const synced = await h.execOnHost(
+            requester,
+            async (sm, a) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    a.source,
+                    sm.channelId,
+                    sm.forkId,
+                    0
+                ),
+            { source: responder.address },
+            { timeoutMs: h.event.hostExecTimeoutMs() }
+        );
+        const query = h.control(requester).query;
+        return {
+            synced,
+            strikes: await query.getStrikes(responder.address).request(),
+            blacklisted: await query.isBlacklisted(responder.address).request(),
+            status: await query.getStatus().request()
+        };
+    } finally {
+        await release();
+    }
+}
+
+/**
+ * A spectator synced at blocks 0-1 whose block work and own sync application
+ * are then held, so its stored head stays behind while the participants
+ * author three more final blocks and peer 0 posts their snapshot. Its local
+ * diamond applies that snapshot, so its proof start is above its head.
+ * Participant 1 then asks it for the latest state. Returns the spectator's
+ * head, the posted height, the refusal, and whether the spectator cut
+ * participant 1.
+ */
+export async function requestLatestFromStaleSpectator(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 2);
+    const spectator = await h.join.addSpectatorWait();
+    const work = await h.rpcStub.holdBlockWork(spectator.index, "queueDequeue");
+    const sync = await h.rpcStub.holdSpectateSyncApplication(spectator.index);
+    try {
+        await h.transition.advanceState({
+            count: 3,
+            waitForFinalization: true,
+            waitForPeers: [0, 1, 2]
+        });
+        const forkId = String(h.activeForkId!);
+        const posted = await h.transition.postSnapshotWait({
+            peerIndex: 0,
+            forkId
+        });
+        const query = h.control(h.getPeer(spectator.index)).query;
+        const spectatorHead = await query
+            .getLatestBlockHeight(forkId)
+            .request();
+        const requester = h.getPeer(1);
+        const { refusal } = await requestLatestFrom(
+            h,
+            requester,
+            h.getPeer(spectator.index).address
+        );
+        return {
+            spectatorHead: spectatorHead ?? -1,
+            postedHeight: posted!.blockHeight,
+            refusal,
+            requesterBlacklisted: await query
+                .isBlacklisted(requester.address)
+                .request()
+        };
+    } finally {
+        await sync.release();
+        await work.release();
+    }
+}
+
+/**
+ * The reduction of a disputed fork lands on chain only, so its window is
+ * chain-final; a fresh spectator then syncs through it and stores none of
+ * the window's reduction input. Participant 0 asks the spectator twice for
+ * the latest state. Returns both error replies ("" when served), whether the
+ * spectator blacklisted the requester, and the spectator's status after.
+ */
+export async function requestLatestFromChainFinalSpectator(
+    h: MathPeerTestHarness
+) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    expect(
+        await h.scenario.finalizeReductionOnChainOnly(1, sourceForkId)
+    ).to.equal(true);
+    const spectator = await h.join.addSpectatorWait();
+    const requester = h.getPeer(0);
+    const ask = async () =>
+        await h.execOnHost(
+            requester,
+            async (sm, { source }) => {
+                try {
+                    await sm.p2pManager.remoteRpc.spectateService
+                        .onSpectateRequest({ channelId: sm.channelId })
+                        .request(source);
+                    return "";
+                } catch (error) {
+                    return error instanceof Error
+                        ? error.message
+                        : String(error);
+                }
+            },
+            { source: spectator.address },
+            { timeoutMs: h.event.hostExecTimeoutMs() }
+        );
+    const firstRefusal = await ask();
+    const secondRefusal = await ask();
+    const query = h.control(h.getPeer(spectator.index)).query;
+    return {
+        sourceForkId: String(sourceForkId),
+        firstRefusal,
+        secondRefusal,
+        requesterBlacklisted: await query
+            .isBlacklisted(requester.address)
+            .request(),
+        spectatorStatus: await query.getStatus().request()
+    };
 }

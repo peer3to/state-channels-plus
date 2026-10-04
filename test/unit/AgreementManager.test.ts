@@ -1,7 +1,34 @@
-import { hash as randomHash, randomAddress } from "../factory";
+import {
+    buildAndEncodeBlock,
+    hash as randomHash,
+    randomAddress
+} from "../factory";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import { Status } from "@/types";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import {
+    heldGenesisPendingAuditor,
+    postedForgedSingleton,
+    stageExitAnchoredFork
+} from "@test/fixtures/DisputeAuditStaging";
+import {
+    authorOnlyConfirmation,
+    buildOwnProof,
+    chainSnapshot,
+    committedSnapshotHash,
+    constructProof,
+    deleteStoredBlocks,
+    describeOnPeer,
+    forgedGenesisRun,
+    genesisSnapshotHash,
+    postSnapshotAt,
+    replaceWithUnlinkedBlock,
+    restoreStoredBlocks,
+    stageLeftChannel,
+    stageUnsignedGenesisTip,
+    verifyOnPeer
+} from "@test/fixtures/StateProofConstructionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -139,7 +166,7 @@ describe("Unit: AgreementManager", function () {
         });
     });
 
-    describe("getStateProof / tryGetStateProof", function () {
+    describe("buildStateProof", function () {
         // no test: sync requests can't deliver a bad height - it's range-
         // checked in SpectateService.generateSyncPayload, and the block
         // iterator clamps anyway. forkId is covered by "unknown fork" below.
@@ -149,194 +176,36 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
 
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!)
-                .request();
+            const v = await constructProof(h, 0);
 
-            // provable finality -> milestone carrier, no signedBlock fallback
-            expect(v).to.not.be.null;
-            expect(v!.milestoneCount).to.equal(1);
-            expect(v!.signedBlockCount).to.equal(0);
-            expect(v!.latestProofHeight).to.equal(v!.blockHeight);
-            // on-chain verifier accepts the proof
-            expect(v!.verified).to.equal(true);
-            expect(v!.isFinal).to.equal(true);
-            expect(v!.onChainFinalizedSnapshotHash).to.equal(
-                v!.finalizedSnapshotHash
+            // the tip carries its own threshold signatures: no tail
+            expect(v.milestones).to.deep.equal([[2]]);
+            expect(v.latestProofHeight).to.equal(v.requestedHeight);
+            expect(v.latestSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 2)
+            );
+            // the on-chain verifier accepts the proof, final at its last point
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                v.milestoneSnapshotHashes[0]
             );
         });
 
-        it("latest block missing a signature → signedBlocks fallback, linkage verified on-chain", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-
-            await h.network.blacklistAndDisconnectPeer(2);
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1]
-            });
-
-            const forkId = h.activeForkId!;
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(forkId)
-                .request();
-            const everyoneSignedLatest = await h
-                .control(h.getPeer(0))
-                .query.didEveryoneSignBlockAt(forkId, v!.blockHeight)
-                .request();
-
-            expect(everyoneSignedLatest).to.equal(false);
-            // no provable finality -> signedBlocks fallback
-            expect(v!.milestoneCount).to.equal(0);
-            expect(v!.signedBlockCount).to.be.greaterThan(0);
-            expect(v!.latestProofHeight).to.equal(v!.blockHeight);
-            // fallback chain satisfies the on-chain linkage verifier
-            expect(v!.verified).to.equal(true);
-            // with no milestone the finalized snapshot stays genesis
-            expect(v!.finalizedSnapshotHash).to.equal(v!.genesisSnapshotHash);
-        });
-
-        it("unknown fork → getStateProof throws 'Fork not found', tryGetStateProof → undefined", async function () {
+        it("unknown fork → buildStateProof throws 'Fork not found'", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
 
-            const bogusForkId = randomHash();
-
-            // try variant -> null
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(bogusForkId)
-                .request();
-            expect(v).to.be.null;
-
-            // throwing variant -> throws
-            const r = await h.execOnHost(
+            const error = await h.execOnHost(
                 h.getPeer(0),
-                async (sm, args) => {
-                    let thrownMessage = "";
-                    try {
-                        await sm.agreementManager.getStateProof(
-                            args.bogusForkId,
-                            0
-                        );
-                    } catch (e) {
-                        thrownMessage =
-                            e instanceof Error ? e.message : String(e);
-                    }
-                    return { thrownMessage };
-                },
-                { bogusForkId }
+                (sm, args) =>
+                    sm.agreementManager.buildStateProof(args.forkId, 0).then(
+                        () => "",
+                        (e: unknown) => String(e)
+                    ),
+                { forkId: randomHash() as ForkId }
             );
-            expect(r.thrownMessage).to.match(/Fork not found/);
-        });
 
-        it("proof requested below a participant leave → tops out at the requested height", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
-
-            const forkId = h.activeForkId!;
-            const requestedHeight = 1; // warmup blocks 0..1, before any leave
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(forkId, requestedHeight)
-                .request();
-
-            expect(v!.blockHeight).to.equal(requestedHeight);
-            expect(v!.latestProofHeight).to.equal(requestedHeight);
-            // latestProofHeight only reads the LAST milestone, so it cannot see
-            // a change-point milestone above the request - the leaves sit above
-            // this height and must not be proven at all
-            expect(
-                v!.milestoneConfirmationHeights
-                    .flat()
-                    .every((height) => height <= requestedHeight),
-                "no milestone may reach a block above the requested height"
-            ).to.equal(true);
-        });
-
-        it("proof requested below a participant join → tops out at the requested height", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 0);
-
-            // a spectator joins -> the set grows to 3 at block 2
-            const { peer: spectator } = await h.join.addSpectatorAuthoring({
-                authoringPeerIndices: [0, 1],
-                minimumBlocks: 2,
-                maximumBlocks: 20
-            });
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
-
-            await h.join.joinChannelWait({ joiner: spectator });
-            await h.assert.storage.honestPeersObserveInboundMessageWait();
-
-            // block 2 includes the joiner; two more so the join is provably final
-            await h.transition.advanceState({
-                count: 3,
-                waitForPeers: [0, 1, 2]
-            });
-
-            const forkId = h.activeForkId!;
-            const requestedHeight = 1; // below the join at height 2
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(forkId, requestedHeight)
-                .request();
-
-            expect(v!.blockHeight).to.equal(requestedHeight);
-            expect(v!.latestProofHeight).to.equal(requestedHeight);
-            // latestProofHeight only reads the LAST milestone, so it cannot see
-            // a change-point milestone above the request - the join sits above
-            // this height and must not be proven at all
-            expect(
-                v!.milestoneConfirmationHeights
-                    .flat()
-                    .every((height) => height <= requestedHeight),
-                "no milestone may reach a block above the requested height"
-            ).to.equal(true);
-        });
-
-        it("proof requested at a fully-confirmed leave-block height → reports that height, nothing above", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
-            await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 3] });
-
-            const forkId = h.activeForkId!;
-
-            // the leave's own block height - later confirming blocks exist
-            // above it from the scenario's follow-up advanceState calls
-            const changeHeights = await h
-                .control(h.getPeer(0))
-                .query.getParticipantChangeHeights(forkId)
-                .request();
-            const requestedHeight = changeHeights[0];
-
-            const q0 = h.control(h.getPeer(0)).query;
-            const v = await q0
-                .getStateProofVerification(forkId, requestedHeight)
-                .request();
-
-            expect(
-                await q0
-                    .didEveryoneSignBlockAt(forkId, requestedHeight)
-                    .request(),
-                "the leave block must be fully confirmed in this scenario"
-            ).to.equal(true);
-
-            expect(v!.blockHeight).to.equal(requestedHeight);
-            expect(v!.latestProofHeight).to.equal(requestedHeight);
-            const allConfirmationHeights =
-                v!.milestoneConfirmationHeights.flat();
-            expect(
-                allConfirmationHeights.every(
-                    (height) => height <= requestedHeight
-                )
-            ).to.equal(true);
-            expect(v!.verified).to.equal(true);
+            expect(error).to.match(/Fork not found/);
         });
 
         it("proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height", async function () {
@@ -440,21 +309,14 @@ describe("Unit: AgreementManager", function () {
                 "the join block must stay partially confirmed"
             ).to.equal(false);
 
-            const v = await q0
-                .getStateProofVerification(forkId, requestedHeight)
-                .request();
+            const v = await constructProof(h, 0, requestedHeight);
 
-            expect(v!.blockHeight).to.equal(requestedHeight);
-            expect(v!.latestProofHeight).to.equal(requestedHeight);
-            const allConfirmationHeights =
-                v!.milestoneConfirmationHeights.flat();
+            expect(v.latestProofHeight).to.equal(requestedHeight);
             expect(
-                allConfirmationHeights.every(
-                    (height) => height <= requestedHeight
-                )
+                v.milestones.flat().every((height) => height <= requestedHeight)
             ).to.equal(true);
             // and the bounded proof still satisfies the on-chain verifier
-            expect(v!.verified).to.equal(true);
+            expect(v.chainValid).to.equal(true);
         });
 
         it("proofs sampled while 10 blocks are produced → each verifies on-chain at its sampled height", async function () {
@@ -465,7 +327,6 @@ describe("Unit: AgreementManager", function () {
             // on peer 0 while we sample, so each sample catches storage in
             // whatever half-signed state it is in at that moment. a single
             // assembly is atomic (sync walk) - the variety is across samples.
-            const forkId = h.activeForkId!;
             const blockCount = 10;
             const failures: string[] = [];
             const heightsSeen = new Set<BlockHeight>();
@@ -473,24 +334,20 @@ describe("Unit: AgreementManager", function () {
             // assembles + on-chain-verifies in one host call
             const sample = async () => {
                 try {
-                    const v = await h
-                        .control(h.getPeer(0))
-                        .query.getStateProofVerification(forkId)
-                        .request();
-                    if (!v) return;
-                    heightsSeen.add(v.blockHeight);
-                    if (v.latestProofHeight !== v.blockHeight) {
+                    const v = await constructProof(h, 0);
+                    heightsSeen.add(v.requestedHeight);
+                    if (v.latestProofHeight !== v.requestedHeight) {
                         failures.push(
-                            `sampled at height ${v.blockHeight} but the proof tops out at ${v.latestProofHeight}`
+                            `sampled at height ${v.requestedHeight} but the proof tops out at ${v.latestProofHeight}`
                         );
-                    } else if (!v.verified) {
+                    } else if (!v.chainValid) {
                         failures.push(
-                            `proof at height ${v.blockHeight} failed the on-chain verifier`
+                            `proof at height ${v.requestedHeight} failed the on-chain verifier`
                         );
                     }
                 } catch (e) {
                     failures.push(
-                        `getStateProof threw: ${e instanceof Error ? e.message : String(e)}`
+                        `constructProof threw: ${e instanceof Error ? e.message : String(e)}`
                     );
                 }
             };
@@ -521,188 +378,359 @@ describe("Unit: AgreementManager", function () {
         });
     });
 
+    describe("buildStateProof: compact construction from the start", function () {
+        it("start 5 permits threshold point 10 without gap blocks", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 6);
+            await postSnapshotAt(h, 0, 5);
+            await h.transition.advanceState({ count: 5 });
+            await h.assert.sync.peersInSyncWait();
+            // the unchanged-set gap is not needed
+            await deleteStoredBlocks(h, 0, [6, 7, 8, 9]);
+
+            const v = await constructProof(h, 0);
+
+            expect(v.startHeight).to.equal(5);
+            expect(v.milestones).to.deep.equal([[10]]);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 10)
+            );
+        });
+
+        it("long unchanged membership builds only milestone 98 through 100", async function () {
+            const h = TestSession.getHarness();
+            // blocks 0..101: block 101 is fully signed on every peer, so the
+            // confirmations of block 100 have merged before the strip
+            await h.lifecycle.start(3, 102);
+            // a relayed duplicate confirmation would merge the stripped
+            // signatures back
+            const restoreConfirmations =
+                await h.rpcStub.dropNetworkConfirmations(0);
+            // blocks 98..100 carry only their authors: together they reach
+            // the threshold; nothing below them is needed
+            await deleteStoredBlocks(h, 0, [98, 99, 100], true);
+            await deleteStoredBlocks(
+                h,
+                0,
+                [...Array(98).keys()] // 0..97
+            );
+
+            const v = await constructProof(h, 0, 100);
+            await restoreConfirmations();
+
+            expect(v.startHeight).to.equal(0);
+            expect(v.milestones).to.deep.equal([[98, 99, 100]]);
+            expect(v.latestProofHeight).to.equal(100);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 98)
+            );
+        });
+
+        it("no threshold point retains needed anchor run", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 6, {
+                timeConfig: { chainFallbackTime: 60 }
+            });
+            const start = await postSnapshotAt(h, 0, 5);
+            // blocks 6 and 7 never reach the threshold
+            await h.network.blacklistAndDisconnectPeer(2);
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+
+            const v = await constructProof(h, 0);
+
+            // one run from the block committing the start to the tip
+            expect(v.milestones).to.deep.equal([[5, 6, 7]]);
+            expect(v.chainValid).to.equal(true);
+            // the normal start is the final point; the tail follows it
+            expect(v.finalizedSnapshotHash).to.equal(start.hash);
+            expect(v.replayBlockIndex).to.equal(1);
+        });
+
+        it("unsigned genesis tip builds unfinal run", async function () {
+            const h = TestSession.getHarness();
+            await stageUnsignedGenesisTip(h, 3, 2);
+
+            const v = await constructProof(h, 0);
+
+            // the only milestone: block 0 unfinal, replayed from block 0
+            expect(v.milestones).to.deep.equal([[0, 1]]);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(v.genesisSnapshotHash);
+            expect(v.replayBlockIndex).to.equal(0);
+            // the latest snapshot follows the unfinal tip, not the genesis
+            expect(v.latestSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 1)
+            );
+        });
+
+        it("mirror missed exit builds valid genesis proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const prover = h.control(h.getPeer(1));
+            await prover.stub.stubHoldSnapshotUpdatedEvents().request();
+            await h.transition.participantLeaveStateTransition({
+                leaverIndex: 2
+            });
+            await h.transition.keepAuthoringUntilPeersStatus({
+                peerIndices: [2],
+                status: Status.SYNCED,
+                waitForPeers: [0, 1],
+                excludePeerIndices: [2]
+            });
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            // dropped, not replayed: the prover's mirror stays at the genesis
+            await prover.stub.restoreSnapshotUpdatedEvents(false).request();
+            expect((await chainSnapshot(h)).blockHeight).to.be.greaterThan(0);
+
+            const v = await constructProof(h, 1);
+
+            // built from the prover's genesis view; the chain walks it from the
+            // exit snapshot and accepts it
+            expect(v.startHeight).to.equal(0);
+            expect(v.finalizedSnapshotHash).to.not.equal(null);
+            expect(v.chainValid).to.equal(true);
+        });
+    });
+
+    describe("buildStateProof: overlapping runs and tails", function () {
+        it("fully signed change-point tip permits repeated starts", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight, remaining } = await stageLeftChannel(h);
+
+            const v = await constructProof(h, remaining[0], changeHeight);
+
+            // the change milestone and the latest milestone share their start
+            expect(v.milestones).to.deep.equal([
+                [changeHeight],
+                [changeHeight]
+            ]);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                v.milestoneSnapshotHashes[1]
+            );
+        });
+
+        it("virtual-vote runs overlap across changes", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight: c, remaining } = await stageLeftChannel(h);
+            const prover = remaining[0];
+            // the leave block and the tip carry only their authors; the block
+            // in between carries every signature
+            await deleteStoredBlocks(h, prover, [c, c + 2], true);
+
+            const v = await constructProof(h, prover, c + 2);
+
+            expect(v.milestones).to.deep.equal([
+                [c, c + 1],
+                [c + 1, c + 2]
+            ]);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, prover, c + 1)
+            );
+        });
+
+        it("one-block tail reaches requested tip", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3, {
+                timeConfig: { chainFallbackTime: 60 }
+            });
+            await h.network.blacklistAndDisconnectPeer(2);
+            await h.transition.advanceState({ count: 1, waitForPeers: [0, 1] });
+
+            const v = await constructProof(h, 0);
+
+            expect(v.milestones).to.deep.equal([[2, 3]]);
+            expect(v.chainValid).to.equal(true);
+            expect(v.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 2)
+            );
+            expect(v.replayBlockIndex).to.equal(1);
+        });
+    });
+
+    describe("buildStateProof: required history", function () {
+        it("missing participant-change block throws", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight, remaining } = await stageLeftChannel(h);
+            await deleteStoredBlocks(h, remaining[0], [changeHeight]);
+
+            const error = await constructProof(h, remaining[0]).then(
+                () => "",
+                String
+            );
+
+            expect(error).to.match(
+                /missing the participant-change block at height 2/
+            );
+        });
+
+        it("missing interior required run block throws", async function () {
+            const h = TestSession.getHarness();
+            await stageUnsignedGenesisTip(h, 4, 3);
+            await deleteStoredBlocks(h, 0, [1]);
+
+            const error = await constructProof(h, 0, 2).then(() => "", String);
+
+            expect(error).to.match(/missing the required block at height 1/);
+        });
+
+        it("missing final requested block throws", async function () {
+            const h = TestSession.getHarness();
+            await stageUnsignedGenesisTip(h, 4, 3);
+            await deleteStoredBlocks(h, 0, [2]);
+
+            const error = await constructProof(h, 0, 2).then(() => "", String);
+
+            expect(error).to.match(/missing the required block at height 2/);
+        });
+
+        it("repairing required history restores construction", async function () {
+            const h = TestSession.getHarness();
+            const { changeHeight, remaining } = await stageLeftChannel(h);
+            const prover = remaining[0];
+            const built = await constructProof(h, prover);
+            const removed = await deleteStoredBlocks(h, prover, [changeHeight]);
+            const error = await constructProof(h, prover).then(
+                () => "",
+                String
+            );
+            expect(error).to.match(
+                /missing the participant-change block at height 2/
+            );
+
+            await restoreStoredBlocks(h, prover, removed);
+            const repaired = await constructProof(h, prover);
+
+            // the explicit retry builds the same verified proof
+            expect(repaired).to.deep.equal(built);
+            expect(repaired.chainValid).to.equal(true);
+        });
+
+        it("wrong predecessor in required run throws", async function () {
+            const h = TestSession.getHarness();
+            await stageUnsignedGenesisTip(h, 4, 3);
+            await deleteStoredBlocks(h, 0, [1]);
+            // block 1 by its author, linked to nothing
+            await restoreStoredBlocks(h, 0, [
+                {
+                    height: 1,
+                    encodedConfirmation: await buildAndEncodeBlock(
+                        h.getPeer(1).signer,
+                        {
+                            header: {
+                                channelId: h.channelId,
+                                forkId: h.activeForkId!,
+                                transactionCnt: 1
+                            },
+                            previousBlockHash: randomHash()
+                        }
+                    )
+                }
+            ]);
+
+            const error = await constructProof(h, 0, 2).then(() => "", String);
+
+            expect(error).to.match(
+                /the block at height 1 does not link to its predecessor/
+            );
+        });
+
+        it("empty genesis minus one returns empty proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+
+            const v = await constructProof(h, 0, -1);
+
+            expect(v.milestones).to.deep.equal([]);
+            expect(v.latestProofHeight).to.equal(null);
+            expect(v.finalizedSnapshotHash).to.equal(v.genesisSnapshotHash);
+            expect(v.latestSnapshotHash).to.equal(v.genesisSnapshotHash);
+            expect(v.chainValid).to.equal(true);
+        });
+
+        it("non-genesis below-start request fails", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 6);
+            await postSnapshotAt(h, 0, 5);
+
+            const error = await constructProof(h, 0, 3).then(() => "", String);
+
+            expect(error).to.match(/below its start at height 5/);
+        });
+    });
+
     describe("getSnapshotFromMilestone", function () {
         // empty-milestone throw is unreachable - a hostile stateProof is gated
         // on-chain first
         it.skip("empty milestone throws", function () {});
 
         // two participant leaves -> a change point per leave -> >=2 milestones.
-        it("multi-milestone proof → snapshot per milestone tracks its first block; finalized + latest select the LAST", async function () {
+        it("multi-milestone proof → one milestone per change point above its anchor plus the latest; finalized + latest select the LAST", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            // the exits' change points lie below their snapshots; the joins
+            // put two change points above the start
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                joinersAboveAnchor: 2
+            });
+            const forkId = h.activeForkId!;
 
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!)
-                .request();
+            const v = await constructProof(h, 0);
+            const changeHeightsAboveStart = (
+                await h
+                    .control(h.getPeer(0))
+                    .query.getParticipantChangeHeights(forkId)
+                    .request()
+            ).filter(
+                (height) =>
+                    height > v.startHeight && height <= v.requestedHeight
+            );
 
-            // 2 leaves = 2 change-point milestones + the latest milestone = 3
-            expect(v!.milestoneCount).to.equal(3);
+            // a change-point milestone per change above the start + the
+            // latest milestone
+            expect(v.startHeight).to.be.greaterThan(0);
+            expect(changeHeightsAboveStart).to.have.length.of.at.least(2);
+            expect(v.milestones).to.have.length(
+                changeHeightsAboveStart.length + 1
+            );
+            // each change milestone starts at its change height
+            expect(v.milestones.slice(0, -1).map((m) => m[0])).to.deep.equal(
+                changeHeightsAboveStart
+            );
             // getSnapshotFromMilestone reads the milestone's FIRST confirmation,
             // so milestones sharing a first block share a snapshot. the latest
             // milestone reaches back to the last change-point block whenever the
             // head isn't threshold-signed on its own -> distinct snapshots track
             // distinct first blocks, not the milestone count.
-            const firstBlocks = v!.milestoneConfirmationHeights.map(
-                (h) => h[0]
-            );
-            expect(new Set(v!.milestoneSnapshotHashes).size).to.equal(
+            const firstBlocks = v.milestones.map((m) => m[0]);
+            expect(new Set(v.milestoneSnapshotHashes).size).to.equal(
                 new Set(firstBlocks).size
             );
-            // getLatestFinalizedSnapshot reads the LAST milestone's first block
-            expect(v!.finalizedSnapshotHash).to.equal(
-                v!.milestoneSnapshotHashes.at(-1)
+            // the walk's finalized state is the LAST milestone's first block
+            expect(v.finalizedSnapshotHash).to.equal(
+                v.milestoneSnapshotHashes.at(-1)
             );
             // getLatestBlockFromStateProof returns the LAST milestone's last
             // (highest) block
-            const highest = Math.max(...v!.milestoneConfirmationHeights.flat());
-            expect(v!.latestProofHeight).to.equal(highest);
-            expect(v!.latestProofHeight).to.equal(
-                v!.milestoneConfirmationHeights.at(-1)!.at(-1)
-            );
+            const highest = Math.max(...v.milestones.flat());
+            expect(v.latestProofHeight).to.equal(highest);
+            expect(v.latestProofHeight).to.equal(v.milestones.at(-1)!.at(-1));
             // and the assembled proof still verifies on-chain
-            expect(v!.verified).to.equal(true);
-        });
-    });
-
-    describe("getLatestFinalizedSnapshot", function () {
-        it("no milestone (empty proof) → genesis", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0); // no blocks -> no milestone
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!, 0)
-                .request();
-
-            expect(v!.finalizedSnapshotHash).to.equal(v!.genesisSnapshotHash);
-        });
-
-        it("signedBlocks proof (no provable finality) → stays genesis", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-
-            // peer 2 disconnected before any block -> nothing ever finalizes
-            await h.network.blacklistAndDisconnectPeer(2);
-            await h.transition.advanceState({
-                count: 2, // blocks 0..1 land unfinalized
-                waitForPeers: [0, 1]
-            });
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!)
-                .request();
-
-            // no milestone builds -> finalized never leaves genesis...
-            expect(v!.milestoneCount).to.equal(0);
-            expect(v!.finalizedSnapshotHash).to.equal(v!.genesisSnapshotHash);
-            // ...while the latest block has advanced (finalized and latest diverge maximally)
-            expect(v!.latestSnapshotHash).to.not.equal(v!.genesisSnapshotHash);
-            expect(v!.latestSnapshotHash).to.not.equal(
-                v!.finalizedSnapshotHash
-            );
-        });
-    });
-
-    describe("getLatestSnapshotFromStateProof", function () {
-        it("empty proof → genesis", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!, 0)
-                .request();
-
-            expect(v!.latestSnapshotHash).to.equal(v!.genesisSnapshotHash);
-        });
-
-        it("milestone carrier → the latest block's snapshot, not genesis", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2); // fully-signed -> milestone proof, latest = 1
-            const forkId = h.activeForkId!;
-
-            const [v, latestBundle] = await Promise.all([
-                h
-                    .control(h.getPeer(0))
-                    .query.getStateProofVerification(forkId)
-                    .request(),
-                h
-                    .control(h.getPeer(0))
-                    .query.getBlockByHeight(forkId, 1)
-                    .request()
-            ]);
-
-            expect(v!.milestoneCount).to.be.greaterThan(0);
-            expect(v!.latestSnapshotHash).to.equal(
-                latestBundle!.stateSnapshotHash
-            );
-            expect(v!.latestSnapshotHash).to.not.equal(v!.genesisSnapshotHash);
-        });
-
-        // carrier-independent: it follows the latest block on a signedBlocks
-        // proof too, where getLatestFinalizedSnapshot is still stuck at genesis
-        it("signedBlocks carrier → still the latest block's snapshot", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-
-            await h.network.blacklistAndDisconnectPeer(2); // no finality -> signedBlocks carrier
-            await h.transition.advanceState({
-                count: 2, // latest = block 1
-                waitForPeers: [0, 1]
-            });
-            const forkId = h.activeForkId!;
-
-            const [v, latestBundle] = await Promise.all([
-                h
-                    .control(h.getPeer(0))
-                    .query.getStateProofVerification(forkId)
-                    .request(),
-                h
-                    .control(h.getPeer(0))
-                    .query.getBlockByHeight(forkId, 1)
-                    .request()
-            ]);
-
-            expect(v!.milestoneCount).to.equal(0);
-            expect(v!.signedBlockCount).to.be.greaterThan(0);
-            expect(v!.latestSnapshotHash).to.equal(
-                latestBundle!.stateSnapshotHash
-            );
+            expect(v.chainValid).to.equal(true);
         });
     });
 
     describe("getLastBlockFromMilestone", function () {
-        // empty milestone → undefined is unreachable: getStateProof never builds
-        // a milestone with no confirmations, and a hostile proof is gated
+        // empty milestone → undefined is unreachable: buildStateProof never
+        // builds a milestone with no confirmations, and a hostile proof is gated
         it.skip("empty milestone → undefined", function () {});
 
         // no test: one-line accessor (blockConfirmations[-1]). its last-block
         // result feeds latestProofHeight, asserted by:
         //   "fully-signed latest block → milestones-only proof, verifyMilestones passes"
-        //   "multi-milestone proof → distinct snapshot per milestone; finalized + latest select the LAST"
-    });
-
-    describe("getLatestBlockFromStateProof", function () {
-        it("empty proof → null", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-
-            const v = await h
-                .control(h.getPeer(0))
-                .query.getStateProofVerification(h.activeForkId!, 0)
-                .request();
-
-            expect(v!.milestoneCount).to.equal(0);
-            expect(v!.signedBlockCount).to.equal(0);
-            expect(v!.latestProofHeight).to.be.null;
-        });
-
-        // no test for the non-empty carriers: latestProofHeight pins them in
-        //   "fully-signed latest block → milestones-only proof, verifyMilestones passes" (milestone)
-        //   "multi-milestone proof → distinct snapshot per milestone; finalized + latest select the LAST" (milestone)
-        //   "latest block missing a signature → signedBlocks fallback, linkage verified on-chain" (signedBlocks)
+        //   "multi-milestone proof → one milestone per change point above its anchor plus the latest; finalized + latest select the LAST"
     });
 
     describe("tryBuildMilestone (virtual voting)", function () {
@@ -799,26 +827,19 @@ describe("Unit: AgreementManager", function () {
             expect(s2).to.not.include(b);
             expect(await signersAt(3)).to.deep.equal([d]);
 
-            const [v, finalizedBundle, latestBundle] = await Promise.all([
-                qd.getStateProofVerification(forkId).request(),
-                qd.getBlockByHeight(forkId, 1).request(),
-                qd.getBlockByHeight(forkId, 3).request()
-            ]);
+            const v = await constructProof(h, 3);
 
             // walk from the latest block: [d] + [c] + [a,b] covers everyone at
-            // block 1 -> milestone [1..3]. b
-            expect(v!.milestoneCount).to.equal(1);
-            expect(v!.signedBlockCount).to.equal(0);
-            expect(v!.milestoneConfirmationHeights).to.deep.equal([[1, 2, 3]]);
+            // block 1 -> milestone [1..3]
+            expect(v.milestones).to.deep.equal([[1, 2, 3]]);
             // block 1 is finalized - final without ever being fully signed
-            expect(v!.onChainFinalizedSnapshotHash).to.equal(
-                finalizedBundle!.stateSnapshotHash
+            expect(v.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 3, 1)
             );
-            expect(v!.verified).to.equal(true);
-            expect(v!.isFinal).to.equal(true);
-            expect(v!.latestProofHeight).to.equal(3);
-            expect(v!.latestSnapshotHash).to.equal(
-                latestBundle!.stateSnapshotHash
+            expect(v.chainValid).to.equal(true);
+            expect(v.latestProofHeight).to.equal(3);
+            expect(v.latestSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 3, 3)
             );
         });
     });
@@ -932,30 +953,6 @@ describe("Unit: AgreementManager", function () {
                     }
                 );
 
-            it("unrecoverable reduce run → undefined, not a throw", async function () {
-                const h = TestSession.getHarness();
-                await h.setup(3);
-                await h.lifecycle.openChannel();
-                await h.transition.advanceState({
-                    count: 2,
-                    waitForFinalization: true
-                });
-                await h.assert.sync.peersInSyncWait();
-                const lagging = 2;
-                const held = await h.rpcStub.holdInboundMessageEvents(lagging);
-                const { forkId } =
-                    await h.scenario.stageCommittedDisputeOverInboundGap({
-                        laggingIndex: lagging
-                    });
-
-                const r = await readReduceData(h, lagging, forkId);
-
-                expect(r.disputeCount).to.be.greaterThan(0);
-                expect(r.threw).to.equal("");
-                expect(r.blockCount).to.equal(null);
-                await held.release({ replay: false });
-            });
-
             it("recoverable reduce run → the full applied run", async function () {
                 const h = TestSession.getHarness();
                 await h.setup(3);
@@ -1047,6 +1044,371 @@ describe("Unit: AgreementManager", function () {
             expect(r.reducedForkId).to.equal(ZeroHash);
             expect(r.resolvedStateHash).to.equal(r.genesisStateHash);
             expect(r.reduceForkId).to.equal(r.forkId);
+        });
+    });
+
+    describe("buildStateProof: runs, start and evidence", function () {
+        it("exit-anchored fork tip → start above 0, every milestone block at or above it, dispute verification passes on chain", async function () {
+            const h = TestSession.getHarness();
+            const { participants, anchorHeight } =
+                await stageExitAnchoredFork(h);
+
+            const v = await constructProof(h, participants[0]);
+
+            expect(v.startHeight).to.equal(anchorHeight);
+            expect(
+                v.milestones.flat().every((height) => height >= anchorHeight)
+            ).to.equal(true);
+            expect(v.chainValid).to.equal(true);
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(participants[0]);
+            expect(
+                await h.channelManager.verifyStateProof.staticCall(
+                    dispute,
+                    auditingData
+                )
+            ).to.equal(true);
+        });
+
+        it("stopAtThresholdCompletion ends at the latest threshold milestone; an unlinked block or a gap ends the run, so no milestone", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3, {
+                timeConfig: { chainFallbackTime: 60 }
+            });
+            // blocks 3 and 4 never reach the threshold
+            await h.network.blacklistAndDisconnectPeer(2);
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+
+            expect((await buildOwnProof(h, 0)).milestones).to.deep.equal([
+                [2, 3, 4]
+            ]);
+            const final = await buildOwnProof(h, 0, {
+                stopAtThresholdCompletion: true
+            });
+            expect(final.milestones).to.deep.equal([[2]]);
+            expect(final.finalizedSnapshotHash).to.equal(
+                await committedSnapshotHash(h, 0, 2)
+            );
+
+            // block 3 is not the block that block 4 links to
+            await replaceWithUnlinkedBlock(h, 0, 3);
+            expect(
+                (
+                    await buildOwnProof(h, 0, {
+                        blockHeight: 4,
+                        stopAtThresholdCompletion: true
+                    })
+                ).milestones
+            ).to.deep.equal([]);
+
+            // block 4's stored neighbor is block 2
+            await deleteStoredBlocks(h, 0, [3]);
+            expect(
+                (
+                    await buildOwnProof(h, 0, {
+                        blockHeight: 4,
+                        stopAtThresholdCompletion: true
+                    })
+                ).milestones
+            ).to.deep.equal([]);
+        });
+
+        it("milestone snapshot missing from storage → no finalized snapshot and no builder walk; all stored → the walk's finalized snapshot", async function () {
+            const h = TestSession.getHarness();
+            await stageUnsignedGenesisTip(h, 3, 2);
+            const stored = await buildOwnProof(h, 0);
+
+            expect(stored.milestones).to.deep.equal([[0, 1]]);
+            expect(stored.milestoneSnapshotHashes).to.deep.equal([
+                await committedSnapshotHash(h, 0, 0)
+            ]);
+            // the unfinal genesis run is final at the genesis
+            expect(stored.finalizedSnapshotHash).to.equal(
+                await genesisSnapshotHash(h, 0)
+            );
+
+            // block 0 now commits a snapshot storage lacks
+            await replaceWithUnlinkedBlock(h, 0, 0);
+            const missing = await buildOwnProof(h, 0, { blockHeight: 0 });
+
+            expect(missing.milestones).to.deep.equal([[0]]);
+            expect(missing.milestoneSnapshotHashes).to.deep.equal([null]);
+            expect(missing.finalizedSnapshotHash).to.equal(null);
+        });
+
+        it("describeStateProof of a foreign proof → each run maps to its first block's snapshot, the start run included, an unknown one to undefined; no walk", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 6);
+            const start = await postSnapshotAt(h, 0, 5);
+            await h.transition.advanceState({ count: 2 });
+            await h.assert.sync.peersInSyncWait();
+            const { confirmation: unknown } = await authorOnlyConfirmation(
+                h,
+                1,
+                8
+            );
+            const storageWalks = await h.mirror.observe(0, "verifyMilestones");
+
+            const described = await describeOnPeer(h, 0, [
+                [4, 5],
+                [6],
+                [unknown]
+            ]);
+
+            expect(described.startSnapshotHash).to.equal(start.hash);
+            expect(described.milestoneSnapshotHashes).to.deep.equal([
+                await committedSnapshotHash(h, 0, 4),
+                await committedSnapshotHash(h, 0, 6),
+                null
+            ]);
+            expect((await storageWalks.observation()).chain.reads).to.equal(0);
+        });
+    });
+
+    // verifyStateProof walks from the latest local threshold-final point
+    // (verifyMilestonesFromTrustedStart), then from the local diamond's
+    // start, then from the chain's (verifyMilestones). Each case observes
+    // the verifier's walks record-only; they still reach the real contracts.
+    describe("verifyStateProof: verification ladder", function () {
+        it("tier one valid → its start, finalized snapshot and replay index; no storage or chain walk", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { stateProof, milestones } = await buildOwnProof(h, 0);
+            const storageWalks = await h.mirror.observe(0, "verifyMilestones");
+
+            const v = await verifyOnPeer(h, 0, stateProof);
+
+            expect(milestones).to.deep.equal([[2]]);
+            // the final point is block 2's snapshot
+            const point = await committedSnapshotHash(h, 0, 2);
+            expect(v.status).to.equal("valid");
+            expect(v.startHash).to.equal(point);
+            expect(v.finalizedSnapshotHash).to.equal(point);
+            expect(v.replayBlockIndex).to.equal(1);
+            expect((await storageWalks.observation()).chain.reads).to.equal(0);
+        });
+
+        it("forged genesis run → tier one not valid, the storage tier answers from the genesis with no chain walk; replay index at the tail start, the last milestone's length, 0 for the empty proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3, {
+                timeConfig: { chainFallbackTime: 60 }
+            });
+            // block 3 never reaches the threshold: block 2 stays the final point
+            await h.network.blacklistAndDisconnectPeer(2);
+            await h.transition.advanceState({ count: 1, waitForPeers: [0, 1] });
+            // peer 1's own blocks 0..2 from the genesis, never stored
+            const forged = await forgedGenesisRun(h, 1, 3);
+            const storageWalks = await h.mirror.observe(0, "verifyMilestones");
+
+            const fromGenesis = await verifyOnPeer(h, 0, forged);
+
+            // its block 2 does not commit the final point: valid from the
+            // genesis (no start), with no chain walk
+            expect((await storageWalks.observation()).chain.reads).to.equal(0);
+            expect(fromGenesis.status).to.equal("valid");
+            expect(fromGenesis.startHash).to.equal(null);
+            expect(fromGenesis.finalizedSnapshotHash).to.equal(
+                await genesisSnapshotHash(h, 0)
+            );
+            // the whole unfinal run is the tail
+            expect(fromGenesis.replayBlockIndex).to.equal(0);
+
+            const tail = await buildOwnProof(h, 0);
+            expect(tail.milestones).to.deep.equal([[2, 3]]);
+            expect(
+                (await verifyOnPeer(h, 0, tail.stateProof)).replayBlockIndex
+            ).to.equal(1);
+            const final = await buildOwnProof(h, 0, { blockHeight: 2 });
+            expect(final.milestones).to.deep.equal([[2]]);
+            expect(
+                (await verifyOnPeer(h, 0, final.stateProof)).replayBlockIndex
+            ).to.equal(1);
+            const empty = await buildOwnProof(h, 0, { blockHeight: -1 });
+            expect(empty.milestones).to.deep.equal([]);
+            const emptyVerified = await verifyOnPeer(h, 0, empty.stateProof);
+            expect(emptyVerified.status).to.equal("valid");
+            expect(emptyVerified.replayBlockIndex).to.equal(0);
+        });
+
+        it("no local threshold-final point (no stored block, or no threshold milestone) → tier one skipped, the storage tier decides", async function () {
+            const h = TestSession.getHarness();
+            // peer 2 is cut off before block 0; blocks 0 and 1 never reach
+            // the threshold on peer 0
+            await stageUnsignedGenesisTip(h, 3, 2);
+            const { stateProof, milestones } = await buildOwnProof(h, 0);
+            expect(milestones).to.deep.equal([[0, 1]]);
+            const storageWalks0 = await h.mirror.observe(0, "verifyMilestones");
+            const storageWalks2 = await h.mirror.observe(2, "verifyMilestones");
+
+            const noThreshold = await verifyOnPeer(h, 0, stateProof);
+            const noBlock = await verifyOnPeer(h, 2, stateProof);
+
+            expect(noThreshold).to.include({
+                status: "valid",
+                startHash: null,
+                replayBlockIndex: 0
+            });
+            expect((await storageWalks0.observation()).chain.reads).to.equal(0);
+            expect(noBlock).to.include({
+                status: "valid",
+                startHash: null,
+                replayBlockIndex: 0
+            });
+            expect((await storageWalks2.observation()).chain.reads).to.equal(0);
+        });
+
+        it("programming error in a local tier → that TypeError propagates; no later tier runs", async function () {
+            const h = TestSession.getHarness();
+            // peer 0 and a pending participant: whichever local tier runs first
+            const { auditor, release } = await heldGenesisPendingAuditor(h);
+            try {
+                const { stateProof } = await buildOwnProof(h, 0);
+                // not a byte string: the ABI encoder throws a TypeError
+                stateProof.milestones[0].blockConfirmations[0].signedBlock.signature =
+                    "0x1";
+                const storageWalks = await h.mirror.observe(
+                    0,
+                    "verifyMilestones"
+                );
+                const auditorWalks = await h.mirror.observe(
+                    auditor.index,
+                    "verifyMilestones"
+                );
+
+                const tierOne = await verifyOnPeer(h, 0, stateProof);
+                const storageTier = await verifyOnPeer(
+                    h,
+                    auditor.index,
+                    stateProof
+                );
+
+                expect(tierOne).to.include({
+                    status: "threw",
+                    errorName: "TypeError"
+                });
+                expect((await storageWalks.observation()).chain.reads).to.equal(
+                    0
+                );
+                expect(storageTier).to.include({
+                    status: "threw",
+                    errorName: "TypeError"
+                });
+                expect((await auditorWalks.observation()).chain.reads).to.equal(
+                    0
+                );
+            } finally {
+                await release();
+            }
+        });
+
+        it("local tier revert or executor failure → that error propagates, no later tier runs; an auditor stores no counter", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { stateProof } = await buildOwnProof(h, 0);
+            // not valid from the final point at block 2
+            const forged = await forgedGenesisRun(h, 1, 3);
+            await h.mirror.observe(0, "verifyMilestonesFromTrustedStart");
+            const storageWalks = await h.mirror.observe(0, "verifyMilestones");
+
+            await h.mirror.failNextLocalRead(
+                0,
+                "verifyMilestonesFromTrustedStart",
+                "revert"
+            );
+            const reverted = await verifyOnPeer(h, 0, stateProof);
+            await h.mirror.failNextLocalRead(
+                0,
+                "verifyMilestonesFromTrustedStart",
+                "transport"
+            );
+            const executorFailed = await verifyOnPeer(h, 0, stateProof);
+
+            expect(reverted.status).to.equal("threw");
+            expect(reverted.errorMessage).to.contain(
+                "Local EVM execution failed"
+            );
+            expect(executorFailed.status).to.equal("threw");
+            expect(executorFailed.errorMessage).to.contain(
+                "Malformed RPC request"
+            );
+            expect((await storageWalks.observation()).chain.reads).to.equal(0);
+
+            // tier one answers not valid, then the storage tier reverts
+            await h.mirror.failNextLocalRead(0, "verifyMilestones", "revert");
+            const storageReverted = await verifyOnPeer(h, 0, forged);
+
+            expect(storageReverted.status).to.equal("threw");
+            expect(storageReverted.errorMessage).to.contain(
+                "Local EVM execution failed"
+            );
+            expect((await storageWalks.observation()).chain.reads).to.equal(0);
+
+            // the auditor's tier one, walking posted data the chain verified,
+            // reverts: the audit throws, no counter
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(0);
+            await h.mirror.observe(1, "verifyMilestonesFromTrustedStart");
+            const auditorWalks = await h.mirror.observe(1, "verifyMilestones");
+            await h.mirror.failNextLocalRead(
+                1,
+                "verifyMilestonesFromTrustedStart",
+                "revert"
+            );
+
+            const run = await h.dispute.auditDispute(1, dispute, auditingData);
+
+            expect(run.outcome).to.equal("threw");
+            expect(run.disputeFraudProofCount).to.equal(0);
+            expect((await auditorWalks.observation()).chain.reads).to.equal(0);
+        });
+
+        it("local tiers not valid, chain read refused or reverted → that error propagates, never invalid; an auditor stores no counter", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            // a block above the tip that only its author signed: final from
+            // no start
+            const { confirmation } = await authorOnlyConfirmation(h, 1, 3);
+            const forged = {
+                milestones: [{ blockConfirmations: [confirmation] }]
+            };
+            const storageWalks = await h.mirror.observe(0, "verifyMilestones");
+
+            await h.mirror.failNextChainRead(
+                0,
+                "verifyMilestones",
+                "transport"
+            );
+            const refused = await verifyOnPeer(h, 0, forged);
+            await h.mirror.failNextChainRead(0, "verifyMilestones", "revert");
+            const reverted = await verifyOnPeer(h, 0, forged);
+
+            expect(refused.status).to.equal("threw");
+            expect(reverted.status).to.equal("threw");
+            const { chain } = await storageWalks.observation();
+            expect(chain.failures).to.have.length(2);
+            expect(chain.failureCodes[0]).to.not.equal("CALL_EXCEPTION");
+            expect(chain.failureCodes[1]).to.equal("CALL_EXCEPTION");
+
+            // an auditor of a posted forged proof: the chain's verification
+            // read is refused
+            const { dispute, auditingData } = await postedForgedSingleton(h);
+            const auditorVerification = await h.mirror.observe(
+                1,
+                "verifyStateProof"
+            );
+            await h.mirror.failNextChainRead(
+                1,
+                "verifyStateProof",
+                "transport"
+            );
+
+            const run = await h.dispute.auditDispute(1, dispute, auditingData);
+
+            expect(run.outcome).to.equal("threw");
+            expect(run.disputeFraudProofCount).to.equal(0);
+            expect(
+                (await auditorVerification.observation()).chain.failures
+            ).to.have.length(1);
         });
     });
 });

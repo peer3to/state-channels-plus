@@ -63,106 +63,172 @@ fix or approve it before marking the subject conformant.
 
 ## System design
 
-- The milestone-plus-suffix proof shape specified upstream is not fully implemented; the concrete
-  proof representation and verifier path must be brought into conformance.
+- **Proof shape.** `StateProof` is `{ MilestoneProof[] milestones }` only
+  ([ProofTypes](../../source/contracts/V1/types/ProofTypes.sol.md)). The latest claimed state is the last
+  block of the last milestone. An empty proof claims the fork genesis. The last milestone may carry
+  an unfinal tail after its threshold point, so the provable latest state is not limited to the
+  last threshold-final block.
 
-Current: [`StateProofFacet._isMilestoneFinalWithExpectedParticipants`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1)
-implements exactly this — it walks the confirmations, enforces fork identity and hash linkage,
-accumulates every authentic signer (author signatures and confirmation signatures) into one
-threshold set, requires the set to cover all expected participants, and returns the **first**
-block's `stateSnapshotHash` as the finalized snapshot of the anchor.
-[`AgreementManager.tryBuildMilestone`](../../../../../src/agreementManager/AgreementManager.ts#L106) is
-the off-chain constructor of the same object.
+Current: [`StateChannelCommon._walkMilestoneBlocks`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L802)
+walks one milestone run from a start index: every block decodes, stays on the fork and on the
+run's channel, links to its predecessor by hash and by height + 1
+([`_isNextHeight`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L865), no
+overflow), and carries its author's signature. It counts the distinct expected participants among
+the authors and confirmation signers in one threshold set and returns the snapshot hash of the
+run's first block. [`StateProofFacet.isMilestoneFinal`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L192)
+applies it to one milestone against one threshold set.
+[`AgreementManager.tryBuildMilestone`](../../../../../src/agreementManager/AgreementManager.ts#L566) is the
+off-chain constructor of the same object; it ends a milestone at the first height or hash gap in
+local blocks.
 
-Current, on-chain: [`StateProofFacet.verifyMilestones`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L114)
-verifies K milestones against K milestone snapshots, rolling the threshold context forward: each
-milestone's expected participants are
-`previousSnapshot.participants ∪ resultingSnapshot.participants ∪ pendingJoiners`, where pending
-joiners are derived from the inbound message blocks between the two snapshots' inbound tips
-(`_deriveMilestoneUnionParticipants`). Each milestone snapshot must hash-match the anchor's
-`stateSnapshotHash`, and then becomes the threshold context for the next hop.
-Current, off-chain: [`AgreementManager.getStateProof`](../../../../../src/agreementManager/AgreementManager.ts#L67)
-builds one milestone per participant-set change point
-(`storage.participantSetChanges.getChangePointsInRange`) plus a final milestone for the latest
-provable state, with the threshold signers of each milestone taken as previous-snapshot
-participants ∪ resulting-snapshot participants.
+Current, on-chain: [`StateProofFacet.verifyMilestones(ProofWalkInput) → ProofWalkResult`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L91)
+runs the one canonical walk
+[`StateChannelCommon._walkStateProof`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L650)
+from the snapshot in storage, with finality. A kept milestone that does not hold the on-chain start
+proves its first block by the union threshold of the last verified set: previous finalized
+participants ∪ resulting snapshot participants ∪ the JOINs in the inbound interval between the two
+snapshots ([`_deriveMilestoneUnionParticipants`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L773)).
+Its first block must commit the supplied milestone snapshot, which then becomes the finalized
+snapshot and the threshold context of the next milestone.
+Current, off-chain: [`AgreementManager.buildStateProof`](../../../../../src/agreementManager/AgreementManager.ts#L112)
+builds a compact proof from the local proof start: one milestone per participant-set change point
+above the start (`storage.participantSetChanges.getChangePointsInRange`) while each builds, the
+latest threshold milestone, then the unfinal tail appended to the last milestone (or, with no
+milestone, one run from the start block). Height -1 gives the empty proof; a height below the
+start or a missing or unlinked required block throws.
 
-Current: [`DisputeVerificationFacet.reduce`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L60)
+Current: [`DisputeVerificationFacet.reduce`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L57)
 selects the candidate latest block with the highest `transactionCnt` across committed disputes,
 breaking exact-height ties deterministically by lower block hash; invalid claims are removed via
 dispute fraud proofs before/while they matter ([disputes.md](./disputes.md),
 [fraud-proofs.md](./fraud-proofs.md)).
 
+## On-chain snapshot start (current)
+
+This section maps §5a ([`REQ-SP-8-9PK9TS`](../../../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts)) to its owners. The per-file detail
+lives in the linked reports.
+
+- **Walk start.** The contract owns the choice
+  ([StateChannelCommon](../../source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md),
+  [StateProofFacet](../../source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)).
+  [`_getAnchorSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L438)
+  returns `(canUseOnChainSnapshot, onChainSnapshot)`: the stored snapshot (the anchor) and whether a
+  proof can start from it. The walk starts at the on-chain snapshot when it is on the same fork and
+  is not the fork genesis
+  ([`_canStartFromOnChainSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L449): the
+  genesis is height 0 with data that hashes to the fork ID; it is excluded because no block commits
+  to it, block 0 only links back to it through `previousBlockHash`); otherwise it starts at the fork
+  genesis. [`getAnchorSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L82)
+  is the routed public view of the same choice.
+- **Dropped milestones.** A milestone whose last block is below the start height is dropped: it is
+  not walked and awards no finality. A proof that ends below the on-chain start is still valid for
+  the walk (its finalized snapshot is the start); the
+  `DisputeStateProofBelowOnChainAnchor` dispute fraud proof counters such a dispute
+  ([fraud-proofs.md](./fraud-proofs.md)).
+- **Start run.** The run that holds an on-chain start (first height at or below the start height)
+  must have a block at exactly the start height whose `stateSnapshotHash` is the hash of the start
+  snapshot. The walk links the run only from that offset; the prefix below it is not checked, and
+  no threshold is needed. Replay starts right after that block. No hash of the block that committed
+  the start is stored.
+- **Genesis start.** A genesis block 0 must link to the genesis snapshot through
+  `previousBlockHash`. An unfinal block 0 is allowed only when it is the only milestone; then the
+  whole run is the unfinal tail and replay starts at block 0.
+  [`_getGenesisSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L755)
+  returns `(isLinked, hasTimestamp, genesisSnapshot)`. When the start snapshot (on-chain or trusted)
+  is this fork's genesis, it is used and the input `genesisStateSnapshotData` is not read. The input
+  must hash to the fork ID only when the fork genesis is not on chain (on-chain snapshot on another
+  fork, or a non-genesis anchor with an empty proof).
+- **Snapshot advance.** A same-fork snapshot post needs the new snapshot proven by threshold
+  ([StateSnapshotFacet](../../source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md),
+  [`_isNewSnapshotProvenByThreshold`](../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L140)): the walk
+  from the on-chain snapshot must be valid and its finalized snapshot must equal the posted
+  snapshot (`isSnapshotNewer` already rejects the on-chain snapshot itself).
+- **Prover.** [AgreementManager](../../source/src/agreementManager/AgreementManager.ts.md)
+  `buildStateProof` reads the start from the local diamond's `getAnchorSnapshot` and builds the
+  compact proof above it; `describeStateProof` returns the walk evidence of a given proof without a
+  walk. [DisputeManager](../../source/src/disputeManager/DisputeManager.ts.md) builds its own dispute with
+  `buildStateProof`.
+- **Verifier ladder.** `AgreementManager.verifyStateProof(proof, evidence)` answers
+  `valid` or `invalid` from three tiers: the latest local threshold-final snapshot
+  through the local diamond's `verifyMilestonesFromTrustedStart`, then the local diamond's stored
+  start, then the chain. A local success is final; a local invalid answer (or no local
+  threshold-final point) falls through; only the chain answers invalid; an error in any tier
+  throws and no later tier runs.
+  [`LocalDiamond.verifyMilestonesFromTrustedStart`](../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L424)
+  runs `_walkStateProof` from a supplied snapshot. It exists only on the local diamond, is not
+  declared on the manager interface, and is not routed: production cannot choose a trusted start
+  ([LocalDiamond](../../source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
+- **Auditor.** [DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md) runs the
+  last-milestone structure scan on the local diamond, files `DisputeStateProofBelowOnChainAnchor`
+  from the chain's `getAnchorSnapshot`, verifies through the ladder, persists only material at
+  or above the walk's start, and replays the last milestone from the walk's `replayBlockIndex`. The
+  balance invariant checks the dispute's `latestStateSnapshot` with one local-first read; it needs
+  no usable walk.
+- **Spectator.** [SpectateService](../../source/src/rpc/network/services/spectate/SpectateService.ts.md) verifies a sync
+  proof through the same ladder and stores only what the walk verified from its start.
+
 ## 7. Exact verification pipeline (current)
 
-[`StateProofFacet.verifyStateProof(dispute, auditingData)`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1)
-— reachable via [`verifyStateProof`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L46), routed to the manager boundary and declared on [StateChannelManagerInterface](../../../../../contracts/V1/StateChannelManagerInterface.sol#L238) —
+[`StateProofFacet.verifyStateProof(dispute, auditingData)`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L40)
+— routed to the manager boundary and declared on [StateChannelManagerInterface](../../../../../contracts/V1/StateChannelManagerInterface.sol#L254) —
 accepts iff all of the following hold:
 
 1. **Auditing reference:** `dispute.input.disputeAuditingDataHash == keccak256(abi.encode(auditingData))`.
-2. **Fork identity:** `forkId == keccak256(abi.encode(auditingData.genesisStateSnapshotData))`.
-3. **Shape:** not both `milestones` and `signedBlocks` non-empty (see §8).
-4. **Milestones** (`verifyMilestones`): K proofs ↔ K snapshots; skip already-settled milestones;
-   per milestone — non-empty, decodable blocks, fork id match, hash-linked confirmations,
-   authentic author signature on every confirmation (`signer == header.participant`), signatures
-   accumulated into the union threshold set of §4, full coverage required, and
-   `keccak256(abi.encode(milestoneSnapshots[i]))` equal to the anchor block's
-   `stateSnapshotHash`.
-5. **Signed blocks** (`_areSignedBlocksLinkedAndVerified`): each block decodes; the first has
-   `transactionCnt == 0`; each later block's `previousBlockHash` equals the keccak of the
-   previous encoded block; each carries a valid author signature matching its declared author.
-   _Not_ checked here: that the signer is a channel participant — a non-participant block fails
-   the on-chain state transition instead, and the dispute is then slashable; block-structure
-   contiguity (`transactionCnt` strictly +1) is enforced on the fraud-proof side
-   (`isInvalidBlockStructureInStateProof`, `DisputeInvalidBlockStructure`).
-6. **Latest-state claim** (`isCorrectLatestState`): the last block of the proof (or the
-   reconstructed genesis snapshot for an empty proof) must hash-match
+2. **Walk** (`verifyMilestones(...).valid`, from the stored start, with finality). There is no
+   up-front fork-identity check of `auditingData.genesisStateSnapshotData`; the walk checks it only
+   when it uses it:
+    - with finality, the milestone count must equal the snapshot count (one snapshot per milestone,
+      [DisputeTypes](../../source/contracts/V1/types/DisputeTypes.sol.md));
+    - a genesis start or an empty proof needs the fork genesis (`_getGenesisSnapshot`): the start
+      snapshot when it is this fork's genesis, else input genesis data that hashes to the fork ID; a
+      non-empty proof on a genesis start also needs the genesis timestamp; an empty proof is valid
+      and its finalized snapshot is the genesis;
+    - per milestone: non-empty; first and last block decode and are on the channel and fork; first
+      heights are nondecreasing (overlap allowed); milestones wholly below the start are dropped;
+    - the start run commits the start at its exact height and is linked from there;
+    - every other kept milestone is linked from block 0 and proves its first block by the union
+      threshold of §4, committing its supplied snapshot (only a lone unfinal genesis block 0 is
+      exempt).
+3. **Posted finalized state** ([#L63](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L63)): `keccak256(auditingData.latestFinalizedStateStateMachineState)`
+   must equal `walk.finalizedSnapshot.snapshotData.stateMachineStateHash`, the state of the snapshot
+   where the walk from the stored start ends (the on-chain anchor, the last threshold-proven
+   milestone snapshot, or the fork genesis). Auditors replay the unfinal tail from this state, so
+   another state of the fork, an earlier proven one included, or empty bytes make the proof invalid
+   and `DisputeInvalidStateProof` kills the dispute.
+4. **Latest-state claim** ([`isCorrectLatestState`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L8)):
+   the last block of the last milestone (or, for an empty proof, the rebuilt genesis snapshot with
+   linked genesis data and an available genesis timestamp) must hash-match
    `dispute.input.latestStateSnapshotHash`.
-7. **Commitment:** `dispute.input.latestStateSnapshotHash == keccak256(abi.encode(auditingData.latestStateSnapshot))`.
+5. **Commitment:** `dispute.input.latestStateSnapshotHash == keccak256(abi.encode(auditingData.latestStateSnapshot))`.
+
+_Not_ checked by the walk: that a block author is a channel participant (a non-participant block
+fails the state transition, provable by `DisputeBlockAuthorNotParticipant`). The walk result
+`ProofWalkResult { valid, finalizedSnapshot, replayBlockIndex }` is usable only when `valid`.
+`replayBlockIndex` is the replay start in the last milestone; when it equals that milestone's length
+there is no unfinal tail (0 for an empty proof).
+
+Other routed proof entries: [`isStateProofLinked`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L96)
+runs the same walk without finality (no milestone snapshot is read; only `valid` is usable);
+[`isInvalidBlockStructureInStateProof(stateProof, blockIndex)`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L143)
+is an input-only check of the last milestone (block authentic and, after the first, linked to its
+predecessor in the same run by hash and height + 1; out of range is no offense);
+[`findFirstInvalidBlockStructureInStateProof`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L156)
+scans the last milestone only and returns `(found, blockIndex)`;
+[`isBlockChallengeEligible(dispute, blockIndex)`](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L114)
+decides without a walk whether a block challenge can address a block of the last milestone
+([fraud-proofs.md](./fraud-proofs.md)).
 
 A dispute whose proof fails these checks is subject to the `DisputeInvalidStateProof` /
-`DisputeNotLatestState` / structure-related dispute fraud proofs
-([fraud-proofs.md](./fraud-proofs.md)).
+`DisputeNotLatestState` / `DisputeStateProofBelowOnChainAnchor` / structure-related dispute fraud
+proofs ([fraud-proofs.md](./fraud-proofs.md)).
 
 ## 8. Current vs. intended divergences
 
-- **Milestones and trailing signed blocks are mutually exclusive.**
-    - Intended: `StateProof` = milestone anchors **plus** a trailing signed-block suffix from the
-      last anchor to the latest non-final state (§3, §5).
-    - Current: `verifyStateProof` and `isCorrectLatestState` reject a proof where both arrays are
-      non-empty, and `_areSignedBlocksLinkedAndVerified` forces a signed-block suffix to start at
-      fork genesis (`transactionCnt == 0`). The SDK mirrors this:
-      [`AgreementManager.getStateProof`](../../../../../src/agreementManager/AgreementManager.ts#L67)
-      emits either milestones-only (comment: "signedBlocks are empty since the milestone already
-      accounted the latest state") or a genesis-anchored signed-block chain when no milestone can
-      be built at all.
-    - Consequence (inferred): once any milestone exists, the provable latest state is the last
-      block _inside_ the last milestone — a newer non-final suffix beyond the last anchor cannot be
-      presented, so the dispute may operate on an older state than the intended model allows. The
-      `ProofTypes.sol` comment ("signed blocks that cryptographically connect the last milestone")
-      and the fraud-proof-side structure walker
-      (`_getUnfinalizedBlockConfirmationsFromStateProof` treats the last milestone's tail _or_ the
-      signed blocks as the unfinalized region) both describe the intended mixed shape, so the
-      restriction looks like an implementation cut, not a design decision.
-    - **Open question:** confirm the intended mixed shape and extend
-      `_areSignedBlocksLinkedAndVerified` / `isCorrectLatestState` / the SDK builder to anchor a
-      suffix at the last milestone (first suffix block linking to the anchor's last confirmation,
-      `transactionCnt` continuing from it), or explicitly ratify the current milestones-XOR-suffix
-      design and its staleness consequence.
-- **Milestone-snapshot cardinality comment mismatch.** `DisputeAuditingData.milestoneSnapshots`
-  is documented as "for K milestones there will be K−1 snapshots, since the first milestone is
-  the genesisSnapshot", but `verifyMilestones` requires exactly K snapshots for K milestone
-  proofs. Observed fact; the code is self-consistent, the comment is stale. **Open question:**
-  fix the comment or the convention.
-- **Unbounded verification gas.** The milestone verifier notes its own gap
+- **Unbounded verification gas.** The milestone walker notes its own gap
   (`TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that
-can't be verified won't be spammed`). Inferred concern: oversized proofs as a griefing vector.
-  Tracked as an open question in [security/data-availability.md](../security/data-availability.md)
-  context.
-- **Debug logging in production contract.** `StateProofFacet` imports `hardhat/console.sol` and
-  logs during verification. Observed fact; must be removed for deployment (contract size and gas)
-  — belongs to the contracts cleanup in
-  [contracts/architecture.md](../architecture/contracts/architecture.md).
+can't be verified won't be spammed`, in `_walkMilestoneBlocks`). Inferred concern: oversized proofs
+  as a griefing vector. Tracked as an open question in
+  [security/data-availability.md](../security/data-availability.md) context.
 
 ## System integration test plan
 
@@ -213,15 +279,15 @@ Every source file relevant to this specification belongs here. A missing file is
 | [src/rpc/network/services/stateTransition/StateTransitionService.ts](../../../../../src/rpc/network/services/stateTransition/StateTransitionService.ts#L1)       | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts#L1)                                                                           | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/BlockQueueManager.ts](../../../../../src/stateManager/BlockQueueManager.ts#L48)                                                                | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
-| [src/stateManager/dispute/DisputeValidationService.ts](../../../../../src/stateManager/dispute/DisputeValidationService.ts#L33)                                  | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
+| [src/stateManager/dispute/DisputeValidationService.ts](../../../../../src/stateManager/dispute/DisputeValidationService.ts#L31)                                  | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/EventSyncService.ts](../../../../../src/stateManager/EventSyncService.ts#L1)                                                                   | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/reduction/index.ts](../../../../../src/stateManager/reduction/index.ts#L1)                                                                     | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/reduction/ReductionComputationService.ts](../../../../../src/stateManager/reduction/ReductionComputationService.ts#L22)                        | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/reduction/ReductionExecutor.ts](../../../../../src/stateManager/reduction/ReductionExecutor.ts#L76)                                            | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/reduction/ReductionManager.ts](../../../../../src/stateManager/reduction/ReductionManager.ts#L52)                                              | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
-| [src/stateManager/snapshotUpdate/SnapshotUpdateService.ts](../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L41)                          | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
+| [src/stateManager/snapshotUpdate/SnapshotUpdateService.ts](../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L57)                          | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/StateManager.ts](../../../../../src/stateManager/StateManager.ts#L1)                                                                           | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
-| [src/stateManager/utils/DisputeFraudProofService.ts](../../../../../src/stateManager/utils/DisputeFraudProofService.ts#L8)                                       | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
+| [src/stateManager/dispute/DisputeFraudProofService.ts](../../../../../src/stateManager/dispute/DisputeFraudProofService.ts#L48)                                  | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/utils/FraudProofService.ts](../../../../../src/stateManager/utils/FraudProofService.ts#L5)                                                     | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/ValidationService.ts](../../../../../src/stateManager/ValidationService.ts#L15)                                                                | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
 | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1)               | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1), [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4), [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4), [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4), [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv), [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h), [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) |
@@ -246,12 +312,13 @@ Every source file relevant to this specification belongs here. A missing file is
 
 This table records whether the repository currently implements each requirement. It does not change the requirement or claim approval; code evidence remains pending until an engineer verifies it.
 
-| Requirement / invariant                                                              | Implementation status | Source evidence                                                                                                                                                                                                                                                    | Design decisions / assumptions                                                                     | Implementation-specific test obligations                                                                                                                                                                                                                    | Gap / divergence |
-| ------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1) | Covered               | [StateProofFacet.\_isMilestoneFinalWithExpectedParticipants](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1); [AgreementManager.tryBuildMilestone](../../../../../src/agreementManager/AgreementManager.ts#L106)                      | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4) | Covered               | [StateProofFacet.verifyStateProof / isCorrectLatestState](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L46)                                                                                                                            | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4) | Covered               | [StateProofFacet.verifyMilestones / \_deriveMilestoneUnionParticipants](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L114); [AgreementManager.getStateProof](../../../../../src/agreementManager/AgreementManager.ts#L67)              | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4) | Covered               | [StateProofFacet.isCorrectLatestState / \_areSignedBlocksLinkedAndVerified](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L9)                                                                                                           | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv) | Covered               | [StateProofFacet.isCorrectLatestState](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L9); [DisputeVerificationFacet.reduceOutputToSnapshotData](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L142) | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h) | Covered               | [DisputeVerificationFacet.reduce](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L60); [FraudProofFacet](../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L9) (`BlockDoubleSign`)                       | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
-| [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) | Covered               | [StateProofFacet](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L8)                                                                                                                                                                     | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
+| Requirement / invariant                                                                    | Implementation status | Source evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Design decisions / assumptions                                                                     | Implementation-specific test obligations                                                                                                                                                                                                                              | Gap / divergence |
+| ------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)       | Covered               | [StateChannelCommon.\_walkMilestoneBlocks](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L802); [AgreementManager.tryBuildMilestone](../../../../../src/agreementManager/AgreementManager.ts#L566)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)       | Covered               | [StateProofFacet.verifyStateProof / isCorrectLatestState](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L40)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-2-ST4JJ4`](../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)       | Covered               | [StateProofFacet.verifyMilestones](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L91); [StateChannelCommon.\_walkStateProof / \_deriveMilestoneUnionParticipants](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L650); [AgreementManager.buildStateProof](../../../../../src/agreementManager/AgreementManager.ts#L120)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)       | Covered               | [StateProofFacet.isCorrectLatestState](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L8); [StateProofFacet.isStateProofLinked](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L96)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-4-NCSEX4`](../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)       | Covered               | [StateProofFacet.isCorrectLatestState](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L8); [DisputeVerificationFacet.reduceOutputToSnapshotData](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L297)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)       | Covered               | [DisputeVerificationFacet.reduce](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L57); [FraudProofFacet](../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L9) (`BlockDoubleSign`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`INV-SP-6-GNW74H`](../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat)       | Covered               | [StateProofFacet](../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L7)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every `.T*` permutation of [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.       | None.            |
+| [`REQ-SP-8-9PK9TS`](../../../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts) | Covered               | [StateProofFacet](../../source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md) (`getAnchorSnapshot`, `verifyMilestones`, `verifyStateProof`); [StateChannelCommon](../../source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md) (`_getAnchorSnapshot`, `_walkStateProof`); [AgreementManager](../../source/src/agreementManager/AgreementManager.ts.md) (`buildStateProof` from the walk start, `verifyStateProof` ladder); [DisputeManager](../../source/src/disputeManager/DisputeManager.ts.md) (own dispute from `buildStateProof`); [DisputeValidationService](../../source/src/stateManager/dispute/DisputeValidationService.ts.md) (auditor, `DisputeStateProofBelowOnChainAnchor`); [StateSnapshotFacet](../../source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md) (threshold-proven same-fork advance) | See [On-chain snapshot start](#on-chain-snapshot-start-current).                                   | Apply every `.T*` permutation of [`REQ-SP-8-9PK9TS`](../../../specification/disputes/dispute-processing.md#req-sp-8-9pk9ts) through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |

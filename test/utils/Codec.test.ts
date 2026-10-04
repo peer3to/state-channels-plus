@@ -447,6 +447,13 @@ describe("Codec", function () {
         expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
     });
 
+    it("round-trips DisputeStateProofBelowOnChainAnchor fraud proof", function () {
+        const value = codecValues.disputeStateProofBelowOnChainAnchorProof();
+        const type = DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor;
+        const encoded = Codec.encode(value, type);
+        expectCodecRoundTrip(value, encoded, Codec.decode(encoded, type));
+    });
+
     it("decodes a primitive EVM return value without object conversion", function () {
         const returnValue = ethers.AbiCoder.defaultAbiCoder().encode(
             ["uint256"],

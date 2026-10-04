@@ -182,13 +182,100 @@ contract StateSnapshotFacetSameForkTest is DiamondHarness {
         assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL_ID))), keccak256(abi.encode(current)));
     }
 
-    // the same all-skipped proof still confirms the threshold snapshot itself, and nothing else
-    function test_verifyMilestones_everyMilestoneBelowThreshold_confirmsOnlyTheThresholdSnapshot() public {
+    // the run that holds the chain snapshot needs no threshold, so it proves nothing newer than that snapshot: a
+    // proof that only reaches the start, alone or with an author-signed block after it, posts no newer snapshot
+    function test_updateStateSnapshotSameFork_proofOnlyReachingTheStart_revertsInvalidStateProof() public {
         StateSnapshot memory current = _advanceOnce();
-        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _allSkippedProof(current);
-        assertTrue(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "confirms the threshold");
-        snapshots[0].blockHeight = current.blockHeight + 1;
-        assertFalse(diamond.verifyMilestones(current.forkId, proofs, snapshots, current), "advances past it");
+        for (uint256 withTail = 0; withTail < 2; withTail++) {
+            (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _startRunProof(current, withTail == 1);
+            vm.expectRevert(
+                abi.encodeWithSelector(ErrorInvalidStateProof.selector, current.forkId, uint256(1), uint256(1))
+            );
+            diamond.updateStateSnapshotSameFork(CHANNEL_ID, proofs, snapshots, new MessageBlock[](0));
+            assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL_ID))), keccak256(abi.encode(current)));
+        }
+    }
+
+    /// one author-signed run from the block that commits `current`, with one more block when `withTail`; its entry
+    /// is the newer snapshot the next block would commit
+    function _startRunProof(StateSnapshot memory current, bool withTail)
+        internal
+        pure
+        returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots)
+    {
+        StateSnapshot memory next = abi.decode(abi.encode(current), (StateSnapshot));
+        next.snapshotData.stateMachineStateHash = keccak256("next state");
+        next.blockHeight = current.blockHeight + 1;
+        next.timestamp = current.timestamp + 1;
+
+        Block memory startBlock;
+        startBlock.transaction.header.channelId = CHANNEL_ID;
+        startBlock.transaction.header.participant = vm.addr(ALICE_PK);
+        startBlock.transaction.header.forkId = current.forkId;
+        startBlock.transaction.header.transactionCnt = current.blockHeight;
+        startBlock.transaction.header.timestamp = current.timestamp;
+        startBlock.stateSnapshotHash = keccak256(abi.encode(current));
+        bytes memory encodedStart = abi.encode(startBlock);
+
+        proofs = new MilestoneProof[](1);
+        proofs[0].blockConfirmations = new BlockConfirmation[](withTail ? 2 : 1);
+        proofs[0].blockConfirmations[0] = _blockConfirmation(encodedStart, _alice());
+        if (withTail) {
+            Block memory tail = startBlock;
+            tail.transaction.header.transactionCnt = next.blockHeight;
+            tail.transaction.header.timestamp = next.timestamp;
+            tail.previousBlockHash = keccak256(encodedStart);
+            tail.stateSnapshotHash = keccak256(abi.encode(next));
+            proofs[0].blockConfirmations[1] = _blockConfirmation(abi.encode(tail), _alice());
+        }
+        snapshots = new StateSnapshot[](1);
+        snapshots[0] = next;
+    }
+
+    function _alice() internal pure returns (uint256[] memory pks) {
+        pks = new uint256[](1);
+        pks[0] = ALICE_PK;
+    }
+
+    // ---- block zero from the genesis: postable only when threshold-final ----
+
+    function test_updateStateSnapshotSameFork_blockZero_postsOnlyWhenFinal() public {
+        StateSnapshot memory genesis = diamond.getStateSnapshot(CHANNEL_ID);
+        uint256[] memory authorOnly = new uint256[](1);
+        authorOnly[0] = ALICE_PK;
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) = _blockZeroProof(genesis, authorOnly);
+        vm.expectRevert(abi.encodeWithSelector(ErrorInvalidStateProof.selector, genesis.forkId, uint256(1), uint256(1)));
+        diamond.updateStateSnapshotSameFork(CHANNEL_ID, proofs, snapshots, new MessageBlock[](0));
+
+        (proofs, snapshots) = _blockZeroProof(genesis, _privateKeys());
+        diamond.updateStateSnapshotSameFork(CHANNEL_ID, proofs, snapshots, new MessageBlock[](0));
+        assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL_ID))), keccak256(abi.encode(snapshots[0])));
+    }
+
+    /// one milestone with the genesis-linked block 0, committing the genesis successor and signed by `signers`;
+    /// that successor is the snapshot the update posts
+    function _blockZeroProof(StateSnapshot memory genesis, uint256[] memory signers)
+        internal
+        pure
+        returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots)
+    {
+        StateSnapshot memory blockZeroSnapshot = abi.decode(abi.encode(genesis), (StateSnapshot));
+        blockZeroSnapshot.snapshotData.stateMachineStateHash = keccak256("block zero state");
+        blockZeroSnapshot.timestamp = genesis.timestamp + 1;
+
+        Block memory blockZero;
+        blockZero.transaction.header.channelId = CHANNEL_ID;
+        blockZero.transaction.header.participant = vm.addr(signers[0]);
+        blockZero.transaction.header.forkId = genesis.forkId;
+        blockZero.transaction.header.timestamp = blockZeroSnapshot.timestamp;
+        blockZero.previousBlockHash = keccak256(abi.encode(genesis));
+        blockZero.stateSnapshotHash = keccak256(abi.encode(blockZeroSnapshot));
+
+        proofs = new MilestoneProof[](1);
+        proofs[0].blockConfirmations = new BlockConfirmation[](1);
+        proofs[0].blockConfirmations[0] = _blockConfirmation(abi.encode(blockZero), signers);
+        snapshots = new StateSnapshot[](1);
+        snapshots[0] = blockZeroSnapshot;
     }
 
     /// one legitimate same-fork advance, so the chain height is above 0 and a lower milestone can be skipped

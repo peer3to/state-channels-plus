@@ -26,7 +26,7 @@ to fire-and-forget or request/response by its return type.
 ## Key design decisions
 
 1. **Type safety is a sender-side property.** The mapped types prevent locally compiled code from constructing a wrong call — and deliberately claim nothing about wire data (type-safe caller vs Byzantine-safe receiver split, [../../../../specification/peer-communication/rpc.md](../../../../../specification/peer-communication/rpc.md)).
-2. **Symbols and `then` are exempt** so runtime inspection and promise-coercion probes don't fabricate envelopes ([#L46](../../../../../../../src/rpc/createRpcProxy.ts#L10)).
+2. **Symbols and `then` are exempt** so runtime inspection and promise-coercion probes don't fabricate envelopes ([#L10](../../../../../../../src/rpc/createRpcProxy.ts#L10)).
 
 ## Inputs, outputs, state, and side effects
 

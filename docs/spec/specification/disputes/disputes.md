@@ -72,6 +72,12 @@ dispute and slashes its disputer ([`REQ-DIS-1-XAJ1VA`](disputes.md#req-dis-1-xaj
 while every listed participant is still in the latest state's participant set — already-removed
 participants cannot justify a new dispute.
 
+A dispute's claimed latest state must not lie strictly below the chain's same-fork, non-genesis
+snapshot: that snapshot is final and newer, so such a claim is obsolete. Upload does not refuse it;
+the dedicated below-anchor dispute fraud proof kills it and slashes its disputer. An empty proof
+claims the fork genesis and is obsolete in the same way once such a snapshot exists
+([state-proofs.md §7](./state-proofs.md), [`REQ-SP-8-9PK9TS`](dispute-processing.md#req-sp-8-9pk9ts)).
+
 **Assumptions & dependencies.** Chain liveness and at least one honest, chain-connected
 participant or watchtower per [trust-model.md](../security/trust-model.md); correct
 [chain-time tracking](../protocol-model/time.md) for all period arithmetic; the state-proof verification rules of
@@ -164,8 +170,8 @@ on `dispute reducer/verifier`:
 - `reduceOutputToSnapshotData(...)` — verifies the claimed latest snapshot, state-machine state,
   and inbound message blocks against the reduce output, applies slashes/removals/inbound messages
   through the state machine, and produces the successor fork's genesis `SnapshotData`
-  (`computeDisputeOutputSnapshotData` / `generateDisputeOutputState` are the per-dispute
-  equivalents used to forge and audit `outputSnapshotDataHash`).
+  (`computeDisputeOutputSnapshotData` and the per-dispute output-state computation behind it are
+  the per-dispute equivalents used to forge and audit `outputSnapshotDataHash`).
 - `reduceAndFinalize(disputes, ..., expectedReducedForkId)` — recomputes the reduction, requires
   it to match the caller's expectation, and commits `winningForkId =
 keccak256(abi.encode(outputSnapshotData))` as the window's `reducedResult`. Idempotent: if a

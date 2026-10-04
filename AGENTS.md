@@ -266,7 +266,7 @@ methods }`. Never interleave a field declaration between methods. When adding a
   below) + a `StateChannelManagerInterface` decl; TS calls
   `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
-  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
+  `isStateProofLinked`). Broadly-shared primitive → `internal`
   `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
   `public` wrapper on `UtilityFacet` when TS or a test needs to call it
   (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can

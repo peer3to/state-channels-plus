@@ -1,5 +1,6 @@
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
+import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import { Address, Bytes, Hash, Signature } from "@/types/types";
 import { Logger } from "@/utils";
@@ -62,55 +63,37 @@ export default class FraudProofService {
     }
 
     /**
-     * Create invalid state transition proof
+     * Create invalid state transition proof: `block` judged from its
+     * predecessor - the block it names by previousBlockHash (none at height
+     * 0), that block's resulting snapshot and state. The chain replays from
+     * that snapshot. Dispute replay passes its predecessor; live gossip reads
+     * it from storage by hash, and without it no proof is valid on chain:
+     * abstain (undefined).
      */
-    createInvalidStateTransitionProof(block: Block): Hash {
+    createInvalidStateTransitionProof(
+        block: Block,
+        predecessor = this.getStoredPredecessor(block)
+    ): Hash | undefined {
         this.logFraudDetection({
             fraudType: FraudProofType.BlockInvalidStateTransition,
             reason: "Block author is not next leader OR state transition is invalid",
             block
         });
 
-        let prevSignedBlock: SignedBlockStruct | undefined;
-        let prevStateSnapshot: StateSnapshot;
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
-        // A fraudulent block may lie about its transactionCnt, so the normal
-        // coordinate lookup at height - 1 can miss its real predecessor. Fall
-        // back to previousBlockHash, which identifies the block the submitted
-        // block actually claims to extend.
-        const previousBlock =
-            previousBlockOrSnapshot.block ??
-            (block.height > 0
-                ? this.storage.blocks.getBlock(block.previousBlockHash)
-                : undefined);
-
-        if (previousBlock) {
-            // Height > 0 case - we have a previous block
-            prevSignedBlock = previousBlock.signedBlock;
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    previousBlock.stateSnapshotHash
-                )!;
-        } else if (block.height === 0) {
-            // Height === 0 case - we have genesis state snapshot
-            prevSignedBlock = createEmptySignedBlock();
-            prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
-        } else {
-            throw new Error(
-                `Cannot create invalid state transition proof: previous block ${block.previousBlockHash} is missing`
+        if (!predecessor) {
+            this.logger.warn(
+                "Abstaining from an invalid state transition proof: the block's predecessor or its state is not stored",
+                { block: LoggerUtils.getBlockMetadata(block) }
             );
+            return undefined;
         }
 
         const proof: BlockInvalidStateTransitionProofStruct = {
             invalidBlock: block.signedBlock,
-            previousBlock: prevSignedBlock,
-            previousBlockStateSnapshot: prevStateSnapshot.toStruct(),
-            previousStateStateMachineState:
-                this.storage.stateMachineStates.getStateMachineState(
-                    prevStateSnapshot.stateMachineStateHash
-                )!
+            previousBlock:
+                predecessor.block?.signedBlock ?? createEmptySignedBlock(),
+            previousBlockStateSnapshot: predecessor.snapshot.toStruct(),
+            previousStateStateMachineState: predecessor.state
         };
 
         return this.storeFraudProof(block.signerAddress, {
@@ -119,24 +102,21 @@ export default class FraudProofService {
         });
     }
 
-    buildInvalidTimestampProof(block: Block): InvalidTimestampProofStruct {
+    buildInvalidTimestampProof(
+        block: Block,
+        previous: {
+            block?: Block;
+            snapshot?: StateSnapshot;
+        } = this.storage.getPreviousBlockAndSnapshot(block.coordinates)
+    ): InvalidTimestampProofStruct {
         let prevSignedBlock: SignedBlockStruct;
-        let prevStateSnapshot: StateSnapshot;
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
-
         let participantSignatureOnPreviousBlock = "0x" as Signature;
         let previousBlockOnChainTimestamp = 0n;
 
-        if (previousBlockOrSnapshot.block) {
+        if (previous.block) {
             // Height > 0 case - we have a previous block
-            const prevBlock = previousBlockOrSnapshot.block;
+            const prevBlock = previous.block;
             prevSignedBlock = prevBlock.signedBlock;
-            prevStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
-                    prevBlock.stateSnapshotHash
-                )!;
             const authorSignedPrevious = prevBlock.findSignature(block.author);
             if (authorSignedPrevious) {
                 participantSignatureOnPreviousBlock = authorSignedPrevious;
@@ -148,20 +128,22 @@ export default class FraudProofService {
         } else {
             // Height === 0 case - we have genesis state snapshot
             prevSignedBlock = createEmptySignedBlock();
-            prevStateSnapshot = previousBlockOrSnapshot.stateSnapshot!;
         }
 
         return {
             invalidBlock: block.signedBlock,
             previousBlock: prevSignedBlock,
-            previousStateSnapshot: prevStateSnapshot.toStruct(),
+            previousStateSnapshot: previous.snapshot!.toStruct(),
             participantSignatureOnPreviousBlock:
                 participantSignatureOnPreviousBlock as Bytes,
             previousBlockOnChainTimestamp
         };
     }
 
-    createInvalidTimestampProof(block: Block): Hash {
+    createInvalidTimestampProof(
+        block: Block,
+        previous?: { block?: Block; snapshot?: StateSnapshot }
+    ): Hash {
         this.logFraudDetection({
             fraudType: FraudProofType.InvalidTimestamp,
             reason: "Block timestamp is invalid or inconsistent with previous block",
@@ -171,7 +153,7 @@ export default class FraudProofService {
             }
         });
 
-        const proof = this.buildInvalidTimestampProof(block);
+        const proof = this.buildInvalidTimestampProof(block, previous);
 
         return this.storeFraudProof(block.signerAddress, {
             type: FraudProofType.InvalidTimestamp,
@@ -247,6 +229,19 @@ export default class FraudProofService {
             type: FraudProofType.ForgedInboundMessageBlock,
             struct: proof
         });
+    }
+
+    /** The predecessor `block` names, its snapshot and state, from storage by hash. */
+    private getStoredPredecessor(block: Block): BlockPredecessor | undefined {
+        if (block.height === 0)
+            return this.storage.getPredecessor(block.forkId);
+        const previousBlock = this.storage.blocks.getBlock(
+            block.previousBlockHash
+        );
+        return (
+            previousBlock &&
+            this.storage.getPredecessor(block.forkId, previousBlock)
+        );
     }
 
     private storeFraudProof(

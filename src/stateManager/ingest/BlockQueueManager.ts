@@ -687,6 +687,14 @@ export default class BlockQueueManager {
         if (this.stateManager.storage.queues.getQueuedEntry(block.hash)) {
             return false;
         }
+        // a free height below the installed history: the proof did not
+        // cover it, so it is inconclusive
+        const blocks = this.stateManager.storage.blocks;
+        if (
+            block.height < blocks.getNextBlockHeight(block.forkId) &&
+            !blocks.getBlock(block.forkId, block.height)
+        )
+            return false;
         return block.forkId === this.stateManager.forkId;
     }
 
