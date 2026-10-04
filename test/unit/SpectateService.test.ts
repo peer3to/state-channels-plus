@@ -4,8 +4,8 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
-    applyDisputeWindowInboundSyncPayload,
-    forgedInboundSuccessor
+    appendForgedInboundSuccessor,
+    applyDisputeWindowInboundSyncPayload
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     applyAnchoredSyncPayload,
@@ -768,14 +768,7 @@ describe("Unit: SpectateService", function () {
         it("chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
-                {
-                    finalizeOnChain: true,
-                    mutate: (payload) => {
-                        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.push(
-                            forgedInboundSuccessor(payload)
-                        );
-                    }
-                }
+                { finalizeOnChain: true, mutate: appendForgedInboundSuccessor }
             );
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);

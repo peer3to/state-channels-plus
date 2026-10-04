@@ -15,19 +15,18 @@ function inboundMessageBlockHash(block: MessageBlockStruct): Hash {
 }
 
 /**
- * A fabricated successor of the window's last applied inbound block: it
- * links to that block and repeats its messages one height above it.
+ * Append a fabricated successor of the window's last applied inbound block:
+ * it links to that block and repeats its messages one height above it.
  */
-export function forgedInboundSuccessor(
-    payload: SyncPayload
-): MessageBlockStruct {
-    const tip =
-        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.at(-1)!;
-    return {
+export function appendForgedInboundSuccessor(payload: SyncPayload): void {
+    const inbound =
+        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce;
+    const tip = inbound.at(-1)!;
+    inbound.push({
         ...tip,
         previousBlockHash: inboundMessageBlockHash(tip),
         blockHeight: BigInt(tip.blockHeight) + 1n
-    };
+    });
 }
 
 /**
@@ -50,14 +49,19 @@ async function stageAndApplyDisputeWindowInboundSync(
         mutate: (payload: SyncPayload) => void;
     }
 ) {
+    let inboundHold: {
+        release: (options: { replay: boolean }) => Promise<void>;
+    };
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
         // peer 2 lacks the top-up, so only the others are awaited
         disputingPeerIndices: [0, 3],
         beforeDispute: async () => {
-            const stub = h.control(h.getPeer(REQUESTER_INDEX)).stub;
-            if (options.requesterInboundHold === "chainEvent")
-                await stub.stubHoldInboundMessageEvents().request();
-            else await stub.stubHoldInboundMessageStorage().request();
+            inboundHold =
+                options.requesterInboundHold === "chainEvent"
+                    ? await h.rpcStub.holdInboundMessageEvents(REQUESTER_INDEX)
+                    : await h.rpcStub.holdInboundMessageStorage(
+                          REQUESTER_INDEX
+                      );
             // a top-up of an existing participant keeps the block turns intact
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(RESPONDER_INDEX).address,
@@ -67,14 +71,12 @@ async function stageAndApplyDisputeWindowInboundSync(
     });
     const responder = h.getPeer(RESPONDER_INDEX);
     const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
     const reductionRaces = await Promise.all(
         h.peers.map((peer) => h.rpcStub.holdReductionRace(peer.index))
     );
     const releaseHolds = async (replay: boolean) => {
-        const stub = h.control(requester).stub;
-        if (options.requesterInboundHold === "chainEvent")
-            await stub.restoreInboundMessageEvents(replay).request();
-        else await stub.restoreInboundMessageStorage(replay).request();
+        await inboundHold.release({ replay });
         for (const race of reductionRaces)
             await race.release({
                 replayEvents: replay,
@@ -106,9 +108,8 @@ async function stageAndApplyDisputeWindowInboundSync(
     expect(servedInboundHashes.length).to.be.greaterThan(0);
     for (const blockHash of servedInboundHashes)
         expect(
-            await h
-                .control(requester)
-                .query.getInboundMessageBlock(blockHash)
+            await requesterControl.query
+                .getInboundMessageBlock(blockHash)
                 .request()
         ).to.equal(null);
     options.mutate(payload);
@@ -130,11 +131,10 @@ async function stageAndApplyDisputeWindowInboundSync(
             .forkID
     ).to.equal(sourceForkId);
 
-    const inboundHeadBefore = await h
-        .control(requester)
-        .query.getLatestInboundMessageHash()
+    const inboundHeadBefore = await requesterControl.query
+        .getLatestInboundMessageHash()
         .request();
-    const requesterStub = h.control(requester).stub;
+    const requesterStub = requesterControl.stub;
     await requesterStub.recordSyncRejections().request();
     let accepted: boolean;
     let rejections: string[];
@@ -169,9 +169,8 @@ async function stageAndApplyDisputeWindowInboundSync(
         ...appliedInboundHashes
     ]))
         if (
-            await h
-                .control(requester)
-                .query.getInboundMessageBlock(blockHash)
+            await requesterControl.query
+                .getInboundMessageBlock(blockHash)
                 .request()
         )
             storedInboundHashes.push(blockHash);
@@ -185,21 +184,14 @@ async function stageAndApplyDisputeWindowInboundSync(
         appliedInboundHashes,
         storedInboundHashes,
         inboundHeadBefore,
-        inboundHeadAfter: await h
-            .control(requester)
-            .query.getLatestInboundMessageHash()
+        inboundHeadAfter: await requesterControl.query
+            .getLatestInboundMessageHash()
             .request(),
         releaseHolds
     };
 }
 
-/**
- * Peer 2 applies peer 0's altered payload for a disputed window whose reduce
- * carries a top-up peer 2 never received; see
- * `stageAndApplyDisputeWindowInboundSync`. Returns the verdict, the served and
- * applied inbound hashes, which of them peer 2 stored, and its inbound head
- * before and after.
- */
+/** `stageAndApplyDisputeWindowInboundSync` with the storage-write hold; releases the holds without replay. */
 export async function applyDisputeWindowInboundSyncPayload(
     h: MathPeerTestHarness,
     options: {
@@ -239,11 +231,7 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
     } = await stageAndApplyDisputeWindowInboundSync(h, {
         finalizeOnChain: true,
         requesterInboundHold: "chainEvent",
-        mutate: (payload) => {
-            payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.push(
-                forgedInboundSuccessor(payload)
-            );
-        }
+        mutate: appendForgedInboundSuccessor
     });
     expect(rejections).to.deep.equal([]);
     expect(accepted).to.equal(true);
