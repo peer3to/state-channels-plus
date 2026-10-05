@@ -6,6 +6,7 @@ import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
     applyDisputeWindowInboundSyncPayload,
+    redirectDisputesToChannelWithoutWindow,
     redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
@@ -815,6 +816,23 @@ describe("Unit: SpectateService", function () {
                 {
                     reduction: "local",
                     mutate: redirectDisputesToForkWithoutWindow
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
+            expect(r.responderBlacklisted).to.equal(true);
+            expect(r.requesterForkId).to.equal(r.sourceForkId);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: redirectDisputesToChannelWithoutWindow
                 }
             );
             expect(r.accepted).to.equal(false);

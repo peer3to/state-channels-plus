@@ -33,12 +33,13 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
 }
 
 /**
- * Point every dispute of the window at a fork with no dispute window, and
- * claim a fabricated reduced fork whose genesis hashes its own data. The
+ * Re-encode every dispute of the window with `input` overriding its input,
+ * and claim a fabricated reduced fork whose genesis hashes its own data. The
  * proof then starts at that genesis with no milestone and no outbound block.
  */
-export function redirectDisputesToForkWithoutWindow(
-    payload: SyncPayload
+function redirectDisputesAndFabricateReducedFork(
+    payload: SyncPayload,
+    input: { forkId: ForkId } | { channelId: string }
 ): void {
     const window = payload.disputeWindows[0];
     for (const { signedDispute } of window.disputeConfirmations) {
@@ -47,13 +48,7 @@ export function redirectDisputesToForkWithoutWindow(
             Type.Dispute
         );
         signedDispute.encodedDispute = Codec.encode(
-            {
-                ...dispute,
-                input: {
-                    ...dispute.input,
-                    forkId: ethers.id("fork without a dispute window")
-                }
-            },
+            { ...dispute, input: { ...dispute.input, ...input } },
             Type.Dispute
         );
     }
@@ -76,6 +71,32 @@ export function redirectDisputesToForkWithoutWindow(
     payload.stateProof.milestones = [];
     payload.latestFinalizedEncodedState = payload.latestForkGenesisEncodedState;
     payload.outboundMessageBlocksOfTheLatestFork = [];
+}
+
+/**
+ * Point every dispute of the window at a fork with no dispute window, and
+ * claim a fabricated reduced fork whose genesis hashes its own data. The
+ * proof then starts at that genesis with no milestone and no outbound block.
+ */
+export function redirectDisputesToForkWithoutWindow(
+    payload: SyncPayload
+): void {
+    redirectDisputesAndFabricateReducedFork(payload, {
+        forkId: ethers.id("fork without a dispute window")
+    });
+}
+
+/**
+ * Keep every dispute of the window on the window's fork but point it at a
+ * channel with no dispute window, and claim the same fabricated reduced fork
+ * as `redirectDisputesToForkWithoutWindow`.
+ */
+export function redirectDisputesToChannelWithoutWindow(
+    payload: SyncPayload
+): void {
+    redirectDisputesAndFabricateReducedFork(payload, {
+        channelId: ethers.id("channel without a dispute window")
+    });
 }
 
 /**
