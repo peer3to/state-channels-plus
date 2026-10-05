@@ -1482,24 +1482,23 @@ describe("E2E: lobby matching", function () {
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-expired-opening-submission");
         const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
-        const lower = h.peers[lowerIndex];
-        const higher = h.peers[higherIndex];
+        const lowerStub = h.control(h.peers[lowerIndex]).stub;
+        const higher = h.control(h.peers[higherIndex]);
         const higherAttempt = () =>
-            h.control(higher).query.getNegotiationAttempt().request();
+            higher.query.getNegotiationAttempt().request();
 
         // Time is the test input: the lower proposer's terms expire a few
         // seconds after it signs them, instead of the full opening window.
-        await h.control(lower).stub.stubShortOpeningDeadline(6).request();
+        await lowerStub.stubShortOpeningDeadline(6).request();
         // The higher peer co-signs and keeps both signatures, but parks the
         // submission until the terms have expired.
-        await h.control(higher).stub.stubHoldOpeningSubmission().request();
+        await higher.stub.stubHoldOpeningSubmission().request();
         try {
             await h.network.joinLobby([lowerIndex, higherIndex], topic);
             await waitFor(
                 async () =>
-                    (await h
-                        .control(higher)
-                        .stub.getHeldOpeningSubmissionCount()
+                    (await higher.stub
+                        .getHeldOpeningSubmissionCount()
                         .request()) === 1,
                 h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
                 100
@@ -1520,39 +1519,30 @@ describe("E2E: lobby matching", function () {
             // The peer clocks only estimate chain time, so the retained
             // signatures are submitted once the chain itself is past the
             // deadline.
-            const deadline = await h
-                .control(lower)
-                .stub.getShortOpeningDeadline()
+            const deadline = await lowerStub
+                .getShortOpeningDeadline()
                 .request();
             if (deadline === null) throw new Error("Terms were not shortened");
             await h.event.waitForChainTimeAfter(deadline);
 
-            await h.control(higher).stub.releaseOpeningSubmission().request();
+            await higher.stub.releaseOpeningSubmission().request();
+            let rejections: string[] = [];
             await waitFor(
                 async () =>
-                    (
-                        await h
-                            .control(higher)
-                            .stub.getOpeningSubmissionRejections()
-                            .request()
-                    ).length > 0,
+                    (rejections = await higher.stub
+                        .getOpeningSubmissionRejections()
+                        .request()).length > 0,
                 h.event.protocolEventTimeoutMs(),
                 100
             );
+            expect(rejections).to.deep.equal([
+                "RaceConditionOpenChannelExpired"
+            ]);
             expect(
-                await h
-                    .control(higher)
-                    .stub.getOpeningSubmissionRejections()
-                    .request()
-            ).to.deep.equal(["RaceConditionOpenChannelExpired"]);
-            expect(
-                await h
-                    .control(higher)
-                    .query.isChannelOpen(signed.channelId)
-                    .request()
+                await higher.query.isChannelOpen(signed.channelId).request()
             ).to.equal(false);
         } finally {
-            await h.control(higher).stub.releaseOpeningSubmission().request();
+            await higher.stub.releaseOpeningSubmission().request();
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);
         }
     });

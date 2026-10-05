@@ -1098,7 +1098,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         // `submitOpening` is private on the service; the stub patches it by name.
         const target = service as unknown as {
-            submitOpening: (...parameters: unknown[]) => Promise<unknown>;
+            submitOpening: (
+                ...parameters: unknown[]
+            ) => Promise<ethers.ContractTransactionResponse>;
         };
         if (!this.service.stubOriginals.has("openingSubmission")) {
             this.service.stubOriginals.set(
@@ -1117,9 +1119,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             // Record-only: the real submission and its outcome still reach
             // the service unchanged.
             try {
-                const tx = (await original.apply(service, parameters)) as {
-                    hash: string;
-                };
+                const tx = await original.apply(service, parameters);
                 DetachedPromises.collect(
                     stubService.recordMinedOpeningRejection(tx.hash)
                 );
@@ -1139,7 +1139,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     public getShortOpeningDeadline(): Timestamp | null {
-        return this.service.shortOpeningDeadline ?? null;
+        return this.service.shortOpeningDeadline;
     }
 
     public getOpeningSubmissionRejections(): string[] {

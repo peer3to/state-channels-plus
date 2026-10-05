@@ -110,7 +110,6 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         }
     }
 
-    // Terms signed before their deadline open the channel and take every deposit.
     function test_open_beforeDeadline_opensChannel() public {
         vm.warp(OPEN_DEADLINE - 1);
 
@@ -119,8 +118,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         _assertOpenedWithDeposits();
     }
 
-    // The deadline itself is still valid: the terms expire after it, not at it,
-    // the same boundary joinChannel uses.
+    // Same inclusive boundary as joinChannel.
     function test_open_atDeadline_opensChannel() public {
         vm.warp(OPEN_DEADLINE);
 
@@ -129,9 +127,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         _assertOpenedWithDeposits();
     }
 
-    // Unanimous signatures do not keep expired terms alive: one second past the
-    // deadline the open reverts with the deadline and the chain time, before any
-    // deposit or channel state is written.
+    // Unanimous signatures do not keep expired terms alive; nothing is written.
     function test_open_afterDeadline_revertsWithOpenChannelExpired() public {
         vm.warp(OPEN_DEADLINE + 1);
         OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();

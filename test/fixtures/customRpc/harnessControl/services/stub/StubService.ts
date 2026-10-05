@@ -493,7 +493,7 @@ export class StubService extends ANetworkRpcService<
     /** Decoded contract error names of opening submissions the chain rejected. */
     openingSubmissionRejections: string[] = [];
     /** Deadline the short-opening-deadline stub gave this proposer's terms. */
-    shortOpeningDeadline?: Timestamp;
+    shortOpeningDeadline: Timestamp | null = null;
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;
@@ -2958,10 +2958,8 @@ export class StubService extends ANetworkRpcService<
         const provider = this.chainProvider;
         const receipt = await provider.waitForTransaction(transactionHash);
         if (!receipt || receipt.status !== 0) return;
-        if (!(provider instanceof JsonRpcApiProvider)) {
-            this.openingSubmissionRejections.push("undecoded");
-            return;
-        }
+        if (!(provider instanceof JsonRpcApiProvider))
+            throw new Error("Expected a JSON-RPC chain provider");
         const trace: { returnValue: string } = await provider.send(
             "debug_traceTransaction",
             [

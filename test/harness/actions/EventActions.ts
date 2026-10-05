@@ -173,10 +173,8 @@ export class EventActions<
     }
 
     /**
-     * Wait until the chain's own clock is past `timestamp`. Each probe mines
-     * one block with a zero-value self-transfer from this slot's deployer
-     * (through its nonce manager, so `channelManager` sends stay in order):
-     * a normal transaction, never a node-wide time RPC. Peer clocks only
+     * Wait until the chain's own clock is past `timestamp`. E2E nodes are
+     * interval-mined, so this only reads the latest block. Peer clocks only
      * estimate chain time, so a deadline they report as passed may not be on
      * chain yet.
      */
@@ -184,24 +182,11 @@ export class EventActions<
         timestamp: number,
         timeoutMs = this.protocolEventTimeoutMs()
     ): Promise<void> {
-        const prober = this.harness.deployerSigner;
-        const proberAddress = await prober.getAddress();
         await waitFor(
-            async () => {
-                const response = await prober.sendTransaction({
-                    to: proberAddress,
-                    value: 0n
-                });
-                const receipt = await response.wait();
-                if (!receipt) return false;
-                const block = await this.harness.provider.getBlock(
-                    receipt.blockNumber
-                );
-                return block !== null && block.timestamp > timestamp;
-            },
-            timeoutMs,
-            // one mined probe per second of chain time
-            1000
+            async () =>
+                ((await this.harness.provider.getBlock("latest"))?.timestamp ??
+                    0) > timestamp,
+            timeoutMs
         );
     }
 
