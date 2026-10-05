@@ -46,6 +46,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-45-ACZCDE`](open-questions.md#oq-45-aczcde)                                         | Subjective post-authentication engagement policy: how a node decides whether to keep interacting with a proven identity                                     | Engineer direction     | [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                     | Open                              |
 | [`OQ-SPEC-LOBBY-1-D65YTT`](open-questions.md#oq-spec-lobby-1-d65ytt)                     | Per-transport cap and overflow outcome for deferred pre-readiness RPC admission                                                                             | Security hardening     | [peer-communication/rpc.md](./peer-communication/rpc.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                         | Open                              |
 | [`OQ-SPEC-OPEN-1-12RH7A`](open-questions.md#oq-spec-open-1-12rh7a)                       | Whether the base-layer open operation must reject opening terms whose deadline has passed                                                                   | Security review        | [enforcement/admission-and-funds.md](./enforcement/admission-and-funds.md), [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md) | Resolved                          |
+| [`OQ-SPEC-OPEN-2-YQTTTB`](open-questions.md#oq-spec-open-2-yqtttb)                       | Minimum time an opening proposal's deadline must leave before the higher peer signs and submits                                                             | Security review        | [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                                                                                   | Resolved                          |
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216) | Future spectator relaying                                                                                                                                   | Plan                   | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
 
 ## Register assumptions and constraints
@@ -618,6 +619,29 @@ Consequence: once chain time is past the deadline, retained signatures cannot op
 integrator. The SDK's own expiry observation runs `agreementTime` after the deadline on its chain-synced
 clock, not on chain time, so a negotiation the SDK treats as expired cannot open the channel as long as
 chain time does not trail that clock by more than `agreementTime`.
+
+<a id="oq-spec-open-2-yqtttb"></a>
+
+## OQ-SPEC-OPEN-2-YQTTTB — Minimum remaining window for an opening proposal
+
+Open rejects terms past their deadline
+([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)).
+The higher peer accepted any proposed deadline after its current time and up to 120 seconds later.
+A lower peer could therefore propose a deadline one or two seconds ahead. The higher peer then signs,
+submits, and pays for an `open` that reverts as expired, and the failed receipt is not the proposer's
+fault, so the proposer takes no strike and can repeat it.
+
+Requested engineer decision: must the higher peer refuse a deadline that leaves less than a minimum
+window, and is a too-close deadline an invalid deadline or a no-strike decline?
+
+**Resolved (2026-10-05, engineer decision):** reject it as an invalid deadline. The higher peer rejects
+a proposal whose deadline is less than 30 seconds after its current time, half of the 60-second window
+an honest proposer uses. Exactly 30 seconds is accepted. The rejection is the existing invalid-deadline
+outcome in [channel-negotiation.md](./peer-communication/channel-negotiation.md): exclude the proposer
+before anything is signed or submitted. The rule is covered by
+[`INV-NEG-1-6FW90P.T1.P11`](peer-communication/channel-negotiation.md#inv-neg-1-6fw90p.t1.p11). Rejected
+alternatives: skip submission below the minimum as a no-strike decline, which saves gas but lets the
+proposer waste matches without limit; and accepting and documenting the risk.
 
 <a id="oq-spec-spectator-relay-1-v6f216"></a>
 

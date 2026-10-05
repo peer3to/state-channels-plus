@@ -25,14 +25,25 @@ The pending-selection upgrade case holds the pick reply and its matching RPC-exp
 The signed-attempt remote-abort case waits for both peers to observe transport closure before checking their respective zero/one strike outcomes. Run 453 queried the lower peer before its socket-close event arrived. The signature retention and eventual chain-opening assertions remain unchanged; runtime revalidation is pending.
 
 The expired-opening case shortens the lower proposer's opening window to six seconds with a host stub
-that offsets only the clock read that derives the deadline, and parks the higher peer's real submission
-after it co-signed. It waits until the higher peer's own expiry observation ends the signed attempt,
+that offsets only the clock read that derives the deadline. Six seconds is below the higher peer's
+30-second minimum, so a second stub offsets only the higher peer's clock read that sets its deadline
+bounds, lowering that minimum to one second for this one proposal; a real deadline over 30 seconds plus
+setup, matching, and the expiry observation would not fit the global test timeout. The case parks the
+higher peer's real submission after it co-signed. It waits until the higher peer's own expiry observation ends the signed attempt,
 then polls the latest block until its timestamp is past the deadline, and only then releases the
 retained signatures to the real submission. The wait sends no transactions and calls no time RPC: it
 relies on the interval-mined E2E node to advance chain time, so on an automine node it times out. A
 record-only wrapper reads the reverted transaction's error back from its trace. The oracle is exactly
 one recorded rejection, `RaceConditionOpenChannelExpired`, and the negotiated channel still closed on
 chain. Without the contract check the same release opens the channel and the case fails.
+
+The too-close-deadline case shortens the lower proposer's opening window to ten seconds, below the
+higher peer's 30-second minimum, without lowering that minimum, and installs the submission hold on the
+higher peer so that any submission would be parked and counted. It waits until the higher peer
+blacklists the lower peer, then asserts that the proposer's stub derived the short deadline, that the
+higher peer parked no submission, and that no opening rejection was recorded: the proposer is excluded
+before the higher peer signs or submits anything. It then waits until the lower peer's own signed attempt ends at its
+deadline before leaving the lobby.
 
 ## Tests and covered test IDs
 
@@ -59,4 +70,5 @@ returns a generic committed peer; `joinLobby` starts negotiation and consumes it
 already-open derived ID is a protocol failure with punishment, listener cleanup, and no raw-topic sync path.
 | [`E2E: lobby matching > keeps a signed attempt observing the chain after a remote abort and opens on the observed submission`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1375) (line 1375) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p16) |
 | [`E2E: lobby matching > rejects retained opening signatures submitted on chain after the SDK expired the opening terms`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1470) (line 1470) | [`REQ-ENFADM-4-2NN96F.T1.P4`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) |
-| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1537) (line 1537) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p17) |
+| [`E2E: lobby matching > excludes a proposer whose opening deadline leaves less than the minimum window, without submitting`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1541) (line 1541) | [`INV-NEG-1-6FW90P.T1.P11`](../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p.t1.p11) |
+| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1589) (line 1589) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p17) |

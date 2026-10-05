@@ -152,7 +152,7 @@ Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrenc
 
 **Evidence and path.** The proxy opening path verified participant signatures and passed deadlineTimestamp to the consumer deposit path without checking expiry. The SDK cleared the attempt after the signed window. A negotiating peer could retain signatures and later open using the bundled consumer behavior.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:678–718](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L678-L718); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–719](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L719); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
 
 **Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials; it has no rank because the path is fixed.
 
@@ -164,6 +164,8 @@ Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrenc
 
 - Direct open before, at and after the deadline.
 - Retained opening signatures submitted after SDK expiry are rejected by the contract.
+
+Follow-on hardening: with `open` now reverting after the deadline, a lower peer could propose a deadline a few seconds ahead and make the higher peer pay for a submission certain to revert, with no strike. The engineer decided on 2026-10-05 that the higher peer rejects a deadline less than 30 seconds after its current time as an invalid deadline and excludes the proposer before signing or submitting ([`OQ-SPEC-OPEN-2-YQTTTB` (Minimum remaining window for an opening proposal)](../specification/open-questions.md#oq-spec-open-2-yqtttb), resolved). Mapped permutation: [`INV-NEG-1-6FW90P.T1.P11`](../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p.t1.p11) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)). The retained-signature E2E lowers that minimum on the higher peer for its one six-second proposal.
 
 Mapped permutations: [`REQ-ENFADM-4-2NN96F.T1.P1`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1), [`REQ-ENFADM-4-2NN96F.T1.P2`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p2) and [`REQ-ENFADM-4-2NN96F.T1.P3`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3) ([proxy open test report](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)), and [`REQ-ENFADM-4-2NN96F.T1.P4`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)).
 

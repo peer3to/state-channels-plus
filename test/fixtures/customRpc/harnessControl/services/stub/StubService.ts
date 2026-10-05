@@ -672,6 +672,40 @@ export class StubService extends ANetworkRpcService<
     }[] = [];
     private restoreRequestFrameCapture?: () => void;
 
+    /**
+     * Shift the clock read that directly follows this peer's next
+     * `buildOpeningData` call by `offsetSeconds`. The offset applies to that
+     * one read only; every later read uses the real clock.
+     */
+    public shiftClockReadAfterOpeningData(
+        offsetSeconds: number,
+        onShiftedRead?: (shiftedNow: Timestamp) => void
+    ): void {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `buildOpeningData` is protected on the service; the stub patches it by name.
+        const target = service as unknown as {
+            buildOpeningData: (...parameters: unknown[]) => Promise<unknown>;
+        };
+        const original = target.buildOpeningData;
+        target.buildOpeningData = async (...parameters: unknown[]) => {
+            const data = await original.apply(service, parameters);
+            target.buildOpeningData = original;
+            const realClock = Clock.getTimeInSeconds;
+            const restore = () => {
+                Clock.getTimeInSeconds = realClock;
+            };
+            Clock.getTimeInSeconds = () => {
+                restore();
+                const shiftedNow = realClock.call(Clock) + offsetSeconds;
+                onShiftedRead?.(shiftedNow);
+                return shiftedNow;
+            };
+            // Never leave the offset behind if the deadline read did not come.
+            setTimeout(restore, 0);
+            return data;
+        };
+    }
+
     public recordLeaveWatchdog(): void {
         this.leaveWatchdogRestore?.();
         const timers = this.sm.timeoutManager;

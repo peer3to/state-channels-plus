@@ -1490,6 +1490,10 @@ describe("E2E: lobby matching", function () {
         // Time is the test input: the lower proposer's terms expire a few
         // seconds after it signs them, instead of the full opening window.
         await lowerStub.stubShortOpeningDeadline(6).request();
+        // Six seconds is below the receiver's minimum remaining window, so
+        // the higher peer lowers that minimum for this one proposal and the
+        // test stays within the global timeout.
+        await higher.stub.stubLowerOpeningMinimumWindow(1).request();
         // The higher peer co-signs and keeps both signatures, but parks the
         // submission until the terms have expired.
         await higher.stub.stubHoldOpeningSubmission().request();
@@ -1538,6 +1542,54 @@ describe("E2E: lobby matching", function () {
             expect(
                 await higher.query.isChannelOpen(signed.channelId).request()
             ).to.equal(false);
+        } finally {
+            await higher.stub.releaseOpeningSubmission().request();
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("excludes a proposer whose opening deadline leaves less than the minimum window, without submitting", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-too-close-opening-deadline");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lower = h.peers[lowerIndex];
+        const lowerStub = h.control(lower).stub;
+        const higher = h.control(h.peers[higherIndex]);
+
+        // The lower proposer's terms leave 10 seconds, below the receiver's
+        // 30-second minimum.
+        await lowerStub.stubShortOpeningDeadline(10).request();
+        // Any opening submission by the higher peer would be parked and
+        // counted here.
+        await higher.stub.stubHoldOpeningSubmission().request();
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                () => higher.query.isBlacklisted(lower.address).request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
+            expect(
+                await lowerStub.getShortOpeningDeadline().request()
+            ).not.to.equal(null);
+
+            expect(
+                await higher.stub.getHeldOpeningSubmissionCount().request()
+            ).to.equal(0);
+            expect(
+                await higher.stub.getOpeningSubmissionRejections().request()
+            ).to.deep.equal([]);
+            // The lower peer signed its own proposal, so its attempt keeps
+            // observing the chain until that deadline expires; only then does
+            // leaving the lobby end its join.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(lower)
+                        .query.getNegotiationAttempt()
+                        .request()) === null,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            );
         } finally {
             await higher.stub.releaseOpeningSubmission().request();
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);

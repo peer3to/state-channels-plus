@@ -29,13 +29,15 @@ import type {
     SignatureBlockMatch
 } from "./StubService";
 
-import Clock from "@/Clock";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
 import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
-import { OPEN_CHANNEL_DEADLINE_SECONDS } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import {
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -1153,32 +1155,28 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
      * that one read only; the peer's expiry observation runs on the real clock.
      */
     public stubShortOpeningDeadline(remainingSeconds: number): boolean {
-        const service = this.p2pManager.localRpc.openChannelNegotiationService;
-        // `buildOpeningData` is protected on the service; the stub patches it by name.
-        const target = service as unknown as {
-            buildOpeningData: (...parameters: unknown[]) => Promise<unknown>;
-        };
-        const original = target.buildOpeningData;
-        const offsetSeconds = remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS;
         const stubService = this.service;
-        target.buildOpeningData = async (...parameters: unknown[]) => {
-            const data = await original.apply(service, parameters);
-            target.buildOpeningData = original;
-            const realClock = Clock.getTimeInSeconds;
-            const restore = () => {
-                Clock.getTimeInSeconds = realClock;
-            };
-            Clock.getTimeInSeconds = () => {
-                restore();
-                const shiftedNow = realClock.call(Clock) + offsetSeconds;
+        this.service.shiftClockReadAfterOpeningData(
+            remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS,
+            (shiftedNow) => {
                 stubService.shortOpeningDeadline =
                     shiftedNow + OPEN_CHANNEL_DEADLINE_SECONDS;
-                return shiftedNow;
-            };
-            // Never leave the offset behind if the deadline read did not come.
-            setTimeout(restore, 0);
-            return data;
-        };
+            }
+        );
+        return true;
+    }
+
+    /**
+     * Make this receiver accept, for its next opening proposal only, a
+     * deadline that leaves `minimumSeconds` instead of the protocol minimum.
+     * The clock read that sets the deadline bounds directly follows
+     * `buildOpeningData`, so the offset applies to that one read only; the
+     * peer's expiry observation runs on the real clock.
+     */
+    public stubLowerOpeningMinimumWindow(minimumSeconds: number): boolean {
+        this.service.shiftClockReadAfterOpeningData(
+            minimumSeconds - OPEN_CHANNEL_MIN_REMAINING_SECONDS
+        );
         return true;
     }
 
