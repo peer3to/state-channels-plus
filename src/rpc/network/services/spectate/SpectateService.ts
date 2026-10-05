@@ -235,7 +235,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // Another sync may have finalized this window only in the shared
             // local EVM. Only chain finality can skip the local reduction.
             // Read finality first: a later window fetch includes any reduction that
-            // lands between reads, while a false decision safely reduces locally.
+            // lands between reads. A false decision then still checks the expected
+            // fork locally, but only a reduction this sync runs checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
@@ -290,6 +291,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.disputeWindows.slice(adoptedWindowCount);
 
             let notReducedCount = 0;
+            // windows whose reduction this sync's own local call committed
+            const reducedByThisSync = new Set<ForkId>();
             for (const dw of linkedDisputeWindows) {
                 // each window must reduce the fork reached so far, starting at the on-chain fork
                 if (dw.forkId !== currentForkId)
@@ -331,13 +334,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         );
                     }
                     try {
-                        await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                            disputes,
-                            dw.latestStateSnapshot,
-                            dw.latestEncodedStateMachineState,
-                            dw.inboundMessageBlocksAppliedInReduce,
-                            dw.reducedForkId
-                        );
+                        const committedReduction =
+                            await diamondStateMachine.reduceAndFinalizeLocally(
+                                disputes,
+                                dw.latestStateSnapshot,
+                                dw.latestEncodedStateMachineState,
+                                dw.inboundMessageBlocksAppliedInReduce,
+                                dw.reducedForkId
+                            );
+                        if (committedReduction)
+                            reducedByThisSync.add(dw.forkId);
                     } catch (e) {
                         if (!isLocalEvmExecutionFailure(e)) throw e;
                         return this.rejectSync(
@@ -532,10 +538,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Persist the verified material; existing data is kept
+            // only this sync's own reduction checked a window's inbound list; any
+            // other window's list is dropped and chain events deliver the genuine blocks
             const { shouldAbort } = await this.persistSyncPayload(
                 {
                     ...syncPayload,
-                    disputeWindows: linkedDisputeWindows,
+                    disputeWindows: linkedDisputeWindows.map((dw) =>
+                        reducedByThisSync.has(dw.forkId)
+                            ? dw
+                            : { ...dw, inboundMessageBlocksAppliedInReduce: [] }
+                    ),
                     outboundMessageBlocksUpToLatestGenesis,
                     outboundMessageBlocksOfTheLatestFork
                 },

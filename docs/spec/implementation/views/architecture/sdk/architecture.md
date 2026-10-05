@@ -28,7 +28,7 @@ surface: the enshrined contract, two client-side signers, the `EventBus`, and
 
 ### 1.1 `p2pSetup` — verified signature
 
-Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L448)
+Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L487)
 (the class is exported as `EvmStateMachine`).
 
 Parameters:
@@ -150,9 +150,9 @@ returned. Application setup owns this sequence; the root owns communication.
 1. **Live instance** — drives the replicated channel state. All happy-path
    execution (`stateTransition`, `getState`/`setState`, `getNextToWrite`,
    balance algebra, `processInboundMessage`) runs against it through
-   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L62).
+   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L67).
 2. **Diamond instance** — embedded in the locally deployed
-   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L420) (see
+   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L459) (see
    `deployLocalDiamondWithStateMachineAddress`). The `LocalDiamond` is a local
    mirror of the on-chain manager's dispute/fraud-proof logic plus per-channel
    chain state, kept in sync by the

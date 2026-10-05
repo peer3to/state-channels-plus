@@ -1268,8 +1268,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdSyncWindowPersistence(): boolean {
-        this.service.holdSyncWindowPersistence();
+    /** Hold a sync's chain-window step before its fetch or after its persist. */
+    public holdSyncWindowPersistence(
+        at: "beforeFetch" | "afterPersist"
+    ): boolean {
+        if (at !== "beforeFetch" && at !== "afterPersist")
+            throw new Error("Invalid sync window hold point");
+        this.service.holdSyncWindowPersistence(at);
         return true;
     }
 

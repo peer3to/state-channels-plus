@@ -34,9 +34,9 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
 2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
 3. **`p2pSetup` is a wrapper over `setupP2pRuntime`** ([setupP2pRuntime.ts](./p2pRuntime/setupP2pRuntime.ts.md)) with the production dependencies; its public signature (`P2pSetupOptions`) is unchanged. The construction returns only after host readiness and disposes the runtime client if deployment completion or application readiness rejects.
 4. **`stateTransition` returns an invalid transition only for a failure inside the EVM.** The
-   catch around the local machine call ([#L156-L168](../../../../../../src/evm/EvmDiamondStateMachine.ts#L156-L168)) returns `success: false` only
+   catch around the local machine call ([#L161-L173](../../../../../../src/evm/EvmDiamondStateMachine.ts#L161-L173)) returns `success: false` only
    when `isInvalidStateTransitionError` ([evmErrorHandler](../utils/evmErrorHandler.ts.md)) says the
-   transition failed inside the EVM within its full budget ([#L162](../../../../../../src/evm/EvmDiamondStateMachine.ts#L162)). A refusal to run
+   transition failed inside the EVM within its full budget ([#L167](../../../../../../src/evm/EvmDiamondStateMachine.ts#L167)). A refusal to run
    under-funded (`ErrorInsufficientGasForStateTransition`), an `out of gas` of the call's own frame,
    and an executor or transport failure are rethrown. An invalid result feeds the block pipeline's
    invalid-transition hook and can become a fraud proof; a thrown local failure leaves the block
@@ -44,6 +44,14 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    dispute ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). If every local failure were an invalid
    transition, a node whose local EVM is under-funded or whose executor fails would judge an honest
    block as fraud.
+5. **`reduceAndFinalizeLocally` reports whether its call committed the reduction.** It runs the
+   local diamond's `reduceAndFinalize` through the contract executor directly
+   ([#L381-L413](../../../../../../src/evm/EvmDiamondStateMachine.ts#L381-L413)), because the local signer discards a call's logs. It returns true
+   only when that call's logs hold `DisputeReducedResultCommitted` from the diamond address. The
+   diamond emits it only when it commits a reduction, so an early return for an already reduced
+   or missing window reads false. A revert propagates as a thrown local EVM failure. Sync uses the
+   result to persist a window's inbound blocks only when its own call checked them
+   ([SpectateService.ts](../rpc/network/services/spectate/SpectateService.ts.md)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -90,7 +98,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | ---------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)         | Covered               | **Here:** the single mirrored deployment + staticCall surface.                                                                                                                                                                                                                                                                                                                                                                                                                                                       | None.                                                                                                    |
 | [`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)         | Partial               | **Here:** event-driven replication entry points.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report). |
-| [`REQ-ENFSM-1-DKJCY2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) | Covered               | **Here:** the `stateTransition` catch returns an invalid transition only for an invalid state transition and rethrows every other failure ([#L162](../../../../../../src/evm/EvmDiamondStateMachine.ts#L162)). **Other files:** [evmErrorHandler](../utils/evmErrorHandler.ts.md) owns the rule; [BlockIngestService](../stateManager/ingest/BlockIngestService.ts.md) restores the state and builds no fraud proof on a thrown failure; [ContractExecutor](contractExecutor/ContractExecutor.ts.md) funds the call. | None.                                                                                                    |
+| [`REQ-ENFSM-1-DKJCY2`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2) | Covered               | **Here:** the `stateTransition` catch returns an invalid transition only for an invalid state transition and rethrows every other failure ([#L167](../../../../../../src/evm/EvmDiamondStateMachine.ts#L167)). **Other files:** [evmErrorHandler](../utils/evmErrorHandler.ts.md) owns the rule; [BlockIngestService](../stateManager/ingest/BlockIngestService.ts.md) restores the state and builds no fraud proof on a thrown failure; [ContractExecutor](contractExecutor/ContractExecutor.ts.md) funds the call. | None.                                                                                                    |
 
 ## Component test obligations
 

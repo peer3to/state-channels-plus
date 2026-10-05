@@ -1357,23 +1357,23 @@ export class StubService extends ANetworkRpcService<
     }
 
     public holdSyncReductionResult(): void {
-        const contract = this.sm.diamondStateMachine.localDiamondContract;
-        const original = contract.reduceAndFinalize;
+        const diamondStateMachine = this.sm.diamondStateMachine;
+        const original =
+            diamondStateMachine.reduceAndFinalizeLocally.bind(
+                diamondStateMachine
+            );
         const hold = this.createRpcHold("spectate");
         this.syncReductionHold = hold;
-        this.restoreSyncReduction = () =>
-            Reflect.set(contract, "reduceAndFinalize", original);
-        Reflect.set(
-            contract,
-            "reduceAndFinalize",
-            async (...args: Parameters<typeof original>) => {
-                const result = await original(...args);
-                this.restoreSyncReduction?.();
-                hold.entered += 1;
-                await hold.gate;
-                return result;
-            }
-        );
+        this.restoreSyncReduction = () => {
+            diamondStateMachine.reduceAndFinalizeLocally = original;
+        };
+        diamondStateMachine.reduceAndFinalizeLocally = async (...args) => {
+            const result = await original(...args);
+            this.restoreSyncReduction?.();
+            hold.entered += 1;
+            await hold.gate;
+            return result;
+        };
     }
 
     public getSyncReductionEntered(): number {
@@ -1503,7 +1503,8 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
-    public holdSyncWindowPersistence(): void {
+    // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
+    public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
         const service = this.p2pManager.localRpc.spectateService;
         const original =
             service.fetchAndPersistOnChainDisputeWindows.bind(service);
@@ -1513,6 +1514,12 @@ export class StubService extends ANetworkRpcService<
             service.fetchAndPersistOnChainDisputeWindows = original;
         };
         service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
+            if (at === "beforeFetch") {
+                this.restoreSyncWindow?.();
+                hold.entered += 1;
+                await hold.gate;
+                return await original(...args);
+            }
             const windows = await original(...args);
             this.restoreSyncWindow?.();
             hold.entered += 1;

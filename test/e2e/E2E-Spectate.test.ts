@@ -726,7 +726,14 @@ describe("E2E: Spectate Service", function () {
     describe("Participant sync across a chain-final window", function () {
         it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
             await assertSyncedParticipantNeverSignsInjectedInbound(
-                TestSession.getHarness()
+                TestSession.getHarness(),
+                "heldEvent"
+            );
+        });
+        it("responder injects an inbound successor and the participant's inbound chain event is lost → chain-log recovery delivers the genuine block, the participant never stores or signs the successor", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "droppedLog"
             );
         });
     });

@@ -768,7 +768,10 @@ describe("Unit: SpectateService", function () {
         it("chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
-                { finalizeOnChain: true, mutate: appendForgedInboundSuccessor }
+                {
+                    reduction: "chainBeforeSync",
+                    mutate: appendForgedInboundSuccessor
+                }
             );
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
@@ -782,10 +785,44 @@ describe("Unit: SpectateService", function () {
         it("window reduced locally during sync → accepted, its inbound blocks stored", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
-                { finalizeOnChain: false, mutate: () => {} }
+                { reduction: "local", mutate: () => {} }
             );
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+
+        it("reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainAfterFinalityRead",
+                    mutate: appendForgedInboundSuccessor
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window already reduced locally by a concurrent sync, with a fabricated inbound successor → accepted, only the concurrent sync's genuine inbound blocks stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "concurrentLocalSync",
+                    mutate: appendForgedInboundSuccessor
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
             expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });

@@ -69,7 +69,8 @@ included. When the anchor itself is latest final, its milestone block and state 
 The requester decodes the payload, fetches chain truth, verifies the dispute-window lineage and
 claimed genesis, and checks the requested fork and outbound commitments. Already-adopted leading
 windows are skipped only after their chain-final successor links are checked. At most one remaining
-window is reduced locally for this verification.
+window is reduced locally for this verification; the call reports whether it executed the reduction
+or returned early because the window was already reduced.
 
 Milestone verification calls `AgreementManager.verifyStateProof`: local finalized state, local
 diamond, then chain. Missing starts or false results permit the next tier; throws do not. The
@@ -81,7 +82,9 @@ Persistence reconstructs retained milestone support, merging matching overlappin
 signatures. It does not require skipped historical blocks. It stores final snapshot and full state,
 then passes the unfinalized suffix through the ordinary spectating ingest path from the verified
 predecessor. A milestone crossing an anchor retains its verified suffix. Conflicting final state
-or a failed payload check rejects the response.
+or a failed payload check rejects the response. A window's inbound blocks are stored only when this
+request's own local reduction executed, since only that call checked them; no other window persists
+its inbound list, and chain events or chain-log recovery deliver its genuine blocks.
 
 ## 4. Failure and threat boundaries
 

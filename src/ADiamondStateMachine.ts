@@ -3,8 +3,12 @@ import { Address, Bytes } from "./types/types";
 import type { LocalDiamondContract } from "./utils/localDiamond";
 import {
     BalanceStruct,
-    MessageStruct
+    MessageBlockStruct,
+    MessageStruct,
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { BytesLike } from "ethers";
 type TransitionResponse = {
     success: boolean;
     outboundMessages: MessageStruct[];
@@ -49,6 +53,19 @@ abstract class ADiamondStateMachine {
     ): Promise<boolean>;
 
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
+
+    /**
+     * Run `reduceAndFinalize` on the local diamond. True only when this call
+     * committed the window's reduction, so it validated the inputs; false
+     * when the window was already reduced or does not exist.
+     */
+    public abstract reduceAndFinalizeLocally(
+        disputes: DisputeStruct[],
+        stateSnapshot: StateSnapshotStruct,
+        encodedStateMachineState: BytesLike,
+        inboundMessageBlocks: MessageBlockStruct[],
+        expectedReducedForkId: BytesLike
+    ): Promise<boolean>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
 
