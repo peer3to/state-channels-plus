@@ -131,7 +131,7 @@ Constructor identity is not stable across module graphs, so it is not part of ei
 resolution or incoming dispatch. The structural check only classifies the service; normal RPC
 guards and payload validation still apply.
 
-[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L49)
+[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L136)
 is exported but **not** instantiated by `MainRpcService`; it only becomes reachable when an
 integrator's custom root wires it in (§2.5). Until wired, its name resolves to nothing and frames
 addressed to it disconnect the sender like any unknown service.
