@@ -1500,11 +1500,10 @@ describe("E2E: lobby matching", function () {
                     (await higher.stub
                         .getHeldOpeningSubmissionCount()
                         .request()) === 1,
-                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
-                100
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
             );
             const signed = await higherAttempt();
-            if (!signed) throw new Error("Negotiation attempt is gone");
+            if (!signed) expect.fail("negotiation attempt is gone");
             expect(signed.localOpeningSignatureIssued).to.equal(true);
 
             // The SDK's own expiry observation ends the signed attempt once
@@ -1513,8 +1512,7 @@ describe("E2E: lobby matching", function () {
                 async () =>
                     (await higherAttempt())?.attemptNonce !==
                     signed.attemptNonce,
-                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
-                100
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
             );
             // The peer clocks only estimate chain time, so the retained
             // signatures are submitted once the chain itself is past the
@@ -1522,7 +1520,7 @@ describe("E2E: lobby matching", function () {
             const deadline = await lowerStub
                 .getShortOpeningDeadline()
                 .request();
-            if (deadline === null) throw new Error("Terms were not shortened");
+            if (deadline === null) expect.fail("terms were not shortened");
             await h.event.waitForChainTimeAfter(deadline);
 
             await higher.stub.releaseOpeningSubmission().request();
@@ -1532,8 +1530,7 @@ describe("E2E: lobby matching", function () {
                     (rejections = await higher.stub
                         .getOpeningSubmissionRejections()
                         .request()).length > 0,
-                h.event.protocolEventTimeoutMs(),
-                100
+                h.event.protocolEventTimeoutMs()
             );
             expect(rejections).to.deep.equal([
                 "RaceConditionOpenChannelExpired"

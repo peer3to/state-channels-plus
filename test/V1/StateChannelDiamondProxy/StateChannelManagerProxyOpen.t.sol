@@ -127,7 +127,8 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         _assertOpenedWithDeposits();
     }
 
-    // Unanimous signatures do not keep expired terms alive; nothing is written.
+    // Unanimous signatures do not keep expired terms alive. The revert rolls back
+    // every write, so the exact revert payload is the whole oracle.
     function test_open_afterDeadline_revertsWithOpenChannelExpired() public {
         vm.warp(OPEN_DEADLINE + 1);
         OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
@@ -136,10 +137,6 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
             abi.encodeWithSelector(RaceConditionOpenChannelExpired.selector, OPEN_DEADLINE, OPEN_DEADLINE + 1)
         );
         diamond.open(confirmation);
-
-        (bool isOpen,) = diamond.isChannelOpen(DEADLINE_CHANNEL_ID);
-        assertFalse(isOpen, "expired terms opened the channel");
-        assertEq(diamond.getChannelBalance(DEADLINE_CHANNEL_ID).totalDeposits.amount, 0, "expired terms deposited");
     }
 
     function _deadlineOpenConfirmation() internal pure returns (OpenChannelConfirmation memory) {
