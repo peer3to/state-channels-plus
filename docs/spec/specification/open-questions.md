@@ -45,7 +45,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-44-3Y5MD7`](open-questions.md#oq-44-3y5md7)                                         | Watchtower deployment shape: an ordinary peer with spectator-equivalent access, versus a distinct delegate role                                             | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                                                                                                       | Open                              |
 | [`OQ-45-ACZCDE`](open-questions.md#oq-45-aczcde)                                         | Subjective post-authentication engagement policy: how a node decides whether to keep interacting with a proven identity                                     | Engineer direction     | [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                     | Open                              |
 | [`OQ-SPEC-LOBBY-1-D65YTT`](open-questions.md#oq-spec-lobby-1-d65ytt)                     | Per-transport cap and overflow outcome for deferred pre-readiness RPC admission                                                                             | Security hardening     | [peer-communication/rpc.md](./peer-communication/rpc.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                         | Open                              |
-| [`OQ-SPEC-OPEN-1-12RH7A`](open-questions.md#oq-spec-open-1-12rh7a)                       | Whether the base-layer open operation must reject opening terms whose deadline has passed                                                                   | Security review        | [enforcement/admission-and-funds.md](./enforcement/admission-and-funds.md), [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md) | Open                              |
+| [`OQ-SPEC-OPEN-1-12RH7A`](open-questions.md#oq-spec-open-1-12rh7a)                       | Whether the base-layer open operation must reject opening terms whose deadline has passed                                                                   | Security review        | [enforcement/admission-and-funds.md](./enforcement/admission-and-funds.md), [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md) | Resolved                          |
 | [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216) | Future spectator relaying                                                                                                                                   | Plan                   | Current queue admission and optional promotion                                                                                                                                                                             | Future; non-blocking              |
 
 ## Register assumptions and constraints
@@ -605,6 +605,17 @@ channel. Until the decision, no requirement owns this behavior, so no planned te
 before, at, and after the deadline. The chosen rule needs a requirement and permutations in
 [admission-and-funds.md](./enforcement/admission-and-funds.md), plus matching updates in the
 implementation, verification, and audit layers.
+
+**Resolved (2026-10-04, engineer decision):** reject on-chain. Open MUST fail when chain time is past
+the opening deadline, with the same boundary as join: the terms are valid up to and including the
+deadline. The check runs before any deposit or channel state change. The rule is normative in
+[`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](enforcement/admission-and-funds.md#req-enfadm-4-2nn96f), with planned permutations for open
+before, at, and after the deadline and for retained signatures submitted after SDK expiry. The
+opening phase in [lifecycle.md](./settlement/lifecycle.md) and the negotiation flow in
+[channel-negotiation.md](./peer-communication/channel-negotiation.md) link it. Rejected alternative:
+leave the deadline to the integrator, which kept a retained opening signature valid indefinitely.
+Consequence: a late opening with retained signatures fails for every integrator, so a negotiation that
+the SDK already treated as expired can no longer produce a channel.
 
 <a id="oq-spec-spectator-relay-1-v6f216"></a>
 

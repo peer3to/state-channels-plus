@@ -79,7 +79,8 @@ Discovery and channel roles do not overlap. A committed match stops lobby advert
 keeps the caller topic connected during negotiation. Before any local opening signature exists, failure
 clears the selected ID and attempt and returns the host workflow to matching on the same topic. After a local
 signature exists, counterparty abandonment excludes that peer immediately, but the signed attempt remains
-observed until the channel opens or the opening deadline expires. Public lobby leave is a matching-only
+observed until the channel opens or the opening deadline expires. After that deadline the chain rejects the
+signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)). Public lobby leave is a matching-only
 operation: after commitment it reports that handoff is complete and does not cancel negotiation or chain
 observation. Successful chain observation leaves the caller topic before the opened-channel result is
 returned to the client.

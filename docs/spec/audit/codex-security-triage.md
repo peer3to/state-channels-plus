@@ -27,7 +27,7 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
 | `unbound-snapshot`  | confirmed      | high              | 2          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
-| `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
+| `open-deadline`     | fixed          | medium            | —          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
 | `sync-inbound`      | fixed          | high              | —          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
 | `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
@@ -35,7 +35,7 @@ Ranks are unique within the confirmed queue and follow the class that each item'
 
 - **Unauthenticated on-chain paths (ranks 1–3):** any chain account can use them.
 - **Peer-assisted signing paths (rank 4; rank 5 is fixed):** the attacker must be the sync responder that the victim selected.
-- **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
+- **On-chain path that needs participant-issued credentials (rank 6, now fixed):** only a counterparty that holds every participant's opening signatures could use it, and its original severity is medium.
 
 Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
@@ -144,28 +144,30 @@ Planned permutation, with no mapped test yet: [`INV-ENFFP-1-BGVZN4.T1.P14`](../s
 
 ## 5. Expired opening signatures still authorize channel creation
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** medium · **confirmed rank:** 6 · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** medium · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz).
+
+**Fix status:** resolved in tree; engineer review pending.
 
 Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrence `occ_3ddb6fa24937a6e8e0ab73a6`.
 
-**Current evidence and path.** The proxy opening path is unchanged: it verifies participant signatures and passes deadlineTimestamp to the consumer deposit path without checking expiry. The SDK clears the attempt after the signed window. A negotiating peer can retain signatures and later open using the bundled consumer behavior.
+**Evidence and path.** The proxy opening path verified participant signatures and passed deadlineTimestamp to the consumer deposit path without checking expiry. The SDK cleared the attempt after the signed window. A negotiating peer could retain signatures and later open using the bundled consumer behavior.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:218–238](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L218-L238); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–718](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L718); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–718](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L718); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
 
-**Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials.
+**Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials; it has no rank because the path is fixed.
 
-**Counterevidence and limits.** An application consumer may enforce the deadline itself. Bundled asset methods are placeholders, so this report claims expired channel authorization, not asset theft.
+**Counterevidence and limits.** An application consumer may enforce the deadline itself. Bundled asset methods are placeholders, so this report claimed expired channel authorization, not asset theft.
 
-**Proof gaps.** Static only; check the real deployed consumer before assigning asset impact.
+**Proof gaps.** None left for the claim: the direct after-deadline test and the E2E retained-signature test below fail without the fix. The real deployed consumer's asset impact was never assessed and is no longer reachable through a late open.
 
-**Fix handoff (proposed, not implemented):** Enforce `OpenChannel.deadlineTimestamp` in `open` before deposits or state changes, consistently with the direct join deadline check. Preserve the preconditions and limits above. Required regression work:
+**Fix (implemented):** the engineer decided on 2026-10-04 that `open` rejects expired terms on chain ([`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../specification/open-questions.md#oq-spec-open-1-12rh7a), now resolved). `open` requires `deadlineTimestamp >= block.timestamp` right after the zero-id and already-open checks, before the balance reset, the signature check and any deposit, and otherwise reverts with the new `RaceConditionOpenChannelExpired(deadline, currentTimestamp)`. The boundary is the join facet's: valid up to and including the deadline. The proxy stays under EIP-170. The SDK decodes the new error from the generated error ABI; the open path classifies only `RaceConditionChannelAlreadyOpen`, so no SDK handling changed. Regression work:
 
-- Test direct open before, at and after deadline.
-- Submit retained opening signatures after SDK expiry and verify the contract rejects them.
+- Direct open before, at and after the deadline.
+- Retained opening signatures submitted after SDK expiry are rejected by the contract.
 
-No requirement states that `open` must reject expired terms, so these cases have no planned permutation yet. [`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../specification/open-questions.md#oq-spec-open-1-12rh7a) asks the engineer for that rule. The requirement and its permutations follow the decision.
+Mapped permutations: [`REQ-ENFADM-4-2NN96F.T1.P1`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1), [`REQ-ENFADM-4-2NN96F.T1.P2`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p2) and [`REQ-ENFADM-4-2NN96F.T1.P3`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3) ([proxy open test report](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)), and [`REQ-ENFADM-4-2NN96F.T1.P4`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)).
 
-**Owners:** [admission and funds](../specification/enforcement/admission-and-funds.md), [lifecycle](../specification/settlement/lifecycle.md), [proxy source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md). Keep the real consumer's deadline behavior explicit.
+**Owners:** [admission and funds](../specification/enforcement/admission-and-funds.md), [lifecycle](../specification/settlement/lifecycle.md), [proxy source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md). A real consumer's own deadline behavior is no longer load-bearing for this path.
 
 <a id="sync-inbound"></a>
 

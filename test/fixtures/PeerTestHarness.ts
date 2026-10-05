@@ -101,6 +101,8 @@ export class PeerTestHarness<
 > {
     public peers: TestPeer<TCustomRpc, TStateMachine>[] = [];
     public channelManager!: StateChannelManagerInterface;
+    /** This slot's deployer; `channelManager` sends through it. */
+    public deployerSigner!: NonceManager;
     private sharedStateMachineDeployer!: LocalStateMachineDeployer;
     public channelId!: ChannelId;
     public options!: HarnessOptions;
@@ -463,6 +465,7 @@ export class PeerTestHarness<
         const deployerSigner = new NonceManager(
             this.signerFor(slotDeployerIndex())
         );
+        this.deployerSigner = deployerSigner;
         const deployment = this.deployment;
 
         this.sharedStateMachineDeployer =

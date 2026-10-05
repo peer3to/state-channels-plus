@@ -41,7 +41,15 @@ way, but specification test discovery matches `*.t.sol`, so the case produced no
 declaration and its evidence could not be assigned. The rename restores the convention every
 sibling in the directory already follows and makes the case inventoriable; it changes no behaviour.
 
-The duplicate-participant and successful-join-count gates are exercised here. The other `open()`
+Three cases cover the opening deadline. Each submits the same unanimously signed two-party opening
+(balances `300` and `200`) whose terms carry a fixed deadline, after `vm.warp` sets the block time on
+this test's own EVM. One second before the deadline and exactly at it, `open` succeeds: the oracle
+is an open channel whose recorded total deposits are `500`, the sum of the signed balances. One
+second after the deadline, the oracle is the full revert payload
+`RaceConditionOpenChannelExpired(deadline, deadline + 1)`, and afterwards the channel is still
+closed with zero recorded deposits.
+
+The duplicate-participant, successful-join-count and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md), and the
 [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length and zero-address gaps
@@ -56,7 +64,10 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                 | Covers                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L28) (line 28)                              | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12) |
-| [`test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L46) (line 46) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p13) |
-| [`test_open_participantsAboveMaximum_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L79) (line 79)                           | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p16) |
-| [`test_open_participantsAtMaximum_passesTheBoundCheck`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L95) (line 95)                  | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p17) |
+| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L32) (line 32)                              | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12) |
+| [`test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L50) (line 50) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p13) |
+| [`test_open_participantsAboveMaximum_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L83) (line 83)                           | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p16) |
+| [`test_open_participantsAtMaximum_passesTheBoundCheck`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L99) (line 99)                  | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p17) |
+| [`test_open_beforeDeadline_opensChannel`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L114) (line 114)                              | [`REQ-ENFADM-4-2NN96F.T1.P1`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1)                                                                  |
+| [`test_open_atDeadline_opensChannel`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L124) (line 124)                                  | [`REQ-ENFADM-4-2NN96F.T1.P2`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p2)                                                                  |
+| [`test_open_afterDeadline_revertsWithOpenChannelExpired`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L135) (line 135)              | [`REQ-ENFADM-4-2NN96F.T1.P3`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3)                                                                  |

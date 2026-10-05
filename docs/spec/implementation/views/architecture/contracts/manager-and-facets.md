@@ -55,15 +55,15 @@ which declares the complete surface, and against the implementing proxy/facet bo
 - Seven functions are declared on the proxy and dispatch directly:
   [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118),
   [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91),
-  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L198),
-  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242),
-  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L248),
-  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L263), and
+  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L203),
+  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L247),
+  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L253),
+  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L268), and
   [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79).
 - Everything else reaches
   [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67),
   which delegatecalls the facet that the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L285)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L290)
   returns for `msg.sig`, passing raw `msg.data`.
 - The constructor installs routes with `_registerRoute(Facet.fn.selector, facetAddress)`. Duplicate
   registration and codeless route targets revert, lookup is constant-time, and runtime mutation is not exposed. Mutable
@@ -72,7 +72,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
   where the fallback would send a selector. Selectors the proxy declares itself never reach the
   fallback, so they are not in the table and this view reports the consumer facet for them.
 - **Unconfigured selectors** resolve to `consumerFacetAddress`
-  ([#L356](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L356)) —
+  ([#L361](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L361)) —
   the fallback of last resort, which is how the integrator's consumer functions are reachable.
 - **Deliberate exclusions (`notRouted`).** Some `public`/`external` facet functions are internal
   steps of a larger operation and are intentionally kept off the diamond surface, so they fall
@@ -93,7 +93,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
 
 | Function                                                                                             | Routes to                 | Semantics (thin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open(OpenChannelConfirmation calldata)`                                                             | (self) + consumer facet   | Opens a channel: rejects zero/duplicate `channelId` and duplicate participants (`RaceConditionChannelAlreadyOpen`, `ErrorDuplicateParticipant`), verifies the unanimous threshold signature over `encodedOpenChannel`, deposits composably per join (honoring `OpenChannel.isAtomic`), requires ≥ 2 successful joins, obtains genesis state from `AConsumerFacet.openChannelGenesis`, stores the genesis `StateSnapshot` (forkId = `keccak256(abi.encode(genesisSnapshotData))`), emits `ChannelOpened`.                                                                                                                                        |
+| `open(OpenChannelConfirmation calldata)`                                                             | (self) + consumer facet   | Opens a channel: rejects zero/duplicate `channelId`, expired opening terms (`RaceConditionOpenChannelExpired`, valid up to and including the deadline) and duplicate participants (`RaceConditionChannelAlreadyOpen`, `ErrorDuplicateParticipant`), verifies the unanimous threshold signature over `encodedOpenChannel`, deposits composably per join (honoring `OpenChannel.isAtomic`), requires ≥ 2 successful joins, obtains genesis state from `AConsumerFacet.openChannelGenesis`, stores the genesis `StateSnapshot` (forkId = `keccak256(abi.encode(genesisSnapshotData))`), emits `ChannelOpened`.                                     |
 | `joinChannel(JoinChannelConfirmation memory, bytes32 expectedSnapshotHash, bytes32 expectedForkId)`  | `JoinChannelFacet`        | Post-open admission (deposit side). See §4.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `topUpBalance(JoinChannelConfirmation memory, bytes32 expectedSnapshotHash, bytes32 expectedForkId)` | `JoinChannelFacet`        | Balance top-up for an existing participant. See §4.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `postBlockCalldata(SignedBlock memory, uint256 maxTimestamp)`                                        | (self)                    | Persists the commitment `keccak256(abi.encode(signedBlock, block.timestamp))` under `[channelId][msg.sender][forkId][transactionCnt]`. Guards: `block.timestamp <= maxTimestamp` (`RaceConditionBlockCalldataTimestampTooLate`), no overwrite (`ErrorBlockCalldataAlreadyPosted`), `msg.sender` must equal the block's author (`ErrorBlockCalldataMsgSenderNotBlockAuthor`). Does **not** verify the block — the sender vouches for the data; junk is later slashable against the commitment. Emits `BlockCalldataPosted`. Data-availability role: [../security/data-availability.md](../../../../specification/security/data-availability.md). |
@@ -462,6 +462,7 @@ families:
   failure during re-execution (`ErrorDisputeStateMachineInboundProcessingFailed`).
 - **Race-condition guards (`RaceCondition*`)** — a state- or time-dependent precondition failed
   because of ordering between competing on-chain actions: `RaceConditionChannelAlreadyOpen`,
+  `RaceConditionOpenChannelExpired`,
   `RaceConditionBlockCalldataTimestampTooLate`, `RaceConditionSnapshotForkMismatch`,
   `RaceConditionJoinChannelExpired` / `…JoinChannelSnapshotMismatch` /
   `…JoinChannelForkDisputed` / `…PendingInboundNotConsumed`, the dispute-window family

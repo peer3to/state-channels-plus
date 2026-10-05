@@ -97,7 +97,7 @@ The mechanics, each verified in code:
 - **Selector routing in the fallback.** The proxy declares no forwarder bodies. `fallback()`
   ([#L67](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67))
   resolves `msg.sig` through the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L285)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L290)
   and delegatecalls that facet with raw `msg.data`. Revert data still bubbles through the unchanged
   [`GeneralUtils._delegatecall`](../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6).
   The constructor registers each entry with `_registerRoute(Facet.fn.selector, facetAddress)`, so
@@ -110,12 +110,12 @@ The mechanics, each verified in code:
   ([#L91](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91)),
   `open` ([#L118](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118)),
   `depositAssetsComposable`
-  ([#L198](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L198)),
+  ([#L203](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L203)),
   `withdrawAssetsComposable`
-  ([#L242](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242)),
+  ([#L247](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L247)),
   `executeStateTransition`
-  ([#L248](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L248)),
-  `multicall` ([#L263](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L263)),
+  ([#L253](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L253)),
+  `multicall` ([#L268](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L268)),
   and the read-only introspection `facetAddressForSelector`
   ([#L79](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79)),
   plus the fallback and the constructor
@@ -137,7 +137,7 @@ The mechanics, each verified in code:
   External callers can never satisfy the guard.
 - **Consumer fallback of last resort.** An unconfigured selector resolves to
   `consumerFacetAddress`
-  ([#L356](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L356)),
+  ([#L361](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L361)),
   so the integrator's `openChannelGenesis`, `deposit`, `withdraw`, and any custom consumer function
   are reachable at the proxy address. Note this forwards **every** unrouted selector — see the
   reachability concern in [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).

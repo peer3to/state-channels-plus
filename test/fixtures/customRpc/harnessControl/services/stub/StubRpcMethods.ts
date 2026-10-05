@@ -29,11 +29,13 @@ import type {
     SignatureBlockMatch
 } from "./StubService";
 
+import Clock from "@/Clock";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
 import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
+import { OPEN_CHANNEL_DEADLINE_SECONDS } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -45,7 +47,13 @@ import type {
     Hash,
     Timestamp
 } from "@/types/types";
-import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import {
+    Codec,
+    DetachedPromises,
+    sleep,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
@@ -1106,13 +1114,72 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             await new Promise<void>((resolve) => {
                 stubService.heldOpeningSubmissions.push(resolve);
             });
-            return original.apply(service, parameters);
+            // Record-only: the real submission and its outcome still reach
+            // the service unchanged.
+            try {
+                const tx = (await original.apply(service, parameters)) as {
+                    hash: string;
+                };
+                DetachedPromises.collect(
+                    stubService.recordMinedOpeningRejection(tx.hash)
+                );
+                return tx;
+            } catch (error) {
+                stubService.openingSubmissionRejections.push(
+                    tryDecodeCustomError(error)?.name ?? "undecoded"
+                );
+                throw error;
+            }
         };
         return true;
     }
 
     public getHeldOpeningSubmissionCount(): number {
         return this.service.heldOpeningSubmissions.length;
+    }
+
+    public getShortOpeningDeadline(): Timestamp | null {
+        return this.service.shortOpeningDeadline ?? null;
+    }
+
+    public getOpeningSubmissionRejections(): string[] {
+        return [...this.service.openingSubmissionRejections];
+    }
+
+    /**
+     * Make this proposer's next opening terms expire `remainingSeconds` from
+     * now instead of the full opening window. The clock read that derives the
+     * deadline directly follows `buildOpeningData`, so the offset applies to
+     * that one read only; the peer's expiry observation runs on the real clock.
+     */
+    public stubShortOpeningDeadline(remainingSeconds: number): boolean {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `buildOpeningData` is protected on the service; the stub patches it by name.
+        const target = service as unknown as {
+            buildOpeningData: (...parameters: unknown[]) => Promise<unknown>;
+        };
+        const original = target.buildOpeningData;
+        const offsetSeconds = remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS;
+        const stubService = this.service;
+        target.buildOpeningData = async (...parameters: unknown[]) => {
+            const data = await original.apply(service, parameters);
+            target.buildOpeningData = original;
+            const realClock = Clock.getTimeInSeconds;
+            const restore = () => {
+                Clock.getTimeInSeconds = realClock;
+            };
+            Clock.getTimeInSeconds = () => {
+                restore();
+                const shiftedNow = realClock.call(Clock) + offsetSeconds;
+                stubService.shortOpeningDeadline =
+                    shiftedNow + OPEN_CHANNEL_DEADLINE_SECONDS;
+                return shiftedNow;
+            };
+            // Never leave the offset behind if the deadline read did not come.
+            setTimeout(restore, 0);
+            return data;
+        };
+        return true;
     }
 
     /** Restore the real submission and let the parked ones proceed. */

@@ -20,7 +20,13 @@ import { deserializeRpcFrame } from "@/rpc/Rpc";
 import type StateManager from "@/stateManager/StateManager";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -40,6 +46,7 @@ import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/type
 import {
     type ContractTransactionResponse,
     hexlify,
+    JsonRpcApiProvider,
     resolveAddress,
     type TransactionRequest
 } from "ethers";
@@ -483,6 +490,10 @@ export class StubService extends ANetworkRpcService<
     capturedInitHandshakeTransport?: NetworkTransport;
     /** Opening submissions parked by the hold stub, released together. */
     heldOpeningSubmissions: (() => void)[] = [];
+    /** Decoded contract error names of opening submissions the chain rejected. */
+    openingSubmissionRejections: string[] = [];
+    /** Deadline the short-opening-deadline stub gave this proposer's terms. */
+    shortOpeningDeadline?: Timestamp;
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;
@@ -2935,6 +2946,38 @@ export class StubService extends ANetworkRpcService<
             this.heldOnChainSlashesQueryWaiters.push(() =>
                 resolve(held.entered)
             )
+        );
+    }
+
+    /**
+     * Record the contract error of a mined opening submission that reverted.
+     * An interval-mined node accepts the transaction and reverts it in its
+     * block, so the error is read back from the read-only transaction trace.
+     */
+    async recordMinedOpeningRejection(transactionHash: string): Promise<void> {
+        const provider = this.chainProvider;
+        const receipt = await provider.waitForTransaction(transactionHash);
+        if (!receipt || receipt.status !== 0) return;
+        if (!(provider instanceof JsonRpcApiProvider)) {
+            this.openingSubmissionRejections.push("undecoded");
+            return;
+        }
+        const trace: { returnValue: string } = await provider.send(
+            "debug_traceTransaction",
+            [
+                transactionHash,
+                {
+                    disableMemory: true,
+                    disableStack: true,
+                    disableStorage: true
+                }
+            ]
+        );
+        const revertData = trace.returnValue.startsWith("0x")
+            ? trace.returnValue
+            : `0x${trace.returnValue}`;
+        this.openingSubmissionRejections.push(
+            tryDecodeCustomError({ data: revertData })?.name ?? "undecoded"
         );
     }
 
