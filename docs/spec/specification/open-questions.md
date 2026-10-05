@@ -614,8 +614,10 @@ before, at, and after the deadline and for retained signatures submitted after S
 opening phase in [lifecycle.md](./settlement/lifecycle.md) and the negotiation flow in
 [channel-negotiation.md](./peer-communication/channel-negotiation.md) link it. Rejected alternative:
 leave the deadline to the integrator, which kept a retained opening signature valid indefinitely.
-Consequence: a late opening with retained signatures fails for every integrator, so a negotiation that
-the SDK already treated as expired can no longer produce a channel.
+Consequence: once chain time is past the deadline, retained signatures cannot open the channel for any
+integrator. The SDK's own expiry observation runs `agreementTime` after the deadline on its chain-synced
+clock, not on chain time, so a negotiation the SDK treats as expired cannot open the channel as long as
+chain time does not trail that clock by more than `agreementTime`.
 
 <a id="oq-spec-spectator-relay-1-v6f216"></a>
 

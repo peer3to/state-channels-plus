@@ -80,7 +80,11 @@ keeps the caller topic connected during negotiation. Before any local opening si
 clears the selected ID and attempt and returns the host workflow to matching on the same topic. After a local
 signature exists, counterparty abandonment excludes that peer immediately, but the signed attempt remains
 observed until the channel opens or the opening deadline expires. After that deadline the chain rejects the
-signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)). Public lobby leave is a matching-only
+signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)).
+This also applies to an honest submission sent before the deadline but mined after it: `open` reverts with
+`RaceConditionOpenChannelExpired`, and the attempt ends through the existing failed-opening-receipt path
+(ordinary mode closes the peer with reconnect allowed, no strike, and retries; targeted mode follows the
+targeted receipt-failure rule below). Public lobby leave is a matching-only
 operation: after commitment it reports that handoff is complete and does not cancel negotiation or chain
 observation. Successful chain observation leaves the caller topic before the opened-channel result is
 returned to the client.

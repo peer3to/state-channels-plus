@@ -27,8 +27,9 @@ The signed-attempt remote-abort case waits for both peers to observe transport c
 The expired-opening case shortens the lower proposer's opening window to six seconds with a host stub
 that offsets only the clock read that derives the deadline, and parks the higher peer's real submission
 after it co-signed. It waits until the higher peer's own expiry observation ends the signed attempt,
-then until a mined block's timestamp is past the deadline (zero-value transactions from the slot's
-deployer, no time RPC), and only then releases the retained signatures to the real submission. A
+then polls the latest block until its timestamp is past the deadline, and only then releases the
+retained signatures to the real submission. The wait sends no transactions and calls no time RPC: it
+relies on the interval-mined E2E node to advance chain time, so on an automine node it times out. A
 record-only wrapper reads the reverted transaction's error back from its trace. The oracle is exactly
 one recorded rejection, `RaceConditionOpenChannelExpired`, and the negotiated channel still closed on
 chain. Without the contract check the same release opens the channel and the case fails.
@@ -58,4 +59,4 @@ returns a generic committed peer; `joinLobby` starts negotiation and consumes it
 already-open derived ID is a protocol failure with punishment, listener cleanup, and no raw-topic sync path.
 | [`E2E: lobby matching > keeps a signed attempt observing the chain after a remote abort and opens on the observed submission`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1375) (line 1375) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p16) |
 | [`E2E: lobby matching > rejects retained opening signatures submitted on chain after the SDK expired the opening terms`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1470) (line 1470) | [`REQ-ENFADM-4-2NN96F.T1.P4`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) |
-| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1550) (line 1550) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p17) |
+| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1537) (line 1537) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b.p17) |

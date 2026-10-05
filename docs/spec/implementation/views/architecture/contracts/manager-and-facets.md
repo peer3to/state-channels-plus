@@ -55,15 +55,15 @@ which declares the complete surface, and against the implementing proxy/facet bo
 - Seven functions are declared on the proxy and dispatch directly:
   [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118),
   [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91),
-  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L203),
-  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L247),
-  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L253),
-  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L268), and
+  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L284),
+  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L328),
+  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L334),
+  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L350), and
   [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79).
 - Everything else reaches
   [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67),
   which delegatecalls the facet that the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L290)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L393)
   returns for `msg.sig`, passing raw `msg.data`.
 - The constructor installs routes with `_registerRoute(Facet.fn.selector, facetAddress)`. Duplicate
   registration and codeless route targets revert, lookup is constant-time, and runtime mutation is not exposed. Mutable
@@ -72,7 +72,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
   where the fallback would send a selector. Selectors the proxy declares itself never reach the
   fallback, so they are not in the table and this view reports the consumer facet for them.
 - **Unconfigured selectors** resolve to `consumerFacetAddress`
-  ([#L361](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L361)) —
+  ([#L395](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L395)) —
   the fallback of last resort, which is how the integrator's consumer functions are reachable.
 - **Deliberate exclusions (`notRouted`).** Some `public`/`external` facet functions are internal
   steps of a larger operation and are intentionally kept off the diamond surface, so they fall
