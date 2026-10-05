@@ -6,6 +6,7 @@ import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
     ErrorTooManyParticipants,
+    RaceConditionChannelAlreadyOpen,
     RaceConditionOpenChannelExpired
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
@@ -136,6 +137,18 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         vm.expectRevert(
             abi.encodeWithSelector(RaceConditionOpenChannelExpired.selector, OPEN_DEADLINE, OPEN_DEADLINE + 1)
         );
+        diamond.open(confirmation);
+    }
+
+    // The already-open check runs before the deadline check, so a duplicate open of
+    // an open channel reports already-open even once its terms have expired.
+    function test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen() public {
+        vm.warp(OPEN_DEADLINE);
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+        diamond.open(confirmation);
+        vm.warp(OPEN_DEADLINE + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionChannelAlreadyOpen.selector, DEADLINE_CHANNEL_ID));
         diamond.open(confirmation);
     }
 
