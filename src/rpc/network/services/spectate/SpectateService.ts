@@ -236,7 +236,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // local EVM. Only chain finality can skip the local reduction.
             // Read finality first: a later window fetch includes any reduction that
             // lands between reads. A false decision then still checks the expected
-            // fork locally, but only a reduction this sync runs checks its inputs.
+            // fork locally, in the window the checked disputes name, but only a
+            // reduction this sync runs checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
@@ -333,6 +334,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             "dispute undecodable"
                         );
                     }
+                    // the local reduce picks its window from the disputes, not from dw
+                    if (
+                        !disputes.every(
+                            (dispute) =>
+                                dispute.input.channelId === channelId &&
+                                dispute.input.forkId === dw.forkId
+                        )
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "dispute window mismatch"
+                        );
                     try {
                         const committedReduction =
                             await diamondStateMachine.reduceAndFinalizeLocally(

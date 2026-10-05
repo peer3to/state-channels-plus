@@ -28,7 +28,7 @@ executors implement.
 Positive balance uses the application's zero balance and comparison methods in one operation. Callers pass their existing labels and retain their own failure handling. See [ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L72).
 
 1. **One handle for all mirrored evaluation** — services depend on this abstraction, not on a concrete VM.
-2. **`reduceAndFinalizeLocally` returns whether the call executed the reduction** ([#L57-L68](../../../../../src/ADiamondStateMachine.ts#L57-L68)) — true only when that call committed it, false when the window was already reduced or does not exist. Sync relies on this to persist a window's inbound blocks only after its own reduction checked them; [EvmDiamondStateMachine.ts](./evm/EvmDiamondStateMachine.ts.md) implements it.
+2. **`reduceAndFinalizeLocally` returns whether the call executed the reduction** ([#L57-L68](../../../../../src/ADiamondStateMachine.ts#L57-L68)) — true only when that call committed it, false when the window was already reduced to the expected fork or does not exist. The window is the one the first dispute names, so a caller checks that the disputes name its window. Sync relies on this to persist a window's inbound blocks only after its own reduction checked them; [EvmDiamondStateMachine.ts](./evm/EvmDiamondStateMachine.ts.md) implements it.
 
 ## Inputs, outputs, state, and side effects
 

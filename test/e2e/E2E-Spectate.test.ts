@@ -730,7 +730,7 @@ describe("E2E: Spectate Service", function () {
                 "heldEvent"
             );
         });
-        it("responder injects an inbound successor and the participant's inbound chain event is lost → chain-log recovery delivers the genuine block, the participant never stores or signs the successor", async function () {
+        it("responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor", async function () {
             await assertSyncedParticipantNeverSignsInjectedInbound(
                 TestSession.getHarness(),
                 "droppedLog"

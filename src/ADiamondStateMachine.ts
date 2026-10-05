@@ -57,7 +57,9 @@ abstract class ADiamondStateMachine {
     /**
      * Run `reduceAndFinalize` on the local diamond. True only when this call
      * committed the window's reduction, so it validated the inputs; false
-     * when the window was already reduced or does not exist.
+     * when the window was already reduced to `expectedReducedForkId` or does
+     * not exist. The window is the one `disputes[0]` names, so a caller must
+     * check that the disputes name the window it means to reduce.
      */
     public abstract reduceAndFinalizeLocally(
         disputes: DisputeStruct[],

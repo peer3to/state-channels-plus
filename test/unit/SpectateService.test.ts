@@ -5,7 +5,8 @@ import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     appendForgedInboundSuccessor,
-    applyDisputeWindowInboundSyncPayload
+    applyDisputeWindowInboundSyncPayload,
+    redirectDisputesToForkWithoutWindow
 } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     applyAnchoredSyncPayload,
@@ -791,6 +792,38 @@ describe("Unit: SpectateService", function () {
             expect(r.accepted).to.equal(true);
             expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
             expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+
+        it("window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: appendForgedInboundSuccessor }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["served reduction reverts"]);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+        });
+
+        it("unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: redirectDisputesToForkWithoutWindow
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
+            expect(r.responderBlacklisted).to.equal(true);
+            expect(r.requesterForkId).to.equal(r.sourceForkId);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
         });
 
         it("reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {

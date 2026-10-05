@@ -69,7 +69,8 @@ included. When the anchor itself is latest final, its milestone block and state 
 The requester decodes the payload, fetches chain truth, verifies the dispute-window lineage and
 claimed genesis, and checks the requested fork and outbound commitments. Already-adopted leading
 windows are skipped only after their chain-final successor links are checked. At most one remaining
-window is reduced locally for this verification; the call reports whether it executed the reduction
+window is reduced locally for this verification, only when every dispute names this channel and
+that window's fork ("dispute window mismatch" otherwise); the call reports whether it executed the reduction
 or returned early because the window was already reduced.
 
 Milestone verification calls `AgreementManager.verifyStateProof`: local finalized state, local

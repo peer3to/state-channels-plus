@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: dispute-window inbound sync staging exercised by explicit SpectateService and E2E-Spectate declarations
+// @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
@@ -8,6 +8,7 @@ import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
+import { ethers, ZeroHash } from "ethers";
 
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
@@ -32,6 +33,52 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
 }
 
 /**
+ * Point every dispute of the window at a fork with no dispute window, and
+ * claim a fabricated reduced fork whose genesis hashes its own data. The
+ * proof then starts at that genesis with no milestone and no outbound block.
+ */
+export function redirectDisputesToForkWithoutWindow(
+    payload: SyncPayload
+): void {
+    const window = payload.disputeWindows[0];
+    for (const { signedDispute } of window.disputeConfirmations) {
+        const dispute = Codec.decode(
+            signedDispute.encodedDispute,
+            Type.Dispute
+        );
+        signedDispute.encodedDispute = Codec.encode(
+            {
+                ...dispute,
+                input: {
+                    ...dispute.input,
+                    forkId: ethers.id("fork without a dispute window")
+                }
+            },
+            Type.Dispute
+        );
+    }
+    const genesis = payload.latestForkGenesisSnapshot;
+    const snapshotData = {
+        ...genesis.snapshotData,
+        originForkId: ethers.id("fabricated origin fork")
+    };
+    const fabricatedForkId = StateSnapshot.from({
+        ...genesis,
+        snapshotData
+    }).snapshotDataHash;
+    payload.latestForkGenesisSnapshot = {
+        ...genesis,
+        snapshotData,
+        forkId: fabricatedForkId
+    };
+    window.reducedForkId = fabricatedForkId;
+    payload.milestoneSnapshots = [];
+    payload.stateProof.milestones = [];
+    payload.latestFinalizedEncodedState = payload.latestForkGenesisEncodedState;
+    payload.outboundMessageBlocksOfTheLatestFork = [];
+}
+
+/**
  * A reducible disputed fork whose reduce applies a top-up of peer 0 that
  * peer 2's inbound storage never gets from its subscription. From before the
  * top-up, peer 2 holds its whole InboundMessagesProcessed handler
@@ -48,7 +95,8 @@ export function appendForgedInboundSuccessor(payload: SyncPayload): void {
  * - `concurrentLocalSync`: after peer 2 persists the window, a second sync of
  *   peer 0's genuine payload reduces it in peer 2's local diamond first.
  * The chain snapshot stays on the source fork. The holds stay until
- * `releaseHolds`.
+ * `releaseHolds`. Besides the inbound storage it reports whether peer 2
+ * blacklisted peer 0, peer 2's fork and its local window's reduced fork.
  */
 async function stageAndApplyDisputeWindowInboundSync(
     h: MathPeerTestHarness,
@@ -236,6 +284,13 @@ async function stageAndApplyDisputeWindowInboundSync(
     return {
         accepted,
         rejections,
+        responderBlacklisted: await requesterControl.query
+            .isBlacklisted(responder.address)
+            .request(),
+        requesterForkId: await requesterControl.query.getForkId().request(),
+        localReducedForkId: await requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request(),
         sourceForkId,
         reducedForkId,
         servedInboundHashes,
@@ -276,9 +331,10 @@ export async function applyDisputeWindowInboundSyncPayload(
  * The chain then adopts the reduced fork and the participants author blocks
  * on it, so peer 2 authors and signs one of them. Neither peer 2 nor any
  * other participant may ever hold the fabricated block, and peer 2's block
- * carries none of it. Peer 2 gets the genuine top-up from its replayed chain
- * event (`heldEvent`) or, when its subscribed log was lost (`droppedLog`),
- * from chain-log recovery.
+ * carries none of it. Peer 2 ends with the genuine top-up: from its replayed
+ * chain event (`heldEvent`) or, when its subscribed log was lost
+ * (`droppedLog`), from chain-log recovery, which may already run while peer 2
+ * audits the dispute, so this mode checks only the end state.
  */
 export async function assertSyncedParticipantNeverSignsInjectedInbound(
     h: MathPeerTestHarness,
@@ -312,8 +368,8 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
     expect(newForkId).to.equal(reducedForkId);
     const requester = h.getPeer(REQUESTER_INDEX);
     const requesterQuery = h.control(requester).query;
-    // the sync dropped the window's list -> only a chain event or chain-log
-    // recovery delivers the genuine block
+    // the sync dropped the window's list -> a chain event or chain-log
+    // recovery (before or after the sync) delivers the genuine block
     await h.eventCountsBarrier.waitFor(
         async () =>
             (await requesterQuery
@@ -350,12 +406,11 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
         const block = Block.fromSignedBlock(
             Codec.decode(bundle!.encodedSignedBlock, Type.SignedBlock)
         );
-        if (String(block.author) === requester.address)
-            requesterBlocks.push(block);
+        if (block.author === requester.address) requesterBlocks.push(block);
     }
     expect(requesterBlocks.length).to.be.greaterThan(0);
     for (const block of requesterBlocks) {
-        expect(String(block.signerAddress)).to.equal(requester.address);
+        expect(block.signerAddress).to.equal(requester.address);
         expect(block.messageBlocks.map(inboundMessageBlockHash)).to.not.include(
             forgedHash
         );
@@ -378,4 +433,71 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
         ).to.equal(responderHead);
     }
     expect(responderHead).to.equal(genuineTopUpHash);
+}
+
+/**
+ * A reducible disputed fork, whose reduce applies a top-up of peer 0, with
+ * every peer's reduction tasks held. Peer 2
+ * fetches peer 0's payload for it and persists the chain's unreduced window
+ * into its local diamond. `reduce` runs peer 2's real `reduceAndFinalizeLocally`
+ * on the (altered) payload's window, expecting its `reducedForkId`.
+ */
+export async function stageLocalWindowReduction(h: MathPeerTestHarness) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+        // a top-up of an existing participant -> the reduce applies an inbound block
+        beforeDispute: async () => {
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(RESPONDER_INDEX).address
+            });
+        }
+    });
+    const responder = h.getPeer(RESPONDER_INDEX);
+    const requester = h.getPeer(REQUESTER_INDEX);
+    const requesterControl = h.control(requester);
+    const response = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            sm.p2pManager.remoteRpc.spectateService
+                .onSpectateRequest({
+                    channelId: sm.channelId,
+                    forkId: args.forkId
+                })
+                .request(args.source),
+        { source: responder.address, forkId: sourceForkId }
+    );
+    const payload = Codec.decode(response.encodedSyncPayload, Type.SyncPayload);
+    expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
+        [sourceForkId]
+    );
+    await h.execOnHost(
+        requester,
+        async (sm, args) => {
+            await sm.p2pManager.localRpc.spectateService.fetchAndPersistOnChainDisputeWindows(
+                sm.channelId,
+                [args.forkId]
+            );
+        },
+        { forkId: sourceForkId }
+    );
+    const localReducedForkId = () =>
+        requesterControl.query
+            .getLocalDisputeWindowReducedForkId(sourceForkId)
+            .request();
+    // premise: nobody reduced the window yet, and its reduce applies the top-up
+    expect(await localReducedForkId()).to.equal(ZeroHash);
+    expect(
+        payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.length
+    ).to.be.greaterThan(0);
+    return {
+        payload,
+        reducedForkId: payload.disputeWindows[0].reducedForkId as ForkId,
+        localReducedForkId,
+        reduce: (alteredPayload: SyncPayload) =>
+            requesterControl.spectate
+                .reduceSyncWindowLocally(
+                    Codec.encode(alteredPayload, Type.SyncPayload) as string,
+                    0
+                )
+                .request()
+    };
 }
