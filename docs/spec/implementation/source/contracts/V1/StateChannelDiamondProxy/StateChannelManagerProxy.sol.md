@@ -125,8 +125,10 @@ the caller-side declaration of the same surface.
     ([#L194-L198](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194-L198)). The boundary is the join facet's: terms are valid up to and
     including their deadline. The check precedes the zero-balance reset, the signature check, and the
     composed deposits, so an expired submission leaves no deposit, inbound block, or channel state. An
-    already-open channel still reports `RaceConditionChannelAlreadyOpen` first, which the SDK's
-    negotiation handles as an observed open. A dedicated error, instead of reusing the join error,
+    already-open channel still reports `RaceConditionChannelAlreadyOpen` first. When the submission
+    fails synchronously, targeted negotiation treats that error as an observed open and ordinary
+    negotiation treats it as a protocol failure. A mined revert surfaces through the receipt-failure
+    path instead. A dedicated error, instead of reusing the join error,
     keeps the open and join races apart in decoded logs; the proxy stays under EIP-170
     ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)).
 
