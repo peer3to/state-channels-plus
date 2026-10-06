@@ -18,6 +18,12 @@ implementation and regression tests to a follow-up PR.** Luka requested that PR 
 finding and its TO1/TO2 coverage gaps remain recorded here. This deferral does not resolve the
 finding, select a remedy, approve the remaining risk, or establish that the slash was executed.
 
+**Scope decision: all SR1 work is outside PR #519.** This includes the proposed replay-conflict
+guard, block-counter preflight, installed-head bound, atomic sync persistence, evidence storage,
+proof rejection rules, and every related unit/E2E regression. Suggestions described as independent
+corrections are also deferred. The acceptance-rule decision belongs to the follow-up PR; it is
+not a pending question for this PR. See the [renewed SR1 review](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192952809).
+
 Sources: [SR1](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733246),
 [audit coverage TO1](https://github.com/peer3to/state-channels-plus/pull/519#issuecomment-6011676218),
 and [sync coverage TO2](https://github.com/peer3to/state-channels-plus/pull/519#discussion_r4192733261).
