@@ -984,6 +984,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -1057,6 +1058,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -1334,6 +1336,22 @@ describe("distributed worker scheduler", function () {
             expect(records[0].durationMs).to.be.greaterThan(0);
             expect(records[0].avgCores).to.be.at.least(0);
             expect(records[0].peakRssGb).to.be.greaterThan(0);
+            // The new test is committed at the project root as measured.
+            const committed = Object.values(
+                JSON.parse(
+                    fs.readFileSync(path.join(root, "test-costs.json"), "utf8")
+                ).tasks
+            ) as Array<Record<string, unknown>>;
+            expect(committed).to.have.length(1);
+            expect(committed[0]).to.have.keys(
+                "durationMs",
+                "avgCores",
+                "peakRssGb",
+                "measurementReason"
+            );
+            expect(committed[0].durationMs).to.equal(
+                Math.round(records[0].durationMs)
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -1407,20 +1425,19 @@ describe("distributed worker scheduler", function () {
         });
     });
 
-    it("reads but never writes the cost cache in read-only runs", async function () {
+    it("schedules by the committed costs but writes nothing in read-only runs", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
-        const costCachePath = path.join(root, "test-costs.json");
+        const costsPath = path.join(root, "test-costs.json");
+        const costCachePath = path.join(root, ".cache/test-costs.json");
         const entry = (durationMs: number) => ({
             durationMs,
             avgCores: 0.1,
             peakRssGb: 0.1,
-            measurementReason: null,
-            samples: 1,
-            lastSeenAt: "2026-10-01T00:00:00.000Z"
+            measurementReason: null
         });
-        // Cached durations put "long" first; unread, discovery order would.
+        // Committed durations put "long" first; unread, discovery order would.
         const seeded = JSON.stringify({
-            version: 2,
+            version: 1,
             tasks: {
                 "forge||light": entry(100),
                 "forge||long": entry(1000),
@@ -1428,7 +1445,7 @@ describe("distributed worker scheduler", function () {
                 "hardhat||long": entry(1000)
             }
         });
-        fs.writeFileSync(costCachePath, seeded);
+        fs.writeFileSync(costsPath, seeded);
         const tasks = (runner: string) =>
             ["light", "long"].map((label) => ({
                 label,
@@ -1465,6 +1482,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: root,
                 costCachePath,
                 costCacheReadOnly: true,
                 runTaskImpl: async (
@@ -1485,7 +1503,8 @@ describe("distributed worker scheduler", function () {
             });
             expect(local.completed).to.equal(2);
             expect(starts).to.deep.equal(["long", "light"]);
-            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(seeded);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
             const distributed = await runAgainstProtocolWorkers(
                 [
                     {
@@ -1502,6 +1521,7 @@ describe("distributed worker scheduler", function () {
                     tasks: tasks("hardhat"),
                     run: {
                         schedule: "cost",
+                        projectRoot: root,
                         costCachePath,
                         costCacheReadOnly: true
                     }
@@ -1512,7 +1532,8 @@ describe("distributed worker scheduler", function () {
                 "long",
                 "light"
             ]);
-            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(seeded);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -1522,7 +1543,7 @@ describe("distributed worker scheduler", function () {
         const cacheDir = fs.mkdtempSync(
             path.join(os.tmpdir(), "distributed-cost-cache-")
         );
-        const costCachePath = path.join(cacheDir, "test-costs.json");
+        const costCachePath = path.join(cacheDir, ".cache/test-costs.json");
         const peer = (durationMs: number, afterRunComplete?: () => void) => ({
             name: "cache-peer",
             distributedProtocol: 15,
@@ -1541,7 +1562,7 @@ describe("distributed worker scheduler", function () {
         try {
             const first = await runAgainstProtocolWorkers([peer(100)], {
                 tasks: [MEASURED_TASK],
-                run: { costCachePath }
+                run: { projectRoot: cacheDir, costCachePath }
             });
             expect(first.failure).to.equal(null);
             const original = fs.readFileSync(costCachePath);
@@ -1553,16 +1574,32 @@ describe("distributed worker scheduler", function () {
                 avgCores: 0.25,
                 peakRssGb: 0.5
             });
+            // A new test is committed as measured, without run bookkeeping.
+            const costsPath = path.join(cacheDir, "test-costs.json");
+            const committed = fs.readFileSync(costsPath);
+            expect(
+                JSON.parse(committed.toString()).tasks["hardhat||measured"]
+            ).to.deep.equal({
+                durationMs: 100,
+                avgCores: 0.25,
+                peakRssGb: 0.5,
+                measurementReason: null
+            });
             const controller = new AbortController();
             await runAgainstProtocolWorkers(
                 [peer(200, () => controller.abort())],
                 {
                     tasks: [MEASURED_TASK],
-                    run: { costCachePath, signal: controller.signal }
+                    run: {
+                        projectRoot: cacheDir,
+                        costCachePath,
+                        signal: controller.signal
+                    }
                 }
             );
             expect(controller.signal.aborted).to.equal(true);
             expect(fs.readFileSync(costCachePath)).to.deep.equal(original);
+            expect(fs.readFileSync(costsPath)).to.deep.equal(committed);
         } finally {
             fs.rmSync(cacheDir, { recursive: true, force: true });
         }
@@ -2151,6 +2188,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 accountPartitions: new AccountPartitionPool(1),
                 resourceGate,
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -2218,6 +2256,7 @@ describe("distributed worker scheduler", function () {
                 logDir,
                 infraPids: () => [],
                 tickMs: 1,
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 resourceGate: {
                     cpuUtil: 0,

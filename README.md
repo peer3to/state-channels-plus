@@ -223,9 +223,10 @@ fails with `All distributed workers were quarantined before running a task`.
 
 Both runners measure every test while it runs: peak memory of its process tree,
 average CPU cores and duration. At the end of a run the orchestrator (or the
-local runner) stores them per test in `.cache/test-costs.json`, and writes
-`logs/run-N/run-metrics.json` with how busy each worker was, why it held tests
-back and when each test was first assigned.
+local runner) stores each test's latest measurement in the ignored
+`.cache/test-costs.json`, updates the committed `test-costs.json` at the project
+root (see below), and writes `logs/run-N/run-metrics.json` with how busy each
+worker was, why it held tests back and when each test was first assigned.
 
 By default (`--schedule fifo`) the measurements are only recorded. On Linux,
 fifo's memory admission now reads running tests' memory from `/proc`, where it
@@ -249,25 +250,34 @@ infrastructure log and totals them in its summary line.
 yarn test:parallel --schedule cost --workers 30
 yarn test:parallel:distributed --schedule cost
 yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
-yarn test:parallel:distributed --cost-cache-read-only  # CI: read, never write
+yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 ```
 
 Each of a test's duration, cores and memory comes from, first match wins: an
-override, this run's measurement, this checkout's cache, the committed snapshot
-`scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
-from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
-cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled only when it fails the test; a redundant copy never); an attempt that starved is stored
-with 50% more cores and memory, so the next run admits it as more expensive,
-and a clean retry in the same run replaces that sample.
+override, this run's measurement, the committed `test-costs.json`, the average
+of finished tests from the same file, then one default (30 s, 1 core, 2 GB).
+`.cache/test-costs.json` is only a record of the latest run; scheduling never
+reads it. A measurement without cores or memory (from an older worker) leaves
+those to the later sources. Every attempt whose result the run keeps is measured
+(a speculative copy that finishes after its test settled only when it fails the
+test; a redundant copy never); an attempt that starved is recorded with 50% more
+cores and memory, so its retry is admitted as more expensive, and the run keeps
+its last attempt's measurement.
 
-`yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
-rounded and sorted so the diff shows only what changed; it stops without
-writing if the cache is missing or either file cannot be read. Commit a refreshed
-snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
-and stays stateless.
+`test-costs.json` and `test-costs.overrides.json` live at the project root, so
+another project using this runner keeps its own. A run that writes the cache
+also rewrites a test's entry in `test-costs.json`, as measured, when the test is
+new there or any one of its duration, cores or memory moved by more than 30%;
+otherwise the file is left alone, so it only changes when a cost does. A starved
+test's inflated cost counts too, so it is admitted as more expensive until a
+clean run measures it again. Commit the updated file with your change. CI runs
+with `--cost-cache-read-only`: it schedules by the committed costs and writes
+neither file. `yarn test:costs:snapshot` copies every test's latest measurement
+from the cache into `test-costs.json` regardless of the 30% threshold; it stops
+without writing if the cache is missing or either file cannot be read.
 
-To correct a test's cost by hand, add it to
-`scripts/e2e-parallel/test-costs.overrides.json`, keyed by
+To correct a test's cost by hand, add it to the optional
+`test-costs.overrides.json`, keyed by
 `runner|file|full title`, e.g.
 `{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
 are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run

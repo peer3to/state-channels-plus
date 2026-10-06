@@ -411,6 +411,9 @@ async function main(options = {}) {
                 30000,
                 setupCancellation.signal
             );
+            // Cleanup can abort this wait while the offer write is pending;
+            // the rejection is still observed by `await needed` below.
+            needed.catch(() => {});
             let need;
             try {
                 await environment.send("WORKSPACE_OFFER", { manifest });

@@ -597,6 +597,7 @@ describe("browser tier admission", function () {
                 infraPids: () => [],
                 tickMs: 1,
                 resourceGate: STUB_RESOURCE_GATE,
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,

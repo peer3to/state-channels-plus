@@ -779,6 +779,16 @@ describe("distributed parallel runner", function () {
                 expect(entry.measurementReason).to.equal(null);
                 expect(entry.samples).to.equal(1);
             }
+            // Both new tests are committed at the project root.
+            const committed = JSON.parse(
+                fs.readFileSync(
+                    path.join(workspace.projectRoot, "test-costs.json"),
+                    "utf8"
+                )
+            );
+            expect(Object.keys(committed.tasks)).to.have.members(
+                Object.keys(cache.tasks)
+            );
         } finally {
             process.env.PATH = originalPath;
             await pool.close();
