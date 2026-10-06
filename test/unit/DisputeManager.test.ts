@@ -19,6 +19,7 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
+import { mismatchRefusalArgs } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import {
     runKillSentAfterKillPeriod,
     runKillWithApplyRace,
@@ -135,6 +136,52 @@ describe("Unit: DisputeManager", function () {
             TestSession.getHarness(),
             false
         );
+    });
+    it("a non-timeout dispute refused as a predecessor mismatch queues no mismatch retry", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const peer = h.getPeer(0);
+        const tasks = await h.rpcStub.recordScheduledTasks(peer.index);
+        const recorder = await h.rpcStub.recordDisputeSubmissions(peer.index, {
+            failWith: {
+                customError:
+                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch",
+                customErrorArgs: mismatchRefusalArgs(
+                    ZeroAddress,
+                    0,
+                    false,
+                    true
+                ),
+                at: "send",
+                times: 1
+            }
+        });
+        try {
+            await h.execOnHost(peer, async (sm) => {
+                await sm.membershipService.startSelfRemovalDispute(sm.forkId);
+            });
+            expect(await recorder.submissions()).to.have.length(1);
+            const dispute = Codec.decode(
+                (await recorder.submissions())[0].encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
+            expect(
+                (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith(
+                        "timeoutParticipantAfterPreviousProducerMismatch"
+                    )
+                )
+            ).to.have.length(0);
+            expect(
+                await h.execOnHost(peer, async (sm) =>
+                    sm.storage.disputes.didIDispute(sm.forkId)
+                )
+            ).to.equal(false);
+        } finally {
+            await recorder.restore();
+            await tasks.restore();
+        }
     });
     describe("constructDispute", function () {
         it("healthy fork → well-formed dispute, the chain accepts its proof", async function () {

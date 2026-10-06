@@ -8,6 +8,8 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ethers } from "ethers";
 
+export const TIMEOUT_RECHECK_DELAY_MS = 1000;
+
 /**
  * Owns the participant-timeout check: schedules it, decides whether the
  * deadline really passed (including the on-chain calldata races that grant the
@@ -315,7 +317,7 @@ export default class ParticipantTimeoutService {
             forkId,
             blockHeight,
             participantAddress,
-            1000,
+            TIMEOUT_RECHECK_DELAY_MS,
             `timeoutParticipantAfterOnChainValidation - ${reason}`,
             isForced
         );
