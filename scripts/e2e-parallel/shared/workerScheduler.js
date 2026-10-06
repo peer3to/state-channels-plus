@@ -12,8 +12,8 @@ class WorkerScheduler {
         this.requestPending = false;
         this.bufferedAssignment = null;
         this.retryTimer = null;
-        // An unknown-cost start whose tick is still running: no immediate
-        // request until that tick fires or the task itself finishes.
+        // Every cost start waits a full tick before another admission, even
+        // if the task finishes during that tick.
         this.settling = null;
     }
 
@@ -33,7 +33,7 @@ class WorkerScheduler {
     }
 
     async requestWhenAvailable() {
-        if (this.stopped || this.requestPending) return;
+        if (this.stopped || this.requestPending || this.settling) return;
         this.requestPending = true;
         let assignment;
         try {
@@ -82,13 +82,8 @@ class WorkerScheduler {
         this.running++;
         this.peakConcurrency = Math.max(this.peakConcurrency, this.running);
         this.run(assignment);
-        // A known cost is already counted against the budget, so the next
-        // request need not wait a tick for the CPU sample to catch up.
-        if (this.options.schedule === "cost" && assignment.task?.cost?.known)
-            this.requestSoon();
-        // An unknown-cost start gets a full tick, not what is left of an
-        // earlier one, so its usage shows before the next admission.
-        else if (this.options.schedule === "cost") {
+        // Space starts so live load can catch up with predicted average costs.
+        if (this.options.schedule === "cost") {
             this.settling = assignment;
             this.restartRetry();
         } else this.scheduleRetry();
@@ -119,7 +114,6 @@ class WorkerScheduler {
         this.updateConcurrency();
         this.runningAssignments.delete(assignment);
         this.running--;
-        if (assignment === this.settling) this.settling = null;
         // Under cost a finished task frees budget a queued one may fit now.
         if (this.options.schedule === "cost") this.requestSoon();
         else this.scheduleRetry();
@@ -166,11 +160,11 @@ class WorkerScheduler {
         this.scheduleRetry();
     }
 
-    // A request that starts nothing schedules the usual retry itself. While an
-    // unknown-cost start settles, the pending tick makes the request instead.
+    // A request that starts nothing schedules the usual retry itself. While a
+    // start settles, the pending tick makes the request instead.
     requestSoon() {
         setImmediate(() => {
-            // Checked when it runs: an unknown-cost start may have begun since.
+            // Checked when it runs: another start may have begun since.
             if (this.settling) return this.scheduleRetry();
             this.requestWhenAvailable().catch((error) =>
                 this.requestFailed(error)

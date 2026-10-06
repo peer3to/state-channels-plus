@@ -351,7 +351,7 @@ describe("distributed worker scheduler", function () {
         });
         try {
             await scheduler.requestWhenAvailable();
-            await scheduler.requestWhenAvailable();
+            await waitFor(() => probes.length === 3, 10000, 10);
             expect(requests).to.equal(1);
             expect(probes).to.deep.equal([
                 { count: 0, assignment: null },
@@ -364,7 +364,7 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests the next cost task at once after starting a known-cost one", async function () {
+    it("paces both known and unknown cost starts by the scheduler interval", async function () {
         const run = async (known: boolean) => {
             const queue = ["first", "second"].map((id) => ({
                 id,
@@ -393,7 +393,7 @@ describe("distributed worker scheduler", function () {
                 release();
             }
         };
-        expect(await run(true)).to.equal(2);
+        expect(await run(true)).to.equal(1);
         expect(await run(false)).to.equal(1);
     });
 
@@ -421,8 +421,7 @@ describe("distributed worker scheduler", function () {
             await new Promise((resolve) => setImmediate(resolve));
             expect(requests).to.equal(1);
             expect(scheduler.bufferedAssignment).to.equal(null);
-            await scheduler.requestWhenAvailable();
-            expect(requests).to.equal(2);
+            await waitFor(() => requests === 2, 10000, 10);
             expect(scheduler.running).to.equal(2);
         } finally {
             scheduler.stop();
@@ -681,7 +680,9 @@ describe("distributed worker scheduler", function () {
             runTask: async (assignment: { id: string }) => {
                 startedAt.set(assignment.id, Date.now());
                 if (assignment.id !== "known") return forever;
-                await new Promise((resolve) => setTimeout(resolve, 50));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, retryMs + 50)
+                );
             }
         });
         try {
@@ -695,7 +696,7 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests at once again once an unknown-cost start's tick has passed", async function () {
+    it("paces a known-cost start after an unknown-cost start", async function () {
         const retryMs = 1000;
         const startedAt = new Map<string, number>();
         const cost = (known: boolean) => ({
@@ -720,14 +721,13 @@ describe("distributed worker scheduler", function () {
         try {
             await scheduler.requestWhenAvailable();
             await waitFor(() => startedAt.has("next"), 10000, 10);
-            // "known" waited out the tick; "next" follows it at once rather
-            // than a tick later.
+            // Both starts wait out a full interval.
             expect(
                 startedAt.get("known")! - startedAt.get("unknown")!
             ).to.be.at.least(retryMs - 15);
             expect(
                 startedAt.get("next")! - startedAt.get("known")!
-            ).to.be.below(retryMs / 2);
+            ).to.be.at.least(retryMs - 15);
         } finally {
             scheduler.stop();
         }
@@ -755,7 +755,9 @@ describe("distributed worker scheduler", function () {
                 startedAt.set(assignment.id, Date.now());
                 if (assignment.id !== "known") return forever;
                 // Finishes while "unknown" is still settling.
-                await new Promise((resolve) => setTimeout(resolve, 50));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, retryMs + 50)
+                );
             }
         });
         try {
@@ -811,11 +813,11 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests at once when a cost task finishes, and only under cost", async function () {
+    it("keeps the start interval when a task finishes immediately", async function () {
         const run = async (schedule: string) => {
             const queue = ["first", "second"].map((id) => ({
                 id,
-                // Unknown costs: only the finish can trigger the next request.
+                // Even a completed task must leave the start interval intact.
                 task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
             }));
             const starts: string[] = [];
@@ -837,7 +839,7 @@ describe("distributed worker scheduler", function () {
                 scheduler.stop();
             }
         };
-        expect(await run("cost")).to.deep.equal(["first", "second"]);
+        expect(await run("cost")).to.deep.equal(["first"]);
         expect(await run("fifo")).to.deep.equal(["first"]);
     });
 

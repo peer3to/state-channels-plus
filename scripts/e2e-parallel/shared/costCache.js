@@ -24,8 +24,7 @@ const object = (value) =>
     value !== null && typeof value === "object" && !Array.isArray(value);
 const reasons = new Set(MEASUREMENT_REASONS);
 
-// Cost of a task nothing has measured: not known, so the request after its
-// start waits for a tick.
+// Cost of a task nothing has measured.
 function defaultCost() {
     return { ...DEFAULT_TASK_COST, known: false };
 }
@@ -280,7 +279,12 @@ class CostCache {
                   ? value * STARVED_COST_FACTOR
                   : value;
         const peakRssGb = inflate(attempt.peakRssGb);
-        const avgCores = inflate(attempt.avgCores);
+        const measuredCores = inflate(attempt.avgCores);
+        // A failed or stalled attempt must not make the next admission cheaper.
+        const avgCores =
+            attempt.code === 0
+                ? measuredCores
+                : Math.max(measuredCores ?? 0, this.resolve(task).cores);
         if (pending.sample) this.addToFileSums(task, pending.sample, -1);
         pending.sample = {
             durationMs: attempt.durationMs,
@@ -364,7 +368,7 @@ class CostCache {
             cores: cores ?? fallback.cores,
             rssGb: rssGb ?? fallback.rssGb,
             // Measured or overridden cores and memory, not a default or a
-            // sibling's: starting it needs no tick before the next request.
+            // sibling's estimate.
             known:
                 (override.cores ?? measured("avgCores")) !== undefined &&
                 (override.rssGb ?? measured("peakRssGb")) !== undefined

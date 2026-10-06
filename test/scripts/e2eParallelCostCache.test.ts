@@ -237,6 +237,72 @@ describe("task cost cache", function () {
         }
     });
 
+    it("keeps the previous CPU estimate after a slower failed attempt and persists it", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-failed-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, { ...sample, avgCores: 0.922 }, metadata);
+            cache.commit();
+            const next = new CostCache({ projectRoot: root });
+            next.record(
+                example,
+                { ...sample, code: 1, durationMs: 96776, avgCores: 0.357 },
+                metadata
+            );
+            expect(next.resolve(example).cores).to.equal(0.922);
+            next.commit();
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example).cores
+            ).to.equal(0.922);
+            next.record(example, { ...sample, avgCores: 0.357 }, metadata);
+            expect(next.resolve(example).cores).to.equal(0.357);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("allows a failed attempt to increase CPU cost and preserves it through a late failure", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-failed-increase-")
+        );
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.8 },
+                metadata
+            );
+            expect(cache.resolve(example).cores).to.equal(0.8);
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.1 },
+                { ...metadata, disposition: "late-failure" }
+            );
+            expect(cache.resolve(example).cores).to.equal(0.8);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("does not lower the default CPU estimate when the first attempt fails", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-first-failure-")
+        );
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const before = cache.resolve(example).cores;
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.1 },
+                metadata
+            );
+            expect(cache.resolve(example).cores).to.equal(before);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("records one finalizing sample per task run including late failure", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-finalizing-"));
         try {

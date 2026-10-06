@@ -244,11 +244,12 @@ may admit more tests than before.
 
 With `--schedule cost` the runner uses them: browser-only and longest tests
 start first, and a busy worker is handed only a test whose predicted CPU and
-memory still fit beside everything it runs. After starting a test whose cores
-and memory are measured or overridden, and after any test finishes, a worker
-requests its next test at once instead of waiting for the scheduler tick; after
-starting an unknown-cost test it waits a full tick, even if another test
-finishes meanwhile, so that test's usage shows first.
+memory still fit beside everything it runs. Every test start waits the configured
+scheduler interval before another test can start, including known-cost tests and
+tests that finish within the interval.
+After the interval has elapsed, a completion can trigger immediate admission.
+Failed attempts cannot lower the CPU estimate used for subsequent scheduling;
+a successful measurement can lower it again.
 `--cpu-limit 6` sets a distributed worker’s predicted CPU budget to six cores,
 capped by its detected available cores. It does not impose a container CPU quota.
 For example, twelve tests predicted to use 0.5 cores each fit this CPU budget,
