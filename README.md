@@ -251,10 +251,10 @@ After the interval has elapsed, a completion can trigger immediate admission.
 Failed attempts cannot lower the CPU estimate used for subsequent scheduling;
 a successful measurement can lower it again.
 `--cpu-limit 6` sets a distributed worker’s predicted CPU budget to six cores,
-capped by its detected available cores. It does not impose a container CPU quota.
+including values above its detected available cores. It does not impose a container CPU quota.
 For example, twelve tests predicted to use 0.5 cores each fit this CPU budget,
 provided the worker’s `--workers` cap permits twelve and memory/live load allow it.
-The server’s CPU limit is the ceiling for an orchestrator’s CPU request.
+The server’s CPU limit is a default; an orchestrator can request a higher value.
 An idle worker still accepts one oversized test so it can make progress.
 The `--workers` cap still applies, and so does `--target-load`: machine CPU at
 or above `min(--target-load, 0.95)` holds new tests. Hold counts in
@@ -355,11 +355,11 @@ Linux blocks the worker host, link-local ranges, RFC1918 ranges, and each
 filesystem/process/resource boundary but reports a reduced network guarantee;
 do not use it as a shared hardened worker.
 
-Each server's startup CPU, memory, disk, process, slot, worker, load, and
-interval values are both its defaults and its current hard ceilings. An
-orchestrator may request smaller per-run values with the corresponding
-distributed command flags. The worker rejects an oversized request before
-creating a container; it never silently clamps it. A retained container updates
+Each server's startup values provide per-run defaults. The orchestrator may
+request higher or lower CPU budgets and worker counts. Memory, disk, process,
+slot, load and interval settings retain their server ceilings: an oversized
+request for one of those settings is rejected before creating a container;
+it is never silently clamped. A retained container updates
 its CPU, memory, and process limits before reuse. Its volume quota is fixed:
 smaller disk requests are valid upper bounds, while a request above the volume's
 original quota is rejected.
@@ -380,7 +380,16 @@ yarn test:parallel:distributed \
 
 `-w N` / `--workers N` requests at most `N` concurrent test processes from
 each leased worker. The final summary prints that active limit in the existing
-capacity block and labels the worker's advertised maximum.
+capacity block and labels the worker's advertised default.
+Both `-w` and `--cpu-limit` may exceed worker defaults. CPU budgets may also
+exceed detected cores. Memory and live-load admission still apply; chain tests
+wait when all 40 funded account partitions are occupied. Workers need this
+runner update once; subsequent experiments need only orchestrator flags.
+
+```shell
+yarn test:parallel:distributed --schedule cost -w 16 --cpu-limit 12 --cost-cache-read-only
+yarn test:parallel:distributed --schedule fifo -w 16 --cost-cache-read-only
+```
 
 The source archive contains tracked and non-ignored files from the test
 repository and every recursive `link:` or `file:` dependency. Their relative

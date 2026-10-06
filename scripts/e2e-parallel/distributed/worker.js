@@ -210,20 +210,27 @@ async function start(config) {
         prefetch: true,
         canRun: async (running, assignment, activeAssignments) => {
             const schedule = scheduler.options.schedule;
-            const allowed = await resources.allows(
-                running,
-                config.concurrencyCap,
-                admissionCost(schedule, assignment, activeAssignments)
+            const accountsAvailable = taskResources.canAcquire(
+                assignment?.task
             );
-            if (!allowed) {
-                const reason = holdReason({
-                    schedule,
+            const allowed =
+                accountsAvailable &&
+                (await resources.allows(
                     running,
-                    concurrencyCap: config.concurrencyCap,
-                    resourceGate: resources,
-                    memBoundGb: config.memBoundGb,
-                    targetLoad: config.targetLoad
-                });
+                    config.concurrencyCap,
+                    admissionCost(schedule, assignment, activeAssignments)
+                ));
+            if (!allowed) {
+                const reason = !accountsAvailable
+                    ? "waiting for a funded account partition"
+                    : holdReason({
+                          schedule,
+                          running,
+                          concurrencyCap: config.concurrencyCap,
+                          resourceGate: resources,
+                          memBoundGb: config.memBoundGb,
+                          targetLoad: config.targetLoad
+                      });
                 logging.hold({
                     seq:
                         assignment?.seq ??

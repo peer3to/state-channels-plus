@@ -526,7 +526,7 @@ function formatWorkerSummary(worker, completed, budgetHolds) {
             : profile.memoryBytes / 1024 ** 3;
     const capacity =
         `${slots} slots, ${workers} workers ` +
-        `(max ${worker.capabilities.workers}), ${memoryGb}GB`;
+        `(default ${worker.capabilities.workers}), ${memoryGb}GB`;
     if (!worker.stats) {
         return `${workerName(worker)} (${capacity}) · ${completed} tests · resource stats unavailable`;
     }

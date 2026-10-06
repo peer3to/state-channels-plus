@@ -560,7 +560,7 @@ describe("distributed worker scheduler", function () {
         expect(resources.costBudget({ cores: 7, rssGb: 0 }).cores).to.equal(-1);
     });
 
-    it("caps a configured CPU budget at the available cores", function () {
+    it("allows a configured CPU budget above the available cores", function () {
         const resources = new ResourceGate({
             testPids: () => [],
             infraPids: () => [],
@@ -570,8 +570,9 @@ describe("distributed worker scheduler", function () {
             sampleOptions: { platform: "darwin", cpuCount: () => 4 }
         });
         expect(resources.costBudget({ cores: 1.5, rssGb: 0 }).cores).to.equal(
-            2.5
+            4.5
         );
+        expect(resources.stats().cpuCores).to.equal(4);
     });
 
     it("meters overlapping process-table scans once and counts a failed one", async function () {
@@ -2360,7 +2361,12 @@ describe("distributed worker scheduler", function () {
         expect(forge.env).to.deep.equal({ BASE_ONLY: "yes" });
         forge.release();
 
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
         const failed = pool.acquire({ runner: "hardhat" });
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(false);
+        expect(pool.canAcquire(null)).to.equal(false);
+        expect(pool.canAcquire({ runner: "forge" })).to.equal(true);
+        expect(pool.canAcquire({ runner: "browser" })).to.equal(true);
         expect(failed.slot.id).to.equal(1);
         expect(failed.accountPartition).to.equal(0);
         expect(failed.env).to.include({
@@ -2370,6 +2376,7 @@ describe("distributed worker scheduler", function () {
             E2E_SLOT_INDEX: "0"
         });
         failed.release();
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
 
         const cancelled = pool.acquire({ runner: "hardhat" });
         expect(cancelled.slot.id).to.equal(2);

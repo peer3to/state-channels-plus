@@ -444,8 +444,7 @@ class ResourceGate {
     costBudget(runningCost) {
         return {
             cores:
-                Math.min(this.cpuCores, this.cpuLimit ?? this.cpuCores) *
-                    COST_CPU_BUDGET -
+                (this.cpuLimit ?? this.cpuCores) * COST_CPU_BUDGET -
                 runningCost.cores,
             rssGb:
                 this.memBoundGb - Math.max(this.occupiedGb, runningCost.rssGb)
