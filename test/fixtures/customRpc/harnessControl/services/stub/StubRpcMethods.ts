@@ -1488,8 +1488,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 multicall
             );
             this.service.reductionSubmitCalls = 0;
-            Reflect.set(contract, "getGasLimit", (...parameters: unknown[]) =>
-                resume(() => Reflect.apply(gasLimit, contract, parameters))
+            Reflect.set(
+                contract,
+                "getGasLimit",
+                async (...parameters: unknown[]) => {
+                    // Hold the completed read, not a new call on a provider
+                    // that disposal may close before the gate is released.
+                    const result = await Reflect.apply(
+                        gasLimit,
+                        contract,
+                        parameters
+                    );
+                    return resume(async () => result);
+                }
             );
             // Count the chain write while keeping the method's static-call
             // and estimation faces for the simulation that precedes it.

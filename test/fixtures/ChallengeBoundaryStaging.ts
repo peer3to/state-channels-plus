@@ -82,9 +82,10 @@ function markStaged(h: MathPeerTestHarness): ForkId {
 }
 
 /**
- * Four peers; blocks 0..2 final on every peer, their snapshot posted (the chain
- * anchor at block 2), then peer 2 goes offline and blocks 3 and 4 stay
- * unfinalized. Peer 3's own proof is the anchor-holding run [2, 3, 4].
+ * Four peers; blocks 0..2 final on every peer. Publish their snapshot while
+ * peer 2 goes offline and blocks 3 and 4 stay unfinalized. Before returning,
+ * the chain and every mirror anchor at block 2. Peer 3's own proof is the
+ * anchor-holding run [2, 3, 4].
  */
 export async function stageAnchorBeforeUnfinalizedTail(
     h: MathPeerTestHarness
@@ -96,14 +97,26 @@ export async function stageAnchorBeforeUnfinalizedTail(
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 3 });
-    const anchor = await h.transition.postSnapshotWait();
+    // The tail cannot finalize with peer 2 offline, so publication still pins
+    // block 2. Neither estimation nor mining may idle the next author.
+    const [posted] = await Promise.all([
+        h.transition.postSameForkSnapshotOnlyWait(),
+        (async () => {
+            await h.network.blacklistAndDisconnectPeer(
+                ANCHORED_TAIL.offlineIndex
+            );
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [...ANCHORED_TAIL.onlineIndices]
+            });
+        })()
+    ]);
+    const anchor = posted?.snapshot;
     expect(anchor?.blockHeight, "the anchor must be block 2").to.equal(
         ANCHORED_TAIL.anchorHeight
     );
-    await h.network.blacklistAndDisconnectPeer(ANCHORED_TAIL.offlineIndex);
-    await h.transition.advanceState({
-        count: 2,
-        waitForPeers: [...ANCHORED_TAIL.onlineIndices]
+    await h.assert.snapshot.localSnapshotsChangedWait({
+        expectedSnapshot: anchor
     });
     return markStaged(h);
 }

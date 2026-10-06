@@ -20,12 +20,13 @@ export async function stageSpectatorBehindUnfinalizedTail(
 ) {
     // a slow calldata fallback keeps the silent writer's missing
     // confirmations from being posted inside the test
-    await h.lifecycle.start(3, 1, { timeConfig: { chainFallbackTime: 60 } });
+    await h.lifecycle.start(3, 0, { timeConfig: { chainFallbackTime: 60 } });
     const participants = [0, 1, 2];
-    // no transition is scheduled while the spectator syncs
+    // Create and sync the spectator before block 0 so startup cannot spend
+    // the next author's timestamp window.
     const spectator = h.getPeer((await h.join.addSpectatorWait()).index);
     await h.transition.advanceState({
-        count: 1,
+        count: 2,
         waitForPeers: participants,
         waitForFinalization: true
     });

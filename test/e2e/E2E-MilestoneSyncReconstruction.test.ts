@@ -621,7 +621,10 @@ describe("E2E: Milestone sync and reconstruction", function () {
 
         // The responder restarts: a fresh runtime with empty storage, for the
         // same key, syncs again while the participants keep authoring.
-        const responder = await restartPeerRuntime(h, responderPeer.index);
+        const responder = await restartPeerRuntime(h, responderPeer.index, [
+            ...participants,
+            requester.index
+        ]);
         await h.transition.keepAuthoringUntilPeersStatus({
             peerIndices: [responder.index],
             status: Status.SYNCED,
@@ -1254,17 +1257,32 @@ describe("E2E: Milestone sync and reconstruction", function () {
         const h = TestSession.getHarness();
         const { forkId, member, participants, anchor } =
             await stageSyncedThroughParticipation(h);
-        const pruned = await pruneBelowAnchor(
-            h,
-            member,
-            forkId,
-            anchor.blockHeight
-        );
-        expect(pruned.prunedHeights.length).to.be.greaterThan(0);
-        expect(pruned.prunedSnapshotHashes.length).to.be.greaterThan(0);
-        const rebuilt = await reconstructedProof(h, member.index, forkId);
-        expect(rebuilt.startSnapshotHash).to.equal(anchor.hash);
-        expect(rebuilt.verified).to.equal(true);
+        // Pruning and chain verification must not idle the next writer while
+        // this case still has later blocks to author.
+        let inspected = false;
+        const inspecting = (async () => {
+            const pruned = await pruneBelowAnchor(
+                h,
+                member,
+                forkId,
+                anchor.blockHeight
+            );
+            expect(pruned.prunedHeights.length).to.be.greaterThan(0);
+            expect(pruned.prunedSnapshotHashes.length).to.be.greaterThan(0);
+            const rebuilt = await reconstructedProof(h, member.index, forkId);
+            expect(rebuilt.startSnapshotHash).to.equal(anchor.hash);
+            expect(rebuilt.verified).to.equal(true);
+        })().finally(() => {
+            inspected = true;
+        });
+        await Promise.all([
+            inspecting,
+            h.transition.keepAuthoringUntil({
+                until: () => inspected,
+                waitForPeers: participants,
+                maximumBlocks: 20
+            })
+        ]);
 
         // A fresh spectator syncs from the pruned participant's payload.
         const fresh = await freshSpectatorSyncedFrom(

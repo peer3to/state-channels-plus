@@ -95,17 +95,24 @@ function committedCost(sample, previous) {
     };
 }
 
-// New, or any one value moved by more than COST_DRIFT_FRACTION.
-function drifted(previous, next) {
+// Compare CPU work, not elapsed time and average cores independently: load can
+// stretch a task without changing the CPU time it consumes. Memory stays an
+// independent admission cost. Older workers without CPU measurements retain
+// duration-only drift detection until a complete measurement is available.
+function drifted(previous, next, sample) {
     if (!previous) return true;
-    return SAMPLE_FIELDS.some((field) => {
-        if (!numeric(next[field])) return false;
-        if (!numeric(previous[field])) return true;
-        return (
-            Math.abs(next[field] - previous[field]) >
-            COST_DRIFT_FRACTION * previous[field]
-        );
-    });
+    const moved = (before, after) =>
+        numeric(after) &&
+        (!numeric(before) ||
+            Math.abs(after - before) > COST_DRIFT_FRACTION * before);
+    if (moved(previous.peakRssGb, next.peakRssGb)) return true;
+    if (!numeric(sample.avgCores))
+        return moved(previous.durationMs, next.durationMs);
+    if (!numeric(previous.avgCores)) return true;
+    return moved(
+        previous.durationMs * previous.avgCores,
+        next.durationMs * next.avgCores
+    );
 }
 
 function writeCosts(costsPath, tasks) {
@@ -429,7 +436,7 @@ class CostCache {
     }
 
     // Rewrites a committed cost, as measured, when the test is new there or
-    // one of its values moved by more than COST_DRIFT_FRACTION. False keeps
+    // CPU work or peak memory moved by more than COST_DRIFT_FRACTION. False keeps
     // this run's measurements pending.
     commitCosts() {
         let unreadable = null;
@@ -448,7 +455,7 @@ class CostCache {
         let changed = false;
         for (const [key, { sample }] of this.pending) {
             const next = committedCost(sample, costs[key]);
-            if (!drifted(costs[key], next)) continue;
+            if (!drifted(costs[key], next, sample)) continue;
             costs[key] = next;
             changed = true;
         }

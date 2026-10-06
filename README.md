@@ -285,7 +285,10 @@ its last attempt's measurement.
 `test-costs.json` and `test-costs.overrides.json` live at the project root, so
 another project using this runner keeps its own. A run that writes the cache
 also rewrites a test's entry in `test-costs.json`, as measured, when the test is
-new there or any one of its duration, cores or memory moved by more than 30%;
+new there or its CPU work (`durationMs × avgCores`) or peak memory moved by more
+than 30%. Duration and average cores are not compared independently: slower
+execution with proportionally lower average cores is the same CPU work. Older
+workers without CPU measurements retain duration-only drift detection;
 otherwise the file is left alone, so it only changes when a cost does. A starved
 test's inflated cost counts too, so it is admitted as more expensive until a
 clean run measures it again. Commit the updated file with your change. CI runs

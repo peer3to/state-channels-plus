@@ -497,7 +497,10 @@ describe("ReductionManager", function () {
             }
             // The released gas limit resolves into the disposal re-check, so
             // no chain write follows.
-            await sleep(500);
+            const settled = await DetachedPromises.awaitAllAndClear();
+            expect(
+                settled.filter((entry) => entry.status === "rejected")
+            ).to.deep.equal([]);
             expect(stub.getReductionSubmitCallCount()).to.equal(0);
             await host.dispose();
         });

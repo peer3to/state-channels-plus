@@ -3,6 +3,10 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Local discovery endpoint replacement
+
+The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Full cost run 435 and FIFO (`-w 6`) run 436 each passed all 3,405 tasks on the final tree, including Forge and both browser gates, with no starvation or infrastructure retries.
+
 ## Runtime cleanup and context forwarding
 
 [LocalDiscoveryServer](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) checks the accepting manager before constructing an inbound transport, including while shared discovery remains active. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) suppresses context echo to the inbound connection, so rapid channel changes do not replay older values between adjacent roots. These repairs preserve the existing lifecycle and identity requirements.

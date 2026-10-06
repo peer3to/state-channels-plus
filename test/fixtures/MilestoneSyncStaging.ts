@@ -774,10 +774,22 @@ export async function stageSyncedThroughParticipation(h: MathPeerTestHarness) {
     await h.assert.sync.peersInSyncWait({ peerIndices: participants });
     const progressed = await reconstructedProof(h, member.index, forkId);
 
-    const anchor = await h.transition.postSnapshotWait({
-        peerIndex: 0,
-        forkId: String(forkId)
-    });
+    // Publishing the anchor must not stop normal authoring while its chain
+    // event reaches every local mirror.
+    let published = false;
+    const publishing = h.transition
+        .postSnapshotWait({ peerIndex: 0, forkId: String(forkId) })
+        .finally(() => {
+            published = true;
+        });
+    const [anchor] = await Promise.all([
+        publishing,
+        h.transition.keepAuthoringUntil({
+            until: () => published,
+            waitForPeers: participants,
+            maximumBlocks: 20
+        })
+    ]);
     if (!anchor) throw new Error("No snapshot posted");
     await h.transition.advanceState({
         count: 1,
@@ -992,15 +1004,41 @@ export async function spawnSpectatorAfterFirstHandshake(
  */
 export async function restartPeerRuntime(
     h: MathPeerTestHarness,
-    index: number
+    index: number,
+    authoringPeerIndices: number[]
 ): Promise<Peer> {
     const previous = h.getPeer(index);
-    await previous.p2pInstance.dispose();
-    previous.logger.dispose();
-    await h.createPeer(index, previous.signer);
-    const restarted = h.getPeer(index);
-    await h.join.connectSpectator(restarted);
-    return restarted;
+    const wasAfk = h.context.afkPeerIndices.includes(index);
+    h.contextApi.markAfkPeer({ afkPeerIndex: index });
+    let ready = false;
+    const restarting = (async () => {
+        await previous.p2pInstance.dispose();
+        previous.logger.dispose();
+        await h.createPeer(index, previous.signer);
+        const restarted = h.getPeer(index);
+        await h.join.connectSpectator(restarted);
+        return restarted;
+    })().finally(() => {
+        ready = true;
+    });
+    try {
+        // Runtime recreation must not consume the participants' writer window.
+        // The unavailable old runtime is excluded from harness state queries.
+        const [restarted] = await Promise.all([
+            restarting,
+            h.transition.keepAuthoringUntil({
+                until: () => ready,
+                waitForPeers: authoringPeerIndices,
+                maximumBlocks: 20
+            })
+        ]);
+        return restarted;
+    } finally {
+        if (!wasAfk)
+            h.context.afkPeerIndices = h.context.afkPeerIndices.filter(
+                (peerIndex) => peerIndex !== index
+            );
+    }
 }
 
 /**

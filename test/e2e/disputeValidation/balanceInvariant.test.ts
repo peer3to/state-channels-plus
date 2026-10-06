@@ -138,9 +138,22 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await walks.release(realHead.hash);
         await walks.restore();
 
-        await h.event.waitForPeers("onDisputeKilled", [auditorIndex], 1, {
-            mode: "atLeast"
-        });
+        // The concurrent real-head audits can kill a different dispute first.
+        await h.eventCountsBarrier.waitFor(
+            () =>
+                auditor.eventSpies.onDisputeKilled
+                    ?.getCalls()
+                    .some(
+                        ({ args }) =>
+                            args[1] === forkId &&
+                            args[2] === h.getPeer(2).address
+                    ) ?? false,
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage:
+                    "The auditor did not observe the forged submitter's dispute kill"
+            }
+        );
         const forgedKill = await readDisputeKill(h, h.getPeer(2).address);
         expect(forgedKill.killer).to.equal(auditor.address);
         expect(forgedKill.appliedProofTypes).to.deep.equal([

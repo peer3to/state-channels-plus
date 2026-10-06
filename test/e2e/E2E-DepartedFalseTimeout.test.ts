@@ -337,9 +337,6 @@ describe("E2E: departed submitter's old timeout", function () {
         } = await stageDepartedEligibleLeaver(h);
         // her parked exit post is released before the test ends
         try {
-            // her exit post parks before the auditor's join lands: a later
-            // post finds an unconsumed inbound block and she self-removes
-            await confirmExitParked();
             const carol = await h.query.getNextPeerToWrite();
             const bob = h.getPeer(
                 remaining.find((peerIndex) => peerIndex !== carol.index)!
@@ -359,6 +356,11 @@ describe("E2E: departed submitter's old timeout", function () {
             });
             const auditor = h.getPeer(auditorIndex);
             await suppressTimeoutChecks(h, [auditorIndex]);
+            // Keep authoring while exit preparation runs; it need only be
+            // parked before the join, not before the spectator is created.
+            // her exit post parks before the auditor's join lands: a later
+            // post finds an unconsumed inbound block and she self-removes
+            await confirmExitParked();
             await joinAsPendingParticipant(h, auditorIndex, remaining);
             await waitForChainInboundHead(h, [
                 ...remaining,

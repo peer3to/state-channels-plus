@@ -17,6 +17,7 @@ import {
 } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import { stageFinalityFromNextBlock } from "@test/fixtures/ProofOwnerStaging";
+import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
 import type { EvidenceComparisonRecording } from "@test/harness/actions/rpcStubActions";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
@@ -840,12 +841,12 @@ export async function stageColludersForkAfterAnchor(h: MathPeerTestHarness) {
 /**
  * A pending auditor that holds no final block at the next head (plan E15:
  * the colluders' final block is one this auditor never signed). A spectator
- * syncs while `authors` author, stops receiving block gossip, then the
+ * syncs while `authors` author, is persistently isolated, then the
  * authors finalize one more block (the head the colluders forge) and the
  * spectator joins (PENDING_PARTICIPANT, its JOIN unconsumed, so it is not in
  * that head's required set). Its local final point stays below the head.
  * The authors' writer-timeout checks are off. `restoreGossip` gives the
- * auditor its block gossip back.
+ * auditor its network connection back.
  */
 export async function stageBlindPendingAuditor(
     h: MathPeerTestHarness,
@@ -858,8 +859,11 @@ export async function stageBlindPendingAuditor(
         authoringPeerIndices: authors
     });
     await h.rpcStub.suppressTimeoutCheck(auditorIndex);
-    const restoreGossip =
-        await h.rpcStub.dropNetworkConfirmations(auditorIndex);
+    // Gossip suppression alone still permits a sync response to reveal the head.
+    await h.network.blacklistAndDisconnectPeer(auditorIndex);
+    const restoreGossip = async () => {
+        await h.network.restorePeerDiscovery([auditorIndex]);
+    };
     await h.transition.advanceState({
         count: 1,
         waitForPeers: authors,
@@ -891,6 +895,21 @@ export async function postForgedDepositsHead(
     disputerIndex: number,
     outsideColluders: number[]
 ): Promise<{ hash: string; encodedBlock: string }> {
+    const prepared = await prepareForgedDepositsHead(
+        h,
+        disputerIndex,
+        outsideColluders
+    );
+    await h.tamper.postTamperedDispute(disputerIndex, prepared.tamper);
+    return prepared.head;
+}
+
+// Signing the colluded head must not consume an already-open evidence window.
+async function prepareForgedDepositsHead(
+    h: MathPeerTestHarness,
+    disputerIndex: number,
+    outsideColluders: number[]
+) {
     const forged = await h.tamper.buildForgedSnapshot(
         disputerIndex,
         (ctx) => ({
@@ -910,41 +929,41 @@ export async function postForgedDepositsHead(
         BigInt(forged.originalSnapshot.snapshotData.totalDeposits.amount)
     ).to.be.greaterThan(0n);
 
-    await h.tamper.postTamperedDispute(
-        disputerIndex,
-        (dispute, _confirmation, auditingData) => {
-            if (!auditingData) {
-                throw new Error("expected dispute auditing data");
-            }
-
-            // the forged block replaces the latest block, which is the
-            // first block of the last (threshold-final) milestone
-            const milestone = dispute.input.stateProof.milestones.at(-1);
-            if (milestone?.blockConfirmations.length !== 1) {
-                throw new Error(
-                    "expected the last milestone to hold only the latest block"
-                );
-            }
-            milestone.blockConfirmations[0] =
-                forged.forgedBlock.blockConfirmationStruct;
-            auditingData.milestoneSnapshots[
-                auditingData.milestoneSnapshots.length - 1
-            ] = forged.forgedSnapshot.toStruct();
-
-            auditingData.latestStateSnapshot = forged.forgedSnapshot.toStruct();
-            dispute.input.latestStateSnapshotHash = forged.forgedSnapshot.hash;
-            dispute.input.disputeAuditingDataHash = hash(
-                Codec.encode(auditingData, Type.DisputeAuditingData)
-            );
-            dispute.postedAuditingData = true;
+    const tamper: DisputeTamper = (dispute, _confirmation, auditingData) => {
+        if (!auditingData) {
+            throw new Error("expected dispute auditing data");
         }
-    );
+
+        // the forged block replaces the latest block, which is the
+        // first block of the last (threshold-final) milestone
+        const milestone = dispute.input.stateProof.milestones.at(-1);
+        if (milestone?.blockConfirmations.length !== 1) {
+            throw new Error(
+                "expected the last milestone to hold only the latest block"
+            );
+        }
+        milestone.blockConfirmations[0] =
+            forged.forgedBlock.blockConfirmationStruct;
+        auditingData.milestoneSnapshots[
+            auditingData.milestoneSnapshots.length - 1
+        ] = forged.forgedSnapshot.toStruct();
+
+        auditingData.latestStateSnapshot = forged.forgedSnapshot.toStruct();
+        dispute.input.latestStateSnapshotHash = forged.forgedSnapshot.hash;
+        dispute.input.disputeAuditingDataHash = hash(
+            Codec.encode(auditingData, Type.DisputeAuditingData)
+        );
+        dispute.postedAuditingData = true;
+    };
     return {
-        hash: String(forged.forgedBlock.hash),
-        encodedBlock: Codec.encode(
-            forged.forgedBlock.blockStruct,
-            Type.Block
-        ) as string
+        tamper,
+        head: {
+            hash: String(forged.forgedBlock.hash),
+            encodedBlock: Codec.encode(
+                forged.forgedBlock.blockStruct,
+                Type.Block
+            ) as string
+        }
     };
 }
 
@@ -1102,18 +1121,25 @@ export async function stageParallelHeadAudits(h: MathPeerTestHarness) {
         .control(h.getPeer(0))
         .query.getLatestBlockInfo(forkId)
         .request())!;
+    const forged = await prepareForgedDepositsHead(h, 2, [auditorIndex]);
     await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
     h.context.leftChannelPeerIndices = [...h.context.leftChannelPeerIndices, 0];
-    await h.tamper.postTamperedDispute(0, () => {}, { markMalicious: false });
-    // the open window is peer 1's reason
-    await h.tamper.postTamperedDispute(
-        1,
-        (dispute) => {
-            dispute.input.requireExistingDisputeWindow = true;
-        },
-        { markMalicious: false }
-    );
-    const forgedHead = await postForgedDepositsHead(h, 2, [auditorIndex]);
+    const [openWindow, postRealHead, postForgedHead] = await Promise.all([
+        h.tamper.prepareTamperedDispute(0, () => {}, { markMalicious: false }),
+        // the open window is peer 1's reason
+        h.tamper.prepareTamperedDispute(
+            1,
+            (dispute) => {
+                dispute.input.requireExistingDisputeWindow = true;
+            },
+            { markMalicious: false }
+        ),
+        h.tamper.prepareTamperedDispute(2, forged.tamper)
+    ]);
+    await openWindow();
+    // Both later submissions depend on that opening, not on each other.
+    await Promise.all([postRealHead(), postForgedHead()]);
+    const forgedHead = forged.head;
     await walks.waitUntilHeld([realHead.hash, realHead.hash, forgedHead.hash]);
     const headHeight = Number(
         Codec.decode(realHead.encodedBlock, Type.Block).transaction.header

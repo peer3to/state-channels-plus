@@ -320,6 +320,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index
@@ -363,6 +370,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index,

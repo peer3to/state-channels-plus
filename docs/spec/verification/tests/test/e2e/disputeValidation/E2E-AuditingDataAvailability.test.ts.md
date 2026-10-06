@@ -6,6 +6,10 @@
 
 Audits omitted and posted data from participant and pending peers with different local holdings. Checks omission routes, missing-data counters, reconstructed latest state and balance validation.
 
+E11 staging installs pending-inbound inclusion controls before the anchor block and applies independent blind-peer controls concurrently. Snapshot publication still precedes the pending join, and both precede the tail; replay, availability, and signature oracles are unchanged.
+
+Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                                                                          |

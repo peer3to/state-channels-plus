@@ -10,7 +10,7 @@ import {
     releaseReductions,
     stageHigherStateOverOpener,
     stageOffWireBlock,
-    uploadLateFalseTimeoutDispute,
+    prepareLateFalseTimeoutDispute,
     uploadLateLowerStateDispute,
     waitPastKillPeriod
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
@@ -56,6 +56,13 @@ describe("E2E: evidence in the dispute window", function () {
             { forward: true }
         );
 
+        const uploadLower = await prepareLateFalseTimeoutDispute(
+            h,
+            late.index,
+            opener.address,
+            forkId
+        );
+
         // the opener disputes the offender's block from height - 1
         await h.byzantine.submitInvalidStateTransitionBlock(offender.index);
         await h.assert.dispute.initiatedWait({ peersIndices: [opener.index] });
@@ -78,13 +85,7 @@ describe("E2E: evidence in the dispute window", function () {
 
         // the late peer's lower-state dispute claims a false timeout: it names
         // the opener, not the leader, as the writer of the next block
-        const lower = await uploadLateFalseTimeoutDispute(
-            h,
-            late.index,
-            opener.address,
-            forkId,
-            LATE_MARGIN_SECONDS
-        );
+        const lower = await uploadLower(LATE_MARGIN_SECONDS);
         expect(latestProofBlock(lower.dispute).height).to.equal(height - 1);
         expect(lower.dispute.input.timeout.participant).to.equal(
             opener.address

@@ -31,6 +31,8 @@ up-to-date mirror answers "incorrect"/"invalid". Each case asserts one local `fa
 `true`, and that the stored proof is `DisputeNotLatestState` from the later latest-state check, not
 `DisputeInvalidStateProof` (the state-proof case posts auditing data).
 
+Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                         | Covers                                                                                                                                                                                                                                                                                                               |

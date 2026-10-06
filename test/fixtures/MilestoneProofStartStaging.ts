@@ -65,9 +65,11 @@ export async function stageChainAnchor(
         peerCount: 4,
         transitionCount: options.transitionCount ?? 2
     });
-    for (const peer of h.peers)
-        await h.rpcStub.suppressTimeoutCheck(peer.index);
-    const anchor = await h.transition.postSnapshotWait();
+    // Independent controls must not delay publication inside the next writer's window.
+    const [anchor] = await Promise.all([
+        h.transition.postSnapshotWait(),
+        ...h.peers.map((peer) => h.rpcStub.suppressTimeoutCheck(peer.index))
+    ]);
     expect(anchor, "the chain anchor must be posted").to.not.equal(undefined);
     if (blocksAboveAnchor > 0)
         await h.transition.advanceState({

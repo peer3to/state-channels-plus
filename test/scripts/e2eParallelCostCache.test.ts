@@ -54,7 +54,7 @@ const readTasks = (file: string) =>
     JSON.parse(fs.readFileSync(file, "utf8")).tasks;
 
 describe("task cost cache", function () {
-    it("rewrites a committed cost only when one value drifts more than 30%", function () {
+    it("rewrites a committed cost only when CPU work or memory drifts more than 30%", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-drift-"));
         const costsPath = path.join(root, "test-costs.json");
         const cachePath = path.join(root, ".cache/test-costs.json");
@@ -103,6 +103,99 @@ describe("task cost cache", function () {
                 cores: 0.3,
                 rssGb: 0.66,
                 known: true
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps committed costs when contention changes duration and cores inversely", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-cpu-work-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const key = cache.key(example);
+            const costsPath = writeCosts(root, { [key]: costEntry(10000, 1) });
+            const committed = fs.readFileSync(costsPath, "utf8");
+            cache.record(
+                example,
+                { ...sample, durationMs: 20000, avgCores: 0.5, peakRssGb: 1 },
+                metadata
+            );
+            cache.commit();
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(committed);
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))[key]
+            ).to.include({ durationMs: 20000, avgCores: 0.5 });
+            cache.record(
+                example,
+                { ...sample, durationMs: 5000, avgCores: 2, peakRssGb: 1 },
+                metadata
+            );
+            cache.commit();
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(committed);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps the exact CPU-work boundary and updates beyond it in both directions", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-cpu-boundary-")
+        );
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const key = cache.key(example);
+            const costsPath = writeCosts(root, { [key]: costEntry(10000, 1) });
+            const record = (durationMs: number, avgCores: number) => {
+                cache.record(
+                    example,
+                    { ...sample, durationMs, avgCores, peakRssGb: 1 },
+                    metadata
+                );
+                cache.commit();
+            };
+            record(13000, 1);
+            expect(readTasks(costsPath)[key].durationMs).to.equal(10000);
+            record(7000, 1);
+            expect(readTasks(costsPath)[key].durationMs).to.equal(10000);
+            // Neither value changes by 30%, but their product rises by 44%.
+            record(12000, 1.2);
+            expect(readTasks(costsPath)[key]).to.include({
+                durationMs: 12000,
+                avgCores: 1.2
+            });
+            record(9000, 0.9);
+            expect(readTasks(costsPath)[key]).to.include({
+                durationMs: 9000,
+                avgCores: 0.9
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps zero CPU work stable and learns the first positive measurement", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-zero-cpu-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const key = cache.key(example);
+            const costsPath = writeCosts(root, { [key]: costEntry(10000, 0) });
+            cache.record(
+                example,
+                { ...sample, durationMs: 20000, avgCores: 0, peakRssGb: 1 },
+                metadata
+            );
+            cache.commit();
+            expect(readTasks(costsPath)[key].durationMs).to.equal(10000);
+            cache.record(
+                example,
+                { ...sample, durationMs: 20000, avgCores: 0.1, peakRssGb: 1 },
+                metadata
+            );
+            cache.commit();
+            expect(readTasks(costsPath)[key]).to.include({
+                durationMs: 20000,
+                avgCores: 0.1
             });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
