@@ -10,6 +10,11 @@
 
 ## Overview
 
+The candidate-computation disposal case releases its held call with an undefined
+result after cancellation, then waits for the observed attempt to drain. It does
+not start a new provider read after disposal. The no-persistence and no-installation
+assertions remain unchanged.
+
 The suite drives `ReductionManager.tryReduce` on real peers via `execOnHost`, staging live
 channels, byzantine invalid-transition blocks, and fully resolved final disputes through the
 harness. The oracles observe the returned reduction outcome, `hasOperation` retention, spy

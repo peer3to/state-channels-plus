@@ -130,7 +130,7 @@
     "test:parallel:docker:self-check": "node scripts/e2e-parallel/distributed/isolatedEnvironmentSelfCheck.js",
     "test:parallel:docker:integration": "node scripts/e2e-parallel/distributed/dockerIntegration.js",
     "test:parallel:docker:benchmark": "node scripts/e2e-parallel/distributed/isolatedEnvironmentBenchmark.js",
-    "test:parallel:prepare": "hardhat clean && hardhat compile --force && hardhat typechain && node scripts/generate-artifacts.js && yarn test:parallel:prepare:cached-contracts",
+    "test:parallel:prepare": "hardhat compile && hardhat typechain && node scripts/generate-artifacts.js && yarn test:parallel:prepare:cached-contracts",
     "test:parallel:prepare:cached-contracts": "ts-node scripts/generate-enums.ts && yarn test:parallel:build && forge build",
     "test:parallel:build": "rimraf dist && mkdir -p dist && node scripts/e2e-parallel/shared/compiledTree.js begin && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",
     "test:parallel:refresh": "node scripts/e2e-parallel/shared/compiledTree.js begin && tsc && tsc-alias -p tsconfig.json && node scripts/copy-test-runtime-utils.js && node scripts/e2e-parallel/shared/compiledTree.js finish",

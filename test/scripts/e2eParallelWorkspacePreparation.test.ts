@@ -28,6 +28,58 @@ describe("distributed workspace preparation", function () {
         ]
     };
 
+    it("retains dependency preparation after build failure and invalidates it when the lock changes", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "dependency-checkpoint-")
+        );
+        const cwd = path.join(root, "project");
+        fs.mkdirSync(path.join(cwd, "node_modules"), { recursive: true });
+        const manifest = {
+            repositories: [
+                {
+                    path: "project",
+                    name: "project",
+                    hasPnpmLock: true,
+                    prepareScript: "build"
+                }
+            ],
+            files: [{ path: "project/pnpm-lock.yaml", sha256: "first" }]
+        };
+        let installs = 0;
+        let failBuild = true;
+        const options = {
+            storeDir: path.join(root, "store"),
+            cacheDependencies: true,
+            onOutput() {},
+            commandRunner: {
+                async run(_command: string, args: string[]) {
+                    if (args[0] === "install") installs++;
+                    if (args[0] === "run" && failBuild)
+                        throw new Error("build interrupted");
+                }
+            }
+        };
+        try {
+            await expect(
+                prepareWorkspace(root, manifest, options)
+            ).to.be.rejectedWith("build interrupted");
+            failBuild = false;
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(1);
+            manifest.files[0].sha256 = "second";
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(2);
+            manifest.files[0].sha256 = "first";
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(3);
+            fs.rmSync(path.join(cwd, "node_modules"), { recursive: true });
+            await prepareWorkspace(root, manifest, options);
+            expect(installs).to.equal(4);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("reuses compiled contracts for non-contract source changes", function () {
         expect(
             selectPrepareScript(repository, {

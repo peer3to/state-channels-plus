@@ -154,6 +154,14 @@ modification time so an unchanged run reuses `dist`. Hardhat's existing cache de
 contracts need recompiling. `--skip-build` and `--dry-run` skip this preflight.
 The standalone `yarn compile` command still performs its full clean rebuild.
 
+Worker preparation also lets Hardhat reuse its compile cache. Successful dependency
+installation is checkpointed separately from compilation, so an interrupted build
+can reuse it. When a run finishes normally while a worker is still preparing, cleanup
+waits for preparation to finish and retain its caches. This can extend a cold run;
+explicit cancellation and disconnected leases still stop without waiting for the build.
+Hardhat supplies TypeScript-test artifacts and TypeChain bindings; Forge builds the
+Solidity test contracts into its separate cache.
+
 The indirection is what makes the tier work on a distributed worker: a worker
 executes tasks with its own copy of the runner, taken from the checkout that
 started `yarn test:parallel:server`, while only the project sources are synced

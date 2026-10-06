@@ -949,12 +949,14 @@ async function main(options = {}) {
                     "PREPARED",
                     config.preparationInactivityTimeoutMs
                 );
+                connection.preparationPromise = prepared;
+                prepared.catch(() => {});
                 await connection.environment.send("SOURCE_COMPLETE", {
                     byteCount: message.header.byteCount,
                     sha256: message.header.sha256
                 });
                 await prepared;
-                if (connection.closing) return;
+                if (connection.closing || connection.stopRequested) return;
                 connection.sourceTransfer = null;
                 connection.prepared = true;
                 manager.markRunning(connection);
@@ -1049,6 +1051,20 @@ async function main(options = {}) {
                 // run finished on other workers first); its clean exit must
                 // not be reported as a startup failure.
                 connection.stopRequested = true;
+                if (
+                    message.kind === "RUN_COMPLETE" &&
+                    connection.preparationPromise
+                ) {
+                    await reportStatus(
+                        connection,
+                        "Finishing workspace preparation before cleanup"
+                    );
+                    // A normal run ending must not repeatedly cancel a cold build.
+                    // Explicit cancellation and disconnect still stop promptly.
+                    await connection.preparationPromise.catch(() => {});
+                    if (manager.active !== connection || connection.closing)
+                        return;
+                }
                 await reportStatus(connection, "Cleaning completed lease");
                 if (connection.workerStarted) {
                     sendToWorker(connection, {

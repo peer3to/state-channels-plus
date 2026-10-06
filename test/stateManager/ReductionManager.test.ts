@@ -370,7 +370,13 @@ describe("ReductionManager", function () {
             );
             const outboundHead = query.getOutboundHead();
             const outboundCount = sm.storage.outboundMessages["blockMap"].size;
-            const hold = await h.rpcStub.holdReductionAttempt(0, "compute");
+            // Settle the held computation after disposal without starting a new
+            // provider read against the runtime being torn down.
+            const hold = await h.rpcStub.holdReductionAttempt(
+                0,
+                "compute",
+                "undefined"
+            );
             stub.startTryReduce(sourceForkId);
             await waitFor(
                 async () => (await hold.entered()) === 1,
@@ -383,6 +389,9 @@ describe("ReductionManager", function () {
                 async () => stub.getTryReduceOutcome()?.settled === true
             );
             stub.restoreReductionAttempt();
+            await waitFor(
+                async () => stub.getReductionAttemptsInFlight() === 0
+            );
 
             expect(stub.getTryReduceOutcome()).to.deep.equal({
                 settled: true,
