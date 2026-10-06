@@ -23,7 +23,7 @@ Structured-log formatting helpers (dispute/auditing metadata projections, hash f
 
 ## Key design decisions
 
-Proof metadata projects milestones and latest height, with no separate signedBlocks count. Block metadata uses acceptedSignerAddresses so malformed evidence does not crash logging. Dispute fraud names resolve only in the dispute enum and ordinary fraud names only in its enum; unknown values display UNKNOWN(n). See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L779).
+Proof metadata projects milestones and latest height, with no separate signed-block count. Block metadata uses acceptedSignerAddresses so malformed evidence does not crash logging. Dispute fraud names resolve only in the dispute enum and ordinary fraud names only in its enum; unknown values display UNKNOWN(n). See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L779).
 
 Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L458).
 

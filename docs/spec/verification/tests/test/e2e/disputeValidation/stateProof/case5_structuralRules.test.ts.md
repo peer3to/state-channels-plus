@@ -9,22 +9,13 @@
 
 ## Overview
 
-The suite pins the structural admission rules of `verifyStateProof` as auditors evaluate them
-through the mirrored canonical logic: `preDisputeSetupCalldataPath` yields a milestones-only
-proof, `stubConstructDispute` mutates peer 3's dispute, and peer 1's double-sign provides the
-trigger. The first case copies a real milestone block into `stateProof.signedBlocks` so both
-arrays are non-empty — the milestones-XOR-signedBlocks constraint rejects the proof and the
-dispute dies with `DisputeInvalidStateProof` (the copy keeps headers matching so the header
-check cannot fire first). The second empties `milestones[0].blockConfirmations`, which fails
-milestone verification the same way. The third appends an unfinalized milestone confirmation
-whose author signature belongs to a different signer, killed as
-`DisputeInvalidBlockStructure`. Oracles throughout: dispute initiated with auditing data,
-`onDisputeKilled` observed, the exact proof type stored by honest peers, and the window
-resolved. Header-mismatch and replay-level tampers are out of scope (Case 4 and the
-milestone-content suite). After the permutation atomization the tail-signature case carries
-the block-structure-check permutation; the facet's suffix-break splits target signed-block
-suffixes, not milestone confirmations, and the empty-confirmations case still matches no
-single-scenario ID, so that row stays unassigned.
+The suite submits disputes with malformed milestone proofs and observes real audit counters
+and dispute kills. An empty milestone produces `DisputeInvalidStateProof`. An invalid tail
+author signature, a broken previous-block hash and a skipped height in a genesis block-zero
+run produce `DisputeInvalidBlockStructure`. The tests mutate real constructed disputes and
+check the stored counter type and the resulting window. The table assigns only permutations
+fully established by each declaration; these cases do not establish cross-milestone identity
+consistency for two differently signed blocks.
 
 ## Tests and covered test IDs
 

@@ -3,6 +3,8 @@
 > **Source:** [src/agreementManager/AgreementManager.ts](../../../../../../src/agreementManager/AgreementManager.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md)
 
+> **Known limitation:** Retained, unexecuted proof support can contaminate installed history. [Deferred finding](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds) records the audit/sync impact and missing regressions; this behavior is not certified by the current coverage.
+
 ## Contents
 
 - [Responsibility and observable boundary](#responsibility-and-observable-boundary)

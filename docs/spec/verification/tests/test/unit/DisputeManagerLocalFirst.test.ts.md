@@ -11,7 +11,7 @@
 ## Overview
 
 The suite builds peer 0's own dispute with `fetchConstructedDispute` on a Math session and watches
-the `isLastMilestoneFinalByEveryone` probe on both sides with a record-only mirror observer: the
+the `isAuditingDataOmissionAllowed` probe on both sides with a record-only mirror observer: the
 local diamond's answers and failures, and the chain manager's reads, answers, failures and error
 codes. The staged states are a late joiner whose head milestone still waits for its signature
 (local "not final"), a plain three-peer start (both sides "final"), and

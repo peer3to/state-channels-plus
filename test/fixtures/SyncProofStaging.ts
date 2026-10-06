@@ -606,12 +606,20 @@ export async function stageAnchoredHistory(
     };
 }
 
+type ServedBlock = {
+    hash: string;
+    author: string;
+    signers: string[];
+    confirmation: ConfirmationStruct;
+    snapshot: SnapshotStruct;
+};
+
 /** Peer 0's stored block at `height`: its confirmation, author and committed snapshot. */
 export async function servedBlock(
     h: MathPeerTestHarness,
     forkId: string,
     height: number
-) {
+): Promise<ServedBlock> {
     const query = h.control(h.getPeer(0)).query;
     const bundle = (await query.getBlockByHeight(forkId, height).request())!;
     const snapshot = (await query
@@ -692,7 +700,7 @@ export async function servingConflictAt(
     height: number
 ): Promise<SyncPayload> {
     const forkId = String(anchor.forkID);
-    const run: Awaited<ReturnType<typeof servedBlock>>[] = [];
+    const run: ServedBlock[] = [];
     for (let at = anchor.blockHeight; at < height; at++)
         run.push(await servedBlock(h, forkId, at));
     const stored = await servedBlock(h, forkId, height);
@@ -877,7 +885,7 @@ export async function servedRunPayload(
     range: { from: number; to: number },
     stateSnapshot: SnapshotStruct
 ) {
-    const run: Awaited<ReturnType<typeof servedBlock>>[] = [];
+    const run: ServedBlock[] = [];
     for (let height = range.from; height <= range.to; height++)
         run.push(await servedBlock(h, forkId, height));
     return {

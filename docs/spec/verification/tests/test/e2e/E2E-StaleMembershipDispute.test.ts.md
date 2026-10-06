@@ -17,9 +17,7 @@ posting. The oracles assert the honest peers classify exactly the coordinate-bin
 apply fraud-proof types explicitly absent — and that the malicious disputer is slashed on-chain by
 the kill transaction, independent of the double-sign fork reduction. This pins the audit's author
 check to the resulting snapshot's coordinates instead of a naive membership lookup in a stale era.
-After the permutation split, the removed-participant kill scenario this test demonstrates in full
-is assigned below; the mirrored `DisputeBlockAuthorNotParticipant` verdict permutation is held by
-`test/e2e/disputeValidation/stateProof/case3_signedBlocksOnly.test.ts`.
+The removed-participant kill scenario is assigned below. Other predicate permutations belong to their owning test declarations.
 
 ## Tests and covered test IDs
 

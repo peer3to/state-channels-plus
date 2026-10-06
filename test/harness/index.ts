@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: Test harness exports and session-hook registration; behavior is exercised by the importing mapped test declarations.
 // Core types and interfaces
 export * from "./core/types";
 export * from "./core/testTimeConfig";

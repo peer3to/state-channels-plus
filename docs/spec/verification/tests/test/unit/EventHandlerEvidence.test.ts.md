@@ -15,7 +15,7 @@ audits, with their answers) and the `constructDispute` calls made inside it (the
 their outcome: `pending`, `resolved`, or `rejected` and the error name). Every call is forwarded.
 The probe can apply one fault to the next comparison: `comparisonError` rejects it,
 `unrecoverableInboundRun` makes the real `constructDispute` find its inbound run unrecoverable, so
-it throws `PartialAuditingDataError`, and `hold` parks it until the test releases it to run for
+the error propagates rather than becoming a no-evidence answer, and `hold` parks it until the test releases it to run for
 real (`forward`) or to reject (`fail`). `repeatLastAudit` asks `shouldAddOwnEvidence` again with the
 last audit's fork and dispute. The oracles are the recorded comparisons and audits per peer, the
 auditor's `onDisputeCommitted` count (audits that completed), the auditor's recorded uploads, the

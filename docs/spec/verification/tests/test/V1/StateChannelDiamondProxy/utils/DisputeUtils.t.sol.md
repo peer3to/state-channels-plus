@@ -10,16 +10,12 @@
 
 ## Overview
 
-A minimal Foundry unit suite calling the free function
-`_getUnfinalizedBlockConfirmationsFromStateProof` directly (file-level import of
-`DisputeUtils.sol`; no diamond, no storage). Inputs are synthetic `StateProof`s whose last
-milestone carries `n` empty block confirmations; the oracle is the returned array length: an empty
-last milestone yields an empty result, `n` confirmations yield `n − 1` (the first, finalized block
-is skipped), and a fuzz over `uint8 n` pins the exact `max(0, n − 1)` formula while proving the
-walk never reverts. Confirmation contents, signatures, and the callers that consume the
-unfinalized suffix are out of scope. The DisputeUtils source report declares no component test
-obligations, and no specification permutation is fully demonstrated by these length-only checks,
-so all rows stay unassigned.
+The Foundry suite calls the free functions in `DisputeUtils.sol` directly, without a diamond
+or storage. The reason cases cover the existing-window flag, timeout, self-removal, forced
+inbound progress and slash membership. The latest-block cases call `_getLatestSignedBlock`:
+an empty proof has no block, and a fuzzed last milestone returns its last confirmation's
+signed block when nonempty. The oracle checks the returned encoded bytes, not only array length.
+These utility tests do not establish signature validity or execute state transitions.
 
 ## Tests and covered test IDs
 

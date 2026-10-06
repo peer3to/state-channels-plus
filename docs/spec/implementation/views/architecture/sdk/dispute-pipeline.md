@@ -235,9 +235,8 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (evidence accumulation). A node that already disputed the fork skips the
   comparison (checked first); otherwise it runs once per disputed fork
   (reduction merges evidence monotonically) and concurrent audits share it. A
-  rejected comparison is dropped and the next audit retries it. A comparison
-  that ends on partial own auditing data (`PartialAuditingDataError`) is no
-  answer: it is dropped and counts as "nothing to add" for this audit only. A
+  rejected comparison is dropped and its error propagates to the audit. Missing
+  required own auditing data is fatal; it is not a "nothing to add" answer. A
   positive answer is kept so a failed upload is retried. A kill drops the
   fork's comparison (the compared dispute may be the one killed), and a
   committed reduced result prunes it (`EventHandler` calls
@@ -325,10 +324,11 @@ multicalls both. This is also the N/N exit path of the block pipeline.
   by commitment, the per-fork `didIDispute` flag.
 - [`DisputeFraudProofStorage`](../../../../../../src/storage/DisputeFraudProofStorage.ts#L8):
   one dispute fraud proof per dispute (the audit stops at the first).
-- `persistDisputeDataWithoutAudit` imports proof-carried snapshots, machine
-  states, message blocks, and (optionally) unfinalized blocks with
-  `justPersist` — persistence without advancing the fork's max height, so
-  imported history never masquerades as live progress.
+- Even after the kill period expires, committed participants run
+  `DisputeValidationService.validateDispute` to obtain verified proof material and
+  replay data for reduction. Its verdict can no longer trigger a kill. Audit
+  persistence does not advance the active view; unsupported retained-block trust
+  is tracked in the open findings register.
 - Return to execution: `unsafeSetGenesisState` → `setLatestState` sets the new
   `forkId` (clearing queue-recovery gates), recomputes status from the new
   participant set (a removed/slashed participant drops to `SYNCED`; a snapshot

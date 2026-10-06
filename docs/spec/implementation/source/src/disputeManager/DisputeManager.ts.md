@@ -145,9 +145,8 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
     ([#L76](../../../../../../src/disputeManager/DisputeManager.ts#L76), [#L414](../../../../../../src/disputeManager/DisputeManager.ts#L414)): reduction merges evidence monotonically, so a dispute of
     ours that adds nothing to the first audited dispute adds nothing once more disputes land.
     Concurrent audits share the in-flight promise. A rejected comparison is removed and the
-    rejection reaches that audit; a comparison ended by partial own auditing data
-    (`PartialAuditingDataError`, answered `undefined` at [#L432-L446](../../../../../../src/disputeManager/DisputeManager.ts#L432-L446)) is no answer: it
-    is removed and counts as `false` for that audit only ([#L399-L412](../../../../../../src/disputeManager/DisputeManager.ts#L399-L412)). Removal checks
+    error propagates to that audit. Missing required own auditing data is fatal and is never
+    converted into a `false` no-evidence answer. Removal checks
     promise identity, so a comparison that settles after it was dropped cannot erase its
     replacement. A positive answer stays, so a failed upload is retried by the next audit.
     `forgetEvidenceComparison(forkId)` ([#L483-L485](../../../../../../src/disputeManager/DisputeManager.ts#L483-L485)) drops the kept answer; `EventHandler`

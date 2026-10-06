@@ -12,8 +12,8 @@
 The suite checks the header binding between a dispute's claims and every block carried in its
 state proof, plus the relevance gating for foreign-fork disputes. `stubConstructDispute`
 rewrites peer 3's dispute: the header `channelId` or `forkId` is randomized on the last
-signed block, the first signed block, and the last milestone confirmation (signedBlocks-only
-and calldata/milestone setups respectively), with `submitDoubleSignBlock(1)` as the trigger.
+confirmation, the first confirmation, and the last milestone confirmation (unfinalized
+genesis block-zero and posted-calldata setups respectively), with `submitDoubleSignBlock(1)` as the trigger.
 Oracle for the mismatch cases: the dispute initiates, honest peers kill it and store a
 `DisputeStateProofHeaderMismatch` dispute fraud proof, and the window resolves. The
 uniform-junk-forkId cases instead rewrite `dispute.input` and the entire proof consistently

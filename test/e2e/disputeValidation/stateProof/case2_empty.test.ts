@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: Skipped navigation alias only; executable empty-proof cases live in disputeInputFields/latestStateSnapshotHash.test.ts.
 describe("E2E: dispute validation / stateProof / Case 2 (empty stateProof) — see latestStateSnapshotHash", function () {
     // Card item: "no M no S | latestFinalizedState == latestState == genesis // try and break"
     // Tests live in:

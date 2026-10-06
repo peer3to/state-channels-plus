@@ -4,7 +4,7 @@
 
 ## Overview
 
-Two Foundry contracts. `MilestoneFinalityFreezeTest` drives the public `isLastMilestoneFinalByEveryone`
+Two Foundry contracts. `MilestoneFinalityFreezeTest` drives the public `isAuditingDataOmissionAllowed`
 predicate and `applyDisputeFraudProofs` on a harness that inherits the dispute-fraud-proof,
 dispute-verification and snapshot facets; the predicate's `isMilestoneFinal` self-call is routed to a
 deployed `StateProofFacet` through a fallback, and pruning uses the real `_clearOldInboundMessageBlocks`.

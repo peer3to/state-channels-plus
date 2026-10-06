@@ -7,7 +7,7 @@
 AgreementManager constructs from the local diamond's mirrored chain anchor, using forward
 minimum evidence for membership hops and backward search for the latest final point. A separate
 later-final milestone may overlap earlier evidence. The proof has only milestones; the last
-milestone contains the tail. There is no signedBlocks fallback array or mixed-shape exclusion.
+milestone contains the tail. There is no separate signed-block fallback array or mixed-shape exclusion.
 
 StateChannelCommon owns the internal walk, signer union and retained-region logic. Its
 WalkCursor and ThresholdTally are internal working structures, not routed ABI inputs.
