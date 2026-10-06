@@ -8,6 +8,8 @@ Participation status remains protective: an installed local participant becomes 
 
 ## Key design decisions
 
+An unlisted pending signer stays pending while its authorization may still land. Installation checks this before publishing status. Seating calls onJoinSeated to clear force-join tracking; unlisted state becomes SYNCED only when the authorization is closed. Existing failure rollback and abort order remain. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L179).
+
 Successful snapshot/genesis application replaces the plain off-chain member set. The publication call passes only participant addresses.
 
 General snapshot adoption saves the previous VM state, installs the candidate, and performs participant/status/next-author reads before publishing storage, fork and eligibility. Failed inspection restores the VM and propagates the error. Reduction genesis keeps its existing staged commit and final shouldCommit guard; only committed genesis publishes the new eligibility set. Cancellation does not publish membership or fork. The reduction VM preparation and broader sync persistence remain separate concerns; this is not a rollback of ordinary sync. See [unsafeSetLatestState](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L32).

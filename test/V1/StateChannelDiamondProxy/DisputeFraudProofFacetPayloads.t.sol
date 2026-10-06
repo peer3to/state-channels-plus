@@ -157,8 +157,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = TIMEOUT_FORK_ID;
         dispute.input.timeout.participant = TIMED_OUT_PARTICIPANT;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0].encodedBlock =
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock =
             abi.encode(_block(PREVIOUS_BLOCK_AUTHOR, TIMEOUT_CHANNEL_ID, TIMEOUT_FORK_ID, PREVIOUS_BLOCK_HEIGHT));
 
         // the timed-out participant, the previous author and the two hashes must
@@ -267,8 +268,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = CALLDATA_FORK_ID;
         dispute.input.timeout.participant = timedOut;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = previousBlock;
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = previousBlock;
 
         vm.expectRevert(
             abi.encodeWithSelector(

@@ -23,6 +23,8 @@ One canonical source-to-signatures map records spent contributions.
 
 ## Key design decisions
 
+BlockPredecessor contains an optional block plus required snapshot and full state. QueuedBlockEntry may carry this trusted replay context separately from network source attribution. Ingest and validation use it instead of coordinate history; it adds no network queue persistence policy. See [QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L25).
+
 Network source keys use the existing checksum-address helper. Equivalent address casing spends one source allowance. When a fresh queued entry exists during restore, its admitted values retain priority over that source’s older dequeued values; other sources keep independent allowances.
 
 `BlockOrigin` names network, calldata and proof origins. The options type requires a sender for network copies; internal callers supply these typed options.

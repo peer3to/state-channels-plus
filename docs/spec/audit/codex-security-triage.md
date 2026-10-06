@@ -169,54 +169,51 @@ No requirement states that `open` must reject expired terms, so these cases have
 
 <a id="sync-inbound"></a>
 
-## 6. Peer sync can make an honest node sign fabricated inbound data
+## 6. Chain-final sync reduction input persistence
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 5 · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
-
+**Current assessment:** reported path removed; regression and engineer review pending.
+Original finding: confirmed, high severity, rank 5;
+[`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
 Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence `occ_482d7e145268e00610d5142b`.
 
-**Current evidence and path.** The new linked-window check excludes unrelated windows and does not persist the already-adopted prefix. It still skips reduction-input validation for a chain-final window that starts at the current chain fork and has not yet been adopted. persistSyncPayload stores that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor can become the local inbound tip and be signed during block production.
+The original finding depended on persisting unused inbound reduction inputs from a chain-final
+window. Current [persistence](../../../src/rpc/network/services/spectate/SpectateService.ts#L1028)
+skips that window's supplied snapshot, state and inbound blocks. Nonfinal windows still execute
+reduction before those inputs are trusted. The old unconditional-persistence path is no longer
+current evidence of an exploit.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:241–329](../../../src/rpc/network/services/spectate/SpectateService.ts#L241-L329); [src/rpc/network/services/spectate/SpectateService.ts:488–501](../../../src/rpc/network/services/spectate/SpectateService.ts#L488-L501); [src/rpc/network/services/spectate/SpectateService.ts:967–978](../../../src/rpc/network/services/spectate/SpectateService.ts#L967-L978); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
+Remaining verification must cover a finalized-but-unadopted window with a mutated ignored inbound
+list: trusted inbound head must not change and a signing participant must not sign the injected
+successor. The full security impact and regression assessment are not completed by this documentation
+update. [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11)
+remains a tracked regression obligation; no passing evidence is implied.
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
-
-**Counterevidence and limits.** Already-adopted prefix windows are now omitted. Nonfinal windows execute reduction. The surviving attack needs a finalized-but-unadopted window, a lagging signing participant, and a fabricated successor that passes chain-shape/balance checks.
-
-**Proof gaps.** Static only; runtime regression must exercise the finalized-but-unadopted branch, not the now-excluded prefix.
-
-**Fix handoff (proposed, not implemented):** Do not persist unused peer-provided reduction inputs from finalized windows. Reconstruct authoritative chain data or validate each object before it enters trusted inbound storage. Preserve the preconditions and limits above. Required regression work:
-
-- Change only a finalized window's ignored inbound list and assert no trusted head changes.
-- Verify a syncing participant never signs the injected successor.
-
-Planned permutation, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11). It is a regression obligation, not evidence of a passing test. The fix change maps the exact test.
-
-**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The tip-promotion component also relates to [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf); this report preserves the distinct end-to-end sync-to-signing claim.
+Owners: [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+and [synchronization](../specification/peer-communication/synchronization.md).
 
 <a id="sync-genesis-time"></a>
 
-## 7. Peer sync can replace genesis time and induce a slashable first block
+## 7. Supplied genesis timestamp and downstream use
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 4 · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
-
+**Current assessment:** open; impact requires recheck with the trusted-start walk.
+Original finding: confirmed, high severity, rank 4;
+[`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occurrence `occ_0c51cce0dbb06ddacb658c01`.
 
-**Current evidence and path.** The new isSameForkRegression check does not close the timestamp-only case. UtilityFacet.isSnapshotNewer returns true for two different height-zero snapshots when the current one is genesis. Time-blind genesis validation and an empty milestone proof then pass; persistence stores the altered genesis. First-block production hashes that snapshot, while WrongGenesis compares the full on-chain genesis hash.
+The trusted walk now selects canonical final state. The prior `isSameForkRegression` helper is
+removed and cannot support a current exploit argument. The payload's supplied genesis snapshot
+is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1033).
+Trace every downstream consumer before deciding whether a timestamp-only mutation can affect
+first-block production or another trusted state path. This review does not establish full resolution.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:332–366](../../../src/rpc/network/services/spectate/SpectateService.ts#L332-L366); [src/rpc/network/services/spectate/SpectateService.ts:1079–1095](../../../src/rpc/network/services/spectate/SpectateService.ts#L1079-L1095); [contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol:268–284](../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L268-L284); [src/rpc/network/services/spectate/SpectateService.ts:979–988](../../../src/rpc/network/services/spectate/SpectateService.ts#L979-L988); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:294–299](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L294-L299).
+Remaining verification covers same-fork empty proofs before block zero and reduced-genesis
+canonical time, with the relevant stored snapshot and first-block commitment observed. If an
+unauthenticated timestamp can reach a trusted consumer, its binding to chain or reduction history
+still needs correction. No new behavior is selected here.
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
-
-**Counterevidence and limits.** An advanced chain snapshot or already-stored block zero blocks the simple case. The victim must sync before its first block, with otherwise correct genesis data. The old report's multicall explanation is obsolete: that helper was removed.
-
-**Proof gaps.** Static only; test a timestamp-only mutation against the new regression helper.
-
-**Fix handoff (proposed, not implemented):** Bind the full genesis snapshot, including timestamp, to authoritative chain state or authenticated reduction history before persistence. Preserve the preconditions and limits above. Required regression work:
-
-- Reject same-fork genesis sync with only timestamp changed.
-- Cover empty proofs before block zero and reduced-genesis canonical timestamp.
-
-Planned permutations, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12) and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13). They are regression obligations, not evidence of passing tests. The fix change maps the exact tests.
-
-**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The new regression helper is not a full genesis authentication check.
+Tracked regressions:
+[`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
+and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+These are obligations, not passing-test claims. Owners are the
+[SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+and [synchronization](../specification/peer-communication/synchronization.md).

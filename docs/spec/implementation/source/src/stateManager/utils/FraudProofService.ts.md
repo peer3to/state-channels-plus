@@ -25,6 +25,8 @@ them for escalation.
 
 ## Key design decisions
 
+Invalid-transition evidence accepts the explicit replay predecessor or resolves the block's previousBlockHash, then its committed snapshot and full state. Missing evidence throws; another block at the previous numeric height is not a substitute. Timestamp evidence also accepts explicit previous block/snapshot. See [FraudProofService.ts](../../../../../../../src/stateManager/utils/FraudProofService.ts#L73).
+
 1. **Proof structs mirror exactly what the enforcement handlers verify** — construction is packaging, never judgment (the mirrored predicate already judged).
 
 ## Inputs, outputs, state, and side effects

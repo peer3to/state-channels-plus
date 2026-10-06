@@ -220,8 +220,7 @@ export function dispute(
             latestInboundMessageBlockHash: hash(),
             lastInboundMessageBlockHeight: 0,
             stateProof: {
-                milestones: [],
-                signedBlocks: []
+                milestones: []
             },
             onChainSlashes: [],
             disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
@@ -660,7 +659,6 @@ export function milestoneProof(
                     blockConfirmations: [blockConfirmation()]
                 }
             ],
-            signedBlocks: [],
             ...overrides
         }
     };

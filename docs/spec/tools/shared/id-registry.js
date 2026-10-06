@@ -1,5 +1,6 @@
 "use strict";
 
+const { prosePlanEntries } = require("./specification-plan-prose");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -131,6 +132,10 @@ function collectCandidates(document) {
         if (statement && REQUIREMENT_RE.test(statement))
             add(statement, index, "statement");
     }
+
+    for (const entry of prosePlanEntries(lines, document))
+        for (const definition of entry.definitions)
+            add(definition.id, definition.line, "statement");
 
     for (const table of tableEntries(lines)) {
         const statementTable = table.headers.some((header) =>

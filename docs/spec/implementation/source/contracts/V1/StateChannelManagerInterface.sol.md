@@ -45,41 +45,15 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
 
 ## Key design decisions
 
-1. **It is a typing artifact, not a contract the proxy satisfies.** The proxy used to inherit it
-   and pay a forwarder body for every declaration; the routing refactor removed those bodies, so the
-   proxy no longer inherits it. The ABI callers see is unchanged — it moved from being _implemented_
-   to being _declared here_
-   ([#L9](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L9)).
-2. **It is an exact superset of the previous proxy ABI.** Every name and parameter list is
-   preserved, plus the one new read-only `facetAddressForSelector`
-   ([#L40](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L40)), so no caller —
-   on-chain or off-chain — had to change an encoding.
-   Two later changes altered the surface on purpose. `isBlockAuthentic` is gone: nothing
-   external calls block authenticity any more, because the client checks author signatures itself
-   under the signature carve-out of
-   [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) and the facets use the internal
-   `_isBlockAuthentic`. `getStateTransitionReplayGas`
-   ([#L90](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L90)) is new: the gas the
-   replay call chain needs so the replayed transition gets its full stipend
-   ([UtilityFacet](./StateChannelDiamondProxy/UtilityFacet.sol.md) decision 7).
-3. **Each declaration repeats the implementing function's state mutability, not the forwarder's.**
-   The old proxy forwarder bodies were `nonpayable` even when the facet function reads nothing, and
-   those mutabilities were carried over verbatim when the declarations moved here. They are now
-   corrected against the owning facet: `reduce`, `hasInvalidTimestamp`, `isDisputeInboundHashValid`,
-   `isCorrectLatestState`, `areSignedBlocksLinkedAndVerified`,
-   `isInvalidBlockStructureInStateProof` and `findFirstInvalidBlockStructureInStateProof` became
-   `view`; `hasStateProofHeaderMismatch` became `pure`; and
-   `isGenesisSnapshotWithoutTimeCheck`/`isSnapshotNewer` moved from `view` to `pure`. This is not
-   cosmetic: mutability is what decides whether ethers sends an `eth_call` or a transaction, so a
-   `nonpayable` declaration of a read-only facet function costs the caller a transaction and returns
-   no value ([#L148](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L148)).
-   Parameter and return names were also aligned with the facets in the same pass; they are ABI-neutral.
-4. **Declarations are grouped by their owning facet.** The comment blocks mirror the proxy's routing
-   table, which is what makes an accidental divergence visible in review
-   ([#L16](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L16)).
-5. **It inherits `StateChannelManagerEvents`** so one bound type covers calls and event decoding —
-   this is what lets a single TypeScript contract object serve the SDK
-   ([#L15](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L15)).
+1. **Caller-side typing only.** No contract implements this declaration artifact. It must match
+   the proxy's callable surface and every routed facet's signature and state mutability.
+2. **The proof ABI intentionally changed.** StateProof is milestone-only; verifyMilestones takes
+   ProofWalkInput and returns ProofWalkResult. Removed signed-block/full-proof helpers are not
+   retained. New declarations include anchor lookup, step invalidity, block challenge eligibility,
+   below-anchor, timeout-superseded and final-conflict predicates.
+3. **Mutability follows the owner.** Walk predicates are view. Auditing-data omission and header
+   checks are nonpayable because their dispatch paths use delegatecall. This controls whether a
+   caller simulates or sends a transaction. Routing parity remains a proxy test obligation.
 
 ## Inputs, outputs, state, and side effects
 
@@ -100,7 +74,7 @@ claims complete conformance for a requirement that depends on other files.
 | [StateChannelManagerInterface.sol](../../../../../../contracts/V1/StateChannelManagerInterface.sol) | [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390), [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) |
 
 Contribution per ID: [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — it is the written form of the stable external
-boundary, unchanged across the internal decomposition; [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — it enumerates
+boundary at the proxy address, with the current version's declared ABI; [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — it enumerates
 the externally visible operations and names each one's owner in its section headings.
 
 ## Assumptions, dependencies, trust boundaries, and limits

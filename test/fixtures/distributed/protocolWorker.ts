@@ -87,7 +87,7 @@ export type ProtocolWorkerLeaseStep =
  * orchestrator to schedule on it: every assigned task passes at once. It
  * records the protocol its workspace offer declared and every task it ran.
  */
-export async function startProtocolWorker(options: {
+async function startProtocolWorker(options: {
     name: string;
     distributedProtocol: number;
     keys: PoolKeys;

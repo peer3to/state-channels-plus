@@ -259,8 +259,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
         if (isChannelOpened) {
             try {
+                // the chain, not the local mirror: a fresh peer's mirror can
+                // miss a slash (the chain's set excludes slashed peers), and
+                // its own slash recovery would then cut the initial sync it
+                // depends on
                 const isPeerParticipant =
-                    await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                    await stateManager.stateChannelManagerContract.canParticipateInDisputes(
                         stateManager.channelId,
                         peerAddress
                     );
@@ -273,14 +277,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
                     );
                 }
             } catch (error) {
+                // a read or sync cut by teardown is no failure; any other is
+                // fatal: the protocol assumes a working RPC connection
                 if (stateManager.isDisposed || transport.isClosed) return;
-                this.logger.debug(
-                    "Skipping sync after handshake because the participant read failed",
+                this.logger.error(
+                    "Participant read or sync after handshake failed",
                     {
                         peerAddress,
                         error: errorMessage(error)
                     }
                 );
+                throw error;
             }
         }
 

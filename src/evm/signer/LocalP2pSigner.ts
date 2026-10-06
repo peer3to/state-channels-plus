@@ -10,6 +10,7 @@ import type {
 } from "@/rpc/network/services";
 import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
 import { DEFAULT_JOIN_AMOUNT } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import type { OwnJoinState } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, Bytes } from "@/types/types";
@@ -323,6 +324,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             this.p2pManager.localRpc.openChannelNegotiationService;
         let match = await matching.match(lobbyTopic, options.matchTimeoutMs);
         while (match) {
+            let opened: LobbyJoinResult | undefined;
             try {
                 const outcome = await negotiation.initMatchedNegotiation(
                     match,
@@ -333,15 +335,25 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 );
                 if (outcome.status === "opened") {
                     await matching.completeLobby(lobbyTopic);
-                    return outcome.result;
+                    opened = outcome.result;
+                } else if (outcome.status === "cancelled") {
+                    return undefined;
                 }
-                if (outcome.status === "cancelled") return undefined;
-                await matching.releaseNegotiationHandoff(lobbyTopic);
+                if (!opened)
+                    await matching.releaseNegotiationHandoff(lobbyTopic);
             } catch (error) {
                 this.logger.warn("Matched lobby negotiation failed to start", {
                     error: errorMessage(error)
                 });
                 await matching.releaseNegotiationHandoff(lobbyTopic);
+            }
+            if (opened) {
+                // Announce the opened channel as a direct connect does, so
+                // spectators and joiners can find its participants.
+                await this.p2pManager.joinDiscoveryKey(
+                    channelIdToDiscoveryKey(opened.channelId)
+                );
+                return opened;
             }
             // Unsigned failures start from a clean discovery session. The
             // matching service leaves the old topic and closes all lobby-owned
@@ -404,6 +416,11 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
 
     public async getChannelStatus(): Promise<Status> {
         return this.p2pManager.stateManager.status;
+    }
+
+    /** The state of this runtime's own join; see {@link OwnJoinState}. */
+    public getOwnJoinState(): Promise<OwnJoinState> {
+        return this.p2pManager.stateManager.membershipService.getOwnJoinState();
     }
 
     private defaultBalance(): BalanceStruct {

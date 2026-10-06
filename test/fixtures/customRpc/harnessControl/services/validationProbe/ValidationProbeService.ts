@@ -9,7 +9,10 @@ import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import { BlockOrigin, getSourcePeers } from "@/storage/QueueStorage";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import type {
+    BlockPredecessor,
+    QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
@@ -66,11 +69,6 @@ export type BlockCalldataRecoveryProbe = {
 };
 
 export type DisputeStrategyResultMatrix = Record<string, string>;
-
-export type CleanCommittedDivergenceProbe = {
-    result: string;
-    proofStored: boolean;
-};
 
 export type MissingParticipantSnapshotsProbe = {
     earlyAuthorResult: string;
@@ -197,19 +195,57 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Single owner of dispute-strategy construction for the stub probes, so
-     * constructor inputs can't drift between them. `blockIndexInUnfinalized
-     * PartOfStateProof` is 0 - the probes replay the first unfinalized block.
+     * constructor inputs can't drift between them. The probes replay `block`
+     * as the last milestone's block at index 0 from the chain's anchor (a
+     * replay that establishes faults), judged from its replay predecessor.
      */
     public createDisputeValidationStrategy(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        block?: Block,
+        predecessor = this.getReplayPredecessor(block)
     ): DisputeValidationStrategy {
         return new DisputeValidationStrategy(
             this.sm.storage,
             dispute,
             0,
-            this.sm.diamondStateMachine.localDiamondContract,
+            predecessor,
+            this.sm.disputeValidationService,
+            true,
             this.sm.logger
         );
+    }
+
+    /**
+     * What dispute replay judges `block` from: the stored block before it
+     * (none at height 0), that block's snapshot (the fork genesis at height 0)
+     * and its state. Without `block`, or for a block whose predecessor this
+     * peer does not hold, the peer's latest stored point.
+     */
+    public getReplayPredecessor(block?: Block): BlockPredecessor {
+        const storage = this.sm.storage;
+        const held = block
+            ? storage.getPreviousBlockAndSnapshot(block.coordinates)
+            : {};
+        const latest = storage.blocks.getLatestBlock(this.sm.forkId);
+        const { block: previous, snapshot } = held.snapshot
+            ? held
+            : {
+                  block: latest,
+                  snapshot: storage.getStateSnapshot({
+                      forkId: this.sm.forkId,
+                      height: latest ? latest.height : -1
+                  })
+              };
+        const state =
+            snapshot &&
+            storage.stateMachineStates.getStateMachineState(
+                snapshot.stateMachineStateHash
+            );
+        if (!snapshot || !state)
+            throw new Error(
+                `getReplayPredecessor: no stored state to judge the block at height ${block?.height} from`
+            );
+        return { block: previous, snapshot, state };
     }
 
     /**
@@ -592,7 +628,10 @@ export class ValidationProbeService extends ANetworkRpcService<
                 () => {},
                 { joined: new Set(), left: new Set() },
                 {
-                    strategy: this.createDisputeValidationStrategy(dispute),
+                    strategy: this.createDisputeValidationStrategy(
+                        dispute,
+                        block
+                    ),
                     onBlockCommitted: () => {
                         committed = true;
                     }
@@ -729,7 +768,10 @@ export class ValidationProbeService extends ANetworkRpcService<
             const { dispute } = await sm.disputeManager.constructDispute(
                 sm.forkId
             );
-            strategy = this.createDisputeValidationStrategy(dispute);
+            strategy = this.createDisputeValidationStrategy(
+                dispute,
+                entry.block
+            );
         }
         let result: string;
         try {
@@ -755,29 +797,6 @@ export class ValidationProbeService extends ANetworkRpcService<
         };
     }
 
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        const { dispute } = await this.sm.disputeManager.constructDispute(
-            this.sm.forkId
-        );
-        const latestBlock = this.sm.storage.blocks.getLatestBlock(
-            this.sm.forkId
-        );
-        if (!latestBlock) throw new Error("Expected a latest block");
-        const strategy = this.createDisputeValidationStrategy(dispute);
-        const entry = this.sm.storage.queues.createEntry(latestBlock, {
-            origin: BlockOrigin.PROOF
-        });
-
-        const result = await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
-        return {
-            result: BlockValidationResult[result],
-            proofStored:
-                this.sm.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                    dispute
-                ) !== undefined
-        };
-    }
-
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
         const { dispute } = await this.sm.disputeManager.constructDispute(
             this.sm.forkId
@@ -793,7 +812,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             },
             this.sm.signer
         );
-        const strategy = this.createDisputeValidationStrategy(dispute);
+        const strategy = this.createDisputeValidationStrategy(dispute, block);
         const entry = this.sm.storage.queues.createEntry(block, {
             origin: BlockOrigin.PROOF
         });
@@ -844,7 +863,8 @@ export class ValidationProbeService extends ANetworkRpcService<
         switch (options?.strategy) {
             case "dispute":
                 strategy = this.createDisputeValidationStrategy(
-                    factory.dispute()
+                    factory.dispute(),
+                    block
                 );
                 break;
             case "spectating":
@@ -965,25 +985,29 @@ export class ValidationProbeService extends ANetworkRpcService<
     /**
      * Replay one confirmation as the dispute audit does: the struct caller
      * `onBlockConfirmationStruct` with a real DisputeValidationStrategy for
-     * `dispute` at unfinalized block index 0. The strategy's side effect (a
+     * `dispute` at last-milestone block index 0 and its replay predecessor. The strategy's side effect (a
      * stored dispute fraud proof) stays real.
      */
     public async runBlockConfirmationStructUnderDispute(
         encodedBlockConfirmation: string,
         encodedDispute: string
     ): Promise<DisputeStructIngestProbe> {
-        const strategy = this.createDisputeValidationStrategy(
-            Codec.decode(encodedDispute, Type.Dispute)
+        const blockConfirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
         );
+        const block = Block.tryFromBlockConfirmation(blockConfirmation);
+        const strategy = this.createDisputeValidationStrategy(
+            Codec.decode(encodedDispute, Type.Dispute),
+            block ?? undefined
+        );
+        const predecessor = this.getReplayPredecessor(block ?? undefined);
         try {
             return {
                 accepted:
                     await this.sm.blockIngestService.onBlockConfirmationStruct(
-                        Codec.decode(
-                            encodedBlockConfirmation,
-                            Type.BlockConfirmation
-                        ),
-                        { validationStrategy: strategy }
+                        blockConfirmation,
+                        { validationStrategy: strategy, predecessor }
                     ),
                 threw: null
             };
@@ -1024,12 +1048,18 @@ export class ValidationProbeService extends ANetworkRpcService<
         // isLinked !prevBlock edge) are drivable here. the dispute struct is
         // only referenced when a deviation stores fraud-proof evidence; the
         // paths driven here don't, so a placeholder dispute is faithful.
+        // dispute replay judges the block from its predecessor, which the
+        // ingest pipeline also positions the state machine at
+        if (options?.strategy === "dispute")
+            entry.predecessor = this.getReplayPredecessor(block);
         const strategy =
             options?.strategy === "dispute"
                 ? this.createDisputeValidationStrategy(
                       options.encodedDispute
                           ? Codec.decode(options.encodedDispute, Type.Dispute)
-                          : factory.dispute()
+                          : factory.dispute(),
+                      block,
+                      entry.predecessor
                   )
                 : options?.strategy === "spectating"
                   ? sm.spectatingValidationStrategy

@@ -25,6 +25,8 @@ structured contract-size error classes and limits thrown by exported deployment 
 
 ## Key design decisions
 
+The public type surface exports OwnJoinState from the membership owner. This declaration adds no runtime state or membership decision. See [index.ts](../../../../../src/index.ts#L86).
+
 The network service base is exported only as `ANetworkRpcService`. The old `ARpcService` alias is removed by engineer decision; callers use the explicit network name.
 
 The standalone createContractExecutorFactory and ContractExecutorFactoryOptions package exports are removed. Executor creation is internal to SDK setup and requires its owning endpoint. Unrelated exports retain their existing public contracts; the replacement internal factory and owner endpoint are not exported here. See [createContractExecutor.ts](evm/contractExecutor/createContractExecutor.ts.md).
