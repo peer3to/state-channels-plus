@@ -25,6 +25,8 @@ state. The fault case uses concrete host controls to make one live threshold pee
 return the joiner's signature; every collection fails as a whole, and the short deadline wins over
 the longer agreement timeout.
 
+The owned-chain deadline fixture clears the shared-chain deployment-cache setting during startup and restores it in `finally`, alongside the provider URLs. This prevents private-chain deployments from reading or overwriting shared-chain markers. Run 450 failed during startup at `getAllTimes()`, before either deadline assertion; validation of this isolation correction is pending the next test run.
+
 ## Tests and covered test IDs
 
 A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each

@@ -269,6 +269,13 @@ yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
 yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 ```
 
+Memory admission leaves 10% of the effective RAM limit as headroom. It adds
+predicted growth of running tests to current process-tree usage, including shared
+infrastructure. On bounded cgroup v2 workers it also checks container-wide usage
+and uses the smaller of the configured and container limits. Raising `--cpu-limit`
+does not raise this RAM budget. Predictions remain estimates, not a guarantee
+against an individual test exceeding its recorded peak.
+
 Each of a test's duration, cores and memory comes from, first match wins: an
 override, this run's measurement, the committed `test-costs.json`, the average
 of finished tests from the same file, then one default (30 s, 1 core, 2 GB).

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Audits old disputes with newer evidence and missing old application state. Checks newer-signed-state kills or honest newer-state responses and final reduction results.
+Audits old disputes with newer evidence and missing old application state. Checks newer-signed-state kills or honest newer-state responses and final reduction results. E41 and E43 bind the expected reduction height to the snapshot in the auditor’s recorded submitted auditing data, verify its hash against the dispute commitment, and require that height to be at least the initially observed auditor height and strictly above the older dispute. A final block arriving after the initial read therefore cannot turn a correct newer-state reduction into a stale-height assertion failure. E43 awaits the leaver’s actual held exit send before submitting the auditor’s join; otherwise that inbound message can make exit preflight refuse and trigger an unrelated self-removal dispute before the test’s audit observations are installed.
 
 ## Tests and covered test IDs
 

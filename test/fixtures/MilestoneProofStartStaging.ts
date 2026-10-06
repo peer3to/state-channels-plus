@@ -65,19 +65,45 @@ export async function stageChainAnchor(
         peerCount: 4,
         transitionCount: options.transitionCount ?? 2
     });
-    // Independent controls must not delay publication inside the next writer's window.
-    const [anchor] = await Promise.all([
-        h.transition.postSnapshotWait(),
+    // Pin the anchor before authoring; mining and mirror delivery must not
+    // consume the next writer's window.
+    const forkId = h.activeForkId!;
+    const publisher = h.getPeer(0);
+    const [prepared] = await Promise.all([
+        h
+            .control(publisher)
+            .transition.prepareUpdateSnapshotSameFork(forkId)
+            .request(),
         ...h.peers.map((peer) => h.rpcStub.suppressTimeoutCheck(peer.index))
     ]);
-    expect(anchor, "the chain anchor must be posted").to.not.equal(undefined);
-    if (blocksAboveAnchor > 0)
-        await h.transition.advanceState({
-            count: blocksAboveAnchor,
-            waitForFinalization: true
-        });
+    if (
+        !prepared.canPost ||
+        !prepared.encodedExpectedSnapshot ||
+        !prepared.callData.length
+    )
+        throw new Error("The chain anchor must be postable");
+    const anchor = StateSnapshot.from(
+        Codec.decode(prepared.encodedExpectedSnapshot, Type.StateSnapshot)
+    );
+    await Promise.all([
+        (async () => {
+            const transaction =
+                await publisher.p2pInstance.stateChannelManagerContract.multicall(
+                    prepared.callData
+                );
+            await transaction.wait();
+            await h.assert.snapshot.localSnapshotsChangedWait({
+                expectedSnapshot: anchor
+            });
+        })(),
+        blocksAboveAnchor > 0
+            ? h.transition.advanceState({
+                  count: blocksAboveAnchor,
+                  waitForFinalization: true
+              })
+            : Promise.resolve()
+    ]);
     await h.assert.sync.peersInSyncWait({ waitForFinalization: true });
-    const forkId = h.activeForkId!;
     const latestHeight = Number(
         await h
             .control(h.getPeer(0))
@@ -87,8 +113,8 @@ export async function stageChainAnchor(
     expect(
         latestHeight,
         "the anchor must be the final point the staged blocks build on"
-    ).to.equal(anchor!.blockHeight + blocksAboveAnchor);
-    return { forkId, anchorHeight: anchor!.blockHeight, latestHeight };
+    ).to.equal(anchor.blockHeight + blocksAboveAnchor);
+    return { forkId, anchorHeight: anchor.blockHeight, latestHeight };
 }
 
 /**

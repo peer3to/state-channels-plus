@@ -13,8 +13,11 @@ export async function assertJoinSignatureDeadlineBoundary(
     // Environment changes are confined to this test process and its startup.
     const providerUrl = process.env.PROVIDER_URL;
     const hardhatUrl = process.env.HARDHAT_NODE_URL;
+    const managerCacheDir = process.env.E2E_MANAGER_CACHE_DIR;
     delete process.env.PROVIDER_URL;
     delete process.env.HARDHAT_NODE_URL;
+    // Deployment markers belong to the shared chain, never this private node.
+    delete process.env.E2E_MANAGER_CACHE_DIR;
     try {
         await h.lifecycle.start(2, 0);
     } finally {
@@ -22,6 +25,9 @@ export async function assertJoinSignatureDeadlineBoundary(
         else process.env.PROVIDER_URL = providerUrl;
         if (hardhatUrl === undefined) delete process.env.HARDHAT_NODE_URL;
         else process.env.HARDHAT_NODE_URL = hardhatUrl;
+        if (managerCacheDir === undefined)
+            delete process.env.E2E_MANAGER_CACHE_DIR;
+        else process.env.E2E_MANAGER_CACHE_DIR = managerCacheDir;
     }
     // Verify ownership before any node-wide mutation; never pause a shared slot.
     assert(Reflect.get(h, "ownNode"), "deadline test must own its chain node");

@@ -65,6 +65,24 @@ function ownCgroupRoot(readFile) {
     return `/sys/fs/cgroup${line.slice(3).trim()}`.replace(/\/+$/, "");
 }
 
+// Only use a bounded cgroup: an unbounded host group is not a worker allocation.
+function readMemorySnapshot(options = {}) {
+    if ((options.platform || process.platform) !== "linux") return undefined;
+    const readFile = options.readFile || defaultReadFile;
+    const root = ownCgroupRoot(readFile);
+    if (!root) return undefined;
+    const current = Number(tryRead(readFile, `${root}/memory.current`));
+    const limit = Number(tryRead(readFile, `${root}/memory.max`));
+    if (
+        !Number.isFinite(current) ||
+        current < 0 ||
+        !Number.isFinite(limit) ||
+        limit <= 0
+    )
+        return undefined;
+    return { usedGb: current / 1024 ** 3, limitGb: limit / 1024 ** 3 };
+}
+
 // /proc/stat first line: user nice system idle iowait irq softirq steal ...
 function readHostStat(readFile) {
     const text = tryRead(readFile, "/proc/stat");
@@ -211,5 +229,6 @@ module.exports = {
     osTimes,
     parseCpuList,
     parsePressure,
-    readCpuSnapshot
+    readCpuSnapshot,
+    readMemorySnapshot
 };

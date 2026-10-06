@@ -527,7 +527,7 @@ describe("distributed worker scheduler", function () {
             expect(resources.costCpuValve).to.equal(0.5);
             expect(
                 resources.costBudget({ cores: 1.5, rssGb: 2 })
-            ).to.deep.equal({ cores: 2.5, rssGb: 8 });
+            ).to.deep.equal({ cores: 2.5, rssGb: 7 });
             expect(
                 holdReason({
                     schedule: "cost",
@@ -1153,6 +1153,90 @@ describe("distributed worker scheduler", function () {
         ).to.deep.equal([500, null]);
     });
 
+    it("reserves infrastructure and container overhead before admitting more work at seven cores", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "memory-admission-")
+        );
+        let containerGb = 4;
+        let boundedContainer = true;
+        let idleTicks = 1000;
+        try {
+            for (const [pid, rssGb] of [
+                [100, 2],
+                [200, 1]
+            ]) {
+                fs.mkdirSync(path.join(root, String(pid)));
+                const fields = Array(22).fill("0");
+                fields[0] = "S";
+                fields[1] = "1";
+                fields[19] = String(pid);
+                fs.writeFileSync(
+                    path.join(root, `${pid}/stat`),
+                    `${pid} (owned) ${fields.join(" ")}\n`
+                );
+                fs.writeFileSync(
+                    path.join(root, `${pid}/status`),
+                    `VmRSS:\t${rssGb * 1024 ** 2} kB\n`
+                );
+            }
+            const resources = new ResourceGate({
+                testPids: () => [100],
+                infraPids: () => [200],
+                targetLoad: 0.95,
+                cpuLimit: 7,
+                memBoundGb: 12.5,
+                sampleOptions: {
+                    platform: "linux",
+                    procRoot: root,
+                    now: steadyClock(),
+                    readFile: (file: string) => {
+                        if (file === "/proc/self/cgroup") return "0::/worker\n";
+                        if (!boundedContainer && file.includes("/memory."))
+                            throw new Error("ENOENT");
+                        if (file.endsWith("/memory.current"))
+                            return String(containerGb * 1024 ** 3);
+                        if (file.endsWith("/memory.max"))
+                            return String(10 * 1024 ** 3);
+                        if (file === "/proc/stat")
+                            return `cpu 0 0 0 ${(idleTicks += 100)} 0 0 0 0 0 0\n`;
+                        throw new Error("ENOENT");
+                    }
+                }
+            });
+            await resources.sample();
+            // 9 GiB usable: 4 currently used + (6 predicted - 2 resident).
+            expect(resources.costBudget({ cores: 3, rssGb: 6 })).to.deep.equal({
+                cores: 4,
+                rssGb: 1
+            });
+            const admission = {
+                schedule: "cost",
+                runningCost: { cores: 3, rssGb: 6 },
+                nextCost: { cores: 1, rssGb: 1 }
+            };
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("memory");
+            admission.nextCost.rssGb = 0.5;
+            expect(await resources.allows(3, 40, admission)).to.equal(true);
+            containerGb = 9.5;
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("memory");
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            boundedContainer = false;
+            await resources.sample();
+            // Without cgroup counters, shared infrastructure still adds to predictions.
+            expect(resources.costBudget({ cores: 3, rssGb: 6 }).rssGb).to.equal(
+                4.25
+            );
+            // Resident memory larger than predictions must not be subtracted twice.
+            expect(resources.costBudget({ cores: 3, rssGb: 1 }).rssGb).to.equal(
+                8.25
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("holds predicted memory even when CPU budget fits", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-admission-"));
         let pids: number[] = [];
@@ -1198,7 +1282,7 @@ describe("distributed worker scheduler", function () {
                 await resources.allows(1, 4, {
                     schedule: "cost",
                     runningCost: { cores: 0.1, rssGb: 0.5 },
-                    nextCost: { cores: 0.1, rssGb: 0.4 }
+                    nextCost: { cores: 0.1, rssGb: 0.3 }
                 })
             ).to.equal(true);
             expect(
