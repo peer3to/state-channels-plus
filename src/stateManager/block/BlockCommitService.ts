@@ -41,16 +41,21 @@ export default class BlockCommitService {
         }
     ): Promise<void> {
         const sm = this.stateManager;
-        // step 1 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING
+        const isDisputeReplay =
+            options?.strategy instanceof DisputeValidationStrategy;
+        // step 1 - potentially change status: SYNCED | PENDING_PARTICIPANT → PARTICIPATING.
+        // Never from a dispute replay: its block is on the dispute's chain,
+        // not this node's live history.
         if (
-            sm.status === Status.SYNCED ||
-            sm.status === Status.PENDING_PARTICIPANT
+            !isDisputeReplay &&
+            (sm.status === Status.SYNCED ||
+                sm.status === Status.PENDING_PARTICIPANT)
         ) {
             const participants = await sm.diamondStateMachine.getParticipants();
             const isParticipant = participants.includes(sm.signerAddress);
             if (isParticipant) {
                 sm.setStatus(Status.PARTICIPATING);
-                sm.storage.forceJoin.clear();
+                sm.membershipService.onJoinSeated();
             } else if (sm.status === Status.PENDING_PARTICIPANT) {
                 await sm.membershipService.maybeInitiateForceJoinDispute(
                     block,
@@ -67,10 +72,7 @@ export default class BlockCommitService {
         );
 
         // step 3 - add my signature if appropriate
-        if (
-            (await this.shouldSignBlock(block)) &&
-            !(options?.strategy instanceof DisputeValidationStrategy)
-        ) {
+        if ((await this.shouldSignBlock(block)) && !isDisputeReplay) {
             // Sign the block and add our signature to confirmation signatures
             const signature = await block.sign(sm.signer);
             this.logger.debug("Signing block", {
@@ -81,9 +83,9 @@ export default class BlockCommitService {
 
         // step 4 - persist the block // TODO - quick hack - cleaner code later
         sm.storage.blocks.storeBlock(block, {
-            justPersist: options?.strategy instanceof DisputeValidationStrategy
+            justPersist: isDisputeReplay
         });
-        if (!(options?.strategy instanceof DisputeValidationStrategy)) {
+        if (!isDisputeReplay) {
             sm.membershipService.publishOffChainEligibility(
                 sm.storage.getParticipantsUnion(
                     block.coordinates,
@@ -107,7 +109,7 @@ export default class BlockCommitService {
         }
 
         // TODO - quick hack - cleaner code later
-        if (options?.strategy instanceof DisputeValidationStrategy) return;
+        if (isDisputeReplay) return;
 
         // step 6 - persist participant change points
         if (
@@ -128,7 +130,7 @@ export default class BlockCommitService {
         // copy from a source they no longer admit.
         if (
             sm.status === Status.PARTICIPATING &&
-            !(options?.strategy instanceof DisputeValidationStrategy) &&
+            !isDisputeReplay &&
             sm.membershipService.isSignerInBlockUnion(block)
         ) {
             sm.p2pManager.remoteRpc.stateTransitionService

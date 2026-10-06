@@ -118,7 +118,7 @@ Behavior: [../protocol/disputes.md](../../../../specification/disputes/disputes.
 | `applyDisputeFraudProofs(DisputeFraudProof[] memory)`                                                                                                                                         | `DisputeFraudProofFacet`   |
 | `validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory, Dispute memory) returns (bool)`                                                                                             | `DisputeFraudProofFacet`   |
 | `hasInvalidTimestamp(InvalidTimestampProof memory) returns (bool)`                                                                                                                            | `FraudProofFacet`          |
-| `isLastMilestoneFinalByEveryone(Dispute memory) returns (bool)`                                                                                                                               | `DisputeFraudProofFacet`   |
+| `isAuditingDataOmissionAllowed(Dispute memory) returns (bool)`                                                                                                                                | `DisputeFraudProofFacet`   |
 | `hasStateProofHeaderMismatch(Dispute memory) returns (bool)`                                                                                                                                  | `DisputeFraudProofFacet`   |
 | `isDisputeInboundHashValid(Dispute memory) returns (bool)`                                                                                                                                    | `DisputeFraudProofFacet`   |
 
@@ -129,12 +129,15 @@ Behavior: [../protocol/state-proofs.md](../../../../specification/disputes/state
 
 | Function                                                                                                                                                   | Routes to                  |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `verifyStateProof(Dispute memory, DisputeAuditingData memory) returns (bool)`                                                                              | `StateProofFacet`          |
 | `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                        | `StateProofFacet`          |
-| `areSignedBlocksLinkedAndVerified(SignedBlock[] memory) returns (bool)`                                                                                    | `StateProofFacet`          |
 | `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                | `StateProofFacet`          |
-| `findFirstInvalidBlockStructureInStateProof(StateProof memory) returns (bool found, uint256 blockIndex)`                                                   | `StateProofFacet`          |
-| `verifyMilestones(bytes32 forkId, MilestoneProof[] memory, StateSnapshot[] memory, StateSnapshot memory thresholdStateSnapshot) returns (bool)`            | `StateProofFacet`          |
+| `verifyMilestones(ProofWalkInput memory) returns (ProofWalkResult memory)`                                                                                 | `StateProofFacet`          |
+| `getAnchorSnapshot`                                                                                                                                        | `StateProofFacet`          |
+| `isStateProofStepInvalid`                                                                                                                                  | `StateProofFacet`          |
+| `isBlockChallengeEligible`                                                                                                                                 | `StateProofFacet`          |
+| `isStateProofBelowOnChainAnchor`                                                                                                                           | `StateProofFacet`          |
+| `isTimeoutSupersededByFinalState`                                                                                                                          | `StateProofFacet`          |
+| `isDisputeConflictingWithFinalState`                                                                                                                       | `StateProofFacet`          |
 | `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)` | `StateProofFacet`          |
 | `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                           | `StateSnapshotFacet`       |
 | `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`             | `StateSnapshotFacet`       |
@@ -268,19 +271,14 @@ outbound message (`EXIT` → consumer `withdraw`; unknown types revert
 
 ### 4.3 `StateProofFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L1). Verifies that a
-claimed latest state is proven within a fork
-([../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md)): `verifyStateProof` (full check
-against `DisputeAuditingData`), `isCorrectLatestState`, `areSignedBlocksLinkedAndVerified`
-(hash-linkage + author signatures on the non-final suffix), `verifyMilestones` /
-`isMilestoneFinal` (milestone finality with membership-union threshold sets, including skipped
-milestones below the on-chain snapshot), and per-block structure checks
-(`isInvalidBlockStructureInStateProof`, `findFirstInvalidBlockStructureInStateProof`).
-Observed fact: a state proof may carry milestones **or** trailing signed blocks, but the current
-checks reject a proof carrying both (`milestones.length != 0 && signedBlocks.length != 0` fails in
-both `isCorrectLatestState` and `verifyStateProof`) — the non-final suffix rides inside the last
-milestone's confirmations on this path. Contains live `hardhat/console.sol` logging
-([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
+[Source report](../../../source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md).
+`verifyMilestones` returns the common walk's structured result from the canonical chain start.
+`getAnchorSnapshot` exposes that start; the local-only trusted-start entry belongs to LocalDiamond.
+`isCorrectLatestState` binds the latest claim. The facet also owns `isStateProofStepInvalid`,
+`isStateProofBelowOnChainAnchor`, `isTimeoutSupersededByFinalState`,
+`isDisputeConflictingWithFinalState`, and `isBlockChallengeEligible`. Block-structure and
+single-milestone checks reuse the same common mechanics. The proof contains milestones only;
+its last milestone carries the tail. No XOR format or separate signed-block path remains.
 
 ### 4.4 `DisputeManagerFacet`
 

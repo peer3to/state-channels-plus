@@ -795,16 +795,15 @@ describe("Unit: ValidationService", function () {
             );
         });
 
-        it("the peer's own stored block replayed verbatim → doubleSignDetected → DISPUTE against the honest author", async function () {
+        it("the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
             const observer = h.getPeer(0);
             const forkId = h.activeForkId!;
 
-            // feed block 1 back verbatim. checkConflictingBlock keys only on
-            // (author,height), no content compare -> an identical replay is
-            // flagged a double-sign of its own honest author. prod gates this
-            // via BlockStorage equal-block dedup, so it's an in-isolation edge.
+            // feed block 1 back verbatim. an identical stored block is no
+            // conflict (dispute replay re-judges stored blocks), so the
+            // conflict check never flags its honest author.
             const stored = await h
                 .control(observer)
                 .query.getBlockByHeight(forkId, 1)
@@ -815,8 +814,11 @@ describe("Unit: ValidationService", function () {
                 .validation.runBlockValidation(stored!.encodedBlockConfirmation)
                 .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.fraudProofType).to.equal(
+            expect(r.firedHooks).to.not.include("doubleSignDetected");
+            expect(r.firedHooks).to.not.include(
+                "conflictingButNotLinkedBlockDetected"
+            );
+            expect(r.fraudProofType).to.not.equal(
                 solProofType(FraudProofType.BlockDoubleSign)
             );
         });
@@ -1618,117 +1620,10 @@ describe("Unit: ValidationService", function () {
     });
 
     // the dispute strategy runs during dispute auditing (replaying a dispute's
-    // state-proof blocks). it skips the disputed-fork/future gates and setStates
-    // before the leader check. deviation hooks -> disputeValidation/*.
+    // state-proof blocks). it skips the disputed-fork/future gates; the replay
+    // positions the state machine at the block's predecessor before the
+    // leader check (BlockIngestService). deviation hooks -> disputeValidation/*.
     describe("DisputeValidationStrategy divergences", function () {
-        it("linked parent whose snapshot is missing → rejects with the missing-snapshot error", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const observer = h.getPeer(0);
-            const forkId = h.activeForkId!;
-
-            // a parent the peer holds, pointing at a snapshot it does not
-            const parentHeight = 20;
-            const encodedParent = await factory.buildAndEncodeBlock(
-                observer.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: parentHeight
-                    }
-                }
-            );
-            const { hash: parentHash } = await h
-                .control(observer)
-                .validation.storeBlockFixture(encodedParent)
-                .request();
-
-            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
-                header: {
-                    channelId: h.channelId,
-                    forkId,
-                    transactionCnt: parentHeight + 1
-                },
-                previousBlockHash: parentHash
-            });
-
-            const error = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request()
-                .then(
-                    () => null,
-                    (e: unknown) => String(e)
-                );
-            expect(error).to.match(
-                /Missing previous snapshot for dispute validation strategy/
-            );
-        });
-
-        it("linked parent whose snapshot references a missing state → rejects with the missing-state error", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const observer = h.getPeer(0);
-            const forkId = h.activeForkId!;
-
-            // the snapshot resolves (and keeps the author a participant), but
-            // its state machine state does not
-            const snapshot = factory.stateSnapshot({
-                forkId,
-                snapshotData: {
-                    participants: [observer.address as Address]
-                }
-            });
-            const { hash: snapshotHash } = await h
-                .control(observer)
-                .validation.storeStateSnapshotFixture(
-                    Codec.encode(
-                        snapshot.toStruct(),
-                        Type.StateSnapshot
-                    ) as string
-                )
-                .request();
-
-            const parentHeight = 30;
-            const encodedParent = await factory.buildAndEncodeBlock(
-                observer.signer,
-                {
-                    header: {
-                        channelId: h.channelId,
-                        forkId,
-                        transactionCnt: parentHeight
-                    },
-                    stateSnapshotHash: snapshotHash
-                }
-            );
-            const { hash: parentHash } = await h
-                .control(observer)
-                .validation.storeBlockFixture(encodedParent)
-                .request();
-
-            const encoded = await factory.buildAndEncodeBlock(observer.signer, {
-                header: {
-                    channelId: h.channelId,
-                    forkId,
-                    transactionCnt: parentHeight + 1
-                },
-                previousBlockHash: parentHash
-            });
-
-            const error = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request()
-                .then(
-                    () => null,
-                    (e: unknown) => String(e)
-                );
-            expect(error).to.match(
-                /Missing previous state machine state for dispute validation strategy/
-            );
-        });
-
         // no test: these hooks need a real committed dispute to build fraud-proof
         // evidence against - beyond unit scope, covered in disputeValidation/* e2e.
         it.skip("deviation hooks build dispute evidence (see disputeValidation/*)", function () {});
@@ -1767,16 +1662,21 @@ describe("Unit: ValidationService", function () {
                 }
             });
 
-            const r = await h
+            const error = await h
                 .control(observer)
                 .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request();
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
 
-            // the hook throws on this strategy, so reaching a later guard is
-            // proof the gate was skipped rather than merely quiet
-            expect(r.firedHooks).to.not.include("blockForkIsDisputed");
-            expect(r.firedHooks).to.include(
-                "blockIsNotLinkedAndIsNotFirstBlock"
+            // both hooks throw on this strategy (a replayed block is always
+            // linked), so reaching the later linkage guard is proof the gate
+            // was skipped rather than merely quiet
+            expect(error).to.not.match(/blockForkIsDisputed/);
+            expect(error).to.match(
+                /blockIsNotLinkedAndIsNotFirstBlock should not be called/
             );
 
             await race.release({ replayEvents: false, runHeldTasks: false });
@@ -1809,27 +1709,29 @@ describe("Unit: ValidationService", function () {
                 "blockIsNotNextAndIsInTheFuture"
             );
 
-            const r = await h
+            const error = await h
                 .control(observer)
                 .validation.runBlockValidation(encoded, { strategy: "dispute" })
-                .request();
+                .request()
+                .then(
+                    () => null,
+                    (e: unknown) => String(e)
+                );
 
             // dispute replay walks a proof's blocks, so height ordering against
-            // active storage is not its concern
-            expect(r.firedHooks).to.not.include(
-                "blockIsNotNextAndIsInTheFuture"
-            );
-            expect(r.firedHooks).to.include(
-                "blockIsNotLinkedAndIsNotFirstBlock"
+            // active storage is not its concern: validation reaches the
+            // linkage guard, which throws on this strategy
+            expect(error).to.not.match(/blockIsNotNextAndIsInTheFuture/);
+            expect(error).to.match(
+                /blockIsNotLinkedAndIsNotFirstBlock should not be called/
             );
         });
 
-        it("a valid linked next block by the leader passes setState + leader check → SUCCESS", async function () {
+        it("a valid linked next block by the leader passes the leader check → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
 
-            // real next block, off-wire. under the dispute strategy it flows
-            // through the setState-then-leader branch the block strategy lacks.
+            // real next block, off-wire, validated under the dispute strategy
             const { observer, authored } =
                 await h.transition.authorNextBlockOffWireWait();
 
@@ -1878,8 +1780,7 @@ describe("Unit: ValidationService", function () {
                 .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
-            // reaching the leader check at all means the previous snapshot and
-            // state resolved and setState ran first
+            // the linkage guard passed, so the leader check judged the block
             expect(r.firedHooks).to.deep.equal([
                 "invalidStateTransitionDetected"
             ]);
@@ -1925,19 +1826,18 @@ describe("Unit: ValidationService", function () {
                 "genesis must name a different next writer"
             ).to.not.equal(correctLeader);
 
-            // only prepareStateMachineForLeaderCheck's setState can move the
-            // machine back to the predecessor; without it getNextToWrite returns
-            // wrongLeader and the leader check flags the block instead
+            // only the replay's setState of the predecessor state
+            // (BlockIngestService) can move the machine back; without it
+            // getNextToWrite returns wrongLeader and the leader check flags
+            // the block instead
             const r = await h
                 .control(observer)
-                .validation.runBlockValidation(
-                    authored!.encodedBlockConfirmation,
-                    {
-                        strategy: "dispute"
-                    }
-                )
+                .validation.runBlockIngest(authored!.encodedBlockConfirmation, {
+                    strategy: "dispute"
+                })
                 .request();
 
+            expect(r.threw).to.equal(null);
             expect(r.resultName).to.equal("SUCCESS");
             expect(r.firedHooks).to.deep.equal([]);
         });

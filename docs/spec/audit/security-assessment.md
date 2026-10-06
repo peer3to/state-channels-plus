@@ -509,8 +509,7 @@ cost at most about one more budget, so twice the requirement keeps a local trans
 refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
 dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
 estimate, and the local call gets no such addition. A local predicate whose work does not fit the
-granted gas fails locally; the local-revert fallback then asks the chain ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is cost,
-not a wrong verdict. A local state transition has no chain answer to fall back to. Until
+granted gas fails locally; the error propagates without a chain fallback ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is failed local audit work, not a false verdict. A local state transition has no chain answer to fall back to. Until
 2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
 local call was under-funded, whose call frame ran out of gas outside the transition, or whose
 executor failed would build a fraud proof against an honest author, and could start a dispute on
@@ -640,3 +639,25 @@ neither result reaches the caller or the host, so a caller never sees a result p
 declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.

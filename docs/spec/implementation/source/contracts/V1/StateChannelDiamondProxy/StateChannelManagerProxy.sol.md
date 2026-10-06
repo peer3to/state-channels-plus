@@ -74,8 +74,7 @@ the caller-side declaration of the same surface.
    for that upgrade path; no routing-comparison benchmark is maintained.
 4. **The proxy deliberately does not inherit the interface.** Inheriting it would force a body for
    every declaration — exactly the code the refactor removed. The interface is instead a
-   caller-side typing artifact that facets and TypeScript bind to `address(this)`, so the external
-   ABI is unchanged while the proxy carries none of it
+   caller-side typing artifact that facets and TypeScript bind to `address(this)`, so the proxy carries no typed forwarder bodies; the declared ABI follows the current protocol version
    ([StateChannelManagerInterface.sol.md](../../StateChannelManagerInterface.sol.md)).
 5. **Only storage-owning and composing operations stay on the proxy.** `open`, `postBlockCalldata`,
    the three `onlySelf` composables and `multicall` need the proxy's own storage context or compose
@@ -88,7 +87,7 @@ the caller-side declaration of the same surface.
    It is also the reason an unowned selector is not rejected — see
    [Missing behavior](#missing-behavior)
    ([#L390](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L390)).
-7. **`facetAddressForSelector` makes the deployed surface enumerable.** The only new externally
+7. **`facetAddressForSelector` makes the deployed surface enumerable.** This externally
    reachable function is this `view`; it lets a caller (and the routing test) reconcile every facet
    ABI against the deployed routing table. Because the proxy's own declared functions dispatch
    before the fallback, they are deliberately absent from the table and the introspection reports
@@ -179,8 +178,7 @@ call, instead of returning a verdict, when the machine could not be granted its 
 - Single logical state via delegatecall-into-own-storage ([`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)); stable
   external boundary ([`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)); `onlySelf` confinement for
   composition-internal operations ([`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)).
-- The external ABI, per-function state mutability, revert-data propagation and the unknown-selector
-  fallback are unchanged by the move from forwarders to routing; the revert data of a routed call
+- The current milestone-only ABI intentionally replaces the old proof surface. Revert-data propagation and unknown-selector fallback retain their routing behavior; the revert data of a routed call
   still bubbles through the unchanged `_delegatecall` helper
   ([GeneralUtils.sol#L6](../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6)).
 - Every deployable in the composition now fits the 24,576-byte platform limit

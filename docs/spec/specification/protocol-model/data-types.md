@@ -152,10 +152,10 @@ state proofs).
 
 Semantics: [../protocol/state-proofs.md](../disputes/state-proofs.md).
 
-| Struct           | Fields                           | Role                                                                                                                                                  |
-| ---------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MilestoneProof` | `blockConfirmations[]`           | One milestone: a finality anchor proven directly by threshold signatures or virtually by later linked confirmations.                                  |
-| `StateProof`     | `milestones[]`, `signedBlocks[]` | A chain of milestone anchors plus a trailing, cryptographically linked, possibly non-final suffix of signed blocks reaching the claimed latest state. |
+| Struct           | Fields                 | Role                                                                                                                 |
+| ---------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `MilestoneProof` | `blockConfirmations[]` | One milestone: a finality anchor proven directly by threshold signatures or virtually by later linked confirmations. |
+| `StateProof`     | `milestones[]`         | Ordered milestone runs; the last includes evidence and any unfinalized tail. Empty means fork genesis only.          |
 
 ### 7.4 Fraud proofs
 

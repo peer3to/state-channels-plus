@@ -2,6 +2,7 @@ import { hash as randomHash } from "../factory";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
+import { runForceJoinBlockBound } from "@test/fixtures/ForceJoinCountingStaging";
 import {
     assertSlashAdmission,
     assertSlashRefreshFailure
@@ -772,224 +773,42 @@ describe("Unit: MembershipService", function () {
             await recorder.restore();
         });
 
-        it("defers force join until on-chain membership and a usable dispute window", async function () {
-            const h = TestSession.getHarness();
-            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(1);
-            const joiner = h.getPeer(prepared.joiner.index);
-            const releaseSubmission = await h.rpcStub.holdMembershipSubmission(
-                prepared.joiner.index,
-                "joinChannel"
+        it("force join waits for its JOIN to land and submits only once at the block bound", async function () {
+            const run = await runForceJoinBlockBound(TestSession.getHarness(), {
+                holdJoinSubmission: true
+            });
+            expect(run.beforeLanding).to.deep.equal({
+                disputeStarted: false,
+                markerRetained: true,
+                submissions: 0
+            });
+            expect(run.atBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound
             );
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                prepared.joiner.index
-            );
-            try {
-                const join = prepared.joiner.p2pInstance.p2pSigner.joinChannel(
-                    prepared.confirmation,
-                    prepared.expectedSnapshotHash,
-                    prepared.expectedForkId
-                );
-                await waitFor(
-                    async () =>
-                        (await h
-                            .control(prepared.joiner)
-                            .stub.getHeldMembershipReceiptCount()
-                            .request()) === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-
-                const absentResult = await h.execOnHost(joiner, async (sm) => {
-                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
-                    const participants =
-                        await sm.diamondStateMachine.getParticipants();
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - participants.length - 1
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-                    return {
-                        disputeStarted:
-                            sm.storage.forceJoin.hasDisputeStarted(),
-                        markerRetained:
-                            sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                            undefined
-                    };
-                });
-                expect(absentResult).to.deep.equal({
-                    disputeStarted: false,
-                    markerRetained: true
-                });
-                expect(await recorder.submissions()).to.have.length(0);
-
-                await releaseSubmission();
-                expect(await join).to.equal(true);
-                expect(
-                    await h
-                        .control(prepared.joiner)
-                        .query.getOnChainParticipantUnion()
-                        .request({ timeoutMs: h.event.hostExecTimeoutMs() })
-                ).to.include(prepared.joiner.address);
-
-                const latestChainBlock = await h.provider.getBlock("latest");
-                expect(latestChainBlock).to.not.equal(null);
-                const evidenceTime = await h.execOnHost(
-                    joiner,
-                    async (sm) => sm.timeConfig.evidenceTime
-                );
-                const expiredWindowTimestamp = Math.max(
-                    1,
-                    latestChainBlock!.timestamp - evidenceTime
-                );
-                const expiredResult = await h.execOnHost(
-                    joiner,
-                    async (sm, args) => {
-                        const getWindow =
-                            sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp.bind(
-                                sm.diamondStateMachine.localDiamondContract
-                            );
-                        Reflect.set(
-                            sm.diamondStateMachine.localDiamondContract,
-                            "getDisputeWindowCreationTimestamp",
-                            async () => BigInt(args.windowTimestamp)
-                        );
-                        try {
-                            const block = sm.storage.blocks.getLatestBlock(
-                                sm.forkId
-                            )!;
-                            const participants =
-                                await sm.diamondStateMachine.getParticipants();
-                            sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                                block.height - participants.length - 1
-                            );
-                            await sm.membershipService.maybeInitiateForceJoinDispute(
-                                block,
-                                participants
-                            );
-                            return {
-                                disputeStarted:
-                                    sm.storage.forceJoin.hasDisputeStarted(),
-                                markerRetained:
-                                    sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
-                                    undefined
-                            };
-                        } finally {
-                            Reflect.set(
-                                sm.diamondStateMachine.localDiamondContract,
-                                "getDisputeWindowCreationTimestamp",
-                                getWindow
-                            );
-                        }
-                    },
-                    { windowTimestamp: expiredWindowTimestamp }
-                );
-                expect(expiredResult).to.deep.equal({
-                    disputeStarted: false,
-                    markerRetained: true
-                });
-                expect(await recorder.submissions()).to.have.length(0);
-
-                await h.execOnHost(joiner, async (sm) => {
-                    const getWindow =
-                        sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp.bind(
-                            sm.diamondStateMachine.localDiamondContract
-                        );
-                    Reflect.set(
-                        sm.diamondStateMachine.localDiamondContract,
-                        "getDisputeWindowCreationTimestamp",
-                        async () => 0n
-                    );
-                    try {
-                        const block = sm.storage.blocks.getLatestBlock(
-                            sm.forkId
-                        )!;
-                        const participants =
-                            await sm.diamondStateMachine.getParticipants();
-                        await sm.membershipService.maybeInitiateForceJoinDispute(
-                            block,
-                            participants
-                        );
-                        await sm.membershipService.maybeInitiateForceJoinDispute(
-                            block,
-                            participants
-                        );
-                    } finally {
-                        Reflect.set(
-                            sm.diamondStateMachine.localDiamondContract,
-                            "getDisputeWindowCreationTimestamp",
-                            getWindow
-                        );
-                    }
-                    return true;
-                });
-                await waitFor(
-                    async () => (await recorder.submissions()).length === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(await recorder.submissions()).to.have.length(1);
-            } finally {
-                await releaseSubmission();
-                await recorder.restore();
-            }
+            expect(run.atBound.disputeStarted).to.equal(true);
+            expect(run.submissionsAtBound).to.equal(1);
+            expect(run.submissionsAfterRecheck).to.equal(1);
         });
 
-        it("fires exactly at joinSubmissionHeight + participants + 1", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            await h.transition.advanceState({ count: 5 });
+        it("U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1", async function () {
+            // A real joiner observes its own landed join; the founders omit
+            // it and author through the grace, below the bound and at it.
+            const run = await runForceJoinBlockBound(TestSession.getHarness());
 
-            const observer = h.getPeer(0);
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                observer.index
+            expect(run.belowBound.countingFromHeight).to.equal(
+                run.firstCountedHeight
             );
-            try {
-                const result = await h.execOnHost(observer, async (sm) => {
-                    const block = sm.storage.blocks.getLatestBlock(sm.forkId)!;
-                    const participants =
-                        await sm.diamondStateMachine.getParticipants();
-                    const triggerOffset = participants.length + 1;
+            expect(run.belowBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound - 1
+            );
+            expect(run.belowBound.disputeStarted).to.equal(false);
+            expect(run.submissionsBelowBound).to.equal(0);
 
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - triggerOffset + 1
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-                    const startedOneBlockEarly =
-                        sm.storage.forceJoin.hasDisputeStarted();
-
-                    sm.storage.forceJoin.setJoinSubmissionBlockHeight(
-                        block.height - triggerOffset
-                    );
-                    await sm.membershipService.maybeInitiateForceJoinDispute(
-                        block,
-                        participants
-                    );
-
-                    return {
-                        blockHeight: block.height,
-                        participantCount: participants.length,
-                        startedOneBlockEarly,
-                        startedAtThreshold:
-                            sm.storage.forceJoin.hasDisputeStarted()
-                    };
-                });
-
-                expect(result.startedOneBlockEarly).to.equal(false);
-                expect(result.startedAtThreshold).to.equal(true);
-                expect(result.blockHeight).to.be.greaterThan(
-                    result.participantCount + 1
-                );
-                await waitFor(
-                    async () => (await recorder.submissions()).length === 1,
-                    h.event.protocolEventTimeoutMs()
-                );
-                expect(await recorder.submissions()).to.have.length(1);
-            } finally {
-                await recorder.restore();
-            }
+            expect(run.atBound.latestBlockHeight).to.equal(
+                run.firstCountedHeight + run.bound
+            );
+            expect(run.atBound.disputeStarted).to.equal(true);
+            expect(run.submissionsAtBound).to.equal(1);
         });
     });
 

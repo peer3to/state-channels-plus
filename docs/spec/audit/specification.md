@@ -49,3 +49,31 @@ RPC ingress, handshake, and lobby matching now use one consequence rule. A malfo
 protocol action blacklists only when an authenticated peer identity makes the fault attributable.
 Transport loss, response timeout, cleanup, send failure, and an unclassified local handler error
 remain disconnect-only.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+The finality owner also includes consumed JOIN participants absent from both endpoint sets after
+an atomic join and exit. Sequential and concurrent audits retain one conflicting final block;
+a later conflicting audit is countered, including when a separate balance fault killed the first
+dispute. Unhandled upload and kill contract errors are logged and fatal.
+
+Sync selects an authenticated replay state; a held matching state can replace earlier served bytes.
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.

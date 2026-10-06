@@ -1,0 +1,3 @@
+{
+    "test/harness/actions/assert/expectDisputeInput.ts": "Removed unused assertion helper; no executable test declarations. Its callers were removed or migrated to assertions in the owning test/harness flow. This is not a deleted coverage obligation."
+}

@@ -29,20 +29,18 @@ channel state. That statelessness is what makes the module the primary payload o
 
 ## Predicate inventory
 
-| Predicate family            | Verifies (semantics owner)                                                                                                                                                                                               | Consumed by                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| State-proof verification    | The full claimed-latest-state proof against auditing data; header consistency; correct latest state ([state-proofs.md](../disputes/state-proofs.md))                                                                     | Dispute audit and adjudication; sync verification (locally).                                                                        |
-| Milestone finality          | Direct and virtual finality per milestone, membership-union thresholds across hops, skipped milestones below the snapshot ([state-proofs.md](../disputes/state-proofs.md), [finality.md](../protocol-model/finality.md)) | Same-fork snapshot advance; dispute audit; sync.                                                                                    |
-| Block linkage and structure | Hash linkage plus author signatures on the non-final suffix; per-block structural validity with first-invalid-index reporting                                                                                            | State-proof verification; dispute fraud proofs.                                                                                     |
-| Threshold signatures        | Unanimous threshold over a canonical encoding with per-signer deduplication ([identity.md](../protocol-model/identity.md))                                                                                               | Opening, admission, dispute finalization, milestone checks.                                                                         |
-| Balance invariant           | Aggregate soundness: total deposits equal total withdrawals plus in-state balances ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6)                                                                 | Sync verification (client-side); prospective on-chain use is [`OQ-19-Y8FDQX`](../../implementation/open-questions.md#oq-19-y8fdqx). |
-| Snapshot/genesis shape      | Genesis identity (fork id = hash of genesis data), snapshot ordering                                                                                                                                                     | Adoption paths; sync.                                                                                                               |
+| Predicate family            | Verifies (semantics owner)                                                                                                                                                                                               | Consumed by                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| State-proof verification    | The full claimed-latest-state proof against auditing data; header consistency; correct latest state ([state-proofs.md](../disputes/state-proofs.md))                                                                     | Dispute audit and adjudication; sync verification (locally). |
+| Milestone finality          | Direct and virtual finality per milestone, membership-union thresholds across hops, skipped milestones below the snapshot ([state-proofs.md](../disputes/state-proofs.md), [finality.md](../protocol-model/finality.md)) | Same-fork snapshot advance; dispute audit; sync.             |
+| Block linkage and structure | Hash linkage plus author signatures on the non-final suffix; per-block structural validity with first-invalid-index reporting                                                                                            | State-proof verification; dispute fraud proofs.              |
+| Threshold signatures        | Unanimous threshold over a canonical encoding with per-signer deduplication ([identity.md](../protocol-model/identity.md))                                                                                               | Opening, admission, dispute finalization, milestone checks.  |
+| Balance invariant           | Aggregate soundness: total deposits equal total withdrawals plus in-state balances ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6)                                                                 | Sync verification and latest-state dispute challenges.       |
+| Snapshot/genesis shape      | Genesis identity (fork id = hash of genesis data), snapshot ordering                                                                                                                                                     | Adoption paths; sync.                                        |
 
-**Known constraint (current behavior).** The state-proof checks accept a proof carrying milestones
-_or_ trailing signed blocks, and reject one carrying both — the non-final suffix must ride inside
-the last milestone's confirmations on that path. Whether that exclusivity is intended or
-incidental needs an engineer decision before implementations diverge on it; flagged with the
-state-proof open questions.
+The proof format contains milestones only. The last milestone holds any unfinalized tail.
+The shared walk selects a trusted anchor, clips retained history, and exposes the positions needed
+by consumers. A pointed-step counter uses the same checks without walking prior hops.
 
 ## Requirements and invariants
 
@@ -67,12 +65,10 @@ can cite the exact violation rather than re-deriving it.
 
 ## Assumptions and constraints
 
-- Verification cost is gas-bounded on-chain; proof sizes are constrained by the owning documents'
-  bounds ([state-proofs.md](../disputes/state-proofs.md)).
+- Verification cost is gas-bounded on-chain; no proof admission cap has yet been selected in the owning document ([state-proofs.md](../disputes/state-proofs.md)).
 - Predicates evaluate committed state as-is; whether that state is fresh is the caller's problem
   (on-chain it always is; locally see [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](local-mirror.md#req-mirror-3-thd7k8)).
-- The milestone-XOR-suffix constraint above is normative _as current behavior_ pending the
-  engineer decision.
+- Empty proofs represent genesis; an anchor claim requires its block.
 
 ## Security considerations
 
@@ -96,6 +92,5 @@ locally and fail on-chain (bounded input rules), and divergence between consumer
 
 ## Future Work
 
-_Non-normative._ Resolve the milestone-XOR-suffix exclusivity; on-chain balance-invariant
 enforcement at snapshot update ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)); proof-size/gas budget table per
 predicate for deployment planning.

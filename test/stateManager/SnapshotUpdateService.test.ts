@@ -54,7 +54,6 @@ describe("SnapshotUpdateService", function () {
             await send.waitUntilHeld();
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
-                dispute.input.stateProof.signedBlocks = [];
             });
             refusal = await send.release();
             expect(await posted).to.equal(false);

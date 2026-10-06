@@ -119,7 +119,11 @@ New documents: [interactions.md](./interactions.md); the nine system READMEs; th
 specification per peer-communication service family (handshake, block gossip, join authorization,
 dispute acknowledgment, synchronization, channel negotiation, transport upgrade).
 
-The local requirement and black-box test-plan tables are authoritative. For every subject `A`, read
+The local requirements and black-box test-plan entries are authoritative. Test plans may use tables
+or prose entries. A prose entry has a heading containing its canonical anchor and unlinked test ID,
+followed by bold labels `Requirements / invariants:`, `Setup and stimulus:`, `Expected result:`, and
+`Required permutations:`. Put each permutation in its own paragraph, retaining its canonical anchor
+and unlinked ID. The checker reads these fields in either format. For every subject `A`, read
 `specification/A`, then `implementation/A`, then `verification/A`. Knowledge flows only in that
 direction: a specification never links source, implementation documentation, concrete tests, or
 audit state. Static analysis compares this layer's requirement and invariant IDs with its test plans.

@@ -13,17 +13,15 @@ describe("Unit: ReductionExecutor", function () {
     describe("reduce data unavailable", function () {
         it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
             const h = TestSession.getHarness();
-            // The staging's offender is the next writer after two blocks,
-            // peer 2, and the reduction slashes it; the lagging peer under
-            // test must therefore be another participant. With peer 2 as the
-            // lagging peer this case only passed because an aborted runtime
-            // kept reducing after disposal, which the terminal reduction
-            // owner no longer allows.
-            const laggingIndex = 1;
-            const { forkId, held } =
-                await h.scenario.stageDisputeOverHeldInboundGap({
-                    laggingIndex: laggingIndex
-                });
+            // the reading peer is a synced spectator: it does not audit, so it
+            // holds the window while the run stays unavailable. a
+            // participant's audit of that window throws on the run (fatal),
+            // so a participant never reaches the reduce with it missing
+            const {
+                forkId,
+                held,
+                spectatorIndex: laggingIndex
+            } = await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
             const scheduled =
                 await h.rpcStub.recordScheduledTasks(laggingIndex);
 
@@ -80,7 +78,7 @@ describe("Unit: ReductionExecutor", function () {
                     .query.getStatus()
                     .request(),
                 "a deferred reduction must not evict the peer"
-            ).to.equal(Status.PARTICIPATING);
+            ).to.equal(Status.SYNCED);
             expect(
                 await h
                     .control(h.getPeer(laggingIndex))

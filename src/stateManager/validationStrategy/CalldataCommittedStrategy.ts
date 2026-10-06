@@ -2,7 +2,6 @@ import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
 import BlockValidationStrategy from "./BlockValidationStrategy";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import type ParticipantTimeoutService from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
@@ -132,6 +131,12 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         return this.blockValidationStrategy.blockForkIsDisputed(entry);
     }
+    public async blockIsBelowInstalledHistory(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult> {
+        return this.blockValidationStrategy.blockIsBelowInstalledHistory(entry);
+    }
+
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
@@ -147,15 +152,6 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
         this.forceTimeout(entry.block);
         return this.blockValidationStrategy.blockIsNotLinkedAndIsNotFirstBlock(
             entry
-        );
-    }
-    public async prepareStateMachineForLeaderCheck(
-        entry: QueuedBlockEntry,
-        diamondStateMachine: ADiamondStateMachine
-    ): Promise<void> {
-        return this.blockValidationStrategy.prepareStateMachineForLeaderCheck(
-            entry,
-            diamondStateMachine
         );
     }
     public async objectiveInvalidTimestampDetected(

@@ -317,3 +317,35 @@ their timeout. The indentation fix in that suite moved no declaration line. It d
 immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard
 reconnect case no longer fails in cleanup, but cleanup success is not an asserted oracle and earns no
 credit.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.
+
+## Milestone proof review regressions
+
+Focused real tests cover virtual finality from later signatures, the resulting on-chain conflict kill, audit evidence above a frozen view, both concurrent audit orders, chain/mirror anchor changes and sync across malformed skipped history. Force-join cases cover seating during a held membership read, a competing block trigger, successor-fork seating and a genuine expired evidence window. The fabricated window read was removed; its compound coverage claims were replaced by separate exact permutations. The omitted-data apply-handler comparison separates payload growth from an unrelated milestone walk. The documentation normalizer has a real CLI regression that restores prose definitions and remains byte-stable on a second run. The final canonical distributed gate passed all 3,306 runnable tasks after the source and test corrections. Failed earlier runs exposed stale test expectations and manually staged dispute-upload races; each was corrected and rerun. Existing skipped cases and repository-wide coverage queues remain separate from this evidence.
+
+The additional exact-height [proof-owner tests](../verification/tests/test/unit/AgreementManagerProofConstruction.test.ts.md) check join and exit points with later union votes, rejection after removing the sole required later confirmation, a join point above an audit observer's frozen view, and a later target requiring two overlapping hops. Every positive case uses the real canonical verifier and asserts the exact final height and unchanged active view. These cover the participant-change gap left by the unchanged-membership virtual-finality regression.
+
+The shared virtual-finality fixture holds unrelated subscribed calldata delivery while setting up proofs and connecting later auditors. Without that hold, normal fallback can deliver block 3 to its missing signer during spectator connection and change the scenario into direct finality at 3. The sequential and concurrent audit cases check the intended `[2,3]` milestone before auditing; both persistence orders retain their existing conflict and frozen-view oracles.
+
+The shared join-hop fixture uses the same subscription-delivery control for its deliberately missing votes. Its frozen-view cases wait for a real fallback event to be held and require both expected milestone runs before auditing. This keeps compact audit evidence tied to the intended intermediate final snapshot even while spectator setup crosses the calldata-posting delay.

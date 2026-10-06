@@ -5,7 +5,6 @@ import type {
     BlockProbeOptions,
     BlockValidationProbe,
     BlockValidationProbeOptions,
-    CleanCommittedDivergenceProbe,
     ConcurrentCalldataRecoveryProbe,
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
@@ -72,10 +71,6 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
 
     public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
         return this.service.probeDisputeStrategyResultMatrix();
-    }
-
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        return this.service.probeCleanCommittedDivergence();
     }
 
     public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {

@@ -28,6 +28,8 @@ author-relevant previous timestamp.
 
 ## Key design decisions
 
+getPreviousBlockAndSnapshot returns optional history, with genesis at zero. getPredecessor joins the supplied block's committed snapshot/state, or fork genesis, and returns undefined if required data is missing. Existing older non-null helper findings are not resolved by these safer helpers. See [Storage.ts](../../../../../../src/storage/Storage.ts#L112).
+
 The storage facade passes the deployed N to QueueStorage and keeps deep-copy boundaries. Queued blocks and source maps cross the existing deep-copy boundary. getParticipantsUnion accepts the supplied resulting snapshot for pre-persistence validation, unions it with the previous snapshot, and canonicalizes addresses without storing a second membership cache. See [getParticipantsUnion](../../../../../../src/storage/Storage.ts#L108).
 
 getGenesisStateMachineState remains available for existing test callers. This test-only production method is outside the deletion scope.

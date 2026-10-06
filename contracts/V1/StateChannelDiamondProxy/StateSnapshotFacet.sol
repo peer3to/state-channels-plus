@@ -70,7 +70,9 @@ contract StateSnapshotFacet is StateChannelCommon {
             RaceConditionBlockHeightTooOld(currentStateSnapshot.blockHeight, newStateSnapshot.blockHeight)
         );
         require(
-            _verifyMilestones(currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot),
+            _isNewSnapshotProvenByThreshold(
+                channelId, currentStateSnapshot, milestoneProofs, milestoneSnapshots, newStateSnapshot
+            ),
             ErrorInvalidStateProof(currentStateSnapshot.forkId, milestoneProofs.length, milestoneSnapshots.length)
         );
         require(
@@ -133,16 +135,26 @@ contract StateSnapshotFacet is StateChannelCommon {
         emit StateSnapshotUpdated(channelId, newSnapshot);
     }
 
-    function _verifyMilestones(
-        bytes32 forkId,
+    /// The walk from the on-chain snapshot finalizes `newStateSnapshot`: the snapshot the last milestone's first
+    /// block commits to, proven by threshold. `isSnapshotNewer` already rejected the on-chain snapshot itself.
+    function _isNewSnapshotProvenByThreshold(
+        bytes32 channelId,
+        StateSnapshot memory currentStateSnapshot,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) internal returns (bool) {
-        bool isValid = StateChannelManagerInterface(address(this)).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
+        StateSnapshot memory newStateSnapshot
+    ) internal view returns (bool) {
+        // a genesis start happens only while the on-chain snapshot is that genesis
+        ProofWalkInput memory input = ProofWalkInput(
+            channelId,
+            currentStateSnapshot.forkId,
+            StateProof(milestoneProofs),
+            currentStateSnapshot.snapshotData,
+            milestoneSnapshots
         );
-        return isValid;
+        ProofWalkResult memory result = StateChannelManagerInterface(address(this)).verifyMilestones(input);
+        return
+            result.valid && keccak256(abi.encode(result.finalizedSnapshot)) == keccak256(abi.encode(newStateSnapshot));
     }
 
     function _applyOutboundMessageBlocks(
