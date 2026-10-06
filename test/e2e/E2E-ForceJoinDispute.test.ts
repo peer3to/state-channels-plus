@@ -1,4 +1,5 @@
 import { Status } from "@/types";
+import { authorUntilForceJoinCountingStarted } from "@test/fixtures/ForceJoinCountingStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -36,11 +37,23 @@ describe("E2E: Force Join Dispute", function () {
             "Joiner should be PENDING_PARTICIPANT after joinChannel"
         );
 
-        // Advance N=3 blocks (peers 0/1 produce blocks without the join message)
-        //  on the 3rd block, the force-join dispute is triggered
-
+        // Blocks count only after the agreementTime grace that follows the
+        // joiner observing its own join; peers 0/1 keep authoring through it.
+        // Peers 0/1 omit the join; the first counted block starts the bound
+        // and the dispute fires N = participants + 1 = 3 blocks later.
         const forkId = h.activeForkId!;
-        await h.transition.advanceState({ count: 3 });
+        const bounds = await authorUntilForceJoinCountingStarted(
+            h,
+            joiner.index,
+            [0, 1]
+        );
+        const remaining =
+            bounds.countingFromHeight! +
+            bounds.participantCount +
+            1 -
+            bounds.latestBlockHeight;
+        expect(remaining, "the dispute height is still ahead").to.be.gte(1);
+        await h.transition.advanceState({ count: remaining });
 
         // Block assembly can include pending inbound messages again. Dispute
         // construction always reads the real inbound head while this stub is
@@ -118,7 +131,18 @@ describe("E2E: Force Join Dispute", function () {
         await h.join.joinChannelWait({ joiner });
 
         const originalForkId = h.activeForkId!;
-        await h.transition.advanceState({ count: 3 });
+        const bounds = await authorUntilForceJoinCountingStarted(
+            h,
+            joiner.index,
+            [0, 1]
+        );
+        const remaining =
+            bounds.countingFromHeight! +
+            bounds.participantCount +
+            1 -
+            bounds.latestBlockHeight;
+        expect(remaining, "the dispute height is still ahead").to.be.gte(1);
+        await h.transition.advanceState({ count: remaining });
         await h.event.waitForPeers("onInitiatingDispute", [joiner.index], 1, {
             mode: "atLeast"
         });

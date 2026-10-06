@@ -1,10 +1,6 @@
 import * as factory from "../factory";
 import { DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT } from "@/evm/contractExecutor/ContractExecutor";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
 import type { Address, Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -443,61 +439,21 @@ describe("Unit: BlockIngestService", function () {
     });
 
     describe("onBlockConfirmationStruct → undecodable bytes under the dispute strategy", function () {
-        // The dispute audit replays the unfinalized part of a state proof
-        // through onBlockConfirmationStruct. Bytes the client cannot decode are
-        // judged by the canonical Solidity structure predicate over the
-        // dispute's own state proof, never by a local decode throw.
-        it("an undecodable replayed block whose state-proof structure is invalid → false + one DisputeInvalidBlockStructure, no throw", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            // no milestones -> the unfinalized part is signedBlocks
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
-            const replayed = dispute.input.stateProof.signedBlocks[0];
-            replayed.encodedBlock = factory.hash(); // bytes that do not decode as a block
-            const auditor = h.getPeer(1);
-            expect(
-                await h
-                    .control(auditor)
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([]);
-
-            const probe = await h
-                .control(auditor)
-                .validation.runBlockConfirmationStructUnderDispute(
-                    Codec.encode(
-                        { signedBlock: replayed, signatures: [] },
-                        Type.BlockConfirmation
-                    ) as string,
-                    Codec.encode(dispute, Type.Dispute) as string
-                )
-                .request();
-
-            expect(probe).to.deep.equal({ accepted: false, threw: null });
-            expect(
-                await h
-                    .control(auditor)
-                    .query.getDisputeFraudProofTypes()
-                    .request()
-            ).to.deep.equal([
-                String(
-                    toSolidityDisputeFraudProofType(
-                        DisputeFraudProofType.DisputeInvalidBlockStructure
-                    )
-                )
-            ]);
-        });
-
+        // The dispute audit replays the unfinalized tail of the last milestone
+        // through onBlockConfirmationStruct. The state-proof structure is
+        // judged before the replay by the canonical Solidity predicate, so a
+        // block the client cannot decode is not a replay verdict.
         it("an undecodable replayed block whose state-proof structure is valid → true, no proof, no throw", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
             const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
+            // nothing is final: one genesis-linked run from block 0
+            expect(dispute.input.stateProof.milestones.length).to.equal(1);
             // the state proof keeps its honest first block, which the
             // contracts decode; only the client's copy does not decode
             const replayed = {
-                ...dispute.input.stateProof.signedBlocks[0],
+                ...dispute.input.stateProof.milestones[0].blockConfirmations[0]
+                    .signedBlock,
                 encodedBlock: factory.hash()
             };
             const auditor = h.getPeer(1);

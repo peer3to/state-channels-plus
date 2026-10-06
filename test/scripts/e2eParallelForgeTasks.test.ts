@@ -404,23 +404,31 @@ describe("parallel forge task discovery", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "AStateMachineStipendTest",
+            "DepartedTimeoutCalldataPostedTest",
+            "DisputeConflictsWithFinalStateTest",
             "DisputeFraudProofFacetPayloadsTest",
             "DisputeVerificationFacetTest",
             "DisputeWindowAdmissionTest",
             "DisputeUtilsTest",
             "FraudProofFacetTest",
+            "InvalidStateProofStepTest",
             "JoinChannelFacetTest",
+            "JoinChannelSnapshotGuardTest",
             "MilestoneFinalityFreezeTest",
             "SameForkSnapshotKillPeriodTest",
             "StateChannelManagerProxyDepositTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
+            "StateProofChallengesTest",
+            "StateProofWalkTest",
             "StateSnapshotFacetOpenChannelRegistryTest",
             "StateSnapshotFacetSameForkTest",
             "StateSnapshotFacetUpdateForkTest",
+            "StateSnapshotProofTargetTest",
+            "TimeoutSupersededByFinalStateTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(16);
+        expect(tasks).to.have.lengthOf(24);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

@@ -85,12 +85,15 @@ the existing top-level handler, including the detached-error route for backgroun
 
 ### Auditing data and replay funding at submission
 
-Construction decides whether to post the dispute's auditing data with
-`isLastMilestoneFinalByEveryone`, asked local-first. A local "not final" posts the data with no
-chain read: posting is never wrong, only costlier. A local "final" would leave the data out, which
+Omission is allowed for an empty genesis proof, a last milestone containing the matching chain anchor,
+or the required participant signatures. The signature set includes chain participants and pending
+joiners through the committed inbound head, minus committed slashes. Construction decides whether
+to post the dispute's auditing data with
+`isAuditingDataOmissionAllowed`, asked local-first. A local "omission not allowed" posts the data with no
+chain read: posting is never wrong, only costlier. A local "omission allowed" would leave the data out, which
 is slashable if the lagging mirror was wrong, so the chain manager answers the same query and its
 answer decides ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
-A local revert falls back to the chain; any other local or chain failure aborts construction.
+A thrown local or chain failure aborts construction; only a completed local answer can select fallback.
 
 The two sends that can replay a transition — the fraud-proof `multicall` in front of an upload and
 `applyDisputeFraudProofs` in `killDispute` — carry their estimate (with the signer's headroom) plus

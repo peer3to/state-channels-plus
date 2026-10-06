@@ -83,6 +83,7 @@ export {
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
 export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
 export type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+export type { OwnJoinState } from "@/stateManager/membership/MembershipService";
 export type {
     SetupPayload,
     SerializedContract,

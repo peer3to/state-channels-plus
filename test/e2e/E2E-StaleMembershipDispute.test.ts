@@ -64,9 +64,7 @@ describe("E2E: stale-membership dispute", function () {
             3,
             async (dispute, sm, args) => {
                 const d = sm.p2pManager.localRpc.dispute;
-                // the leave finalized everything into milestones; append the
-                // attack block to the unfinalized tail of the last milestone.
-                d.expectMilestonesOnlyStateProof(dispute.input.stateProof);
+                // append the attack block to the tail of the last milestone.
                 const confirmations =
                     dispute.input.stateProof.milestones.at(
                         -1
@@ -96,6 +94,10 @@ describe("E2E: stale-membership dispute", function () {
                         return block;
                     }
                 );
+                // the proof's latest block is the dispute's latest state, so
+                // the state proof stays valid and only the author check fails
+                dispute.input.latestStateSnapshotHash =
+                    args.staleSnapshotHash as string;
             },
             {
                 args: {

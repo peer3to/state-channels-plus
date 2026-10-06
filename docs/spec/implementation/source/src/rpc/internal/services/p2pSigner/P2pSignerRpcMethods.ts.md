@@ -9,6 +9,8 @@ Declares only the public p2pSigner endpoints: `sendTransaction`, `callView`, `co
 
 ## Key design decisions
 
+getOwnJoinState is a public RPC endpoint delegating through requireP2pSigner. It returns the serializable discriminated union; helper state and policy remain outside the routable methods class. See [P2pSignerRpcMethods.ts](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L125).
+
 - Endpoint declarations are the concrete source of bound remote argument/result types ([`P2pSignerRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L9)).
 - Domain work delegates through the service; helpers are not added to the routable receiver ([`P2pSignerRpcMethods.ts`](../../../../../../../../../src/rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts#L9)).
 

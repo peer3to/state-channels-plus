@@ -123,8 +123,8 @@ export class DisputeTampering {
     }
 
     /**
-     * Upload posted auditing data with no inbound run. verifyStateProof never
-     * binds inboundMessageBlocks to the dispute's stated head, so re-pinning
+     * Upload posted auditing data with no inbound run. The state-proof checks
+     * never bind inboundMessageBlocks to the dispute's stated head, so re-pinning
      * the auditing-data hash keeps the upload accepted while the auditor is
      * handed nothing.
      */
@@ -290,6 +290,10 @@ export class DisputeTamperingActions<
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
+        // This upload bypasses the poster's DisputeManager, so its own audit
+        // of it would dispute the same window again; the contract takes one
+        // dispute per participant per window. Its kills still go out.
+        await this.harness.dispute.suppressDisputeInitiation([authorPeerIndex]);
         const channelManager = peer.p2pInstance.stateChannelManagerContract;
         let receipt;
         try {
@@ -476,9 +480,15 @@ export class DisputeTamperingActions<
             .request();
     }
 
+    /**
+     * The head block of `peerIndex` re-signed with a snapshot `mutate`
+     * builds, by its author and every other harness peer but
+     * `options.withoutSignerIndices` (peers outside the colluding set).
+     */
     async buildForgedSnapshot(
         peerIndex: number,
-        mutate: ForgeSubmitterSnapshotMutate
+        mutate: ForgeSubmitterSnapshotMutate,
+        options?: { withoutSignerIndices?: number[] }
     ): Promise<ForgedSnapshotBuild> {
         const peer = this.harness.getPeer(peerIndex);
         const forkId = this.harness.activeForkId;
@@ -550,7 +560,11 @@ export class DisputeTamperingActions<
         );
         const confirmationSigs = await Promise.all(
             this.harness.peers
-                .filter((p) => p !== author)
+                .filter(
+                    (p) =>
+                        p !== author &&
+                        !options?.withoutSignerIndices?.includes(p.index)
+                )
                 .map((p) => forgedBlock.sign(p.signer))
         );
         forgedBlock.expandSignatures(confirmationSigs);

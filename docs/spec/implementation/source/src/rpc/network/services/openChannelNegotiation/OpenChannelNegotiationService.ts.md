@@ -27,6 +27,8 @@ signed-attempt retention through chain open or payload expiry.
 
 ## Key design decisions
 
+Founder completion waits for ownGenesisInstalled, set by completed onChannelOpened handling. A receipt alone cannot publish observer state or announce founder completion before genesis installation. Foreign observed-open handling remains a separate existing path. See [OpenChannelNegotiationService.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L880).
+
 Attempt detachment owns timer cancellation, both unsubscriptions and clearing the active attempt in the original order. Commitment lookup keeps raw parameter comparisons and checksum failure; signed attempts retain their special lifecycle. See [OpenChannelNegotiationService.ts](../../../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L806).
 
 1. **Re-derive, never adopt.** The proposal is compared field-for-field against a locally rebuilt struct with the local amount — term substitution is structurally impossible to sign ([`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../../../../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p)).

@@ -23,11 +23,6 @@ is assigned below; the mirrored `DisputeBlockAuthorNotParticipant` verdict permu
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
 | Test declaration                                                                                                                                                                                                                          | Covers                                                                                              |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | [`E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`](../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts#L10) (line 10) | [`REQ-DIS-3-C4KYSF.T1.P16`](../../../../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p16) |

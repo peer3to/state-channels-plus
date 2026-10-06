@@ -34,6 +34,8 @@ merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
 
 ## Key design decisions
 
+verifyMilestonesFromTrustedStart is a local-only entry into the common walk. It accepts the SDK's verified final snapshot without changing the mirrored chain anchor. It is not a production proxy selector. Replay positions come from ProofWalkResult. See [LocalDiamond.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L435).
+
 1. **Event-replication entry points** (`on*` handlers) are how the client advances the mirror — replication, never local hypothesis ([`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)).
 2. **No block-authentication or decoding entry point of its own.** The public `isBlockAuthentic`
    entry point is gone; the client checks author signatures itself under the signature carve-out of

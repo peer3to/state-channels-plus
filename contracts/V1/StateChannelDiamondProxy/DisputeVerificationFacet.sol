@@ -581,55 +581,6 @@ contract DisputeVerificationFacet is StateChannelCommon {
         return dispute.input.disputeAuditingDataHash == keccak256(abi.encode(disputeAuditingData));
     }
 
-    // function isCorrectAuditingData(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-    //     public
-    //     view
-    //     returns (bool)
-    // {
-    //     // Doesn't check data integrity (disputeAuditingDataHash == hash(disputeAuditingData))
-
-    //     // Check dispute commits to genesisStateSnapshot
-    //     if (dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.genesisStateSnapshotData))) return false;
-
-    //     // Check latestStateSnapshot
-    //     (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-    //     if (
-    //         hasBlock
-    //             && (latestBlock.stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))
-    //                 || latestBlock.stateSnapshotHash != dispute.input.latestStateSnapshotHash)
-    //     ) {
-    //         return false;
-    //     }
-    //     if (
-    //         !hasBlock
-    //             && dispute.input.forkId != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot.snapshotData))
-    //     ) {
-    //         return false;
-    //     }
-
-    //     // Check milestones
-    //     Block[] memory milestoneBlocks = _getMilestoneBlocks(dispute.input.stateProof);
-    //     if (milestoneBlocks.length != disputeAuditingData.milestoneSnapshots.length) return false;
-    //     for (uint256 i = 0; i < milestoneBlocks.length; i++) {
-    //         if (
-    //             milestoneBlocks[i].stateSnapshotHash != keccak256(abi.encode(disputeAuditingData.milestoneSnapshots[i]))
-    //         ) {
-    //             return false;
-    //         }
-    //     }
-
-    //     // Check latest stateMachineState
-    //     if (
-    //         disputeAuditingData.latestStateSnapshot.snapshotData.stateMachineStateHash
-    //             != keccak256(disputeAuditingData.latestStateStateMachineState)
-    //     ) return false;
-
-    //     // Check outbound message blocks
-    //     if (!_verifyDisputeOutboundMessageBlocks(disputeAuditingData)) return false;
-
-    //     return true;
-    // }
-
     function isDisputeOutputCorrect(
         Dispute memory dispute,
         StateSnapshot memory latestStateSnapshot,

@@ -267,6 +267,15 @@ describe("E2E: Targeted channel join", function () {
             const selectedIndex = h.peers.find(
                 (peer) => peer.address.toLowerCase() === selected.toLowerCase()
             )!.index;
+            // the target is recorded before its request is sent: cut the
+            // connection only once the held request reached the target, or
+            // the target drops it from the blacklisted peer uncounted
+            await waitFor(
+                async () =>
+                    (await h.rpcStub.getSpectateRequestCount(selectedIndex)) ===
+                    1,
+                h.event.protocolEventTimeoutMs()
+            );
             await h.network.blacklistAndDisconnectPeer(selectedIndex);
             expect(await connect).to.equal(false);
             expect(

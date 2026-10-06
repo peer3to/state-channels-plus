@@ -30,6 +30,8 @@ disposal.
 
 ## Key design decisions
 
+One AgreementManager receives storage, event synchronization, logger, a live channel-id getter and local/chain contracts. Construction, shared proof tiers and retained persistence remain behind that owner; callers do not promote private finality into the mirrored chain anchor. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L188).
+
 Channel reset and stop clear membership mirrors. Verified state application replaces local membership; a fork change requires no cache invalidation or background membership read. BlockQueueManager has no pending admission records to cancel; ordinary sync owns its request lifecycle.
 
 The state manager's signer is declared as the host nonce manager, not a bare ethers signer: it is the only signer the runtime ever constructs it with, and typing the entry point that way lets its concrete surface — the owned nonce counter and the gas usage recorder — reach every holder without a cast. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L75).

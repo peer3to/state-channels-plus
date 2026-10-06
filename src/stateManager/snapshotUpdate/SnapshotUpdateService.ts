@@ -32,6 +32,8 @@ export type SameForkSnapshotUpdatePreparation = {
     milestoneProofs: MilestoneProofStruct[];
     milestoneSnapshots: StateSnapshot[];
     outboundMessageBlocks: MessageBlockStruct[];
+    /** The chain holds an inbound message the latest snapshot has not consumed. */
+    blockedByInbound?: boolean;
 };
 
 export default class SnapshotUpdateService {
@@ -49,27 +51,37 @@ export default class SnapshotUpdateService {
         options?: { forkAdoptionOnly?: boolean }
     ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId, options);
-        if (!submission) return undefined;
+        if (!submission || submission === "blocked-by-inbound")
+            return undefined;
 
         DetachedPromises.collect(submission.completion);
         return submission.expectedSnapshot;
     }
 
-    /** Resolves false only when the chain refused the post on a disputed fork. */
+    /**
+     * Resolves false when the chain refused the post on a disputed fork, and
+     * when the same-fork update cannot be posted because the chain holds an
+     * inbound message the latest snapshot has not consumed: only a dispute,
+     * whose replay applies that message, can move such a fork on.
+     */
     public async postStateSnapshotWait(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
     ): Promise<boolean> {
         const submission = await this.submitStateSnapshot(forkId, options);
+        if (submission === "blocked-by-inbound") return false;
         return submission?.completion ?? true;
     }
 
     private async submitStateSnapshot(
         forkId: ForkId,
         options?: { forkAdoptionOnly?: boolean }
-    ): Promise<SnapshotSubmission | undefined> {
+    ): Promise<SnapshotSubmission | "blocked-by-inbound" | undefined> {
         const forkData = await this.prepareUpdateStateSnapshotFork();
-        const sameForkData: typeof forkData = options?.forkAdoptionOnly
+        const sameForkData: Omit<
+            SameForkSnapshotUpdatePreparation,
+            "milestoneProofs" | "milestoneSnapshots"
+        > = options?.forkAdoptionOnly
             ? { canPost: true, callData: [], outboundMessageBlocks: [] }
             : await this.prepareUpdateSnapshotSameFork(
                   forkId,
@@ -82,7 +94,11 @@ export default class SnapshotUpdateService {
 
         // Preparation always runs to completion. `canPost` only controls
         // whether the resulting calldata is currently eligible for submission.
-        if (!forkData.canPost || !sameForkData.canPost) return undefined;
+        if (!forkData.canPost) return undefined;
+        if (!sameForkData.canPost)
+            return sameForkData.blockedByInbound
+                ? "blocked-by-inbound"
+                : undefined;
 
         if (callData.length === 0) {
             this.logger.debug("No state snapshot updates needed");
@@ -447,7 +463,12 @@ export default class SnapshotUpdateService {
 
             const latestBlockHeight =
                 this.stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
-            if (latestBlockHeight < 0) {
+            // nothing at or above the base: no newer final point to post
+            if (
+                latestBlockHeight < 0 ||
+                (canPost &&
+                    latestBlockHeight < preparationBaseSnapshot.blockHeight)
+            ) {
                 return {
                     canPost,
                     callData: [],
@@ -456,57 +477,33 @@ export default class SnapshotUpdateService {
                     outboundMessageBlocks: []
                 };
             }
-            const stateProof =
-                await this.stateManager.agreementManager.getStateProof(
+            // The proof of the latest final point, built from the local
+            // diamond's anchor (a lagging mirror only lengthens it). Its target
+            // is the snapshot the last milestone's first block commits to;
+            // the unfinalized tail is never the target.
+            const built =
+                await this.stateManager.agreementManager.buildStateProof(
                     forkId,
-                    latestBlockHeight
+                    latestBlockHeight,
+                    { finalizedOnly: true }
                 );
-            const milestoneProofs: MilestoneProofStruct[] = [];
-            const milestoneSnapshots: StateSnapshot[] = [];
-
-            for (const milestoneProof of stateProof.milestones) {
-                if (milestoneProof.blockConfirmations.length === 0) {
-                    throw new Error("Empty milestone proof found");
-                }
-
-                const snapshot =
-                    this.stateManager.agreementManager.getSnapshotFromMilestone(
-                        milestoneProof
-                    );
-                if (!snapshot) {
-                    throw new Error(
-                        "Milestone built but corresponding snapshot not found"
-                    );
-                }
-
-                if (
-                    await this.stateManager.stateChannelManagerContract.isSnapshotNewer(
-                        snapshot.toStruct(),
-                        preparationBaseSnapshot.toStruct()
-                    )
-                ) {
-                    milestoneProofs.push(milestoneProof);
-                    milestoneSnapshots.push(snapshot);
-                }
-            }
-
-            if (milestoneSnapshots.length === 0) {
+            const latestSnapshot = built.finalizedSnapshot;
+            const milestoneProofs = built.stateProof.milestones;
+            const milestoneSnapshots = built.evidence.milestoneSnapshots.map(
+                (snapshot) => StateSnapshot.from(snapshot)
+            );
+            // no newer finalized point than the base: nothing to post
+            if (
+                !(await this.stateManager.stateChannelManagerContract.isSnapshotNewer(
+                    latestSnapshot.toStruct(),
+                    preparationBaseSnapshot.toStruct()
+                ))
+            ) {
                 return {
                     canPost,
                     callData: [],
-                    milestoneProofs,
-                    milestoneSnapshots,
-                    outboundMessageBlocks: []
-                };
-            }
-
-            const latestSnapshot = milestoneSnapshots.at(-1)!;
-            if (latestSnapshot.hash === preparationBaseSnapshot.hash) {
-                return {
-                    canPost,
-                    callData: [],
-                    milestoneProofs,
-                    milestoneSnapshots,
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
                     outboundMessageBlocks: []
                 };
             }
@@ -552,7 +549,9 @@ export default class SnapshotUpdateService {
                     callData: [],
                     milestoneProofs: [],
                     milestoneSnapshots: [],
-                    outboundMessageBlocks: []
+                    outboundMessageBlocks: [],
+                    // a fork snapshot not yet on chain blocks first
+                    blockedByInbound: canPost
                 };
             }
 

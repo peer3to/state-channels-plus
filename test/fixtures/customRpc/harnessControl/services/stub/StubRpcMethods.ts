@@ -48,7 +48,6 @@ import type {
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
-import { ethers } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -208,83 +207,6 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    /**
-     * The local diamond serves the unfinalized part of every state proof with
-     * its first confirmation's block bytes replaced by bytes that do not
-     * decode (appended when that part is empty), so the replay callers
-     * (dispute audit, spectate sync) hand them to onBlockConfirmationStruct.
-     * With `structureInvalid`, the structure predicate the dispute strategy
-     * asks also judges that block invalid.
-     */
-    public stubUndecodableUnfinalizedBlock(structureInvalid: boolean): boolean {
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        if (!this.service.stubOriginals.has("undecodableUnfinalizedBlock")) {
-            this.service.stubOriginals.set(
-                "undecodableUnfinalizedBlock",
-                localDiamond.getUnfinalizedBlockConfirmationsFromStateProof
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "undecodableUnfinalizedBlock"
-        ) as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
-        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof = (async (
-            ...args: Parameters<typeof original>
-        ) => {
-            const confirmations = (await original(...args)).map((bc) => ({
-                signedBlock: {
-                    encodedBlock: String(bc.signedBlock.encodedBlock),
-                    signature: String(bc.signedBlock.signature)
-                },
-                signatures: Array.from(bc.signatures, String)
-            }));
-            const undecodable = ethers.id("undecodable block");
-            if (confirmations.length === 0)
-                confirmations.push({
-                    signedBlock: { encodedBlock: undecodable, signature: "0x" },
-                    signatures: []
-                });
-            else confirmations[0].signedBlock.encodedBlock = undecodable;
-            return confirmations;
-        }) as unknown as typeof original;
-
-        if (
-            structureInvalid &&
-            !this.service.stubOriginals.has("invalidBlockStructurePredicate")
-        ) {
-            this.service.stubOriginals.set(
-                "invalidBlockStructurePredicate",
-                localDiamond.isInvalidBlockStructureInStateProof
-            );
-            localDiamond.isInvalidBlockStructureInStateProof = Object.assign(
-                async () => true,
-                { staticCall: async () => true }
-            ) as unknown as typeof localDiamond.isInvalidBlockStructureInStateProof;
-        }
-        return true;
-    }
-
-    public restoreUndecodableUnfinalizedBlock(): boolean {
-        const original = this.service.stubOriginals.get(
-            "undecodableUnfinalizedBlock"
-        );
-        if (original === undefined) return false;
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        localDiamond.getUnfinalizedBlockConfirmationsFromStateProof =
-            original as typeof localDiamond.getUnfinalizedBlockConfirmationsFromStateProof;
-        this.service.stubOriginals.delete("undecodableUnfinalizedBlock");
-        const predicate = this.service.stubOriginals.get(
-            "invalidBlockStructurePredicate"
-        );
-        if (predicate !== undefined) {
-            localDiamond.isInvalidBlockStructureInStateProof =
-                predicate as typeof localDiamond.isInvalidBlockStructureInStateProof;
-            this.service.stubOriginals.delete("invalidBlockStructurePredicate");
-        }
-        return true;
-    }
-
     /** Make authored blocks omit pending inbound messages. */
     public stubPendingInboundInclusion(): boolean {
         // This is deliberately scoped to block authoring. Stubbing the inbound
@@ -370,25 +292,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
      * scenario is not cut short by a real timeout dispute.
      */
     public stubSuppressTimeoutCheck(): boolean {
-        const timeouts = this.service.sm.participantTimeoutService;
-        if (!this.service.stubOriginals.has("timeoutCheck")) {
-            this.service.stubOriginals.set(
-                "timeoutCheck",
-                timeouts["tryTimeoutParticipant"]
-            );
-        }
-        timeouts["tryTimeoutParticipant"] = async () => undefined;
+        this.service.suppressTimeoutCheck();
         return true;
     }
 
     public restoreSuppressTimeoutCheck(): boolean {
-        const original = this.service.stubOriginals.get("timeoutCheck");
-        if (original === undefined) return false;
-        const timeouts = this.service.sm.participantTimeoutService;
-        timeouts["tryTimeoutParticipant"] =
-            original as (typeof timeouts)["tryTimeoutParticipant"];
-        this.service.stubOriginals.delete("timeoutCheck");
-        return true;
+        return this.service.restoreSuppressTimeoutCheck();
     }
 
     /**
@@ -1798,10 +1707,31 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    /** Park the dispute audit at its on-chain-slashes query until released. */
-    /** Park every auditing-data rebuild until restored. */
-    public stubHoldAuditingDataRebuild(): boolean {
-        this.service.installAuditingDataRebuildHold();
+    /** Park this peer's audit proof walks before the walk and its persistence. */
+    public stubHoldProofWalks(): boolean {
+        this.service.installProofWalkHold();
+        return true;
+    }
+
+    /** Latest block hashes of the proofs whose walks are parked. */
+    public getHeldProofWalkBlockHashes(): string[] {
+        return this.service.heldProofWalks.map((walk) => walk.latestBlockHash);
+    }
+
+    /** Release the parked walk of the proof ending at `latestBlockHash`. */
+    public releaseHeldProofWalk(latestBlockHash: string): boolean {
+        return this.service.releaseHeldProofWalk(latestBlockHash);
+    }
+
+    /** Release every parked walk and restore the real walk. */
+    public restoreProofWalks(): boolean {
+        return this.service.restoreProofWalkHold();
+    }
+
+    public stubHoldAuditingDataRebuild(
+        at: "output" | "auditingData" = "output"
+    ): boolean {
+        this.service.installAuditingDataRebuildHold(at);
         return true;
     }
 
@@ -1874,6 +1804,88 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     /** Resolves once a post is parked at its send; parked count. */
     public waitForHeldSnapshotPostSend(): Promise<number> {
         return this.service.waitForHeldSnapshotPostSend();
+    }
+
+    /**
+     * Prune this peer's stored blocks of `forkId` below `anchorHeight` (the
+     * anchor block is kept), so a test can reconstruct a proof from pruned
+     * history. Irreversible: the session teardown discards the peer.
+     */
+    public pruneStoredBlocksBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): { prunedHeights: BlockHeight[] } {
+        return {
+            prunedHeights: this.service.pruneStoredBlocksBelowAnchor(
+                forkId,
+                anchorHeight
+            )
+        };
+    }
+
+    /**
+     * The next execution of the block at `forkId:height` throws a genuine
+     * internal error (one-shot; see `StubService.failBlockReplayAt`).
+     */
+    public stubFailBlockReplayAt(forkId: ForkId, height: BlockHeight): boolean {
+        this.service.failBlockReplayAt(forkId, height);
+        return true;
+    }
+
+    /** Record instead of start this peer's force-join disputes. */
+    public stubSuppressForceJoinDispute(): boolean {
+        this.service.suppressForceJoinDispute();
+        return true;
+    }
+
+    public getSuppressedForceJoinTriggers(): string[] {
+        return this.service.getSuppressedForceJoinTriggers();
+    }
+
+    public didBlockReplayFaultFire(): boolean {
+        return this.service.didBlockReplayFaultFire();
+    }
+
+    public restoreBlockReplayFault(): boolean {
+        return this.service.restoreBlockReplayFault();
+    }
+
+    /**
+     * Remove `signer`'s confirmation signature from this peer's stored block
+     * at `height` (test-harness staging of missing signature evidence).
+     */
+    public stripStoredBlockSignature(
+        forkId: ForkId,
+        height: BlockHeight,
+        signer: Address
+    ): boolean {
+        this.service.stripStoredBlockSignature(forkId, height, signer);
+        return true;
+    }
+
+    /**
+     * Remove one stored state snapshot by hash (test-harness pruning of a
+     * required snapshot). Irreversible: the session teardown discards the peer.
+     */
+    public deleteStoredSnapshot(snapshotHash: Hash): boolean {
+        this.service.deleteStoredSnapshot(snapshotHash);
+        return true;
+    }
+
+    /**
+     * Prune this peer's snapshots and application states below `anchorHeight`
+     * (the anchor's are kept); call it before pruning the blocks.
+     */
+    public pruneStoredSnapshotsBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): { prunedSnapshotHashes: Hash[] } {
+        return {
+            prunedSnapshotHashes: this.service.pruneStoredSnapshotsBelowAnchor(
+                forkId,
+                anchorHeight
+            )
+        };
     }
 
     public stubHoldOnChainSlashesQuery(): boolean {
@@ -2197,7 +2209,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreReplayGasReads();
     }
 
-    /** Keep this peer out of a kill race (counts the kills it skipped). */
+    /**
+     * Keep this peer out of a kill race (counts the kills it skipped): both
+     * the lone kill and the kill-then-dispute multicall, which the audit uses
+     * while this peer has not disputed yet, are skipped whole.
+     */
     public stubSuppressDisputeKill(): boolean {
         const disputeManager = this.service.sm.disputeManager;
         if (!this.service.stubOriginals.has("disputeKill")) {
@@ -2205,11 +2221,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 "disputeKill",
                 disputeManager.killDispute.bind(disputeManager)
             );
+            this.service.stubOriginals.set(
+                "disputeKillMulticall",
+                disputeManager.dispute.bind(disputeManager)
+            );
         }
+        const dispute = this.service.stubOriginals.get(
+            "disputeKillMulticall"
+        ) as typeof disputeManager.dispute;
         this.service.suppressedDisputeKillCount = 0;
         disputeManager.killDispute = (async () => {
             this.service.suppressedDisputeKillCount += 1;
         }) as typeof disputeManager.killDispute;
+        disputeManager.dispute = (async (forkId, options) => {
+            if (!options?.kill) return dispute(forkId, options);
+            this.service.suppressedDisputeKillCount += 1;
+        }) as typeof disputeManager.dispute;
         return true;
     }
 
@@ -2223,7 +2250,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const disputeManager = this.service.sm.disputeManager;
         disputeManager.killDispute =
             original as typeof disputeManager.killDispute;
+        disputeManager.dispute = this.service.stubOriginals.get(
+            "disputeKillMulticall"
+        ) as typeof disputeManager.dispute;
         this.service.stubOriginals.delete("disputeKill");
+        this.service.stubOriginals.delete("disputeKillMulticall");
         return true;
     }
 
@@ -2237,11 +2268,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
-     * Park `constructDispute` for `forkId` at its `getStateProof` await - the
-     * first async boundary inside it, so a construction parked there has
+     * Park `constructDispute` for `forkId` at its `buildStateProof` await -
+     * the first async boundary inside it, so a construction parked there has
      * started but has not yet read the stored fraud proofs. The park is scoped
-     * to a running `constructDispute`, so an unrelated `getStateProof` caller
-     * can never take it instead and leave the test's race unstaged.
+     * to a running `constructDispute`, so an unrelated `buildStateProof`
+     * caller can never take it instead and leave the test's race unstaged.
      */
     public stubPauseConstructDisputeAtStateProof(forkId: ForkId): boolean {
         const agreementManager = this.service.sm.agreementManager;
@@ -2249,7 +2280,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         if (!this.service.stubOriginals.has("constructDisputeStateProof")) {
             this.service.stubOriginals.set(
                 "constructDisputeStateProof",
-                agreementManager.getStateProof.bind(agreementManager)
+                agreementManager.buildStateProof.bind(agreementManager)
             );
         }
         if (!this.service.stubOriginals.has("constructDisputeEntry")) {
@@ -2260,7 +2291,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         const originalStateProof = this.service.stubOriginals.get(
             "constructDisputeStateProof"
-        ) as typeof agreementManager.getStateProof;
+        ) as typeof agreementManager.buildStateProof;
         const originalConstruct = this.service.stubOriginals.get(
             "constructDisputeEntry"
         ) as typeof disputeManager.constructDispute;
@@ -2279,19 +2310,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         };
         this.service.pausedConstructDispute = state;
 
-        disputeManager.constructDispute = ((requestedForkId: ForkId) => {
+        disputeManager.constructDispute = (requestedForkId, options) => {
             if (requestedForkId !== state.targetForkId) {
-                return originalConstruct(requestedForkId);
+                return originalConstruct(requestedForkId, options);
             }
             state.inside = true;
-            return originalConstruct(requestedForkId).finally(() => {
+            return originalConstruct(requestedForkId, options).finally(() => {
                 state.inside = false;
             });
-        }) as typeof disputeManager.constructDispute;
+        };
 
-        agreementManager.getStateProof = (async (
-            requestedForkId: ForkId,
-            blockHeight: number
+        agreementManager.buildStateProof = async (
+            requestedForkId,
+            blockHeight,
+            options
         ) => {
             if (
                 state.inside &&
@@ -2301,8 +2333,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 state.entered += 1;
                 await state.gate;
             }
-            return originalStateProof(requestedForkId, blockHeight);
-        }) as typeof agreementManager.getStateProof;
+            return originalStateProof(requestedForkId, blockHeight, options);
+        };
         return true;
     }
 
@@ -2329,8 +2361,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         );
         if (originalStateProof === undefined) return false;
         const agreementManager = this.service.sm.agreementManager;
-        agreementManager.getStateProof =
-            originalStateProof as typeof agreementManager.getStateProof;
+        agreementManager.buildStateProof =
+            originalStateProof as typeof agreementManager.buildStateProof;
         this.service.stubOriginals.delete("constructDisputeStateProof");
 
         const originalConstruct = this.service.stubOriginals.get(
@@ -2650,8 +2682,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 disputeManager.dispute.bind(disputeManager)
             );
         }
-        disputeManager.dispute =
-            (async () => {}) as typeof disputeManager.dispute;
+        // the dispute is suppressed; a kill it would carry still lands alone
+        disputeManager.dispute = (async (_forkId, options) => {
+            if (options?.kill) await disputeManager.killDispute(options.kill);
+        }) as typeof disputeManager.dispute;
         return true;
     }
 

@@ -92,14 +92,6 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
-    public async persistSyncPayload(
-        encodedSyncPayload: string
-    ): Promise<{ shouldAbort: boolean }> {
-        const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
-        return this.service.spectate.persistSyncPayload(payload);
-    }
-
     /** Store a block straight into storage (`justPersist`); returns its hash. */
     public storeBlockJustPersist(encodedSignedBlock: string): string {
         const block = Block.fromSignedBlock(

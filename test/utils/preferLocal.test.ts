@@ -53,11 +53,12 @@ describe("Unit: preferLocal", () => {
         expect(chainReads).to.equal(1);
     });
 
-    it("asks the chain when the local EVM reverts", async () => {
+    it("propagates a local EVM revert without asking the chain", async () => {
         let chainReads = 0;
-        const answer = await preferLocal(
+        const failure = localRevert();
+        const read = preferLocal(
             async () => {
-                throw localRevert();
+                throw failure;
             },
             async () => {
                 chainReads++;
@@ -66,9 +67,12 @@ describe("Unit: preferLocal", () => {
             (isValid) => isValid
         );
 
-        expect(isLocalEvmExecutionFailure(localRevert())).to.equal(true);
-        expect(answer).to.equal(true);
-        expect(chainReads).to.equal(1);
+        expect(isLocalEvmExecutionFailure(failure)).to.equal(true);
+        await read.then(
+            () => expect.fail("the local revert must propagate"),
+            (error: unknown) => expect(error).to.equal(failure)
+        );
+        expect(chainReads).to.equal(0);
     });
 
     it("propagates a local failure that is not a revert without asking the chain", async () => {
@@ -109,25 +113,7 @@ describe("Unit: preferLocal", () => {
         );
     });
 
-    it("propagates the chain's rejection of a read that replaces a local revert", async () => {
-        const rejection = new Error("chain rejected the fallback read");
-        const read = preferLocal(
-            async () => {
-                throw localRevert();
-            },
-            async () => {
-                throw rejection;
-            },
-            (isValid) => isValid
-        );
-
-        await read.then(
-            () => expect.fail("the chain rejection must propagate"),
-            (error: unknown) => expect(error).to.equal(rejection)
-        );
-    });
-
-    it("asks the chain when a real local contract call reverts in the executor", async () => {
+    it("propagates a real local contract call revert in the executor without asking the chain", async () => {
         const executor = new ContractExecutor(await EVM.create());
         try {
             // the default call gas cannot grant this machine its stipend, so
@@ -145,7 +131,7 @@ describe("Unit: preferLocal", () => {
             );
             let localFailure: unknown;
             let chainReads = 0;
-            const answer = await preferLocal(
+            const read = preferLocal(
                 async () => {
                     try {
                         await contract.stateTransition.staticCall(
@@ -164,9 +150,12 @@ describe("Unit: preferLocal", () => {
                 (isValid) => isValid
             );
 
+            await read.then(
+                () => expect.fail("the local revert must propagate"),
+                (error: unknown) => expect(error).to.equal(localFailure)
+            );
             expect(isLocalEvmExecutionFailure(localFailure)).to.equal(true);
-            expect(answer).to.equal(false);
-            expect(chainReads).to.equal(1);
+            expect(chainReads).to.equal(0);
         } finally {
             await executor.dispose();
         }
@@ -201,39 +190,6 @@ describe("Unit: preferLocal", () => {
         } finally {
             await executor.dispose();
         }
-    });
-
-    it("classifies a non-Error local failure by its text", async () => {
-        let chainReads = 0;
-        const answer = await preferLocal(
-            async () => {
-                throw `${LOCAL_EVM_EXECUTION_FAILED}: revert`;
-            },
-            async () => {
-                chainReads++;
-                return true;
-            },
-            (isValid) => isValid
-        );
-        expect(answer).to.equal(true);
-        expect(chainReads).to.equal(1);
-
-        const failure = "runtime closed";
-        const read = preferLocal(
-            async () => {
-                throw failure;
-            },
-            async () => {
-                chainReads++;
-                return true;
-            },
-            (isValid) => isValid
-        );
-        await read.then(
-            () => expect.fail("the non-revert failure must propagate"),
-            (error: unknown) => expect(error).to.equal(failure)
-        );
-        expect(chainReads).to.equal(1);
     });
 
     it("propagates an acceptance-callback failure without asking the chain", async () => {
