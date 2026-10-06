@@ -527,7 +527,7 @@ describe("distributed worker scheduler", function () {
             expect(resources.costCpuValve).to.equal(0.5);
             expect(
                 resources.costBudget({ cores: 1.5, rssGb: 2 })
-            ).to.deep.equal({ cores: 2.5, rssGb: 7 });
+            ).to.deep.equal({ cores: 2.5, rssGb: 6 });
             expect(
                 holdReason({
                     schedule: "cost",
@@ -1157,7 +1157,7 @@ describe("distributed worker scheduler", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "memory-admission-")
         );
-        let containerGb = 4;
+        let containerGb = 3;
         let boundedContainer = true;
         let idleTicks = 1000;
         try {
@@ -1204,7 +1204,7 @@ describe("distributed worker scheduler", function () {
                 }
             });
             await resources.sample();
-            // 9 GiB usable: 4 currently used + (6 predicted - 2 resident).
+            // 8 GiB usable: 3 currently used + (6 predicted - 2 resident).
             expect(resources.costBudget({ cores: 3, rssGb: 6 })).to.deep.equal({
                 cores: 4,
                 rssGb: 1
@@ -1218,7 +1218,7 @@ describe("distributed worker scheduler", function () {
             expect(resources.lastHoldReason).to.equal("memory");
             admission.nextCost.rssGb = 0.5;
             expect(await resources.allows(3, 40, admission)).to.equal(true);
-            containerGb = 9.5;
+            containerGb = 8;
             expect(await resources.allows(3, 40, admission)).to.equal(false);
             expect(resources.lastHoldReason).to.equal("memory");
             expect(await resources.allows(0, 40, admission)).to.equal(false);
@@ -1226,11 +1226,11 @@ describe("distributed worker scheduler", function () {
             await resources.sample();
             // Without cgroup counters, shared infrastructure still adds to predictions.
             expect(resources.costBudget({ cores: 3, rssGb: 6 }).rssGb).to.equal(
-                4.25
+                3
             );
             // Resident memory larger than predictions must not be subtracted twice.
             expect(resources.costBudget({ cores: 3, rssGb: 1 }).rssGb).to.equal(
-                8.25
+                7
             );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -1415,6 +1415,7 @@ describe("distributed worker scheduler", function () {
         );
         const task = {
             label: "sample",
+            fullTitle: "cache fixture runs",
             logName: "sample",
             runner: "hardhat",
             args: ["test", "--no-compile", fixture]

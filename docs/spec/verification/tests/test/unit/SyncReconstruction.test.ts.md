@@ -6,6 +6,11 @@
 
 Installs real sync responses and inspects reconstructed blocks, snapshots, states and proofs. Cases cover compact history, overlapping milestones, confirmation merging and unfinalized tails.
 
+The separated-evidence fixture uses a 10-second `p2pTime` to allow spectator
+setup before live authoring resumes. Agreement-time validation and the proof
+assertions are unchanged; this fixture timing is not a protocol default.
+Runtime verification of this timing adjustment is pending.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                                                               |

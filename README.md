@@ -104,7 +104,7 @@ type before parsing, including when a shared `--test-pattern` is supplied.
 
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
-yarn test:parallel --no-forge       # Mocha and browser tiers
+yarn test:parallel --no-forge       # Mocha tier
 yarn test:parallel --browser-only   # only the browser gates
 yarn test:parallel --no-browser     # Mocha and forge tiers
 yarn test:parallel --forge-threads 2
@@ -235,6 +235,12 @@ local runner) stores each test's latest measurement in the ignored
 `.cache/test-costs.json`, updates the committed `test-costs.json` at the project
 root (see below), and writes `logs/run-N/run-metrics.json` with how busy each
 worker was, why it held tests back and when each test was first assigned.
+Distributed `[startup]` logs show per-worker phase durations and elapsed time
+from orchestrator startup: connection, lease wait, workspace negotiation,
+transfer/preparation, worker boot/infrastructure provisioning, and first assignment.
+Workspace negotiation reports changed/deleted file counts and transfer size.
+Phase timings are also saved under each worker's `startup` in `run-metrics.json`;
+local compilation and bundling before orchestrator startup are outside that clock.
 
 Cost scheduling is the default. With `--schedule fifo`, measurements are only
 recorded. On Linux,
@@ -269,7 +275,7 @@ yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
 yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 ```
 
-Memory admission leaves 10% of the effective RAM limit as headroom. It adds
+Memory admission leaves 20% of the effective RAM limit as headroom. It adds
 predicted growth of running tests to current process-tree usage, including shared
 infrastructure. On bounded cgroup v2 workers it also checks container-wide usage
 and uses the smaller of the configured and container limits. Raising `--cpu-limit`
@@ -291,17 +297,22 @@ its last attempt's measurement.
 
 `test-costs.json` and `test-costs.overrides.json` live at the project root, so
 another project using this runner keeps its own. A run that writes the cache
-also rewrites a test's entry in `test-costs.json`, as measured, when the test is
-new there or its CPU work (`durationMs × avgCores`) or peak memory moved by more
-than 30%. Duration and average cores are not compared independently: slower
-execution with proportionally lower average cores is the same CPU work. Older
-workers without CPU measurements retain duration-only drift detection;
-otherwise the file is left alone, so it only changes when a cost does. A starved
-test's inflated cost counts too, so it is admitted as more expensive until a
-clean run measures it again. Commit the updated file with your change. CI runs
+adds a test's entry to `test-costs.json` only when it is new. Existing entries
+stay unchanged on ordinary runs, regardless of CPU or memory drift. A final
+starvation sample still updates the entry with the existing 50% CPU and memory
+inflation and a `starved: true` marker. The next successful, non-starved run
+with complete measurements replaces that temporary baseline and clears the marker.
+`.cache/test-costs.json` is atomically replaced with only the latest completed
+run's measurements; tests absent from that run and older measurements are not merged in.
+The committed `test-costs.json` still preserves existing baselines as described above.
+At the end of a completed run, deleted tests are removed from both files by
+checking their source definitions, independently of grep, tier, and optional-group
+filters. Inactive tests and definitions that cannot be safely inspected are retained.
+Interrupted and read-only runs do not prune costs.
+Disable both writes
 with `--cost-cache-read-only`: it schedules by the committed costs and writes
 neither file. `yarn test:costs:snapshot` copies every test's latest measurement
-from the cache into `test-costs.json` regardless of the 30% threshold; it stops
+from the cache into `test-costs.json` even for existing entries; it stops
 without writing if the cache is missing or either file cannot be read.
 
 To correct a test's cost by hand, add it to the optional
@@ -663,3 +674,18 @@ MIT
 ## Automated PR review
 
 See the [persistent PR review service guide](docs/pr-review-bot.md) for setup, account and host prerequisites, CI ownership, recovery and acceptance.
+
+### Optional test groups
+
+Normal parallel runs omit `e2eParallel*.test.*` runner self-tests and browser
+checks (both browser gates and Mocha files marked `@distributed-requires: browser`).
+Enable them explicitly, including when using `--grep`:
+
+```shell
+yarn test:parallel:distributed --test-parallel-script
+yarn test:parallel:distributed --test-browser
+yarn test:parallel:distributed --test-parallel-script --test-browser
+```
+
+CI passes both flags for the full test gate. `--browser-only` still selects only
+browser gates. `--e2e-only` retains its existing tier restrictions.

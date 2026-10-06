@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 // Copy every test's latest measured cost from the cache into the committed
-// test-costs.json, without the drift threshold a run applies.
+// test-costs.json, replacing existing entries while preserving uncached tests.
 // usage: yarn test:costs:snapshot [--cost-cache <path>]
 const {
     DEFAULT_COST_CACHE_PATH,

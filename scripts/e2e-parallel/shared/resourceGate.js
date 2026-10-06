@@ -6,6 +6,7 @@ const { performance } = require("perf_hooks");
 const { promisify } = require("util");
 const {
     PER_TEST_MEM_GB,
+    MEM_LIMIT_FRACTION,
     PROC_CLOCK_TICKS_PER_SECOND,
     COST_CPU_BUDGET,
     COST_CPU_VALVE,
@@ -431,7 +432,7 @@ class ResourceGate {
     ) {
         await this.sample();
         this.lastHoldReason = null;
-        if (this.occupiedGb >= this.memoryLimitGb * 0.9)
+        if (this.occupiedGb >= this.memoryLimitGb * MEM_LIMIT_FRACTION)
             return this.hold("memory");
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
@@ -448,7 +449,10 @@ class ResourceGate {
             return true;
         }
         if (this.cpuUtil >= this.targetLoad) return this.hold("cpu");
-        if (this.occupiedGb + this.avgPerTestGb >= this.memoryLimitGb * 0.9)
+        if (
+            this.occupiedGb + this.avgPerTestGb >=
+            this.memoryLimitGb * MEM_LIMIT_FRACTION
+        )
             return this.hold("memory");
         return true;
     }
@@ -467,8 +471,8 @@ class ResourceGate {
             rssGb:
                 // Reserve infrastructure and untracked container memory separately.
                 // Add any predicted test growth to the current footprint, leaving
-                // 10% of the hard limit for sampling gaps and allocation bursts.
-                this.memoryLimitGb * 0.9 -
+                // 20% of the hard limit for sampling gaps and allocation bursts.
+                this.memoryLimitGb * MEM_LIMIT_FRACTION -
                 Math.max(this.occupiedGb, this.infraGb + this.testGb) -
                 Math.max(0, runningCost.rssGb - this.testGb)
         };

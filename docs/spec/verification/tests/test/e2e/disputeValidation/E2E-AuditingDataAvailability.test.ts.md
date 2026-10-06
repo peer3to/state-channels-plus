@@ -10,6 +10,11 @@ E11 staging installs pending-inbound inclusion controls before the anchor block 
 
 Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
 
+The anchored unfinalized-tail fixture uses a 10-second `p2pTime` for snapshot
+posting and pending-join setup before tail authoring. Agreement-time validation
+and the auditing-data assertions remain unchanged. Runtime verification of this
+timing adjustment is pending.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                                                                          |

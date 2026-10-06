@@ -11,7 +11,7 @@ import {
 import { quietSample } from "@test/fixtures/PerformanceReportingStaging";
 import { expect } from "chai";
 import { existsSync } from "node:fs";
-import { setTimeout as waitRealTime } from "node:timers/promises";
+import { setTimeout as nativeSetTimeout } from "node:timers";
 import sinon from "sinon";
 
 /**
@@ -21,6 +21,9 @@ import sinon from "sinon";
  * so each case zeroes the global threshold for its duration and drives the
  * synthetic threshold through the internal options only.
  */
+// Capture before Sinon installs fake timers, including its timers/promises replacement.
+const realSetTimeout = nativeSetTimeout;
+
 describe("NodeLogger performance monitor", function () {
     let clock: sinon.SinonFakeTimers;
     let previousConfig: typeof config;
@@ -220,7 +223,7 @@ describe("NodeLogger performance monitor", function () {
                 });
             });
             // Native time lets the real histogram collect; only monitor ticks are scripted.
-            await waitRealTime(30);
+            await new Promise<void>((resolve) => realSetTimeout(resolve, 30));
             const markers = captureTimingMarkers(() => clock.tick(INTERVAL_MS));
             expect(markers).to.have.length(1);
             const timing = JSON.parse(

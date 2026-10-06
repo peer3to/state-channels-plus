@@ -57,7 +57,6 @@ const DEFAULT_TASK_COST = { durationMs: 30000, cores: 1, rssGb: 2 };
 const STARVED_COST_FACTOR = 1.5;
 // A run that writes the cache rewrites a test's committed cost when one of its
 // values moved by more than this fraction.
-const COST_DRIFT_FRACTION = 0.3;
 // Why a task's peakRssGb/avgCores are null: the sampler found no process tree,
 // or the attempt came from a worker that predates the measurements.
 const MEASUREMENT_REASONS = Object.freeze([
@@ -87,7 +86,7 @@ const TARGET_LOAD_PER_CORE = 0.8;
 // infra) rather than os.freemem() (which under-reports on macOS), keep a running
 // average per test process, and admit another test only if the projected total
 // (current owned + one more average process) stays under MEM_LIMIT_FRACTION of
-// system RAM. PER_TEST_MEM_GB seeds the average before any sample exists.
+// the effective memory limit. PER_TEST_MEM_GB seeds the average before any sample exists.
 const MEM_LIMIT_FRACTION = 0.8;
 const PER_TEST_MEM_GB = 2;
 
@@ -109,7 +108,6 @@ module.exports = {
     COST_CPU_VALVE,
     DEFAULT_TASK_COST,
     STARVED_COST_FACTOR,
-    COST_DRIFT_FRACTION,
     MEASUREMENT_REASONS,
     CONCURRENCY_STAT_FIELDS,
     HOLD_REASONS,

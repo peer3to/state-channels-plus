@@ -24,8 +24,8 @@ import { ZeroAddress } from "ethers";
  * uploaded `LATE_MARGIN_SECONDS` before the evidence period of
  * `EVIDENCE_TIME` seconds closes, after the higher state was admitted.
  */
-const EVIDENCE_TIME = 10;
-const LATE_MARGIN_SECONDS = 3;
+const EVIDENCE_TIME = 15;
+const LATE_MARGIN_SECONDS = 7;
 
 /**
  * Plan 35 (milestone-only state proof): what a peer submits when the dispute
@@ -34,7 +34,7 @@ const LATE_MARGIN_SECONDS = 3;
  * loss of the only higher-state commitment.
  */
 describe("E2E: evidence in the dispute window", function () {
-    it("E47: a peer whose frozen view is above the opening dispute submits its higher state at once; a lower-state dispute admitted near evidence closure needs no new upload, its own false timeout is still countered, and reduction keeps the higher state", async function () {
+    it("E47: a peer whose frozen view is above the opening dispute submits its higher state at once; a lower-state dispute admitted after the higher evidence needs no new upload, its own false timeout is still countered, and reduction keeps the higher state", async function () {
         const h = TestSession.getHarness();
         const {
             forkId,

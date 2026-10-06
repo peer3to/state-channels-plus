@@ -136,7 +136,7 @@ jobs:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
                   SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
               # Schedules by the committed test-costs.json and never writes it.
-              run: yarn test:parallel:distributed --discovery-timeout 300000 --schedule cost --cost-cache-read-only
+              run: yarn test:parallel:distributed --test-parallel-script --test-browser --discovery-timeout 300000 --schedule cost --cost-cache-read-only
 
             - name: Upload run logs
               if: always()

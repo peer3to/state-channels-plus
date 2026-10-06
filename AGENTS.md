@@ -64,10 +64,22 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed` is the canonical full test gate. It runs three
+`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
 tiers across the configured distributed workers: all Mocha tests, the forge
 tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
+
+During development, leave these optional groups disabled unless the changes
+touch their relevant files or dependencies:
+
+- Use `--test-parallel-script` when changing parallel-runner scripts, their
+  configuration, or their self-tests.
+- Use `--test-browser` when changing browser code, browser build/runtime
+  dependencies, or browser tests, including shared code that affects those paths.
+
+Run only the relevant optional group and focused tests for those changes. Do not
+add both flags routinely to development validation; CI runs both groups on every
+full gate so the development cycle stays lean.
 
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
 run only on a protocol 14 or newer worker host whose runner image was built with

@@ -21,6 +21,8 @@ Options:
       --forge-only               Discover only Foundry (forge) test contracts
       --no-forge                 Skip Foundry (forge) test contracts
       --forge-threads <count>    Threads per forge task (default 1)
+      --test-parallel-script    Include parallel-runner infrastructure tests
+      --test-browser            Include browser gates and browser-required Mocha tests
       --browser-only             Discover only browser gates
       --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>
@@ -50,8 +52,8 @@ Options:
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
 
-By default all Mocha tests, all Foundry test contracts and all browser gates
-under test/ are discovered and logs are written to a new logs/run-N directory.
+By default Mocha tests (excluding parallel-runner and browser-required tests)
+and all Foundry test contracts under test/ are discovered and logs are written to a new logs/run-N directory.
 Use --e2e-only only when the ordinary Mocha tier is not needed; it also drops
 the forge and browser tiers.
 Each forge task uses one thread by default because the runner already
@@ -94,9 +96,10 @@ function parseCliArgs(argv) {
         forge: true,
         forgeOnly: false,
         forgeThreads: DEFAULT_FORGE_THREADS,
-        // Browser gates are discovered alongside the other tiers by default;
+        // Browser gates are opt-in via --test-browser;
         // --no-browser drops them, --browser-only drops every other tier.
-        browser: true,
+        browser: false,
+        testParallelScript: false,
         browserOnly: false,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
@@ -247,8 +250,17 @@ function parseCliArgs(argv) {
             options.forge = false;
             continue;
         }
+        if (arg === "--test-parallel-script") {
+            options.testParallelScript = true;
+            continue;
+        }
+        if (arg === "--test-browser") {
+            options.browser = true;
+            continue;
+        }
         if (arg === "--browser-only") {
             options.browserOnly = true;
+            options.browser = true;
             continue;
         }
         if (arg === "--no-browser") {
@@ -539,7 +551,7 @@ function parseCliArgs(argv) {
     if (options.forgeOnly && options.e2eOnly) {
         throw new Error("--forge-only conflicts with --e2e-only");
     }
-    if (options.browserOnly && !options.browser) {
+    if (options.browserOnly && argv.includes("--no-browser")) {
         throw new Error("--browser-only conflicts with --no-browser");
     }
     if (options.browserOnly && options.e2eOnly) {

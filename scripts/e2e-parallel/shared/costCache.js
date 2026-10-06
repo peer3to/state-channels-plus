@@ -2,7 +2,6 @@
 const fs = require("fs");
 const path = require("path");
 const {
-    COST_DRIFT_FRACTION,
     DEFAULT_TASK_COST,
     STARVED_COST_FACTOR,
     MEASUREMENT_REASONS,
@@ -15,7 +14,7 @@ const { normalizeTaskRunner } = require("./taskRunners");
 
 // 3: each test's latest measurement; scheduling reads the committed costs.
 const CACHE_VERSION = 3;
-// The committed costs file: measured values only, no per-run bookkeeping.
+// Committed measurements, with a marker for temporary starvation inflation.
 const COSTS_VERSION = 1;
 const SAMPLE_FIELDS = ["durationMs", "avgCores", "peakRssGb"];
 const OVERRIDE_FIELDS = ["durationMs", "cores", "rssGb"];
@@ -33,6 +32,7 @@ function validCost(entry) {
     return (
         object(entry) &&
         numeric(entry.durationMs) &&
+        (entry.starved === undefined || typeof entry.starved === "boolean") &&
         ["peakRssGb", "avgCores"].every(
             (field) => entry[field] === null || numeric(entry[field])
         ) &&
@@ -86,6 +86,7 @@ function committedCost(sample, previous) {
     const avgCores = pick("avgCores");
     const peakRssGb = pick("peakRssGb");
     return {
+        ...(sample.starved ? { starved: true } : {}),
         durationMs: Math.round(sample.durationMs),
         avgCores,
         peakRssGb,
@@ -93,26 +94,6 @@ function committedCost(sample, previous) {
             ? (sample.measurementReason ?? "legacy-measurements-unavailable")
             : null
     };
-}
-
-// Compare CPU work, not elapsed time and average cores independently: load can
-// stretch a task without changing the CPU time it consumes. Memory stays an
-// independent admission cost. Older workers without CPU measurements retain
-// duration-only drift detection until a complete measurement is available.
-function drifted(previous, next, sample) {
-    if (!previous) return true;
-    const moved = (before, after) =>
-        numeric(after) &&
-        (!numeric(before) ||
-            Math.abs(after - before) > COST_DRIFT_FRACTION * before);
-    if (moved(previous.peakRssGb, next.peakRssGb)) return true;
-    if (!numeric(sample.avgCores))
-        return moved(previous.durationMs, next.durationMs);
-    if (!numeric(previous.avgCores)) return true;
-    return moved(
-        previous.durationMs * previous.avgCores,
-        next.durationMs * next.avgCores
-    );
 }
 
 function writeCosts(costsPath, tasks) {
@@ -189,6 +170,51 @@ function executed(attempt, metadata) {
 // late failure); a redundant copy never reaches the cache.
 function isCostSample(attempt, metadata) {
     return executed(attempt, metadata) && numeric(attempt.durationMs);
+}
+
+// Inspect source independently of run selection. Unknown/dynamic definitions and
+// unreadable sources are retained rather than mistaken for deleted tests.
+function deletedCostChecker(projectRoot) {
+    const files = new Map();
+    return (key) => {
+        const [runner, relative, ...titleParts] = key.split("|");
+        if (!["hardhat", "forge", "browser"].includes(runner) || !relative)
+            return false;
+        const file = path.resolve(projectRoot, relative);
+        const identity = runner + "|" + file;
+        if (!files.has(identity)) {
+            let titles = null;
+            try {
+                try {
+                    fs.statSync(file);
+                } catch (error) {
+                    if (error.code !== "ENOENT") throw error;
+                    files.set(identity, new Set());
+                    return true;
+                }
+                if (runner === "hardhat") {
+                    const { extractMochaTests } = require("./taskDiscovery");
+                    const found = extractMochaTests(file, {
+                        includeInactive: true
+                    });
+                    if (!found.requiresFileFallback)
+                        titles = new Set(
+                            found.tests.map((test) => test.fullTitle)
+                        );
+                } else if (runner === "forge") {
+                    const {
+                        extractForgeTestContracts
+                    } = require("./forgeTaskDiscovery");
+                    titles = new Set(extractForgeTestContracts(file));
+                }
+            } catch (error) {
+                console.warn(`Keeping costs for ${relative}: ${error.message}`);
+            }
+            files.set(identity, titles);
+        }
+        const titles = files.get(identity);
+        return titles !== null && !titles.has(titleParts.join("|"));
+    };
 }
 
 class CostCache {
@@ -294,6 +320,7 @@ class CostCache {
                 : Math.max(measuredCores ?? 0, this.resolve(task).cores);
         if (pending.sample) this.addToFileSums(task, pending.sample, -1);
         pending.sample = {
+            starved: metadata.starveCount > 0,
             durationMs: attempt.durationMs,
             peakRssGb,
             avgCores,
@@ -304,6 +331,11 @@ class CostCache {
                     : null)
         };
         this.addToFileSums(task, pending.sample, 1);
+        pending.starved = metadata.starveCount > 0;
+        pending.succeeded =
+            attempt.code === 0 &&
+            !pending.starved &&
+            SAMPLE_FIELDS.every((field) => numeric(attempt[field]));
         pending.at = metadata.at ?? new Date().toISOString();
         this.touch(task);
     }
@@ -382,33 +414,26 @@ class CostCache {
         };
     }
 
-    // Persisting is best effort: a cache that cannot be read or written warns
+    // Persisting is best effort: a cache that cannot be written warns
     // and keeps this run's measurements pending, and never fails the run.
-    commit({ interrupted = false } = {}) {
-        if (interrupted || this.readOnly || !this.pending.size) return;
-        // Merge into the file as it is now: another run from this checkout may
-        // have committed since this one started.
-        let readDenied = null;
-        const tasks = readCache(this.cachePath, (error) => {
-            // A corrupt file is replaced; one we may not read is kept.
-            startCold(this.cachePath)(error);
-            if (!(error instanceof SyntaxError)) readDenied = error;
-        });
-        if (readDenied) {
-            console.warn(
-                `Not committing cost cache ${this.cachePath}: it could not be read (${readDenied.message})`
-            );
+    commit({ interrupted = false, pruneDeleted = false } = {}) {
+        if (
+            interrupted ||
+            this.readOnly ||
+            (!this.pending.size && !pruneDeleted)
+        )
             return;
-        }
+        const isDeleted = pruneDeleted
+            ? deletedCostChecker(this.projectRoot)
+            : () => false;
+        // Replace atomically with this run only; never inherit older measurements.
+        const tasks = {};
         for (const [key, { sample, at }] of this.pending) {
-            // The latest measurement; a value it lacks keeps the stored one.
-            const cached = tasks[key];
+            // Missing measurements stay missing in this run's cache.
             const entry = Object.fromEntries(
                 SAMPLE_FIELDS.map((field) => [
                     field,
-                    numeric(sample[field])
-                        ? sample[field]
-                        : (cached?.[field] ?? null)
+                    numeric(sample[field]) ? sample[field] : null
                 ])
             );
             entry.measurementReason = [
@@ -418,9 +443,13 @@ class CostCache {
                 ? (sample.measurementReason ??
                   "legacy-measurements-unavailable")
                 : null;
-            entry.samples = (cached?.samples ?? 0) + 1;
+            if (sample.starved) entry.starved = true;
+            entry.samples = 1;
             entry.lastSeenAt = at;
             tasks[key] = entry;
+        }
+        for (const key of Object.keys(tasks)) {
+            if (isDeleted(key)) delete tasks[key];
         }
         try {
             writeJsonAtomic(this.cachePath, { version: CACHE_VERSION, tasks });
@@ -428,17 +457,16 @@ class CostCache {
             console.warn(`Unable to commit cost cache: ${error.message}`);
             return;
         }
-        if (!this.commitCosts()) return;
+        if (!this.commitCosts(isDeleted)) return;
         this.pending.clear();
         this.fileSums.clear();
         this.fileRevisions.clear();
         this.generation++;
     }
 
-    // Rewrites a committed cost, as measured, when the test is new there or
-    // CPU work or peak memory moved by more than COST_DRIFT_FRACTION. False keeps
-    // this run's measurements pending.
-    commitCosts() {
+    // Preserve established baselines; replace temporary starvation inflation
+    // after a successful measured attempt. False keeps measurements pending.
+    commitCosts(isDeleted = () => false) {
         let unreadable = null;
         const costs = readCache(
             this.costsPath,
@@ -453,11 +481,18 @@ class CostCache {
             return false;
         }
         let changed = false;
-        for (const [key, { sample }] of this.pending) {
+        for (const [key, { sample, starved, succeeded }] of this.pending) {
+            if (costs[key] && !starved && !(costs[key].starved && succeeded))
+                continue;
             const next = committedCost(sample, costs[key]);
-            if (!drifted(costs[key], next, sample)) continue;
             costs[key] = next;
             changed = true;
+        }
+        for (const key of Object.keys(costs)) {
+            if (isDeleted(key)) {
+                delete costs[key];
+                changed = true;
+            }
         }
         if (changed) {
             try {

@@ -565,9 +565,13 @@ export async function syncSpectatorOnServedPayload(
  */
 export async function stageAnchoredHistory(
     h: MathPeerTestHarness,
-    options: { blocksAfter: number; cutPeer?: boolean }
+    options: { blocksAfter: number; cutPeer?: boolean; p2pTime?: number }
 ) {
-    await h.lifecycle.start(3, 3);
+    await h.lifecycle.start(3, 3, {
+        ...(options.p2pTime === undefined
+            ? {}
+            : { timeConfig: { p2pTime: options.p2pTime } })
+    });
     if (options.cutPeer) {
         for (const index of [0, 1, 2])
             await h.rpcStub.suppressTimeoutCheck(index);
@@ -744,7 +748,11 @@ function authorsOf(
  * served; the served state is a+4's.
  */
 export async function stageSeparatedEvidencePayload(h: MathPeerTestHarness) {
-    const staged = await stageAnchoredHistory(h, { blocksAfter: 4 });
+    // Spectator setup happens between final blocks; allow it time before the next author.
+    const staged = await stageAnchoredHistory(h, {
+        blocksAfter: 4,
+        p2pTime: 10
+    });
     const { forkId, anchor, latestHeight, payload } = staged;
     expect(proofHeights(payload)).to.deep.equal([[latestHeight]]);
     const first = await servedBlock(h, forkId, anchor.blockHeight + 1);

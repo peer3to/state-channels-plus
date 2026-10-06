@@ -297,7 +297,11 @@ async function main(options = {}) {
                 cli.grep,
                 undefined,
                 cli.mochaTestPattern ?? cli.testPattern,
-                { compiled: compiledAvailable }
+                {
+                    compiled: compiledAvailable,
+                    includeParallelScript: cli.testParallelScript,
+                    includeBrowser
+                }
             );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);

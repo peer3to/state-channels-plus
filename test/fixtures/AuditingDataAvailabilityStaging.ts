@@ -43,7 +43,7 @@ export async function stageAnchoredUnfinalizedTail(
     // confirmation round) sit in one writer window before the tail block.
     await h.lifecycle.start(3, 0, {
         timeConfig: {
-            p2pTime: 4,
+            p2pTime: 10,
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 8

@@ -742,6 +742,24 @@ describe("distributed parallel runner", function () {
             expect(metrics.workers).to.have.lengthOf(1);
             const [worker] = metrics.workers;
             expect(worker.legacyAdmission).to.equal(false);
+            expect(worker.startup).to.have.all.keys(
+                "discovery and connection",
+                "lease wait",
+                "workspace negotiation",
+                "workspace transfer and preparation",
+                "worker boot and infrastructure provisioning",
+                "ready to first assignment"
+            );
+            const startupPhases = Object.values(worker.startup) as Array<{
+                durationMs: number;
+                elapsedMs: number;
+            }>;
+            let elapsedMs = 0;
+            for (const phase of startupPhases) {
+                expect(phase.durationMs).to.be.at.least(0);
+                elapsedMs += phase.durationMs;
+                expect(phase.elapsedMs).to.equal(elapsedMs);
+            }
             expect(worker.meanConcurrency).to.be.a("number");
             expect(worker.peakConcurrency).to.equal(1);
             expect(worker.holdCounts).to.have.all.keys("cap", "memory", "cpu");

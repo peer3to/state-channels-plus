@@ -20,7 +20,11 @@ function getStringLiteralValue(node) {
 
 function isDescribeCallee(expression) {
     const text = expression.getText();
-    return text === "describe" || text.startsWith("describe.");
+    return (
+        text === "describe" ||
+        text === "xdescribe" ||
+        text.startsWith("describe.")
+    );
 }
 
 /** Mocha full title: outer describe … inner describe … it (space-separated). */
@@ -46,9 +50,11 @@ function collectDescribeTitlesFromIt(itCall) {
     return titles;
 }
 
-function extractMochaTests(filePath) {
+function extractMochaTests(filePath, { includeInactive = false } = {}) {
     const project = new Project();
     const sourceFile = project.addSourceFileAtPath(filePath);
+    if (includeInactive && sourceFile.compilerNode.parseDiagnostics?.length)
+        throw new Error(`Cannot inspect malformed test source: ${filePath}`);
     const tests = [];
     let requiresFileFallback = false;
 
@@ -58,15 +64,26 @@ function extractMochaTests(filePath) {
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .forEach((callExpr) => {
             const expr = callExpr.getExpression();
-            if (expr.getText() !== "it") return;
+            if (
+                expr.getText() !== "it" &&
+                !(
+                    includeInactive &&
+                    ["it.skip", "it.only", "xit"].includes(expr.getText())
+                )
+            )
+                return;
 
             const args = callExpr.getArguments();
-            if (args.length < 2) return;
+            if (args.length < 1 || (!includeInactive && args.length < 2))
+                return;
             const secondArg = args[1];
             const isFunction =
-                secondArg.getKind() === SyntaxKind.ArrowFunction ||
-                secondArg.getKind() === SyntaxKind.FunctionExpression;
-            if (!isFunction) return;
+                secondArg?.getKind() === SyntaxKind.ArrowFunction ||
+                secondArg?.getKind() === SyntaxKind.FunctionExpression;
+            if (!isFunction && !(includeInactive && args.length === 1)) {
+                if (includeInactive) requiresFileFallback = true;
+                return;
+            }
 
             const testName = getStringLiteralValue(args[0]);
             if (!testName) {
@@ -206,10 +223,23 @@ function discoverTasks(
     grep,
     e2eDir = path.resolve("test/e2e"),
     testPattern = DEFAULT_MOCHA_TEST_PATTERN,
-    { compiled = false } = {}
+    {
+        compiled = false,
+        includeParallelScript = true,
+        includeBrowser = true
+    } = {}
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
         .filter(isMochaTestFile)
+        .filter(
+            (file) =>
+                includeParallelScript ||
+                !/^e2eParallel.*\.test\.[cm]?[jt]s$/.test(path.basename(file))
+        )
+        .filter(
+            (file) =>
+                includeBrowser || !readRequiredRunners(file).includes("browser")
+        )
         .sort();
     const resolvedE2eDir = path.resolve(e2eDir);
     const tasks = [];
