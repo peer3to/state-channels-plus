@@ -146,6 +146,14 @@ shells out to `forge test --match-contract <contract> --threads <count>`,
 streams its output through, and passes its exit code on. It does not depend on
 the compile task, so no task recompiles.
 
+Before discovery, projects defining `generate-enums` and `generate-artifacts`
+run `yarn hardhat compile` and those two generators before building the TypeScript
+test tree. Hardhat updates TypeChain for changed contracts; a missing TypeChain
+index triggers `yarn hardhat typechain`. Unchanged generated output keeps its
+modification time so an unchanged run reuses `dist`. Hardhat's existing cache decides which
+contracts need recompiling. `--skip-build` and `--dry-run` skip this preflight.
+The standalone `yarn compile` command still performs its full clean rebuild.
+
 The indirection is what makes the tier work on a distributed worker: a worker
 executes tasks with its own copy of the runner, taken from the checkout that
 started `yarn test:parallel:server`, while only the project sources are synced
@@ -228,7 +236,8 @@ local runner) stores each test's latest measurement in the ignored
 root (see below), and writes `logs/run-N/run-metrics.json` with how busy each
 worker was, why it held tests back and when each test was first assigned.
 
-By default (`--schedule fifo`) the measurements are only recorded. On Linux,
+Cost scheduling is the default. With `--schedule fifo`, measurements are only
+recorded. On Linux,
 fifo's memory admission now reads running tests' memory from `/proc`, where it
 used to fall back to whole-host memory and a fixed 2 GB per test, so containers
 may admit more tests than before.
@@ -240,6 +249,12 @@ and memory are measured or overridden, and after any test finishes, a worker
 requests its next test at once instead of waiting for the scheduler tick; after
 starting an unknown-cost test it waits a full tick, even if another test
 finishes meanwhile, so that test's usage shows first.
+`--cpu-limit 6` sets a distributed worker’s predicted CPU budget to six cores,
+capped by its detected available cores. It does not impose a container CPU quota.
+For example, twelve tests predicted to use 0.5 cores each fit this CPU budget,
+provided the worker’s `--workers` cap permits twelve and memory/live load allow it.
+The server’s CPU limit is the ceiling for an orchestrator’s CPU request.
+An idle worker still accepts one oversized test so it can make progress.
 The `--workers` cap still applies, and so does `--target-load`: machine CPU at
 or above `min(--target-load, 0.95)` holds new tests. Hold counts in
 `run-metrics.json` include tests a worker was refused because they did not fit
@@ -256,6 +271,8 @@ yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 Each of a test's duration, cores and memory comes from, first match wins: an
 override, this run's measurement, the committed `test-costs.json`, the average
 of finished tests from the same file, then one default (30 s, 1 core, 2 GB).
+The committed costs and overrides are orchestrator-only metadata and are excluded
+from worker source bundles, so updating them does not trigger worker preparation.
 `.cache/test-costs.json` is only a record of the latest run; scheduling never
 reads it. A measurement without cores or memory (from an older worker) leaves
 those to the later sources. Every attempt whose result the run keeps is measured

@@ -997,6 +997,7 @@ async function main(options = {}) {
                         slotCount: profile.slots,
                         concurrencyCap: profile.workers,
                         schedulerTickMs: profile.schedulerTickMs,
+                        cpuLimit: profile.cpu,
                         targetLoad: profile.targetLoad,
                         memBoundGb: profile.memoryBytes / 1024 ** 3,
                         maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,

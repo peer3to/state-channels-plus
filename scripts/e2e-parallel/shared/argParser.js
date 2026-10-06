@@ -27,18 +27,18 @@ Options:
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
-      --schedule fifo|cost      Task selection policy (default fifo)
+      --schedule fifo|cost      Task selection policy (default cost)
       --cost-cache <path>       Task cost cache path (default .cache/test-costs.json)
       --cost-cache-read-only    Read task costs but never write them (CI)
       --keep-infra-logs          Keep infrastructure logs even when all tests pass
       --source-tests             Run the TypeScript sources under ts-node instead of the compiled dist tree
-      --skip-build               Reuse the existing dist tree instead of rebuilding it first
+      --skip-build               Reuse existing contracts and dist tree without rebuilding
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes
-      --cpu-limit <count>        Distributed worker CPU request (advisory; no container quota)
+      --cpu-limit <count>        Distributed cost CPU budget in cores (no container quota)
       --disk-limit-bytes <bytes> Distributed environment disk request
       --pids-limit <count>       Distributed environment process limit
       --sdk-thread               Run the SDK host in a worker thread
@@ -74,7 +74,7 @@ function parseCliArgs(argv) {
         logDir: DEFAULT_LOG_DIR,
         costCachePath: DEFAULT_COST_CACHE_PATH,
         costCacheReadOnly: false,
-        schedule: "fifo",
+        schedule: "cost",
         // Explicit --logDir → that exact dir is used (and cleared);
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
         logDirProvided: false,

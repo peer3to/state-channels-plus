@@ -287,12 +287,14 @@ class ResourceGate {
         infraPids,
         targetLoad,
         memBoundGb,
+        cpuLimit,
         sampleOptions
     }) {
         this.testPids = testPids;
         this.infraPids = infraPids;
         this.targetLoad = targetLoad;
         this.memBoundGb = memBoundGb;
+        this.cpuLimit = cpuLimit;
         this.sampleOptions = sampleOptions;
         this.lastCpuSnapshot = readCpuSnapshot(sampleOptions);
         this.cpuSource = this.lastCpuSnapshot.source;
@@ -441,7 +443,10 @@ class ResourceGate {
     /** What a cost worker can still start beside `runningCost`. */
     costBudget(runningCost) {
         return {
-            cores: this.cpuCores * COST_CPU_BUDGET - runningCost.cores,
+            cores:
+                Math.min(this.cpuCores, this.cpuLimit ?? this.cpuCores) *
+                    COST_CPU_BUDGET -
+                runningCost.cores,
             rssGb:
                 this.memBoundGb - Math.max(this.occupiedGb, runningCost.rssGb)
         };

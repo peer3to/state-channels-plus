@@ -12,7 +12,10 @@ const EXCLUDED_SOURCE_ROOTS = new Set([
     "artifacts",
     "diagrams",
     "docs",
-    "internal_docs"
+    "internal_docs",
+    // Scheduling metadata is consumed by the orchestrator, not the worker build.
+    "test-costs.json",
+    "test-costs.overrides.json"
 ]);
 
 function readPackageJson(root) {

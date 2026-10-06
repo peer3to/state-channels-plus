@@ -33,6 +33,7 @@ const {
 } = require("./e2e-parallel/shared/browserTaskDiscovery");
 const {
     TASK_RUNNERS,
+    tierBuildFailure,
     browserTypecheckFailure,
     browserChromiumFailure,
     countTasksForRunner,
@@ -222,6 +223,41 @@ async function main(options = {}) {
     }
     // A broken overrides file fails the run before anything is built.
     readOverrides(path.resolve(process.cwd(), DEFAULT_COST_OVERRIDES_PATH));
+
+    // Contracts supply the types read by the local build, including distributed discovery.
+    const manifestPath = path.join(process.cwd(), "package.json");
+    const scripts = fs.existsSync(manifestPath)
+        ? (JSON.parse(fs.readFileSync(manifestPath, "utf8")).scripts ?? {})
+        : {};
+    if (
+        scripts["generate-enums"] &&
+        scripts["generate-artifacts"] &&
+        !cli.skipBuild &&
+        !cli.dryRun
+    ) {
+        for (const args of [
+            ["hardhat", "compile"],
+            // Hardhat's compile task already updates TypeChain for changed contracts.
+            // Recover a missing generated tree even when Solidity's cache is warm.
+            ...(!fs.existsSync(
+                path.join(process.cwd(), "typechain-types", "index.ts")
+            )
+                ? [["hardhat", "typechain"]]
+                : []),
+            ["generate-enums"],
+            ["generate-artifacts"]
+        ]) {
+            const failure = tierBuildFailure("yarn", args, {
+                missing:
+                    "Install the project dependencies before running tests.",
+                failed: "Fix contract compilation before building the TypeScript test tree."
+            });
+            if (failure) {
+                console.error(failure);
+                process.exit(1);
+            }
+        }
+    }
 
     // ---- discover tasks ----
     // The Mocha, Foundry and browser tiers are discovered independently and

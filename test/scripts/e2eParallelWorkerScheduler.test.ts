@@ -77,9 +77,9 @@ function steadyClock() {
 }
 
 describe("distributed worker scheduler", function () {
-    it("accepts default FIFO and rejects invalid scheduling flags", function () {
+    it("accepts default cost scheduling and rejects invalid scheduling flags", function () {
         expect(parseCliArgs(["node", "runner"])).to.include({
-            schedule: "fifo",
+            schedule: "cost",
             costCachePath: ".cache/test-costs.json",
             costCacheReadOnly: false
         });
@@ -542,6 +542,37 @@ describe("distributed worker scheduler", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("uses the configured CPU budget without changing detected capacity", function () {
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            cpuLimit: 6,
+            sampleOptions: { platform: "darwin", cpuCount: () => 8 }
+        });
+        expect(resources.stats().cpuCores).to.equal(8);
+        expect(resources.costBudget({ cores: 5.5, rssGb: 0 }).cores).to.equal(
+            0.5
+        );
+        expect(resources.costBudget({ cores: 6, rssGb: 0 }).cores).to.equal(0);
+        expect(resources.costBudget({ cores: 7, rssGb: 0 }).cores).to.equal(-1);
+    });
+
+    it("caps a configured CPU budget at the available cores", function () {
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            cpuLimit: 6,
+            sampleOptions: { platform: "darwin", cpuCount: () => 4 }
+        });
+        expect(resources.costBudget({ cores: 1.5, rssGb: 0 }).cores).to.equal(
+            2.5
+        );
     });
 
     it("meters overlapping process-table scans once and counts a failed one", async function () {

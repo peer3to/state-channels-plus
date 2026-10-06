@@ -106,7 +106,31 @@ describe("distributed source workspace", function () {
                 "module.exports = {};\n"
             );
 
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                "{}"
+            );
             const manifest = await buildRuntimeBundle(project, transfer);
+            expect(
+                manifest.files.some((entry: { path: string }) =>
+                    /test-costs(?:\.overrides)?\.json$/.test(entry.path)
+                )
+            ).to.equal(false);
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{"measured":{}}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                '{"adjusted":{}}'
+            );
+            const costsOnly = await buildRuntimeManifest(project);
+            expect(costsOnly.sourceDigest).to.equal(manifest.sourceDigest);
+
             expect(manifest.version).to.equal(3);
             expect(manifest.rootProjectPath).to.equal("project");
             expect(manifest.runnerEntry).to.equal(

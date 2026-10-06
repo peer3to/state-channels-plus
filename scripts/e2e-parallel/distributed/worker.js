@@ -200,6 +200,7 @@ async function start(config) {
                 ...infra.nodes.map((node) => node.proc.pid),
                 ...infra.discoveries.map((entry) => entry.child.pid)
             ].filter(Boolean),
+        cpuLimit: config.cpuLimit,
         targetLoad: config.targetLoad,
         memBoundGb: config.memBoundGb
     });
