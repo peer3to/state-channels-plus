@@ -47,6 +47,9 @@ and sends a request again on the next socket when the socket drops before answer
    requests still waiting for a reconnect.
 8. **One owner of socket subscriptions:** [NodeSocketSubscriptions](../../../../../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts#L129) subscribes a callback on a node socket, forgets destroyed sockets and unsubscribes the live ones; the block relay and the event listener both use it.
 9. **Quiet when down:** the first failed attempt of an outage warns, later ones at most once a minute.
+10. **No request cache:** the provider is built with ethers' `cacheTimeout` off. ethers otherwise
+    keeps a failed answer for 250 ms and hands it to a repeated request without asking the node, so a
+    retried log window would fail again unread.
 
 ## Inputs, outputs, state, and side effects
 

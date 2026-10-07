@@ -11,6 +11,9 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { Log, Provider } from "ethers";
 
+/** Marks a catch-up read whose socket ended before it answered. */
+const CATCH_UP_ABANDONED = Symbol("catch-up abandoned");
+
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
@@ -90,6 +93,14 @@ class StateChannelEventListener {
                     else listener(log);
                 };
                 let socketLost = false;
+                let abandonCatchUp!: () => void;
+                // settles once the socket ends: a read still waiting for
+                // this node to reconnect is not awaited any longer
+                const abandoned = new Promise<typeof CATCH_UP_ABANDONED>(
+                    (resolve) => {
+                        abandonCatchUp = () => resolve(CATCH_UP_ABANDONED);
+                    }
+                );
                 // Ends the catch-up once it read up to the head or is
                 // abandoned: hands on the held live logs, then releases the
                 // watermark. A second call finds nothing left to do.
@@ -104,6 +115,7 @@ class StateChannelEventListener {
                 // watermark. The node's next socket catches up on its own.
                 const unwatchLoss = node.watchConnectionLoss(() => {
                     socketLost = true;
+                    abandonCatchUp();
                     endCatchUp();
                 });
                 // subscribe first, then read up to the head: a log after the
@@ -115,6 +127,7 @@ class StateChannelEventListener {
                             this.catchUpUntilRead(
                                 node,
                                 () => socketLost || socket.destroyed,
+                                abandoned,
                                 channelId,
                                 subscribedAtBlock,
                                 generation
@@ -159,10 +172,13 @@ class StateChannelEventListener {
      * through the reopened node; after a failed read the remaining windows
      * are read through the runtime's provider, i.e. the first connected
      * node, so one endpoint that keeps failing cannot hold the watermark.
+     * A read in flight when the socket ends is not awaited: it may wait for
+     * the node to reconnect, and the node's next socket catches up itself.
      */
     private async catchUpUntilRead(
         node: RpcNodeProvider,
         hasSocketEnded: () => boolean,
+        abandoned: Promise<typeof CATCH_UP_ABANDONED>,
         channelId: ChannelId,
         subscribedAtBlock: number,
         generation: number
@@ -173,12 +189,17 @@ class StateChannelEventListener {
         for (let failedAttempts = 0; ; failedAttempts++) {
             if (this.disposed || generation !== this.generation) return;
             if (hasSocketEnded()) return;
-            resumeFrom = await this.eventSyncService.catchUpLogs(
-                reader,
-                channelId,
-                subscribedAtBlock,
-                resumeFrom
-            );
+            const read = await Promise.race([
+                this.eventSyncService.catchUpLogs(
+                    reader,
+                    channelId,
+                    subscribedAtBlock,
+                    resumeFrom
+                ),
+                abandoned
+            ]);
+            if (read === CATCH_UP_ABANDONED) return;
+            resumeFrom = read;
             if (resumeFrom === undefined) return;
             reader = this.getProvider();
             await sleep(getReconnectDelayMs(failedAttempts));

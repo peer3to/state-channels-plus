@@ -29,8 +29,9 @@ released can answer, it [holds the watermark](../../../../../src/StateChannelEve
 at the catch-up's first block until the read reaches the head or is abandoned, so a log a recovery
 query completes in a later block cannot move it past unread blocks either. The catch-up is abandoned
 when its socket ends: a [connection-loss watcher](../../../../../src/StateChannelEventListener.ts#L105)
-hands on the held live logs and releases the hold at once, even while the read still waits for the
-node to reconnect, and the node's next socket starts its own catch-up. It is also abandoned when the
+hands on the held live logs and releases the hold at once, and the catch-up stops awaiting a read
+that still waits for the node to reconnect, so it settles at once; the node's next socket starts its
+own catch-up. It is also abandoned when the
 subscription is cleared or replaced, or the listener is disposed; the release runs once per hold. A
 failed catch-up window is retried with the reconnect backoff while the socket stays open and the
 subscription is current. The first read goes through the reopened node; after a failed read the

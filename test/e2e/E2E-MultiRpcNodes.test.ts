@@ -9,6 +9,11 @@ import { AbiCoder, keccak256, toQuantity } from "ethers";
 const LIVE_LOG_SETTLE_MS = 3_000;
 /** Longer than the reconnect backoff's 5 s cap: a retry loop would have read again. */
 const BACKOFF_CAP_WINDOW_MS = 6_000;
+/**
+ * Seconds of chain fallback time for a test that leaves its channel without
+ * a block for longer than the default first-block timeout window.
+ */
+const IDLE_CHANNEL_FALLBACK_TIME = 60;
 
 /**
  * A peer connected to several RPC nodes. Each node is a WebSocket proxy in
@@ -779,7 +784,11 @@ describe("E2E: Multiple RPC nodes", function () {
         const windowBlocks = 10;
         await h.lifecycle.start(3, 0, {
             rpcNodeProxiesByPeer: { [proxied]: 2 },
-            configOverrides: { LOG_QUERY_MAX_BLOCKS: windowBlocks }
+            configOverrides: { LOG_QUERY_MAX_BLOCKS: windowBlocks },
+            // the produced blocks and the backup's reconnect backoff keep the
+            // channel idle past the default first-block timeout, whose
+            // dispute would reject the later top-up
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [first, backup] = h.getRpcNodeProxies(proxied);
         const validation = h.control(h.getPeer(proxied)).validation;

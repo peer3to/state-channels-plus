@@ -35,6 +35,9 @@ open socket and moves to the next one when that node has none or loses it before
    on a destroyed node is rejected too.
 4. **Block events from sockets:** [\_getSubscriber](../../../../../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts#L120)
    relays each node socket's `block` events, each new height once, so transaction waits do not poll.
+5. **No request cache:** the provider is built with ethers' `cacheTimeout` off, like each node, so a
+   retry of a failed read, such as a recovery attempt's log window, is sent to a node again instead of
+   being answered with the failure ethers would otherwise keep for 250 ms.
 
 ## Inputs, outputs, state, and side effects
 

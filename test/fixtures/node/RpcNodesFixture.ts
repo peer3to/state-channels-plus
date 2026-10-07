@@ -33,8 +33,6 @@ import {
 const ABSENCE_WINDOW_MS = 1_000;
 /** Hardhat's local chain id. */
 const HARDHAT_CHAIN_ID = 31337n;
-/** ethers answers a repeated request from its cache for 250 ms. */
-const ETHERS_REQUEST_CACHE_MS = 300;
 /** A second private chain, for a node configured against the wrong chain. */
 const OTHER_CHAIN_ID = 31338;
 
@@ -658,8 +656,6 @@ export async function assertTransactionWaitResolvesAfterReconnect(): Promise<voi
         // two confirmations: only a later block's event can end this wait
         const waited = sent.wait(2);
         await waitFor(async () => (await provider.listenerCount("block")) > 1);
-        // past ethers' request cache, so the wait reads the new height
-        await sleep(ETHERS_REQUEST_CACHE_MS);
 
         // a normal transaction on the private node mines that later block
         const later = await minedReceiptOf(
@@ -969,9 +965,8 @@ export async function assertFailedLogPageAnsweredForRetry(): Promise<void> {
         expect(failure?.failedFrom).to.equal(TEST_LOG_SPAN);
         expect(pages).to.equal(1);
         const readsBeforeRetry = proxy.forwardedLogWindows().length;
-        // past ethers' request cache, which still holds the failed read
-        await sleep(ETHERS_REQUEST_CACHE_MS);
 
+        // at once: no request cache answers the retry with the failed read
         const retried = await readLogPages(
             rpcNode,
             {},

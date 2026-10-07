@@ -195,7 +195,13 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
         logger: Logger,
         expectedChain: ExpectedChain = {}
     ) {
-        super(undefined, { staticNetwork: true, batchMaxCount: 1 });
+        // cacheTimeout -1: ethers keeps a failed answer for 250 ms and would
+        // hand it to a retry of the same request without asking the node
+        super(undefined, {
+            staticNetwork: true,
+            batchMaxCount: 1,
+            cacheTimeout: -1
+        });
         this.url = url;
         this.logger = logger.child({ component: "RpcNode" });
         this.expectedChain = expectedChain;

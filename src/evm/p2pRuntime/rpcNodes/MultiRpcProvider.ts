@@ -81,7 +81,13 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
 
     constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
-        super(undefined, { staticNetwork: true, batchMaxCount: 1 });
+        // cacheTimeout -1: ethers keeps a failed answer for 250 ms and would
+        // hand it to a retry of the same request without asking a node
+        super(undefined, {
+            staticNetwork: true,
+            batchMaxCount: 1,
+            cacheTimeout: -1
+        });
         this.nodes = nodes;
         this.logger = logger.child({ component: "RpcNodes" });
         for (const node of nodes) {
