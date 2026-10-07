@@ -80,6 +80,17 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
 };
 
+/**
+ * Rejects a log window size that is not a positive integer: windows of
+ * zero, fractional or negative blocks never cover a range.
+ */
+export function assertLogQueryMaxBlocks(maxBlocks: number): void {
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
+        throw new Error(
+            `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
+        );
+}
+
 export function isNodeRuntime() {
     return (
         typeof process !== "undefined" &&

@@ -23,7 +23,7 @@ import {
     Type
 } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
-import { config } from "@/utils/config";
+import { assertLogQueryMaxBlocks, config } from "@/utils/config";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -79,17 +79,6 @@ const STATE_CHANNEL_MANAGER_EVENT_NAME_SET =
 const LOG_RECOVERY_ATTEMPTS = 3;
 // one span already covers the whole window the calldata can be in
 const CALLDATA_RECOVERY_ATTEMPTS = 1;
-
-/**
- * Rejects a log window size that is not a positive integer: windows of
- * zero, fractional or negative blocks never cover a range.
- */
-export function assertLogQueryMaxBlocks(maxBlocks: number): void {
-    if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
-        throw new Error(
-            `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
-        );
-}
 
 /** The window whose eth_getLogs read failed, and why. */
 export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
@@ -239,15 +228,7 @@ export default class EventSyncService {
         );
 
         const channelKey = toChannelKey(scheduledChannelId);
-        const states = this.getBlockStates(channelKey);
-        const state = states.get(log.blockNumber) ?? {
-            pending: 0,
-            complete: false,
-            failed: false
-        };
-        state.pending += 1;
-        state.complete = false;
-        states.set(log.blockNumber, state);
+        const state = this.acquireBlock(channelKey, log.blockNumber);
 
         // A log executes atomically: it either completes or throws. A throw is
         // fatal - the rejected promise stays cached so the log is never
@@ -261,27 +242,26 @@ export default class EventSyncService {
                 });
                 throw error;
             })
-            .finally(() => {
-                state.pending -= 1;
-                state.complete = state.pending === 0 && !state.failed;
-                this.publishCompletedBlocks(scheduledChannelId, channelKey);
-            });
+            .finally(() =>
+                this.releaseBlock(scheduledChannelId, channelKey, state)
+            );
         this.eventPromises.set(eventKey, promise);
         this.eventBlockNumbers.set(eventKey, log.blockNumber);
         return promise;
     }
 
     /**
-     * Re-read this channel's subscribed logs from one RPC node whose socket
-     * reopened, from the completed-block watermark (or `fromBlock` before
-     * one exists) up to that node's head, page by page, and schedule each
-     * page's logs before reading the next. scheduleStreamedLog deduplicates
-     * the logs another stream delivered. Never throws: answers `undefined`
-     * once caught up, or the block a retry resumes from (`resumeFrom` of the
-     * next call) when a read failed.
+     * Re-read this channel's subscribed logs through `reader` (the RPC node
+     * whose socket reopened, or the runtime's provider once a read through
+     * that node failed), from the completed-block watermark (or `fromBlock`
+     * before one exists) up to `reader`'s head, page by page, and schedule
+     * each page's logs before reading the next. scheduleStreamedLog
+     * deduplicates the logs another stream delivered. Never throws: answers
+     * `undefined` once caught up, or the block a retry resumes from
+     * (`resumeFrom` of the next call) when a read failed.
      */
     async catchUpLogs(
-        node: Provider,
+        reader: Provider,
         channelId: ChannelId,
         fromBlock: BlockNumber,
         resumeFrom?: BlockNumber
@@ -291,7 +271,7 @@ export default class EventSyncService {
         const catchUpFrom = resumeFrom ?? watermark ?? fromBlock;
         let toBlock: BlockNumber;
         try {
-            toBlock = await node.getBlockNumber();
+            toBlock = await reader.getBlockNumber();
         } catch (error) {
             this.logger.warn("Contract event catch-up read failed", {
                 channelId,
@@ -302,7 +282,7 @@ export default class EventSyncService {
         }
         if (toBlock < catchUpFrom) return undefined;
         const failure = await readLogPages(
-            node,
+            reader,
             this.getSubscriptionFilter(channelId),
             catchUpFrom,
             toBlock,
@@ -346,22 +326,12 @@ export default class EventSyncService {
         const heldAt =
             this.storage.eventSync.getLatestProcessedBlock(channelId) ??
             fromBlock;
-        const states = this.getBlockStates(channelKey);
-        const state = states.get(heldAt) ?? {
-            pending: 0,
-            complete: false,
-            failed: false
-        };
-        state.pending += 1;
-        state.complete = false;
-        states.set(heldAt, state);
+        const state = this.acquireBlock(channelKey, heldAt);
         let released = false;
         return () => {
             if (released) return;
             released = true;
-            state.pending -= 1;
-            state.complete = state.pending === 0 && !state.failed;
-            this.publishCompletedBlocks(channelId, channelKey);
+            this.releaseBlock(channelId, channelKey, state);
         };
     }
 
@@ -997,6 +967,40 @@ export default class EventSyncService {
             default:
                 this.assertNeverEventName(eventName);
         }
+    }
+
+    /**
+     * Count one more pending piece of work in `blockNumber`, so the block
+     * and every later one stay unpublished until releaseBlock counts it done.
+     */
+    private acquireBlock(
+        channelKey: ChannelKey,
+        blockNumber: BlockNumber
+    ): BlockState {
+        const states = this.getBlockStates(channelKey);
+        const state = states.get(blockNumber) ?? {
+            pending: 0,
+            complete: false,
+            failed: false
+        };
+        state.pending += 1;
+        state.complete = false;
+        states.set(blockNumber, state);
+        return state;
+    }
+
+    /**
+     * Count one pending piece of work of `state` done, and publish the
+     * blocks that completed with it.
+     */
+    private releaseBlock(
+        channelId: ChannelId,
+        channelKey: ChannelKey,
+        state: BlockState
+    ): void {
+        state.pending -= 1;
+        state.complete = state.pending === 0 && !state.failed;
+        this.publishCompletedBlocks(channelId, channelKey);
     }
 
     private publishCompletedBlocks(

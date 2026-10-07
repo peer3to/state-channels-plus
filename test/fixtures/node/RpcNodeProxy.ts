@@ -53,6 +53,17 @@ function logBounds(params: unknown): [number, number] | undefined {
     return [Number(filter.fromBlock), Number(filter.toBlock)];
 }
 
+/** The [fromBlock, toBlock] of each eth_getLogs among `requests`, in order. */
+function toLogWindows(requests: ForwardedRequest[]): [number, number][] {
+    return requests
+        .filter((request) => request.method === "eth_getLogs")
+        .map((request) => {
+            const bounds = logBounds(request.params);
+            if (!bounds) throw new Error("eth_getLogs without block bounds");
+            return bounds;
+        });
+}
+
 /** Blocks an eth_getLogs request spans; 0 without explicit bounds. */
 function logSpan(params: unknown): number {
     const bounds = logBounds(params);
@@ -86,14 +97,20 @@ export class RpcNodeProxy {
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
     /** Method -> how many of its next requests pass before one fails. */
     private readonly delayedFailures = new Map<JsonRpcMethod, number>();
-    /** Requests this proxy answered with an error, by method. */
-    private readonly failedMethods: JsonRpcMethod[] = [];
+    /** Requests this proxy answered with an error, in order. */
+    private readonly failedRequests: ForwardedRequest[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
     private maxLogSpan?: number;
-    /** Methods whose requests wait here until their hold is released. */
-    private readonly heldMethods = new Map<JsonRpcMethod, (() => void)[]>();
+    /**
+     * Method -> its requests waiting here until their hold is released, and
+     * how many more of its requests the hold takes.
+     */
+    private readonly heldMethods = new Map<
+        JsonRpcMethod,
+        { forwards: (() => void)[]; remaining: number }
+    >();
     private isCut = false;
     private isBlackholed = false;
 
@@ -152,7 +169,13 @@ export class RpcNodeProxy {
 
     /** How many `method` requests this proxy answered with an error. */
     failedCount(method: JsonRpcMethod): number {
-        return this.failedMethods.filter((failed) => failed === method).length;
+        return this.failedRequests.filter((failed) => failed.method === method)
+            .length;
+    }
+
+    /** The [fromBlock, toBlock] of every eth_getLogs this proxy failed, in order. */
+    failedLogWindows(): [number, number][] {
+        return toLogWindows(this.failedRequests);
     }
 
     /** Answer every `method` request with an error until {@link stopFailingRequests}. */
@@ -176,14 +199,7 @@ export class RpcNodeProxy {
 
     /** The [fromBlock, toBlock] of every eth_getLogs request, in order. */
     forwardedLogWindows(): [number, number][] {
-        return this.forwardedRequests
-            .filter((request) => request.method === "eth_getLogs")
-            .map((request) => {
-                const bounds = logBounds(request.params);
-                if (!bounds)
-                    throw new Error("eth_getLogs without block bounds");
-                return bounds;
-            });
+        return toLogWindows(this.forwardedRequests);
     }
 
     /** How many `method` requests clients sent through this proxy. */
@@ -192,15 +208,19 @@ export class RpcNodeProxy {
     }
 
     /**
-     * Keep `method`'s requests at the proxy until the returned release runs,
-     * then forward them.
+     * Keep the next `count` of `method`'s requests (every one when omitted)
+     * at the proxy until the returned release runs, then forward them.
      */
-    holdRequests(method: JsonRpcMethod): () => void {
-        this.heldMethods.set(method, []);
+    holdRequests(
+        method: JsonRpcMethod,
+        count = Number.POSITIVE_INFINITY
+    ): () => void {
+        const hold = { forwards: [] as (() => void)[], remaining: count };
+        this.heldMethods.set(method, hold);
         return () => {
-            const held = this.heldMethods.get(method) ?? [];
-            this.heldMethods.delete(method);
-            for (const forward of held) forward();
+            if (this.heldMethods.get(method) === hold)
+                this.heldMethods.delete(method);
+            for (const forward of hold.forwards.splice(0)) forward();
         };
     }
 
@@ -267,7 +287,7 @@ export class RpcNodeProxy {
             if (method && id !== undefined && failures) {
                 if (failures === 1) this.failingMethods.delete(method);
                 else this.failingMethods.set(method, failures - 1);
-                this.failedMethods.push(method);
+                this.failedRequests.push({ method, params });
                 reply({ error: { code: -32005, message: "request failed" } });
                 return;
             }
@@ -296,9 +316,11 @@ export class RpcNodeProxy {
                 this.swallowedReplyMethods.has(method)
             )
                 this.swallowedReplyIds.add(id);
-            const held = method ? this.heldMethods.get(method) : undefined;
-            if (held) held.push(() => forward(data, isBinary));
-            else forward(data, isBinary);
+            const hold = method ? this.heldMethods.get(method) : undefined;
+            if (hold && hold.remaining > 0) {
+                hold.remaining -= 1;
+                hold.forwards.push(() => forward(data, isBinary));
+            } else forward(data, isBinary);
         });
         upstream.on("open", () => {
             for (const frame of pending.splice(0))

@@ -28,7 +28,8 @@ The runtime reaches the chain through the ordered endpoint list `PROVIDER_URLS`,
   node drops; it warns once while every node is down and relays block events from the node sockets.
 - **Listener** — [StateChannelEventListener](../../source/src/StateChannelEventListener.ts.md) subscribes
   the channel's manager events on every node socket. A socket opened after the subscription holds its
-  live logs until its catch-up has scheduled what it read, and a failed catch-up is retried.
+  live logs until its catch-up has scheduled what it read. A failed catch-up is retried through the
+  first connected node, and a catch-up whose socket ends is abandoned at once.
 - **Sync** — [EventSyncService](../../source/src/stateManager/eventSync/EventSyncService.ts.md) pages the
   catch-up from the completed-block watermark to the node's head, deduplicates logs by block-scoped
   identity, ignores removed logs and drops streamed logs below the watermark.
@@ -40,7 +41,9 @@ derives the wallet, opens the nodes and returns once one node connected.
 
 - Every listed endpoint serves one chain and is trusted; events are not checked across endpoints.
 - `LOG_QUERY_MAX_BLOCKS` (default 1000) must be at or below every endpoint's own `eth_getLogs` range
-  limit; with a larger value every window above the limit fails and the catch-up keeps retrying.
+  limit. A reopened endpoint whose windows fail hands the rest of its catch-up to the first connected
+  endpoint; when that endpoint fails the windows too, the catch-up keeps retrying through it and the
+  watermark stays held until the read succeeds or the reopened socket ends.
 
 ## System design
 
@@ -55,7 +58,11 @@ derives the wallet, opens the nodes and returns once one node connected.
 4. **Observation.** Every node socket carries the channel subscription. A reopened socket is subscribed
    first, its logs are held, the watermark is held at the catch-up's first block, its catch-up reads windows of at most
    `LOG_QUERY_MAX_BLOCKS` blocks in ascending order and
-   schedules each before the next, then the held logs are released.
+   schedules each before the next, then the held logs are released and the watermark hold ends. The
+   first read goes through the reopened node; after a failed read the remaining windows are read
+   through the provider, i.e. the first connected node, retried with the reconnect backoff. The
+   socket ending, a cleared or replaced subscription, or disposal abandons the catch-up: the held logs
+   are released and the hold ends at once, and the node's next socket starts a new catch-up.
 5. **Ownership.** The host disposes the provider, or, when the process-wide Clock still reads through
    it, stops its reconnects and releases it to the Clock, which destroys it once replaced.
 
@@ -66,20 +73,23 @@ The listener, provider, node and sync interaction crosses `src/StateChannelEvent
 specification subject's test matrix and exercised end to end against a WebSocket proxy in front of the
 test node: a cut and restored only endpoint, a newer event during the catch-up read, a failed catch-up
 read, two endpoints with one cut, a backup that connects after startup, the restored primary catching
-up over events the backup delivered, clear and select of the channel listener, the retry's exits, a
-subscription made before the channel opened, and a catch-up node whose head is behind or at the
-watermark, a recovery that completes a later block during a catch-up read, and windows of
-`LOG_QUERY_MAX_BLOCKS` against an endpoint with a smaller range limit. Exact evidence is mapped in the verification reports.
+up over events the backup delivered, clear and select of the channel listener, the retry's exits
+(socket drop, cleared listener, disposal) with the watermark advancing afterwards, a subscription made
+before the channel opened, a catch-up node whose head is behind or at the watermark, a real recovery
+query that completes later blocks during a catch-up read, windows of `LOG_QUERY_MAX_BLOCKS` against
+an endpoint with a smaller range limit, a backup that drops for good during its catch-up read, two
+nodes catching up at once, and a connected backup whose failed window hands the rest of its
+catch-up to the first node. Exact evidence is mapped in the verification reports.
 
 ## Source inventory
 
-| Source                                                                             | Report                                                                                    | Role                                                                                              |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [RuntimeChainContext.ts](../../../../src/evm/p2pRuntime/RuntimeChainContext.ts)    | [RuntimeChainContext.ts.md](../../source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)    | Endpoint list, window size and wallet validation; startup on the first connected node.            |
-| [RpcNodeProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts)   | [RpcNodeProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)   | One endpoint's socket, liveness, reconnect, chain id and socket hand-over.                        |
-| [MultiRpcProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts) | [MultiRpcProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) | Request routing and failover, outage warning, block relay.                                        |
-| [StateChannelEventListener.ts](../../../../src/StateChannelEventListener.ts)       | [StateChannelEventListener.ts.md](../../source/src/StateChannelEventListener.ts.md)       | Per-node subscriptions, held reopened streams, catch-up retries and the watermark hold.           |
-| [EventSyncService.ts](../../../../src/stateManager/eventSync/EventSyncService.ts)  | [EventSyncService.ts.md](../../source/src/stateManager/eventSync/EventSyncService.ts.md)  | Paged log reads, catch-up, block-scoped dedup, removed and below-watermark drops, watermark hold. |
+| Source                                                                             | Report                                                                                    | Role                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [RuntimeChainContext.ts](../../../../src/evm/p2pRuntime/RuntimeChainContext.ts)    | [RuntimeChainContext.ts.md](../../source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)    | Endpoint list, window size and wallet validation; startup on the first connected node.                                                           |
+| [RpcNodeProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts)   | [RpcNodeProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)   | One endpoint's socket, liveness, reconnect, chain id and socket hand-over.                                                                       |
+| [MultiRpcProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts) | [MultiRpcProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) | Request routing and failover, outage warning, block relay.                                                                                       |
+| [StateChannelEventListener.ts](../../../../src/StateChannelEventListener.ts)       | [StateChannelEventListener.ts.md](../../source/src/StateChannelEventListener.ts.md)       | Per-node subscriptions, held reopened streams, catch-up retries through the first connected node, abandon on socket loss and the watermark hold. |
+| [EventSyncService.ts](../../../../src/stateManager/eventSync/EventSyncService.ts)  | [EventSyncService.ts.md](../../source/src/stateManager/eventSync/EventSyncService.ts.md)  | Paged log reads, catch-up, block-scoped dedup, removed and below-watermark drops, watermark hold.                                                |
 
 ## Conformance traceability
 

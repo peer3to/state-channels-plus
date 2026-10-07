@@ -74,18 +74,6 @@ export type InboundLogRedelivery =
     // the re-mined log, streamed once its block is the completed watermark
     | "reorgedAtWatermark";
 
-/** A chain log's fields, as they cross the control RPC. */
-export type ChainLogFields = {
-    address: string;
-    topics: string[];
-    data: string;
-    blockNumber: number;
-    blockHash: string;
-    transactionHash: string;
-    index: number;
-    transactionIndex: number;
-};
-
 /** One log delivered again through the scheduler, and what it caused. */
 export type StreamedLogDeliveryProbe = {
     handlerCalls: number;
@@ -505,28 +493,14 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Schedule `fields`' log the way a recovery query does, wait for it to
-     * complete, and answer the channel's watermark afterwards.
-     */
-    public async scheduleLogAsRecovery(
-        fields: ChainLogFields
-    ): Promise<number | null> {
-        const sm = this.sm;
-        const provider = sm.stateChannelManagerContract.runner?.provider;
-        if (!provider) throw new Error("Expected the runtime chain provider");
-        const log = new Log({ ...fields, removed: false }, provider);
-        await sm.eventSyncService.scheduleLog(log, sm.channelId);
-        return this.getEventWatermark();
-    }
-
-    /**
      * Hold the channel's completed-block watermark the way a reconnect
-     * catch-up does, and answer the hold's id for releaseEventWatermark.
+     * catch-up does, at `fromBlock` while no watermark exists, and answer
+     * the hold's id for releaseEventWatermark.
      */
-    public holdEventWatermark(): number {
+    public holdEventWatermark(fromBlock = 0): number {
         const sm = this.sm;
         this.watermarkReleases.push(
-            sm.eventSyncService.holdWatermark(sm.channelId, 0)
+            sm.eventSyncService.holdWatermark(sm.channelId, fromBlock)
         );
         return this.watermarkReleases.length - 1;
     }

@@ -2,8 +2,7 @@ import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
-import { assertLogQueryMaxBlocks } from "@/stateManager/eventSync/EventSyncService";
-import type { Config } from "@/utils/config";
+import { assertLogQueryMaxBlocks, type Config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { Signer, Wallet } from "ethers";

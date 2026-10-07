@@ -9,7 +9,7 @@ import { DetachedPromises, Logger, sleep } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import { Log, WebSocketProvider } from "ethers";
+import { Log, Provider } from "ethers";
 
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
@@ -89,6 +89,23 @@ class StateChannelEventListener {
                     if (catchingUp) held.push(log);
                     else listener(log);
                 };
+                let socketLost = false;
+                // Ends the catch-up once it read up to the head or is
+                // abandoned: hands on the held live logs, then releases the
+                // watermark. A second call finds nothing left to do.
+                const endCatchUp = () => {
+                    unwatchLoss();
+                    catchingUp = false;
+                    for (const log of held.splice(0)) listener(log);
+                    releaseWatermark();
+                };
+                // The socket ending abandons its catch-up at once: a read
+                // waiting for this node to reconnect must not hold the
+                // watermark. The node's next socket catches up on its own.
+                const unwatchLoss = node.watchConnectionLoss(() => {
+                    socketLost = true;
+                    endCatchUp();
+                });
                 // subscribe first, then read up to the head: a log after the
                 // read arrives on the new subscription
                 DetachedPromises.collect(
@@ -97,17 +114,13 @@ class StateChannelEventListener {
                         .then(() =>
                             this.catchUpUntilRead(
                                 node,
-                                socket,
+                                () => socketLost || socket.destroyed,
                                 channelId,
                                 subscribedAtBlock,
                                 generation
                             )
                         )
-                        .finally(() => {
-                            catchingUp = false;
-                            for (const log of held.splice(0)) listener(log);
-                            releaseWatermark();
-                        })
+                        .finally(endCatchUp)
                 );
             })
         );
@@ -142,27 +155,32 @@ class StateChannelEventListener {
     /**
      * Run the catch-up on a reopened socket until it read up to the head,
      * retrying a failed window with the reconnect backoff while the socket
-     * stays open and the subscription is current.
+     * stays open and the subscription is current. The first read goes
+     * through the reopened node; after a failed read the remaining windows
+     * are read through the runtime's provider, i.e. the first connected
+     * node, so one endpoint that keeps failing cannot hold the watermark.
      */
     private async catchUpUntilRead(
         node: RpcNodeProvider,
-        socket: WebSocketProvider,
+        hasSocketEnded: () => boolean,
         channelId: ChannelId,
         subscribedAtBlock: number,
         generation: number
     ): Promise<void> {
         // a retry reads again only from the window that failed
         let resumeFrom: number | undefined;
+        let reader: Provider = node;
         for (let failedAttempts = 0; ; failedAttempts++) {
             if (this.disposed || generation !== this.generation) return;
-            if (socket.destroyed) return;
+            if (hasSocketEnded()) return;
             resumeFrom = await this.eventSyncService.catchUpLogs(
-                node,
+                reader,
                 channelId,
                 subscribedAtBlock,
                 resumeFrom
             );
             if (resumeFrom === undefined) return;
+            reader = this.getProvider();
             await sleep(getReconnectDelayMs(failedAttempts));
         }
     }

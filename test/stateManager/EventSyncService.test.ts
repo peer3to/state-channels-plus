@@ -7,7 +7,7 @@ import { assertListenerStopWindow } from "@test/fixtures/EventListenerStopFixtur
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { hexlify, zeroPadValue } from "ethers";
+import { AbiCoder, hexlify, keccak256, zeroPadValue } from "ethers";
 
 // mirrors LOG_RECOVERY_ATTEMPTS in EventSyncService
 const LOG_RECOVERY_ATTEMPTS = 3;
@@ -379,10 +379,31 @@ describe("EventSyncService", function () {
                 .dispute.recoverCommittedDisputes(forkId)
                 .request();
 
-            expect(proxy.failedCount("eth_getLogs")).to.equal(1);
+            const failedWindows = proxy.failedLogWindows();
+            expect(failedWindows.length).to.equal(1);
+            const [[failedFrom]] = failedWindows;
+            const committedLogs = [
+                ...(await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommitted(h.channelId)
+                )),
+                ...(await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommittedWithAuditingData(
+                        h.channelId
+                    )
+                ))
+            ];
+            // premise - a dispute commit lies in or after the failed window,
+            // so recovering it needed a later attempt
             expect(
-                proxy.forwardedLogWindows().length - windowsBefore
-            ).to.be.at.least(3);
+                Math.max(...committedLogs.map((log) => log.blockNumber))
+            ).to.be.at.least(failedFrom);
+            // a later attempt read the failed window again
+            expect(
+                proxy
+                    .forwardedLogWindows()
+                    .slice(windowsBefore)
+                    .filter(([fromBlock]) => fromBlock === failedFrom).length
+            ).to.be.at.least(2);
             if (recoveredCount === null)
                 throw new Error("Expected the window to be recovered");
             expect(recoveredCount).to.be.greaterThan(0);
@@ -586,6 +607,54 @@ describe("EventSyncService", function () {
             expect(
                 await validation.releaseEventWatermark(secondHold).request()
             ).to.equal(topUpLog.blockNumber);
+        });
+
+        it("holds at the given start block before any block completed, and publishes the channel's first block on release", async function () {
+            const h = TestSession.getHarness();
+            const label = "event-sync-hold-before-watermark";
+            const channelId = keccak256(
+                AbiCoder.defaultAbiCoder().encode(["string"], [label])
+            );
+            const observer = 2;
+            await h.setup(3, { autoConnect: false, channelId: label });
+            await h.setChannelId(channelId);
+            const validation = h.control(h.getPeer(observer)).validation;
+            // premise - no block of the channel completed yet
+            expect(await validation.getEventWatermark().request()).to.equal(
+                null
+            );
+            const startBlock = await h.provider.getBlockNumber();
+            const holdId = await validation
+                .holdEventWatermark(startBlock)
+                .request();
+            const openedBefore = h.event.getEventCallCount(
+                observer,
+                "onChannelOpened"
+            );
+
+            await h.lifecycle.openChannelForParticipants([0, 1], {
+                observePeerIndices: [0, 1]
+            });
+            await waitFor(
+                () =>
+                    h.event.getEventCallCount(observer, "onChannelOpened") >
+                    openedBefore
+            );
+            await h.event.settleContractEvents(observer);
+            const [openedLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.ChannelOpened(channelId)
+                )
+            ).slice(-1);
+
+            // premise - the opening completed a block after the hold's start
+            expect(openedLog.blockNumber).to.be.greaterThan(startBlock);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                null
+            );
+            expect(
+                await validation.releaseEventWatermark(holdId).request()
+            ).to.equal(openedLog.blockNumber);
         });
     });
 

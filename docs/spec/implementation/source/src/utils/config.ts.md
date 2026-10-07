@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debug gates). `PROVIDER_URLS` lists the RPC endpoints in priority order; unset or empty means the single `PROVIDER_URL` ([RuntimeChainContext](../evm/p2pRuntime/RuntimeChainContext.ts.md)). `LOG_QUERY_MAX_BLOCKS` (default 1000) is the most blocks one `eth_getLogs` read spans; event catch-up and recovery read longer ranges in windows of that size ([EventSyncService](../stateManager/eventSync/EventSyncService.ts.md)).
+Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debug gates). `PROVIDER_URLS` lists the RPC endpoints in priority order; unset or empty means the single `PROVIDER_URL` ([RuntimeChainContext](../evm/p2pRuntime/RuntimeChainContext.ts.md)). `LOG_QUERY_MAX_BLOCKS` (default 1000) is the most blocks one `eth_getLogs` read spans; event catch-up and recovery read longer ranges in windows of that size ([EventSyncService](../stateManager/eventSync/EventSyncService.ts.md)). [assertLogQueryMaxBlocks](../../../../../../src/utils/config.ts#L87) rejects a window size that is not a positive integer; startup ([RuntimeChainContext](../evm/p2pRuntime/RuntimeChainContext.ts.md)) and every paged log read call it, so neither imports the event sync for the check.
 
 ## Key design decisions
 

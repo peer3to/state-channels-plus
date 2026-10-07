@@ -650,10 +650,17 @@ the manager's events, reconnects with a bounded backoff, and is re-read from the
 watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
 across streams; removed events are ignored and lagging deliveries below the watermark are dropped
 ([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
-head, so no other query can move it past unread blocks, and every log query reads windows of at
-most `LOG_QUERY_MAX_BLOCKS` blocks. Endpoint URLs are logged by scheme and host
-only. Residual risks: a `LOG_QUERY_MAX_BLOCKS` above an endpoint's range limit makes that endpoint's
-catch-up retry without end, holding the watermark and the endpoint's live events meanwhile; answers are not cross-checked between endpoints; a removed event's effects stay
+head or is abandoned, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold released at once, when its
+socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
+replaced, or on disposal. After a failed window the remaining windows are read through the first
+connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Endpoint URLs are
+logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit) and the reopened
+socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
+block states are not pruned, every recovery query reads from the held block, and the reopened socket's
+live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay
 applied; a socket drop in the middle of one block's events can leave part of a block below the
 watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
 and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
