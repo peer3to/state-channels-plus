@@ -13,7 +13,7 @@ specification, implementation mirror, and verification plan as those owners are 
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | <a id="find-sync-reduction-gas-1-aje985"></a>`FIND-SYNC-REDUCTION-GAS-1-AJE985` | A local sync reduction out-of-gas is classified as invalid served evidence and can blacklist its responder; end-to-end reduction gas sufficiency is not established by that classification. | Open; high. Luka explicitly deferred all remediation and related coverage outside PR #520 on 2026-10-07. |
 
-**Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L349)
+**Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L351)
 calls `rejectSync` for errors recognized by [isLocalEvmExecutionFailure](../../../src/utils/evmErrorHandler.ts#L88).
 That classifier accepts the same prefix which [ContractExecutor](../../../src/evm/contractExecutor/ContractExecutor.ts#L185)
 uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
@@ -92,7 +92,7 @@ then stores a wrapped block counter without preflighting its validity on chain.
 can slash the eligible sender when that counter fails. Reproduce all prerequisites and the
 actual chain verdict before claiming a demonstrated slash.
 
-**Sync path.** [Sync persistence precedes tail replay](../../../src/rpc/network/services/spectate/SpectateService.ts#L550).
+**Sync path.** [Sync persistence precedes tail replay](../../../src/rpc/network/services/spectate/SpectateService.ts#L552).
 Retained support may advance the installed view, including when an earlier run extends beyond
 the last run. A later rejection does not roll back prior persistence. A subsequent honest
 response can collide with the stored support, producing `payload persistence aborted` and

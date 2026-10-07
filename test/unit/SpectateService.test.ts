@@ -30,26 +30,6 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-// The dispute-window inbound sync staging keeps the top-up out of peer 2's
-// inbound storage while the dispute runs. A missing inbound run is fatal for
-// dispute and audit work, so peer 2's own dispute and each of its audits fail.
-const OWN_DISPUTE_MISSING_INBOUND_RUN_MESSAGE =
-    "dispute - the inbound run up to the chain's head is unavailable";
-const AUDIT_MISSING_INBOUND_RUN_MESSAGE =
-    "Dispute audit: the inbound run is unavailable after event recovery";
-
-async function settleRequesterMissingInboundRunErrors(): Promise<void> {
-    // the first settle leaves the audit errors for the second, which then
-    // fails on anything else still left
-    await TestSession.settleDetached({
-        expectedErrorIncludes: OWN_DISPUTE_MISSING_INBOUND_RUN_MESSAGE,
-        throwOnError: false
-    });
-    await TestSession.settleDetached({
-        expectedErrorIncludes: AUDIT_MISSING_INBOUND_RUN_MESSAGE
-    });
-}
-
 describe("Unit: SpectateService", function () {
     it("concurrent identical sync requests share the completed result", async () => {
         await assertConcurrentPinnedRequests(TestSession.getHarness(), "same");
@@ -795,7 +775,6 @@ describe("Unit: SpectateService", function () {
                     mutate: appendForgedInboundSuccessor
                 }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
             expect(r.appliedInboundHashes.length).to.equal(
@@ -810,7 +789,6 @@ describe("Unit: SpectateService", function () {
                 TestSession.getHarness(),
                 { reduction: "local", mutate: () => {} }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
             expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
@@ -822,7 +800,6 @@ describe("Unit: SpectateService", function () {
                 TestSession.getHarness(),
                 { reduction: "local", mutate: appendForgedInboundSuccessor }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.accepted).to.equal(false);
             expect(r.rejections).to.deep.equal(["served reduction reverts"]);
             expect(r.appliedInboundHashes.length).to.equal(
@@ -841,7 +818,6 @@ describe("Unit: SpectateService", function () {
                     mutate: redirectDisputesToForkWithoutWindow
                 }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.accepted).to.equal(false);
             expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
             expect(r.responderBlacklisted).to.equal(true);
@@ -859,7 +835,6 @@ describe("Unit: SpectateService", function () {
                     mutate: redirectDisputesToChannelWithoutWindow
                 }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.accepted).to.equal(false);
             expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
             expect(r.responderBlacklisted).to.equal(true);
@@ -877,7 +852,6 @@ describe("Unit: SpectateService", function () {
                     mutate: appendForgedInboundSuccessor
                 }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
             expect(r.appliedInboundHashes.length).to.equal(
@@ -895,7 +869,6 @@ describe("Unit: SpectateService", function () {
                     mutate: appendForgedInboundSuccessor
                 }
             );
-            await settleRequesterMissingInboundRunErrors();
             expect(r.rejections).to.deep.equal([]);
             expect(r.accepted).to.equal(true);
             expect(r.appliedInboundHashes.length).to.equal(

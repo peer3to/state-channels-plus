@@ -5,6 +5,7 @@ import type { SyncPayload } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { MathTestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
@@ -12,6 +13,13 @@ import { ethers, ZeroHash } from "ethers";
 
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
+// The dispute-window inbound sync staging keeps the top-up out of peer 2's
+// inbound storage while the dispute runs. A missing inbound run is fatal for
+// dispute and audit work, so peer 2's own dispute and each of its audits fail.
+const OWN_DISPUTE_MISSING_INBOUND_RUN_MESSAGE =
+    "dispute - the inbound run up to the chain's head is unavailable";
+const AUDIT_MISSING_INBOUND_RUN_MESSAGE =
+    "Dispute audit: the inbound run is unavailable after event recovery";
 
 function inboundMessageBlockHash(block: MessageBlockStruct): Hash {
     return hash(Codec.encode(block, Type.MessageBlock));
@@ -360,7 +368,23 @@ async function stageAndApplyDisputeWindowInboundSync(
     };
 }
 
-/** `stageAndApplyDisputeWindowInboundSync` with the storage-write hold; releases the holds without replay. */
+async function settleRequesterMissingInboundRunErrors(): Promise<void> {
+    // the first settle leaves the audit errors for the second, which then
+    // fails on anything else still left
+    await MathTestSession.settleDetached({
+        expectedErrorIncludes: OWN_DISPUTE_MISSING_INBOUND_RUN_MESSAGE,
+        throwOnError: false
+    });
+    await MathTestSession.settleDetached({
+        expectedErrorIncludes: AUDIT_MISSING_INBOUND_RUN_MESSAGE
+    });
+}
+
+/**
+ * `stageAndApplyDisputeWindowInboundSync` with the storage-write hold;
+ * releases the holds without replay, then settles the missing-inbound-run
+ * errors that the hold causes in peer 2's dispute and audits.
+ */
 export async function applyDisputeWindowInboundSyncPayload(
     h: MathPeerTestHarness,
     options: {
@@ -378,6 +402,7 @@ export async function applyDisputeWindowInboundSyncPayload(
             requesterInboundHold: "storageWrite"
         });
     await releaseHolds(false);
+    await settleRequesterMissingInboundRunErrors();
     return result;
 }
 

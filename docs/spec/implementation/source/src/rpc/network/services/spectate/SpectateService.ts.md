@@ -37,7 +37,7 @@ Unpinned latest requests derive their fork from the chain. An earlier proof star
 when its endpoint reaches the local final view; an endpoint below that view is rejected under
 the current too-old policy.
 
-Source admission reuses this existing sync method unchanged. The request pins channel, optional fork and minimum height; the service returns its existing boolean and waits for a concurrent same-peer request and reuses an applicable result. Verification, state application and peer-failure behavior remain ordinary sync behavior. BlockQueueManager awaits this call and ends intake without retaining the triggering copy. No admission-specific behavior is added here. See [public async sync](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L52).
+Source admission reuses this existing sync method unchanged. The request pins channel, optional fork and minimum height; the service returns its existing boolean and waits for a concurrent same-peer request and reuses an applicable result. Verification, state application and peer-failure behavior remain ordinary sync behavior. BlockQueueManager awaits this call and ends intake without retaining the triggering copy. No admission-specific behavior is added here. See [public async sync](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L54).
 
 Each request reads window finality from the chain before verifying its supplied reduction lineage.
 A chain-final window is checked against its fetched result and contributes no locally trusted
@@ -48,7 +48,7 @@ window inputs, so its inbound list is not persisted (see the inbound rule below)
 `reduceAndFinalize` picks its window from the first dispute's channel and fork, and returns early
 without any check when that window does not exist. So before the call, every dispute must name this
 request's channel and the window's fork, or the sync is rejected as a dispute window mismatch
-([#L337-L348](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L337-L348)). Another sync's
+([#L339-L350](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L339-L350)). Another sync's
 local completion does not establish chain finality. The request's finality
 multicall is a read; it is not a snapshot-adoption simulation.
 
@@ -56,9 +56,9 @@ Independent per-sync reduction verification is retained. A local completed reduc
 chain finality. The milestone-only design now verifies historic proof predicates without simulating
 snapshot adoption; reuse of verified reductions remains a separate performance question.
 
-Every pinned request accepts the requested fork or a verified successor whose reduction lineage contains it. On the same fork, the height is a minimum; a verified successor omits the old-fork height requirement. A known successor without an installed genesis uses the computed reduction snapshot and encoded state, an empty state proof, and the outbound block persisted through the existing outbound-chain owner. The genesis timestamp comes from the reduction manager’s cached kill-period observation. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L672).
+Every pinned request accepts the requested fork or a verified successor whose reduction lineage contains it. On the same fork, the height is a minimum; a verified successor omits the old-fork height requirement. A known successor without an installed genesis uses the computed reduction snapshot and encoded state, an empty state proof, and the outbound block persisted through the existing outbound-chain owner. The genesis timestamp comes from the reduction manager’s cached kill-period observation. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L669).
 
-Verified proof suffixes use SpectatingValidationStrategy through the existing ingest option. In-flight sync keys use ChecksumAddress. Pinned sync accepts the requested fork or a successor whose verified reduction lineage contains it; only a same-fork result must meet the pinned height. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L450).
+Verified proof suffixes use SpectatingValidationStrategy through the existing ingest option. In-flight sync keys use ChecksumAddress. Pinned sync accepts the requested fork or a successor whose verified reduction lineage contains it; only a same-fork result must meet the pinned height. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L452).
 
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [SpectateService.ts](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L18).
 
@@ -85,25 +85,25 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
 10. **The replayed suffix is history.** Each verified block confirmation enters ingest with SpectatingValidationStrategy, which accepts its historical subjective timing. Objective validation is unchanged. A completed false replay result rejects the responder; an internal throw propagates fatally without a peer verdict.
 11. **Diagnostic logs never decode what the pipeline has not judged.** The debug line listing the
     unfinalized confirmations maps each with `Block.tryFromBlockConfirmation`
-    ([#L496](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L496)) and logs an undefined height and author for bytes that do not decode; the
+    ([#L498](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L498)) and logs an undefined height and author for bytes that do not decode; the
     ingest pipeline then refuses those bytes. A throwing decode in the log would abort the sync
     before the pipeline could judge the confirmation and name the reason.
 12. **The dispute windows form one chain from the on-chain fork.** At the top of the dispute-window
-    loop each window's fork must equal `currentForkId` ([#L299](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L299)), which starts at the step-1
-    snapshot's fork ([#L229](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L229)) and becomes each window's reduced fork ([#L390](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L390)).
+    loop each window's fork must equal `currentForkId` ([#L301](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L301)), which starts at the step-1
+    snapshot's fork ([#L231](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L231)) and becomes each window's reduced fork ([#L392](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L392)).
     Otherwise the sync rejects with "dispute window not linked". Windows are not checked one by one
     in isolation, so a payload cannot skip, repeat, or start from an unrelated fork.
     One exception serves an honest responder whose local snapshot lags the chain: it serves windows
     the chain already adopted. Before the loop, a leading prefix is skipped (`adoptedWindowCount`,
-    [#L270](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L270)) only when each window in it is chain-final, its chain-recorded
+    [#L272](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L272)) only when each window in it is chain-final, its chain-recorded
     `reducedResult.forkId` equals its `reducedForkId`, it starts at the previous window's
-    `reducedForkId`, and the last one reduces into the on-chain fork ([#L287](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L287)). Otherwise nothing
+    `reducedForkId`, and the last one reduces into the on-chain fork ([#L289](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L289)). Otherwise nothing
     is skipped and the link check above still rejects. The loop runs over the rest,
-    `linkedDisputeWindows` ([#L291](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L291)). When a prefix was skipped, the pre-genesis outbound blocks
+    `linkedDisputeWindows` ([#L293](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L293)). When a prefix was skipped, the pre-genesis outbound blocks
     are pruned to the on-chain outbound tip with `pruneOutboundMessageBlocks` before step 2.7
-    ([#L420](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L420)). The skipped prefix is not persisted: `persistSyncPayload` gets
+    ([#L422](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L422)). The skipped prefix is not persisted: `persistSyncPayload` gets
     `linkedDisputeWindows` and the pruned outbound blocks ([#L556](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L556)). The pinned-mode lineage check
-    (step 2.8.2, [#L467](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L467)) still reads the full window list, because the skipped prefix is
+    (step 2.8.2, [#L469](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L469)) still reads the full window list, because the skipped prefix is
     chain-verified.
     Engineer decision (2026-10-05): a window persists its `inboundMessageBlocksAppliedInReduce`
     only when this sync's own local `reduceAndFinalize` call executed the reduction, because only
@@ -111,14 +111,15 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
     [`ADiamondStateMachine.reduceAndFinalizeLocally`](../../../../ADiamondStateMachine.ts.md),
     which reports whether the call emitted `DisputeReducedResultCommitted`; the diamond emits it
     only when it commits the reduction, never on the early return for an already reduced window
-    ([#L349-L359](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L349-L359)).
+    ([#L351-L361](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L351-L361)).
     No other linked window persists its inbound list. For a window final on chain at the finality
     read, step 2.3 skips the call and `persistSyncPayload` skips all its reduction inputs
-    (`chainFinalForkIds`, [#L1048](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1048)).
+    (`chainFinalForkIds`, [#L1045](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1045)).
     A window reduced on chain between the finality read and the window fetch, and a window a
-    concurrent sync already reduced in the shared local EVM (the call returns early in both), reach
-    `persistSyncPayload` with an empty inbound list
-    ([#L556-L566](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L556-L566)). The genuine blocks of such a
+    concurrent sync already reduced in the shared local EVM (the call returns early in both), are
+    not in the `selfReducedForkIds` set that `applySyncResponse` passes on, so `persistSyncPayload`
+    does not store their inbound list
+    ([#L1052-L1057](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1052-L1057)). The genuine blocks of such a
     window reach inbound storage the normal way, through the `InboundMessagesProcessed` chain
     events and the event-sync log recovery for missing inbound runs. Block production never walks
     below the snapshot's inbound head while storage lags it. This closes
@@ -163,7 +164,7 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification contradictions
 
 The prior chain-final inbound injection path is blocked by `persistSyncPayload` skipping reduction
-inputs for `verified.chainFinalForkIds` ([source](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1048)).
+inputs for `verified.chainFinalForkIds` ([source](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L1045)).
 Its regressions are mapped in
 [`FIND-SECURITY-5-1KP5YX`](../../../../../../../audit/open-findings.md#find-security-5-1kp5yx).
 
@@ -192,7 +193,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-SYNC-2-TNT4F4`](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)  | Covered               | **Here:** client-side invariant check before adoption. **Other files:** on-chain enforcement absence tracked as [`OQ-19-Y8FDQX`](../../../../../../open-questions.md#oq-19-y8fdqx).                                                                                                                                                                                   | None here.                                                                                                                                                                                                                                                                                                                             |
 | [`INV-SYNC-4-Z6HER7`](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)  | Covered               | **Here:** every contract check in the sync chain is a local-mirror read or `staticCall` simulation. No step transacts; verification can reach the canonical chain tier.                                                                                                                                                                                               | None.                                                                                                                                                                                                                                                                                                                                  |
 | [`REQ-SYNC-3-1P5ZHT`](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)  | Covered               | **Here:** the unfinalized suffix replays through the standard pipeline under the spectating context. **Other files:** [SpectatingValidationStrategy](../../../../stateManager/validationStrategy/SpectatingValidationStrategy.ts.md).                                                                                                                                 | None.                                                                                                                                                                                                                                                                                                                                  |
-| [`REQ-GOSSIP-4-J5Z4DF`](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) | Covered               | **Here:** [public async sync](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L52) implements the contribution described above. **Other files:** [BlockQueueManager.ts](../../../../stateManager/ingest/BlockQueueManager.ts.md), [StateApplicationService.ts](../../../../stateManager/snapshotUpdate/StateApplicationService.ts.md) | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified.                                                                                                                                                                                                                                   |
+| [`REQ-GOSSIP-4-J5Z4DF`](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) | Covered               | **Here:** [public async sync](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L54) implements the contribution described above. **Other files:** [BlockQueueManager.ts](../../../../stateManager/ingest/BlockQueueManager.ts.md), [StateApplicationService.ts](../../../../stateManager/snapshotUpdate/StateApplicationService.ts.md) | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified.                                                                                                                                                                                                                                   |
 
 ## Component test obligations
 

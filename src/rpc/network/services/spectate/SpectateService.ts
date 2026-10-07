@@ -34,6 +34,8 @@ type VerifiedSync = {
     base: SyncReplayBase;
     /** windows the chain already reduced: their reduce input is not stored */
     chainFinalForkIds: Set<ForkId>;
+    /** windows this sync's own reduction verified: only their inbound list is stored */
+    selfReducedForkIds: Set<ForkId>;
 };
 
 export interface SyncRequest {
@@ -551,16 +553,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Persist the verified material; existing data is kept
-            // only this sync's own reduction checked a window's inbound list; any
-            // other window's list is dropped and chain events deliver the genuine blocks
             const { shouldAbort } = await this.persistSyncPayload(
                 {
                     ...syncPayload,
-                    disputeWindows: linkedDisputeWindows.map((dw) =>
-                        reducedByThisSync.has(dw.forkId)
-                            ? dw
-                            : { ...dw, inboundMessageBlocksAppliedInReduce: [] }
-                    ),
+                    disputeWindows: linkedDisputeWindows,
                     outboundMessageBlocksUpToLatestGenesis,
                     outboundMessageBlocksOfTheLatestFork
                 },
@@ -572,7 +568,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         linkedDisputeWindows
                             .map((dw) => dw.forkId)
                             .filter((forkId) => finalizedByFork.get(forkId))
-                    )
+                    ),
+                    selfReducedForkIds: reducedByThisSync
                 }
             );
             if (shouldAbort)
@@ -1052,6 +1049,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     storage.stateMachineStates.storeStateMachineState(
                         dw.latestEncodedStateMachineState
                     );
+                    // only this sync's own reduction checked a window's inbound list; any
+                    // other window's list is dropped and chain events deliver the genuine blocks
+                    if (!verified.selfReducedForkIds.has(dw.forkId)) continue;
                     for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
                         storage.inboundMessages.store(inboundBlock);
                     }
