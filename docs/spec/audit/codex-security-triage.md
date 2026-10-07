@@ -179,7 +179,7 @@ Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence
 
 **Evidence and path.** The linked-window check excluded unrelated windows and did not persist the already-adopted prefix. It still skipped reduction-input validation for a chain-final window that started at the current chain fork and had not yet been adopted. persistSyncPayload stored that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor could become the local inbound tip and be signed during block production.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:243–349](../../../src/rpc/network/services/spectate/SpectateService.ts#L243-L349); [src/rpc/network/services/spectate/SpectateService.ts:509–527](../../../src/rpc/network/services/spectate/SpectateService.ts#L509-L527); [src/rpc/network/services/spectate/SpectateService.ts:993–1004](../../../src/rpc/network/services/spectate/SpectateService.ts#L993-L1004); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
+**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:264–389](../../../src/rpc/network/services/spectate/SpectateService.ts#L264-L389); [src/rpc/network/services/spectate/SpectateService.ts:553–582](../../../src/rpc/network/services/spectate/SpectateService.ts#L553-L582); [src/rpc/network/services/spectate/SpectateService.ts:1042–1056](../../../src/rpc/network/services/spectate/SpectateService.ts#L1042-L1056); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
 
 **Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint was crossed; the victim's node accepted and persisted the payload. Ranking class: peer-assisted signing path; it has no rank because the path is fixed.
 
@@ -212,7 +212,7 @@ Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occur
 
 The trusted walk now selects canonical final state. The prior `isSameForkRegression` helper is
 removed and cannot support a current exploit argument. The payload's supplied genesis snapshot
-is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1033).
+is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1058).
 Trace every downstream consumer before deciding whether a timestamp-only mutation can affect
 first-block production or another trusted state path. This review does not establish full resolution.
 
