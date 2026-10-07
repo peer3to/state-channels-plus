@@ -9,6 +9,9 @@
 
 ## Overview
 
+The real-head-first sequence uses a 15-second evidence window for the initial
+real audit, later forged upload, and automatic follow-up dispute submissions.
+
 The suite checks balance audits and conflicting final blocks on a channel with nonzero deposits.
 A pending auditor first sees either a forged balance head or the real final head. It kills the
 forged claim by the balance or final-conflict counter, according to which head it has retained.

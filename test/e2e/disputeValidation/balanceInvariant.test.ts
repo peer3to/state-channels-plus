@@ -73,7 +73,8 @@ describe("E2E: dispute validation / balanceInvariant", function () {
 
     it("the colluders' real-head dispute audited first by the pending auditor, then peer 2's forged-head dispute → the auditor accepts the real head and kills the forged dispute with DisputeConflictsWithFinalState (real audited first)", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup();
+        // The real audit precedes the forged upload and its follow-up disputes.
+        await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
         const forkId = h.activeForkId!;
         const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
             h,

@@ -173,6 +173,9 @@ async function main(options = {}) {
     const manager = new WorkerLeaseManager({
         queueLength: config.queueLength,
         onGrant(connection) {
+            // These flags belong to one lease, not the reusable connection.
+            connection.stopRequested = false;
+            connection.preparationPromise = null;
             connection.peer
                 .send("LEASE_GRANTED", {
                     capabilities: capabilities(
