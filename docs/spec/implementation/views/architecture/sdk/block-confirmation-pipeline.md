@@ -53,8 +53,8 @@ directly:
    result disconnects and blacklists the sending peer. `senderAddress` feeds
    source attribution (§4).
 2. **Block-calldata chain events.**
-   [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L8) →
-   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L107) →
+   [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L17) →
+   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L96) →
    [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L290):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires

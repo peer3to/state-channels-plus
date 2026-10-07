@@ -1,6 +1,7 @@
 import {
     assertAbortClosesRuntime,
     assertAbortCancelsTimeout,
+    assertClockOwnedProviderReleasedOnDispose,
     assertProviderShutdownOrder
 } from "@test/fixtures/RuntimeAbortFixture";
 
@@ -16,5 +17,8 @@ describe("StateManager abort", function () {
     });
     it("cancels session-owned timeout work", async function () {
         await assertAbortCancelsTimeout();
+    });
+    it("keeps a Clock-owned provider open on dispose without reconnects until the Clock replaces it", async function () {
+        await assertClockOwnedProviderReleasedOnDispose();
     });
 });

@@ -16,6 +16,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                                                                                                       | Resolved (2026-09-05) |
 | [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                                                                                                     | Resolved (2026-09-05) |
 | [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
+| [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send and subscribe to multiple nodes                         | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -116,3 +117,16 @@ receiving inbound blocks from the responder.
 
 Owner: [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28).
 Evidence and scope: [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md).
+
+<a id="oq-audit-rpc-1-bqa20a"></a>
+
+## OQ-AUDIT-RPC-1-BQA20A — Send and subscribe to multiple nodes
+
+Open; not critical now, to consider for production. The current design sends every read and
+transaction to the first connected endpoint and fails over when it drops
+([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
+The alternative is to send to several endpoints and subscribe on several at once. Endpoints
+replicate a transaction in the mempool anyway, so sending it to several should not change on-chain
+behavior. It raises the chance of success when the selected endpoint dies: there is no wait to
+recover and reconnect to another endpoint, which could be fatal if it takes long. Every response
+can be deduplicated: treat the endpoints as redundant connections where the first response wins.

@@ -15,6 +15,9 @@ import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 
+/** How long a host handler call takes to reach its main-thread spy. */
+const SPY_FORWARD_WINDOW_MS = 500;
+
 /**
  * EventActions handles all event spy management and queries.
  * Responsibilities:
@@ -40,6 +43,32 @@ export class EventActions<
         const spy = peer.eventSpies[eventName];
         const count = spy ? spy.callCount : 0;
         return count;
+    }
+
+    /** The summed call counts of several event spies of one peer. */
+    getEventCallCounts(
+        peerIndex: number,
+        eventNames: readonly (keyof EventSpies)[]
+    ): number {
+        return eventNames.reduce(
+            (total, eventName) =>
+                total + this.getEventCallCount(peerIndex, eventName),
+            0
+        );
+    }
+
+    /**
+     * Wait until every contract event the peer scheduled has settled, then
+     * for the handler calls to reach the spies: the host forwards them over
+     * the runtime port, and they may arrive just after the drain returns.
+     */
+    async settleContractEvents(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .validation.drainScheduledEvents()
+            .request();
+        // time is the input: the forwarding delay of the spied handler calls
+        await sleep(SPY_FORWARD_WINDOW_MS);
     }
 
     /**

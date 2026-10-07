@@ -39,6 +39,27 @@ describe("Clock", () => {
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
     });
 
+    it("destroys a released provider once a replacement takes over", async () => {
+        const released = createSecondProvider();
+        await Clock.init(released);
+        Clock.releaseProvider(released);
+        expect(released.destroyed).to.equal(false);
+
+        await Clock.init(createSecondProvider());
+
+        expect(released.destroyed).to.equal(true);
+    });
+
+    it("keeps a replaced provider its runtime still owns", async () => {
+        const owned = createSecondProvider();
+        await Clock.init(owned);
+
+        await Clock.init(createSecondProvider());
+
+        expect(owned.destroyed).to.equal(false);
+        owned.destroy();
+    });
+
     it("recovers with a live provider after a failed replacement", async () => {
         await Clock.init(ethers.provider);
         const destroyed = createSecondProvider();
