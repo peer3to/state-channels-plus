@@ -60,6 +60,13 @@ function budgetHoldReason(reason) {
 function holdReason(options) {
     const { running, concurrencyCap, resourceGate, memBoundGb, targetLoad } =
         options;
+    if (
+        resourceGate.lastHoldReason === "memory" &&
+        resourceGate.lastMemoryHold
+    ) {
+        const { occupiedGb, thresholdGb } = resourceGate.lastMemoryHold;
+        return `memory (admission ${occupiedGb.toFixed(1)}≥${thresholdGb.toFixed(1)}GB)`;
+    }
     if (running >= concurrencyCap)
         return `cap (running ${running}/${concurrencyCap})`;
     if (resourceGate.cpuMeasured === false)

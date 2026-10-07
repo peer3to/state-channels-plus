@@ -1303,6 +1303,36 @@ describe("distributed worker scheduler", function () {
             expect(resources.costBudget({ cores: 0, rssGb: 0 }).rssGb).to.equal(
                 -1.5
             );
+            activeFileGb = 1;
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            expect(resources.lastMemoryHold).to.deep.equal({
+                occupiedGb: 8.5,
+                thresholdGb: 8
+            });
+            expect(
+                holdReason({
+                    schedule: "cost",
+                    running: 0,
+                    concurrencyCap: 40,
+                    resourceGate: resources,
+                    memBoundGb: 12.5,
+                    targetLoad: 0.95
+                })
+            ).to.equal("memory (admission 8.5≥8.0GB)");
+            expect(await resources.allows(0, 40)).to.equal(false);
+            expect(
+                holdReason({
+                    schedule: "fifo",
+                    running: 0,
+                    concurrencyCap: 40,
+                    resourceGate: resources,
+                    memBoundGb: 12.5,
+                    targetLoad: 0.95
+                })
+            ).to.equal("memory (admission 8.5≥8.0GB)");
+            activeFileGb = 6.5;
+            expect(await resources.allows(0, 40)).to.equal(true);
+            expect(resources.lastMemoryHold).to.equal(null);
             activeFileGb = 0;
             expect(await resources.allows(0, 40, admission)).to.equal(false);
             boundedContainer = false;

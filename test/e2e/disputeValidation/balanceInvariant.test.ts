@@ -34,7 +34,8 @@ describe("E2E: dispute validation / balanceInvariant", function () {
 
     it("peer 2 uploads a dispute whose committed snapshot breaks the balance invariant; a pending auditor without a final block at the forged head → DisputeInvalidBalanceInvariant, then the colluders' real-head disputes → DisputeConflictsWithFinalState (forged audited first)", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup();
+        // Use the approved balance-invariant evidence window for both audit orders.
+        await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
         const forkId = h.activeForkId!;
         // the colluders' head is one the pending auditor never finalized
         const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(

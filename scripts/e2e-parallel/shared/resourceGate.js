@@ -337,6 +337,7 @@ class ResourceGate {
         this.peakOccupiedGb = 0;
         this.holdCounts = { cap: 0, memory: 0, cpu: 0 };
         this.lastHoldReason = null;
+        this.lastMemoryHold = null;
     }
 
     async sample() {
@@ -437,20 +438,27 @@ class ResourceGate {
     ) {
         await this.sample();
         this.lastHoldReason = null;
+        this.lastMemoryHold = null;
         const occupiedGb =
             running === 0 ? this.idleOccupiedGb : this.occupiedGb;
-        if (occupiedGb >= this.memoryLimitGb * MEM_LIMIT_FRACTION)
+        const thresholdGb = this.memoryLimitGb * MEM_LIMIT_FRACTION;
+        if (occupiedGb >= thresholdGb) {
+            this.lastMemoryHold = { occupiedGb, thresholdGb };
             return this.hold("memory");
+        }
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
         // Until the first CPU reading a busy worker cannot see the load.
         if (!this.cpuMeasured) return this.hold("cpu");
         // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
-            const shortfall = costBudgetShortfall(
-                nextCost,
-                this.costBudget(runningCost)
-            );
+            const budget = this.costBudget(runningCost);
+            const shortfall = costBudgetShortfall(nextCost, budget);
+            if (shortfall === "memory")
+                this.lastMemoryHold = {
+                    occupiedGb: thresholdGb - budget.rssGb + nextCost.rssGb,
+                    thresholdGb
+                };
             if (shortfall) return this.hold(shortfall);
             if (this.cpuUtil >= this.costCpuValve) return this.hold("cpu");
             return true;
@@ -459,8 +467,13 @@ class ResourceGate {
         if (
             this.occupiedGb + this.avgPerTestGb >=
             this.memoryLimitGb * MEM_LIMIT_FRACTION
-        )
+        ) {
+            this.lastMemoryHold = {
+                occupiedGb: this.occupiedGb + this.avgPerTestGb,
+                thresholdGb
+            };
             return this.hold("memory");
+        }
         return true;
     }
 

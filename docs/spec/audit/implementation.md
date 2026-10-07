@@ -3,6 +3,19 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## PR #520 third-review and CI corrections (2026-10-07)
+
+The [localDiamond report](../implementation/source/src/utils/localDiamond.ts.md) now anchors its
+conformance claims to the current declarations and expressions. The
+[stale-membership test report](../verification/tests/test/e2e/E2E-StaleMembershipDispute.test.ts.md)
+records direct malicious-dispute submission instead of a double-sign trigger that also opened an
+unrelated honest dispute. The
+[balance-invariant test report](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
+records the previously approved 15-second evidence window for both sequential audit orders.
+Their existing membership-fraud, exact-counter, slash and reduction oracles are retained.
+The CI artifacts demonstrate expired evidence/kill windows, not an invalid membership-proof verdict.
+No SDK or contract behavior changes are made for these failures; the sync-reduction gas finding remains deferred.
+
 ## PR #520 second-review corrections (2026-10-07)
 
 The local-first revert behavior is unchanged: local errors propagate without a chain fallback.
