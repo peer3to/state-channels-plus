@@ -658,10 +658,12 @@ connected endpoint, so a reopened endpoint that drops for good or keeps failing 
 range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
 reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
 is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
-reopened endpoint's subscription never delivered. Endpoint URLs are
+reopened endpoint's subscription never delivered. When the reopened endpoint answers its head request
+with an error, the request is retried on it with the backoff and nothing is read meanwhile; the
+catch-up never falls back to the first connected endpoint's own head. Endpoint URLs are
 logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
 the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
-the reopened endpoint's head, and the reopened
+the reopened endpoint's head, or the reopened endpoint keeps failing its head request, and the reopened
 socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
 block states are not pruned, every recovery query reads from the held block, and the reopened socket's
 live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay

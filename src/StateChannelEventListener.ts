@@ -187,12 +187,13 @@ class StateChannelEventListener {
      * through the reopened node; after a failed read the remaining windows
      * are read through the runtime's provider, i.e. the first connected
      * node, so one endpoint that keeps failing cannot hold the watermark.
-     * Those reads still have to reach the reopened node's head, read once
-     * on its socket when the switch happens: a first connected node whose
-     * head is behind it is read again after the backoff. A read in flight
-     * when the socket ends or the subscription is removed is not awaited:
-     * it may wait for the node to reconnect, and the node's next socket
-     * catches up itself.
+     * Those reads still have to reach the reopened node's head, asked on
+     * its socket before the switch: a head request answered with an error
+     * is asked again on that socket after the backoff, and a first
+     * connected node whose head is behind it is read again after the
+     * backoff. A read in flight when the socket ends or the subscription is
+     * removed is not awaited: it may wait for the node to reconnect, and
+     * the node's next socket catches up itself.
      */
     private async catchUpUntilRead(
         node: RpcNodeProvider,
@@ -208,30 +209,39 @@ class StateChannelEventListener {
         // the reopened node's head, which a read through another node must
         // reach; unknown while the reopened node reads for itself
         let targetHead: number | undefined;
+        // the reopened node failed a read and has not yet answered its head:
+        // the head is asked again instead of reading logs
+        let awaitingTargetHead = false;
         for (let failedAttempts = 0; ; failedAttempts++) {
             if (this.disposed || generation !== this.generation) return;
             if (hasSocketEnded()) return;
-            const read = await Promise.race([
-                this.eventSyncService.catchUpLogs(
-                    reader,
-                    channelId,
-                    subscribedAtBlock,
-                    resumeFrom,
-                    targetHead
-                ),
-                abandoned
-            ]);
-            if (read === CATCH_UP_ABANDONED) return;
-            resumeFrom = read;
-            if (resumeFrom === undefined) return;
-            if (reader === node) {
+            if (!awaitingTargetHead) {
+                const read = await Promise.race([
+                    this.eventSyncService.catchUpLogs(
+                        reader,
+                        channelId,
+                        subscribedAtBlock,
+                        resumeFrom,
+                        targetHead
+                    ),
+                    abandoned
+                ]);
+                if (read === CATCH_UP_ABANDONED) return;
+                resumeFrom = read;
+                if (resumeFrom === undefined) return;
+                awaitingTargetHead = reader === node;
+            }
+            if (awaitingTargetHead) {
                 const head = await Promise.race([
                     this.readSocketHead(node),
                     abandoned
                 ]);
                 if (head === CATCH_UP_ABANDONED) return;
-                targetHead = head;
-                reader = this.getProvider();
+                if (head !== undefined) {
+                    targetHead = head;
+                    reader = this.getProvider();
+                    awaitingTargetHead = false;
+                }
             }
             const slept = await Promise.race([
                 sleep(getReconnectDelayMs(failedAttempts)),
@@ -242,10 +252,10 @@ class StateChannelEventListener {
     }
 
     /**
-     * The reopened node's head, asked once on its open socket without
+     * The reopened node's head, asked on its open socket without
      * waiting for a reconnect. Abandoned when the socket has ended;
-     * `undefined` when the node answers with an error: the reads through
-     * the first connected node then reach that node's own head.
+     * `undefined` when the node answers with an error: the catch-up asks
+     * again after the backoff.
      */
     private async readSocketHead(
         node: RpcNodeProvider

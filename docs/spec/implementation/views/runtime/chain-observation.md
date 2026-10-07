@@ -62,8 +62,9 @@ derives the wallet, opens the nodes and returns once one node connected.
    schedules each before the next, then the held logs are released and the watermark hold ends. The
    first read goes through the reopened node; after a failed read the remaining windows are read
    through the provider, i.e. the first connected node, retried with the reconnect backoff. Those
-   reads must reach the reopened node's head, asked once on its socket at the switch: a first
-   connected node behind it reads nothing until it catches up. The socket ending abandons the
+   reads must reach the reopened node's head, asked on its socket before the switch: a head request
+   answered with an error is retried on that socket with the reconnect backoff, and nothing is read
+   until it answers; a first connected node behind that head reads nothing until it catches up. The socket ending abandons the
    catch-up: the held logs are released and the hold ends at once, and the node's next socket starts
    a new catch-up. A cleared or replaced subscription, or disposal, aborts it at once too: the held
    logs of the removed subscription are dropped and the hold ends without waiting for a read or a
