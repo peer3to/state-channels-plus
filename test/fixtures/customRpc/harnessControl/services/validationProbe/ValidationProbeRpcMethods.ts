@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: public validation probe endpoints
 import type {
+    ChainLogFields,
     BlockCalldataRecoveryProbe,
     BlockIngestProbe,
     BlockProbeOptions,
@@ -68,8 +69,25 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.runCatchUpFromFirstNode();
     }
 
-    public async runCatchUpThroughNode(nodeUrl: string): Promise<boolean> {
-        return this.service.runCatchUpThroughNode(nodeUrl);
+    public async runCatchUpThroughNode(
+        nodeUrl: string,
+        resumeFrom?: number
+    ): Promise<number | null> {
+        return this.service.runCatchUpThroughNode(nodeUrl, resumeFrom);
+    }
+
+    public async scheduleLogAsRecovery(
+        fields: ChainLogFields
+    ): Promise<number | null> {
+        return this.service.scheduleLogAsRecovery(fields);
+    }
+
+    public async holdEventWatermark(): Promise<number> {
+        return this.service.holdEventWatermark();
+    }
+
+    public async releaseEventWatermark(holdId: number): Promise<number | null> {
+        return this.service.releaseEventWatermark(holdId);
     }
 
     public async getEventWatermark(): Promise<number | null> {

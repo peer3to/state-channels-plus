@@ -415,11 +415,11 @@ describe("E2E: Multiple RPC nodes", function () {
         try {
             proxy.answerRequests("eth_blockNumber", toQuantity(watermark - 1));
 
-            const caughtUp = await validation
+            const resumeFrom = await validation
                 .runCatchUpThroughNode(proxy.url)
                 .request();
 
-            expect(caughtUp).to.equal(true);
+            expect(resumeFrom).to.equal(null);
             expect(proxy.forwardedCount("eth_getLogs")).to.equal(0);
         } finally {
             await proxy.close();
@@ -436,16 +436,163 @@ describe("E2E: Multiple RPC nodes", function () {
         try {
             proxy.answerRequests("eth_blockNumber", toQuantity(watermark));
 
-            const caughtUp = await validation
+            const resumeFrom = await validation
                 .runCatchUpThroughNode(proxy.url)
                 .request();
 
-            expect(caughtUp).to.equal(true);
+            expect(resumeFrom).to.equal(null);
             expect(proxy.forwardedLogWindows()).to.deep.equal([
                 [watermark, watermark]
             ]);
         } finally {
             await proxy.close();
         }
+    });
+
+    it("retries from the watermark when the catch-up's head read fails", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const validation = h.control(h.getPeer(1)).validation;
+        const watermark = await validation.getEventWatermark().request();
+        if (watermark === null) throw new Error("Expected a watermark");
+        const proxy = await RpcNodeProxy.start(h.getConfig().PROVIDER_URL!);
+        try {
+            // the catch-up's head read is the node's first eth_blockNumber
+            proxy.failNextRequest("eth_blockNumber");
+
+            const resumeFrom = await validation
+                .runCatchUpThroughNode(proxy.url)
+                .request();
+
+            expect(resumeFrom).to.equal(watermark);
+            expect(proxy.forwardedCount("eth_getLogs")).to.equal(0);
+            const retried = await validation
+                .runCatchUpThroughNode(proxy.url, resumeFrom ?? undefined)
+                .request();
+            expect(retried).to.equal(null);
+            const windows = proxy.forwardedLogWindows();
+            expect(windows.length).to.equal(1);
+            expect(windows[0][0]).to.equal(watermark);
+        } finally {
+            await proxy.close();
+        }
+    });
+
+    it("delivers the missed event when a recovery completes a later block during the catch-up read", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        const callsBeforeCut = h.event.getEventCallCount(
+            proxied,
+            "onInboundMessagesProcessed"
+        );
+        // the threshold signs both top-ups while every peer reaches the chain
+        const missed = await h.join.prepareForceInboundJoinWait({
+            participant: h.getPeer(0).address
+        });
+        const later = await h.join.prepareForceInboundJoinWait({
+            participant: h.getPeer(1).address
+        });
+        proxy.cut();
+        await h.join.submitPreparedForceInboundJoinWait(missed, {
+            observePeerIndices: [0, 1]
+        });
+        const getLogsBeforeRestore = proxy.forwardedCount("eth_getLogs");
+        const releaseCatchUpRead = proxy.holdRequests("eth_getLogs");
+        proxy.restore();
+        // the reconnect's catch-up read is in flight, held at the proxy
+        await waitFor(
+            () => proxy.forwardedCount("eth_getLogs") > getLogsBeforeRestore
+        );
+        await h.join.submitPreparedForceInboundJoinWait(later, {
+            observePeerIndices: [0, 1]
+        });
+        const logs = await h.channelManager.queryFilter(
+            h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+        );
+        const [missedLog, laterLog] = logs.slice(-2);
+
+        // a recovery query completes the later block's log meanwhile
+        const watermark = await h
+            .control(h.getPeer(proxied))
+            .validation.scheduleLogAsRecovery({
+                address: laterLog.address,
+                topics: [...laterLog.topics],
+                data: laterLog.data,
+                blockNumber: laterLog.blockNumber,
+                blockHash: laterLog.blockHash,
+                transactionHash: laterLog.transactionHash,
+                index: laterLog.index,
+                transactionIndex: laterLog.transactionIndex
+            })
+            .request();
+
+        expect(watermark).not.to.equal(null);
+        expect(watermark!).to.be.lessThan(missedLog.blockNumber);
+        releaseCatchUpRead();
+        await waitFor(
+            () =>
+                h.event.getEventCallCount(
+                    proxied,
+                    "onInboundMessagesProcessed"
+                ) >=
+                callsBeforeCut + 2
+        );
+        await h.event.settleContractEvents(proxied);
+        expect(
+            h.event.getEventCallCount(proxied, "onInboundMessagesProcessed")
+        ).to.equal(callsBeforeCut + 2);
+    });
+
+    it("converges a catch-up wider than the endpoint's log range limit in LOG_QUERY_MAX_BLOCKS windows", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        const endpointLimit = 10;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 },
+            configOverrides: { LOG_QUERY_MAX_BLOCKS: endpointLimit }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        proxy.rejectLogSpansAbove(endpointLimit);
+        const callsBeforeCut = h.event.getEventCallCount(
+            proxied,
+            "onInboundMessagesProcessed"
+        );
+        const topUp = await h.join.prepareForceInboundJoinWait({
+            participant: h.getPeer(0).address
+        });
+        proxy.cut();
+        // the missed range grows past one window
+        await h.produceBlocks(endpointLimit + 2);
+        await h.join.submitPreparedForceInboundJoinWait(topUp, {
+            observePeerIndices: [0, 1]
+        });
+        const inboundHead = await h.query.getLatestInboundMessageHash(0);
+        const windowsBeforeRestore = proxy.forwardedLogWindows().length;
+
+        proxy.restore();
+
+        await waitFor(
+            async () =>
+                (await h.query.getLatestInboundMessageHash(proxied)) ===
+                inboundHead
+        );
+        const catchUpWindows = proxy
+            .forwardedLogWindows()
+            .slice(windowsBeforeRestore);
+        expect(catchUpWindows.length).to.be.at.least(2);
+        for (const [fromBlock, toBlock] of catchUpWindows)
+            expect(toBlock - fromBlock + 1).to.be.at.most(endpointLimit);
+        // the held live stream is released: a later event arrives on it
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(1).address
+        });
+        await h.event.settleContractEvents(proxied);
+        expect(
+            h.event.getEventCallCount(proxied, "onInboundMessagesProcessed")
+        ).to.equal(callsBeforeCut + 2);
     });
 });

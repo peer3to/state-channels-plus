@@ -1020,16 +1020,19 @@ export class MathScenarioActions extends ScenarioActions {
         peerCount?: number;
         initialBlocks?: number;
         passFirst?: boolean;
+        /** Harness options of the session, e.g. RPC node proxies. */
+        harnessOptions?: HarnessOptions;
     }) {
         const {
             observerIndex,
             maliciousPeerIndex,
             peerCount = 4,
             initialBlocks = 2,
-            passFirst = false
+            passFirst = false,
+            harnessOptions
         } = options;
         const h = this.harness;
-        await h.lifecycle.start(peerCount, initialBlocks);
+        await h.lifecycle.start(peerCount, initialBlocks, harnessOptions);
         const forkId = h.activeForkId!;
 
         const race = await h.rpcStub.holdReductionRace(observerIndex);

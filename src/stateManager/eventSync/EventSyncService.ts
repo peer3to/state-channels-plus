@@ -23,6 +23,7 @@ import {
     Type
 } from "@/utils";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
+import { config } from "@/utils/config";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -79,8 +80,16 @@ const LOG_RECOVERY_ATTEMPTS = 3;
 // one span already covers the whole window the calldata can be in
 const CALLDATA_RECOVERY_ATTEMPTS = 1;
 
-/** Most blocks one eth_getLogs read spans; hosted endpoints reject wider reads. */
-export const MAX_LOG_SPAN = 1000;
+/**
+ * Rejects a log window size that is not a positive integer: windows of
+ * zero, fractional or negative blocks never cover a range.
+ */
+export function assertLogQueryMaxBlocks(maxBlocks: number): void {
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
+        throw new Error(
+            `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
+        );
+}
 
 /** The window whose eth_getLogs read failed, and why. */
 export type LogPageReadFailure = { failedFrom: BlockNumber; error: unknown };
@@ -99,8 +108,9 @@ export async function readLogPages(
     fromBlock: BlockNumber,
     toBlock: BlockNumber,
     onPage: (logs: Log[]) => void | Promise<void>,
-    maxSpan: number = MAX_LOG_SPAN
+    maxSpan: number
 ): Promise<LogPageReadFailure | undefined> {
+    assertLogQueryMaxBlocks(maxSpan);
     for (
         let windowFrom = fromBlock;
         windowFrom <= toBlock;
@@ -302,7 +312,8 @@ export default class EventSyncService {
                         this.scheduleStreamedLog(log, channelId)
                     );
                 }
-            }
+            },
+            config.LOG_QUERY_MAX_BLOCKS
         );
         if (failure) {
             this.logger.warn("Contract event catch-up read failed", {
@@ -319,6 +330,39 @@ export default class EventSyncService {
             toBlock
         });
         return undefined;
+    }
+
+    /**
+     * Keep the channel's completed-block watermark from passing the block a
+     * catch-up starts at (the watermark, or `fromBlock` before one exists)
+     * until the returned release runs. While a catch-up still has windows to
+     * read, a log another path schedules and completes in a later block
+     * cannot move the watermark past blocks the catch-up has not read, so
+     * their logs are never dropped as below it. The release is idempotent
+     * and publishes the blocks completed meanwhile.
+     */
+    holdWatermark(channelId: ChannelId, fromBlock: BlockNumber): () => void {
+        const channelKey = toChannelKey(channelId);
+        const heldAt =
+            this.storage.eventSync.getLatestProcessedBlock(channelId) ??
+            fromBlock;
+        const states = this.getBlockStates(channelKey);
+        const state = states.get(heldAt) ?? {
+            pending: 0,
+            complete: false,
+            failed: false
+        };
+        state.pending += 1;
+        state.complete = false;
+        states.set(heldAt, state);
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            state.pending -= 1;
+            state.complete = state.pending === 0 && !state.failed;
+            this.publishCompletedBlocks(channelId, channelKey);
+        };
     }
 
     async tryRecoverBlockCalldataAndScheduleValidation(
@@ -647,7 +691,8 @@ export default class EventSyncService {
                                 DetachedPromises.collect(eventPromise)
                             );
                         }
-                    }
+                    },
+                    config.LOG_QUERY_MAX_BLOCKS
                 );
                 if (failure) throw failure.error;
             } catch (error) {

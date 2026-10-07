@@ -2,6 +2,7 @@ import MultiRpcProvider from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 import RpcNodeProvider, {
     type ExpectedChain
 } from "@/evm/p2pRuntime/rpcNodes/RpcNodeProvider";
+import { assertLogQueryMaxBlocks } from "@/stateManager/eventSync/EventSyncService";
 import type { Config } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -81,6 +82,8 @@ export async function createRuntimeChainContext(
     signerSecret: string,
     logger: Logger
 ): Promise<RuntimeChainContext> {
+    // a bad window size would only surface at the first catch-up
+    assertLogQueryMaxBlocks(config.LOG_QUERY_MAX_BLOCKS);
     const secret = signerSecret.trim();
     // derived before any node opens, so a bad secret leaves nothing behind
     const wallet = /^0x[0-9a-fA-F]{64}$/.test(secret)

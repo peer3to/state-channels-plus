@@ -74,6 +74,18 @@ export type InboundLogRedelivery =
     // the re-mined log, streamed once its block is the completed watermark
     | "reorgedAtWatermark";
 
+/** A chain log's fields, as they cross the control RPC. */
+export type ChainLogFields = {
+    address: string;
+    topics: string[];
+    data: string;
+    blockNumber: number;
+    blockHash: string;
+    transactionHash: string;
+    index: number;
+    transactionIndex: number;
+};
+
 /** One log delivered again through the scheduler, and what it caused. */
 export type StreamedLogDeliveryProbe = {
     handlerCalls: number;
@@ -205,6 +217,8 @@ export class ValidationProbeService extends ANetworkRpcService<
      * overlapping probes would restore each other's replacements.
      */
     private readonly blockValidationProbeMutex = new Mutex();
+    /** Releases of the watermark holds taken through holdEventWatermark; the index is the hold's id. */
+    private readonly watermarkReleases: (() => void)[] = [];
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -462,27 +476,67 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Run one reconnect catch-up for this peer's channel through a separate
-     * RPC node at `nodeUrl`, and wait for the logs it scheduled. Answers
-     * whether it caught up.
+     * RPC node at `nodeUrl`, from `resumeFrom` when given, and wait for the
+     * logs it scheduled. Answers the block to resume from, or null once
+     * caught up.
      */
-    public async runCatchUpThroughNode(nodeUrl: string): Promise<boolean> {
+    public async runCatchUpThroughNode(
+        nodeUrl: string,
+        resumeFrom?: number
+    ): Promise<number | null> {
         const sm = this.sm;
         const node = new RpcNodeProvider(nodeUrl, sm.logger);
         try {
             if (await node.firstAttempt)
                 throw new Error("Expected the catch-up node to connect");
-            const resumeFrom = await sm.eventSyncService.catchUpLogs(
+            const nextResumeFrom = await sm.eventSyncService.catchUpLogs(
                 node,
                 sm.channelId,
-                0
+                0,
+                resumeFrom
             );
             await sm.eventSyncService.waitForScheduled(
                 CATCH_UP_DRAIN_TIMEOUT_MS
             );
-            return resumeFrom === undefined;
+            return nextResumeFrom ?? null;
         } finally {
             node.destroy();
         }
+    }
+
+    /**
+     * Schedule `fields`' log the way a recovery query does, wait for it to
+     * complete, and answer the channel's watermark afterwards.
+     */
+    public async scheduleLogAsRecovery(
+        fields: ChainLogFields
+    ): Promise<number | null> {
+        const sm = this.sm;
+        const provider = sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("Expected the runtime chain provider");
+        const log = new Log({ ...fields, removed: false }, provider);
+        await sm.eventSyncService.scheduleLog(log, sm.channelId);
+        return this.getEventWatermark();
+    }
+
+    /**
+     * Hold the channel's completed-block watermark the way a reconnect
+     * catch-up does, and answer the hold's id for releaseEventWatermark.
+     */
+    public holdEventWatermark(): number {
+        const sm = this.sm;
+        this.watermarkReleases.push(
+            sm.eventSyncService.holdWatermark(sm.channelId, 0)
+        );
+        return this.watermarkReleases.length - 1;
+    }
+
+    /** Run the release of hold `holdId`, and answer the watermark afterwards. */
+    public releaseEventWatermark(holdId: number): number | null {
+        const release = this.watermarkReleases[holdId];
+        if (!release) throw new Error(`No watermark hold ${holdId}`);
+        release();
+        return this.getEventWatermark();
     }
 
     /** The channel's completed-block watermark, or null before one exists. */

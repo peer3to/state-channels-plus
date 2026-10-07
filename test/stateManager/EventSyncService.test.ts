@@ -350,6 +350,55 @@ describe("EventSyncService", function () {
             await restoreEvents(false);
         });
 
+        it("a recovery read across several windows survives a failed middle window and dispatches each dispute once", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2,
+                    harnessOptions: {
+                        rpcNodeProxiesByPeer: { [observerIndex]: 1 },
+                        // one block per window: every recovery spans several
+                        configOverrides: { LOG_QUERY_MAX_BLOCKS: 1 }
+                    }
+                });
+            const [proxy] = h.getRpcNodeProxies(observerIndex);
+            await restoreEvents(false);
+            await h.event.settleContractEvents(observerIndex);
+            const committedBefore = h.event.getEventCallCount(
+                observerIndex,
+                "onDisputeCommitted"
+            );
+            const windowsBefore = proxy.forwardedLogWindows().length;
+            // the first attempt reads one window, then its second window fails
+            proxy.failRequestAfter("eth_getLogs", 1);
+
+            const recoveredCount = await h
+                .control(h.getPeer(observerIndex))
+                .dispute.recoverCommittedDisputes(forkId)
+                .request();
+
+            expect(proxy.failedCount("eth_getLogs")).to.equal(1);
+            expect(
+                proxy.forwardedLogWindows().length - windowsBefore
+            ).to.be.at.least(3);
+            if (recoveredCount === null)
+                throw new Error("Expected the window to be recovered");
+            expect(recoveredCount).to.be.greaterThan(0);
+            await h.event.settleContractEvents(observerIndex);
+            expect(
+                h.event.getEventCallCount(observerIndex, "onDisputeCommitted") -
+                    committedBefore
+            ).to.equal(recoveredCount);
+
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+        });
+
         it("dispute window-span read fails → failed recovery, no throw", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
@@ -466,6 +515,77 @@ describe("EventSyncService", function () {
             // premise - the log's block is the completed watermark itself
             expect(probe.watermark).to.equal(probe.logBlockNumber);
             expect(probe.handlerCalls).to.equal(1);
+        });
+    });
+
+    describe("holdWatermark", function () {
+        it("keeps the watermark at its block while a later block completes, and publishes that block on release", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const validation = h.control(h.getPeer(1)).validation;
+            const watermark = await validation.getEventWatermark().request();
+            if (watermark === null) throw new Error("Expected a watermark");
+            const holdId = await validation.holdEventWatermark().request();
+            const callsBefore = h.event.getEventCallCount(
+                1,
+                "onInboundMessagesProcessed"
+            );
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.event.settleContractEvents(1);
+            const [topUpLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.InboundMessagesProcessed(
+                        h.channelId
+                    )
+                )
+            ).slice(-1);
+
+            // premise - the later block's log was processed while held
+            expect(
+                h.event.getEventCallCount(1, "onInboundMessagesProcessed")
+            ).to.equal(callsBefore + 1);
+            expect(topUpLog.blockNumber).to.be.greaterThan(watermark);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                watermark
+            );
+            expect(
+                await validation.releaseEventWatermark(holdId).request()
+            ).to.equal(topUpLog.blockNumber);
+        });
+
+        it("a repeated release does not release another hold", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const validation = h.control(h.getPeer(1)).validation;
+            const watermark = await validation.getEventWatermark().request();
+            if (watermark === null) throw new Error("Expected a watermark");
+            const firstHold = await validation.holdEventWatermark().request();
+            const secondHold = await validation.holdEventWatermark().request();
+
+            await validation.releaseEventWatermark(firstHold).request();
+            await validation.releaseEventWatermark(firstHold).request();
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.event.settleContractEvents(1);
+            const [topUpLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.InboundMessagesProcessed(
+                        h.channelId
+                    )
+                )
+            ).slice(-1);
+
+            expect(topUpLog.blockNumber).to.be.greaterThan(watermark);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                watermark
+            );
+            expect(
+                await validation.releaseEventWatermark(secondHold).request()
+            ).to.equal(topUpLog.blockNumber);
         });
     });
 

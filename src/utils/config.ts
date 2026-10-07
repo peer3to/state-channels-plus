@@ -5,6 +5,10 @@ export type Config = {
     // RPC nodes in priority order. The first one sends transactions while it
     // is connected. Unset or empty means the single node PROVIDER_URL.
     PROVIDER_URLS?: string[];
+    // Most blocks one eth_getLogs read may span. Event catch-up and recovery
+    // read longer ranges in windows of this size; set it at or below the
+    // endpoints' own range limit. A positive integer.
+    LOG_QUERY_MAX_BLOCKS: number;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -49,6 +53,7 @@ export type Config = {
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
+    LOG_QUERY_MAX_BLOCKS: 1000,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

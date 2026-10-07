@@ -993,3 +993,42 @@ export async function assertFailedLogPageAnsweredForRetry(): Promise<void> {
         ).to.equal(TEST_LOG_SPAN);
     });
 }
+
+export async function assertInvalidLogWindowRejectsStartup(): Promise<void> {
+    await withIsolatedHardhatNode(async (node) => {
+        const logger = quietLogger();
+        const reachable = await RpcNodeProxy.start(node._getConnection().url);
+        try {
+            const failures = await Promise.all(
+                [0, 2.5].map((maxBlocks) =>
+                    createRuntimeChainContext(
+                        {
+                            ...config,
+                            PROVIDER_URLS: [reachable.url],
+                            LOG_QUERY_MAX_BLOCKS: maxBlocks
+                        },
+                        Wallet.createRandom().privateKey,
+                        logger
+                    ).then(
+                        () => undefined,
+                        (error: unknown) => error
+                    )
+                )
+            );
+            // time is the input: long enough for a node to connect
+            await sleep(ABSENCE_WINDOW_MS);
+
+            for (const failure of failures) {
+                if (!(failure instanceof Error))
+                    throw new Error("Expected startup to fail");
+                expect(failure.message).to.include(
+                    "LOG_QUERY_MAX_BLOCKS must be a positive integer"
+                );
+            }
+            expect(reachable.forwardedMethods).to.deep.equal([]);
+        } finally {
+            await reachable.close();
+            logger.dispose();
+        }
+    });
+}

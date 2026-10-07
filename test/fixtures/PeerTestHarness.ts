@@ -1008,6 +1008,23 @@ export class PeerTestHarness<
         this.logger.dispose();
     }
 
+    /**
+     * Mine `count` blocks with ordinary self-transfers from this slot's
+     * deployer account, one block each: a chain that advances without
+     * channel events and without any node-wide test RPC.
+     */
+    async produceBlocks(count: number): Promise<void> {
+        const deployer = this.signerFor(slotDeployerIndex());
+        for (let block = 0; block < count; block++) {
+            await (
+                await deployer.sendTransaction({
+                    to: deployer.address,
+                    value: 0n
+                })
+            ).wait();
+        }
+    }
+
     /** The RPC node proxies of a peer set up with `rpcNodeProxiesByPeer`, in PROVIDER_URLS order. */
     getRpcNodeProxies(index: number): readonly RpcNodeProxy[] {
         const proxies = this.rpcNodeProxies.get(index);

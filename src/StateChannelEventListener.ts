@@ -76,6 +76,15 @@ class StateChannelEventListener {
                 // catch-up drops that block's logs as below the watermark.
                 const held: Log[] = [];
                 let catchingUp = true;
+                // Hold the watermark at the catch-up's first block until the
+                // read reaches the head or is abandoned. Taken here, before
+                // the requests this reconnect released can answer, so a log
+                // a recovery query completes in a later block cannot move
+                // the watermark past blocks the catch-up has not read.
+                const releaseWatermark = this.eventSyncService.holdWatermark(
+                    channelId,
+                    subscribedAtBlock
+                );
                 const socketListener = (log: Log) => {
                     if (catchingUp) held.push(log);
                     else listener(log);
@@ -97,6 +106,7 @@ class StateChannelEventListener {
                         .finally(() => {
                             catchingUp = false;
                             for (const log of held.splice(0)) listener(log);
+                            releaseWatermark();
                         })
                 );
             })

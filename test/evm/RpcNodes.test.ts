@@ -5,6 +5,7 @@ import {
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
     assertHeartbeatErrorAnswerKeepsNode,
+    assertInvalidLogWindowRejectsStartup,
     assertInvalidSecretOpensNoNode,
     assertLogPagesReadInAscendingWindows,
     assertMalformedEndpointRejectsStartupQuietly,
@@ -138,6 +139,10 @@ describe("MultiRpcProvider", () => {
 
     it("rejects startup over an invalid signer secret without opening a node", async () => {
         await assertInvalidSecretOpensNoNode();
+    });
+
+    it("rejects startup over a log window that is not a positive integer without opening a node", async () => {
+        await assertInvalidLogWindowRejectsStartup();
     });
 
     it("relays each new block once from the node sockets without polling", async () => {

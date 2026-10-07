@@ -84,6 +84,10 @@ export class RpcNodeProxy {
     private readonly swallowedReplyIds = new Set<JsonRpcId>();
     /** Method -> how many of its next requests this proxy answers with an error. */
     private readonly failingMethods = new Map<JsonRpcMethod, number>();
+    /** Method -> how many of its next requests pass before one fails. */
+    private readonly delayedFailures = new Map<JsonRpcMethod, number>();
+    /** Requests this proxy answered with an error, by method. */
+    private readonly failedMethods: JsonRpcMethod[] = [];
     /** Method -> the result this proxy answers its requests with, unforwarded. */
     private readonly answeredMethods = new Map<JsonRpcMethod, unknown>();
     /** Most blocks an eth_getLogs may span before this proxy rejects it. */
@@ -139,6 +143,16 @@ export class RpcNodeProxy {
     /** Answer the next `method` request with a JSON-RPC error, unforwarded. */
     failNextRequest(method: JsonRpcMethod): void {
         this.failingMethods.set(method, 1);
+    }
+
+    /** Let `passing` `method` requests through, then fail the next one. */
+    failRequestAfter(method: JsonRpcMethod, passing: number): void {
+        this.delayedFailures.set(method, passing);
+    }
+
+    /** How many `method` requests this proxy answered with an error. */
+    failedCount(method: JsonRpcMethod): number {
+        return this.failedMethods.filter((failed) => failed === method).length;
     }
 
     /** Answer every `method` request with an error until {@link stopFailingRequests}. */
@@ -238,12 +252,22 @@ export class RpcNodeProxy {
             if (method && this.swallowedMethods.has(method)) return;
             const reply = (answer: object) =>
                 client.send(JSON.stringify({ jsonrpc: "2.0", id, ...answer }));
+            const passing = method
+                ? this.delayedFailures.get(method)
+                : undefined;
+            if (method && id !== undefined && passing !== undefined) {
+                if (passing === 0) {
+                    this.delayedFailures.delete(method);
+                    this.failingMethods.set(method, 1);
+                } else this.delayedFailures.set(method, passing - 1);
+            }
             const failures = method
                 ? this.failingMethods.get(method)
                 : undefined;
             if (method && id !== undefined && failures) {
                 if (failures === 1) this.failingMethods.delete(method);
                 else this.failingMethods.set(method, failures - 1);
+                this.failedMethods.push(method);
                 reply({ error: { code: -32005, message: "request failed" } });
                 return;
             }

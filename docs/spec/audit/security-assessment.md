@@ -649,8 +649,11 @@ endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with fail
 the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
 watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
 across streams; removed events are ignored and lagging deliveries below the watermark are dropped
-([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). Endpoint URLs are logged by scheme and host
-only. Residual risks: answers are not cross-checked between endpoints; a removed event's effects stay
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
+head, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. Endpoint URLs are logged by scheme and host
+only. Residual risks: a `LOG_QUERY_MAX_BLOCKS` above an endpoint's range limit makes that endpoint's
+catch-up retry without end, holding the watermark and the endpoint's live events meanwhile; answers are not cross-checked between endpoints; a removed event's effects stay
 applied; a socket drop in the middle of one block's events can leave part of a block below the
 watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
 and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
