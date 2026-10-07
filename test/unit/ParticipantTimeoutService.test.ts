@@ -1,4 +1,7 @@
-import { EARLY_TIMEOUT_RECHECK_REASON } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
+    EARLY_TIMEOUT_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -737,6 +740,54 @@ describe("Unit: ParticipantTimeoutService", function () {
                 "disposed",
                 "mismatch"
             );
+        });
+    });
+
+    describe("predecessor commitment read failure", function () {
+        it("a failed predecessor commitment read re-arms the check and the timeout still commits", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.timeoutSetup(3);
+            // peer 0 authors height 0; observer 2 will time out writer 1
+            await h.transition.advanceState();
+            const observer = h.getPeer(2);
+            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            await h
+                .control(observer)
+                .stub.stubFailChainCommitmentReads()
+                .request();
+            try {
+                await waitFor(
+                    async () =>
+                        (await tasks.tasks()).some((task) =>
+                            task.taskName.startsWith(
+                                CHAIN_READ_FAILED_RECHECK_REASON
+                            )
+                        ),
+                    h.event.hostExecTimeoutMs()
+                );
+                expect(await uploads.submissions()).to.deep.equal([]);
+                await h
+                    .control(observer)
+                    .stub.restoreChainCommitmentReadFailures()
+                    .request();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+            } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreChainCommitmentReadFailures()
+                    .request();
+                await uploads.restore();
+                await tasks.restore();
+            }
         });
     });
 

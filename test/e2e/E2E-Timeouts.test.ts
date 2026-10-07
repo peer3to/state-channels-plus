@@ -4,7 +4,7 @@ import {
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -16,6 +16,12 @@ const MOVED_DEADLINE_TIME_CONFIG = {
     agreementTime: 8,
     chainFallbackTime: 10,
     evidenceTime: 20
+};
+// M9: the dispute window must outlive the post-moved deadline, or the fork is
+// reduced before the claim is ever built
+const WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG = {
+    ...MOVED_DEADLINE_TIME_CONFIG,
+    evidenceTime: 60
 };
 
 /**
@@ -653,6 +659,104 @@ describe("E2E: Timeouts", function () {
                     )
                 ).to.equal(true);
             } finally {
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h
+                    .control(observer)
+                    .stub.restoreTimeoutBuildRecording()
+                    .request();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Dispute Window Opened Before A Moved Deadline", function () {
+        it("M9 a window opened before the post-moved deadline keeps the observer from storing a claim the chain refuses", async function () {
+            const h = TestSession.getHarness();
+            const { observer, author, parentAuthor, previous, forkId } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: WINDOW_OUTLIVES_DEADLINE_TIME_CONFIG
+                });
+            // the parent author must stay free to open the window below
+            await h.dispute.suppressDisputeInitiation([author.index]);
+            // park the observer's check at the parent-based deadline
+            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // the window's event never reaches the observer, so its local
+            // mirror reads no window: only the chain knows it opened
+            const restoreDisputeEvents =
+                await h.rpcStub.holdDisputeCommittedEvents(observer.index, {
+                    passFirst: false
+                });
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            try {
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getTimeoutBuildObservation()
+                                .request()
+                        ).entered === 1,
+                    h.event.hostExecTimeoutMs()
+                );
+                // a window opens after that deadline...
+                await h.execOnHost(parentAuthor, (sm) =>
+                    sm.membershipService.startSelfRemovalDispute(sm.forkId)
+                );
+                await waitFor(
+                    async () =>
+                        await h.execOnHost(
+                            observer,
+                            async (sm, args) =>
+                                Number(
+                                    await sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                                        sm.channelId,
+                                        args.forkId
+                                    )
+                                ) !== 0,
+                            { forkId }
+                        ),
+                    h.event.hostExecTimeoutMs()
+                );
+                // ...and only then does the predecessor post, moving the
+                // writer's deadline past the window
+                await h.byzantine.postJunkCalldataOnChain(parentAuthor.index, {
+                    height: previous.height,
+                    forkId
+                });
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+
+                // the check waits out the post-based deadline...
+                const awaitPost = async () =>
+                    (await tasks.tasks()).find(
+                        (task) =>
+                            task.taskName.startsWith(
+                                PREDECESSOR_POSTED_RECHECK_REASON
+                            ) && task.delayMs > 1000
+                    );
+                await waitFor(
+                    async () => (await awaitPost()) !== undefined,
+                    h.event.hostExecTimeoutMs()
+                );
+                await sleep((await awaitPost())!.delayMs + 5000);
+
+                // ...then finds the window predates it: nothing stored, and
+                // no claim against the writer ever reaches the chain
+                expect(
+                    await h.control(observer).query.getTimeout(forkId).request()
+                ).to.equal(null);
+                for (const submission of await uploads.submissions()) {
+                    expect(
+                        Codec.decode(submission.encodedDispute, Type.Dispute)
+                            .input.timeout.participant
+                    ).to.not.equal(author.address);
+                }
+            } finally {
+                await restoreDisputeEvents(false);
                 await h.control(observer).stub.releaseTimeoutBuild().request();
                 await h
                     .control(observer)

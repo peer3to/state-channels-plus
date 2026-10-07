@@ -489,6 +489,7 @@ export class StubService extends ANetworkRpcService<
     private originalQueueProbe?: SpectateService["sync"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
+    private restoreChainCommitmentReads?: () => void;
     private timeoutStoreCalls = 0;
     private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
@@ -1672,6 +1673,23 @@ export class StubService extends ANetworkRpcService<
     public restoreTimeoutBuildRecording(): void {
         this.restoreTimeoutBuild?.();
         this.restoreTimeoutBuild = undefined;
+    }
+
+    // every chain commitment read rejects until restored (an RPC outage)
+    public stubFailChainCommitmentReads(): void {
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
+        const original = contract.getBlockCallDataCommitment;
+        Reflect.set(contract, "getBlockCallDataCommitment", async () => {
+            throw new Error("stubbed chain commitment read failure");
+        });
+        this.restoreChainCommitmentReads = () =>
+            Reflect.set(contract, "getBlockCallDataCommitment", original);
+    }
+
+    public restoreChainCommitmentReadFailures(): void {
+        this.restoreChainCommitmentReads?.();
+        this.restoreChainCommitmentReads = undefined;
     }
 
     public holdInitHandshakes(): void {

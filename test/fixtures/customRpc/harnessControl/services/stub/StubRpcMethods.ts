@@ -3034,6 +3034,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public stubFailChainCommitmentReads(): boolean {
+        this.service.stubFailChainCommitmentReads();
+        return true;
+    }
+
+    public restoreChainCommitmentReadFailures(): boolean {
+        this.service.restoreChainCommitmentReadFailures();
+        return true;
+    }
+
     public holdInitHandshakes(): boolean {
         this.service.holdInitHandshakes();
         return true;
