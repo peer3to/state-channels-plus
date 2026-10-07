@@ -70,9 +70,14 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
 
     public async runCatchUpThroughNode(
         nodeUrl: string,
-        resumeFrom?: number
+        resumeFrom?: number,
+        targetHead?: number
     ): Promise<number | null> {
-        return this.service.runCatchUpThroughNode(nodeUrl, resumeFrom);
+        return this.service.runCatchUpThroughNode(
+            nodeUrl,
+            resumeFrom,
+            targetHead
+        );
     }
 
     public async holdEventWatermark(fromBlock?: number): Promise<number> {

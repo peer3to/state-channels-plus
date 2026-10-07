@@ -655,9 +655,13 @@ most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold rele
 socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
 replaced, or on disposal. After a failed window the remaining windows are read through the first
 connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
-range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Endpoint URLs are
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
+reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
+is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
+reopened endpoint's subscription never delivered. Endpoint URLs are
 logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
-the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit) and the reopened
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
+the reopened endpoint's head, and the reopened
 socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
 block states are not pruned, every recovery query reads from the held block, and the reopened socket's
 live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay

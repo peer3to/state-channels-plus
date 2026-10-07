@@ -256,15 +256,19 @@ export default class EventSyncService {
      * that node failed), from the completed-block watermark (or `fromBlock`
      * before one exists) up to `reader`'s head, page by page, and schedule
      * each page's logs before reading the next. scheduleStreamedLog
-     * deduplicates the logs another stream delivered. Never throws: answers
-     * `undefined` once caught up, or the block a retry resumes from
-     * (`resumeFrom` of the next call) when a read failed.
+     * deduplicates the logs another stream delivered. A `targetHead` (the
+     * reopened node's head while another node reads for it) is the least
+     * head the read must reach: a reader still behind it reads nothing and
+     * answers where to resume. Never throws: answers `undefined` once
+     * caught up, or the block a retry resumes from (`resumeFrom` of the next
+     * call) when a read failed or the reader is behind `targetHead`.
      */
     async catchUpLogs(
         reader: Provider,
         channelId: ChannelId,
         fromBlock: BlockNumber,
-        resumeFrom?: BlockNumber
+        resumeFrom?: BlockNumber,
+        targetHead?: BlockNumber
     ): Promise<BlockNumber | undefined> {
         const watermark =
             this.storage.eventSync.getLatestProcessedBlock(channelId);
@@ -277,6 +281,15 @@ export default class EventSyncService {
                 channelId,
                 fromBlock: catchUpFrom,
                 error
+            });
+            return catchUpFrom;
+        }
+        if (targetHead !== undefined && toBlock < targetHead) {
+            this.logger.warn("Contract event catch-up reader is behind", {
+                channelId,
+                fromBlock: catchUpFrom,
+                readerHead: toBlock,
+                targetHead
             });
             return catchUpFrom;
         }

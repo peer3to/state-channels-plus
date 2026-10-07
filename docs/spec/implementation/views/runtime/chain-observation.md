@@ -43,7 +43,8 @@ derives the wallet, opens the nodes and returns once one node connected.
 - `LOG_QUERY_MAX_BLOCKS` (default 1000) must be at or below every endpoint's own `eth_getLogs` range
   limit. A reopened endpoint whose windows fail hands the rest of its catch-up to the first connected
   endpoint; when that endpoint fails the windows too, the catch-up keeps retrying through it and the
-  watermark stays held until the read succeeds or the reopened socket ends.
+  watermark stays held until the read succeeds or the reopened socket ends. The same holds while the
+  first connected endpoint's head is behind the reopened endpoint's head.
 
 ## System design
 
@@ -60,9 +61,13 @@ derives the wallet, opens the nodes and returns once one node connected.
    `LOG_QUERY_MAX_BLOCKS` blocks in ascending order and
    schedules each before the next, then the held logs are released and the watermark hold ends. The
    first read goes through the reopened node; after a failed read the remaining windows are read
-   through the provider, i.e. the first connected node, retried with the reconnect backoff. The
-   socket ending, a cleared or replaced subscription, or disposal abandons the catch-up: the held logs
-   are released and the hold ends at once, and the node's next socket starts a new catch-up.
+   through the provider, i.e. the first connected node, retried with the reconnect backoff. Those
+   reads must reach the reopened node's head, asked once on its socket at the switch: a first
+   connected node behind it reads nothing until it catches up. The socket ending abandons the
+   catch-up: the held logs are released and the hold ends at once, and the node's next socket starts
+   a new catch-up. A cleared or replaced subscription, or disposal, aborts it at once too: the held
+   logs of the removed subscription are dropped and the hold ends without waiting for a read or a
+   retry's backoff.
 5. **Ownership.** The host disposes the provider, or, when the process-wide Clock still reads through
    it, stops its reconnects and releases it to the Clock, which destroys it once replaced.
 

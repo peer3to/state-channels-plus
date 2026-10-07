@@ -464,13 +464,14 @@ export class ValidationProbeService extends ANetworkRpcService<
 
     /**
      * Run one reconnect catch-up for this peer's channel through a separate
-     * RPC node at `nodeUrl`, from `resumeFrom` when given, and wait for the
-     * logs it scheduled. Answers the block to resume from, or null once
-     * caught up.
+     * RPC node at `nodeUrl`, from `resumeFrom` when given, up to at least
+     * `targetHead` when given, and wait for the logs it scheduled. Answers
+     * the block to resume from, or null once caught up.
      */
     public async runCatchUpThroughNode(
         nodeUrl: string,
-        resumeFrom?: number
+        resumeFrom?: number,
+        targetHead?: number
     ): Promise<number | null> {
         const sm = this.sm;
         const node = new RpcNodeProvider(nodeUrl, sm.logger);
@@ -481,7 +482,8 @@ export class ValidationProbeService extends ANetworkRpcService<
                 node,
                 sm.channelId,
                 0,
-                resumeFrom
+                resumeFrom,
+                targetHead
             );
             await sm.eventSyncService.waitForScheduled(
                 CATCH_UP_DRAIN_TIMEOUT_MS

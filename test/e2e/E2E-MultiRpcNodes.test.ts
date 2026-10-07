@@ -549,6 +549,50 @@ describe("E2E: Multiple RPC nodes", function () {
         }
     });
 
+    it("reads nothing and answers the watermark through a node whose head is below the target head", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const validation = h.control(h.getPeer(1)).validation;
+        const watermark = await validation.getEventWatermark().request();
+        if (watermark === null) throw new Error("Expected a watermark");
+        const proxy = await RpcNodeProxy.start(h.getConfig().PROVIDER_URL!);
+        try {
+            proxy.answerRequests("eth_blockNumber", toQuantity(watermark));
+
+            const resumeFrom = await validation
+                .runCatchUpThroughNode(proxy.url, undefined, watermark + 1)
+                .request();
+
+            expect(resumeFrom).to.equal(watermark);
+            expect(proxy.forwardedCount("eth_getLogs")).to.equal(0);
+        } finally {
+            await proxy.close();
+        }
+    });
+
+    it("reads up to its own head through a node whose head is the target head", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const validation = h.control(h.getPeer(1)).validation;
+        const watermark = await validation.getEventWatermark().request();
+        if (watermark === null) throw new Error("Expected a watermark");
+        const proxy = await RpcNodeProxy.start(h.getConfig().PROVIDER_URL!);
+        try {
+            proxy.answerRequests("eth_blockNumber", toQuantity(watermark));
+
+            const resumeFrom = await validation
+                .runCatchUpThroughNode(proxy.url, undefined, watermark)
+                .request();
+
+            expect(resumeFrom).to.equal(null);
+            expect(proxy.forwardedLogWindows()).to.deep.equal([
+                [watermark, watermark]
+            ]);
+        } finally {
+            await proxy.close();
+        }
+    });
+
     it("keeps the watermark below the catch-up's unread blocks while a recovery query completes later blocks, and advances it once the read finishes", async function () {
         const h = TestSession.getHarness();
         const proxied = 2;
@@ -619,7 +663,11 @@ describe("E2E: Multiple RPC nodes", function () {
         const endpointLimit = 10;
         await h.lifecycle.start(3, 0, {
             rpcNodeProxiesByPeer: { [proxied]: 1 },
-            configOverrides: { LOG_QUERY_MAX_BLOCKS: endpointLimit }
+            configOverrides: { LOG_QUERY_MAX_BLOCKS: endpointLimit },
+            // the produced blocks and the reconnect backoff keep the channel
+            // idle past the default first-block timeout, whose dispute would
+            // reject the later top-up
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [proxy] = h.getRpcNodeProxies(proxied);
         proxy.rejectLogSpansAbove(endpointLimit);
@@ -831,6 +879,109 @@ describe("E2E: Multiple RPC nodes", function () {
         // time is the input: a retry through the backup would have read by now
         await sleep(BACKOFF_CAP_WINDOW_MS);
         expect(backup.failedCount("eth_getLogs")).to.equal(1);
+        backup.stopFailingRequests("eth_getLogs");
+    });
+
+    it("releases a catch-up's watermark hold at once when the channel listener is cleared during its read", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        const validation = () => h.control(h.getPeer(proxied)).validation;
+        proxy.cut();
+        const getLogsBeforeRestore = proxy.forwardedCount("eth_getLogs");
+        // only the catch-up's read: later reads pass
+        const releaseCatchUpRead = proxy.holdRequests("eth_getLogs", 1);
+        proxy.restore();
+        // the reconnect's catch-up read is in flight, held at the proxy
+        await waitFor(
+            () => proxy.forwardedCount("eth_getLogs") > getLogsBeforeRestore
+        );
+
+        await validation().clearChannelListener().request();
+        await validation().restoreChannelListener().request();
+        // the selected channel's live subscription streams a later event
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(0).address
+        });
+        await h.event.settleContractEvents(proxied);
+        const [laterLog] = (
+            await h.channelManager.queryFilter(
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+            )
+        ).slice(-1);
+
+        // the cleared catch-up's read is still held, yet its hold is gone
+        const watermark = await validation().getEventWatermark().request();
+        expect(watermark).not.to.equal(null);
+        expect(watermark!).to.be.at.least(laterLog.blockNumber);
+        releaseCatchUpRead();
+    });
+
+    it("keeps a backup's catch-up through the first connected node retrying until that node reaches the backup's head", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 2 },
+            // the reconnect backoff and the lagging node keep the channel
+            // idle past the default first-block timeout, whose dispute
+            // would reject the later top-up
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
+        });
+        const [first, backup] = h.getRpcNodeProxies(proxied);
+        const validation = h.control(h.getPeer(proxied)).validation;
+        const callsBefore = h.event.getEventCallCount(
+            proxied,
+            "onInboundMessagesProcessed"
+        );
+        backup.cut();
+        const head = await h.channelManager.runner!.provider!.getBlockNumber();
+        // the first node reports a head one block behind the backup's
+        first.answerRequests("eth_blockNumber", toQuantity(head - 1));
+        // the backup's own catch-up read fails, so the first node reads for it
+        backup.failRequests("eth_getLogs");
+        const firstWindowsBefore = first.forwardedLogWindows().length;
+        backup.restore();
+        await waitFor(() => backup.failedCount("eth_getLogs") > 0);
+        const [[failedFrom]] = backup.failedLogWindows();
+        // time is the input: a read through the first node would have
+        // finished by now if it stopped at that node's head
+        await sleep(LIVE_LOG_SETTLE_MS);
+
+        // the first node streams a later event live
+        await h.join.forceInboundJoinWait({
+            participant: h.getPeer(0).address
+        });
+        await h.event.settleContractEvents(proxied);
+        const [laterLog] = (
+            await h.channelManager.queryFilter(
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+            )
+        ).slice(-1);
+        // the catch-up has read nothing through the lagging node and still
+        // holds the watermark
+        expect(first.forwardedLogWindows().slice(firstWindowsBefore)).to.be
+            .empty;
+        const heldWatermark = await validation.getEventWatermark().request();
+        expect(heldWatermark).not.to.equal(null);
+        expect(heldWatermark!).to.be.lessThan(laterLog.blockNumber);
+
+        first.stopAnsweringRequests("eth_blockNumber");
+        await waitFor(
+            async () =>
+                ((await validation.getEventWatermark().request()) ?? -1) >=
+                laterLog.blockNumber
+        );
+        const [[readFrom]] = first
+            .forwardedLogWindows()
+            .slice(firstWindowsBefore);
+        expect(readFrom).to.equal(failedFrom);
+        await h.event.settleContractEvents(proxied);
+        expect(
+            h.event.getEventCallCount(proxied, "onInboundMessagesProcessed")
+        ).to.equal(callsBefore + 1);
         backup.stopFailingRequests("eth_getLogs");
     });
 });

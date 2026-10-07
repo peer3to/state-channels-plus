@@ -192,6 +192,11 @@ export class RpcNodeProxy {
         this.answeredMethods.set(method, result);
     }
 
+    /** Forward `method`'s requests to the node again after {@link answerRequests}. */
+    stopAnsweringRequests(method: JsonRpcMethod): void {
+        this.answeredMethods.delete(method);
+    }
+
     /** Reject eth_getLogs requests spanning more than `maxSpan` blocks. */
     rejectLogSpansAbove(maxSpan: number): void {
         this.maxLogSpan = maxSpan;
