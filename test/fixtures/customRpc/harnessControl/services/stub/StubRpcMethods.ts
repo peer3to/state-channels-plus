@@ -1208,24 +1208,23 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Restore scheduling for `prefix`, run its held tasks and wait for each to
-     * finish; returns how many ran, so a caller can prove they executed.
+     * finish. Like TimeoutManager.scheduleTask, a failing task does not reject
+     * the call; its error is returned so the caller can require a clean run.
      */
-    public async runHeldScheduledTasks(prefix: string): Promise<number> {
+    public async runHeldScheduledTasks(
+        prefix: string
+    ): Promise<{ ran: number; errors: string[] }> {
         const held = this.service.heldScheduledTasks.get(prefix) ?? [];
         this.restoreHeldScheduledTasks(prefix, false);
+        const errors: string[] = [];
         for (const { task } of held) {
-            // like TimeoutManager.scheduleTask: a failing task is reported,
-            // not propagated to the caller
             try {
                 await task();
             } catch (error) {
-                this.service.sm.logger.warn("held scheduled task failed", {
-                    prefix,
-                    error: errorMessage(error)
-                });
+                errors.push(errorMessage(error));
             }
         }
-        return held.length;
+        return { ran: held.length, errors };
     }
 
     public holdNextSignature(match?: SignatureBlockMatch): boolean {

@@ -446,7 +446,7 @@ export async function assertMismatchRetryAfterForkSwitch(
     let probes:
         | {
               release: (runHeld: boolean) => Promise<void>;
-              runHeld: () => Promise<number>;
+              runHeld: () => Promise<{ ran: number; errors: string[] }>;
               submissions: () => Promise<RecordedDisputeSubmission[]>;
               tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
               restore: () => Promise<void>;
@@ -529,7 +529,7 @@ async function expectOldForkCheckIgnored(
     sourceForkId: ForkId,
     reason: string,
     probes: {
-        runHeld: () => Promise<number>;
+        runHeld: () => Promise<{ ran: number; errors: string[] }>;
         submissions: () => Promise<RecordedDisputeSubmission[]>;
         tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
     },
@@ -557,8 +557,8 @@ async function expectOldForkCheckIgnored(
             );
         const count = (await oldForkTasks()).length;
         const submitted = (await probes.submissions()).length;
-        // the held old-fork re-arm really runs, to completion
-        expect(await probes.runHeld()).to.equal(1);
+        // the held old-fork re-arm really runs, to completion, without error
+        expect(await probes.runHeld()).to.deep.equal({ ran: 1, errors: [] });
         // New attempts to queue that same old-fork check must also be ignored.
         await h.execOnHost(
             target,
