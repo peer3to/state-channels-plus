@@ -711,6 +711,28 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Hold only the inbound storage write of a peer's InboundMessagesProcessed
+     * handler: its local diamond still applies the event, while inbound
+     * storage lags it.
+     */
+    async holdInboundMessageStorage(peerIndex: number): Promise<{
+        /** Restore the storage write; held writes replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldInboundMessageStorage().request();
+        this.logger.debug(
+            `Holding inbound storage writes on peer ${peerIndex}`
+        );
+        return {
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageStorage(replay).request();
+            }
+        };
+    }
+
     async dropSlashLogs(peerIndex: number) {
         return this.dropEventLogs(peerIndex, ["ChainSlashed", "DisputeKilled"]);
     }

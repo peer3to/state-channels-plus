@@ -4,6 +4,12 @@ import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateServic
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    appendForgedInboundSuccessor,
+    applyDisputeWindowInboundSyncPayload,
+    redirectDisputesToChannelWithoutWindow,
+    redirectDisputesToForkWithoutWindow
+} from "@test/fixtures/DisputeWindowInboundSyncStaging";
+import {
     applyAnchoredSyncPayload,
     forgedOutboundBlock,
     stageAnchoredSyncPayload
@@ -759,6 +765,117 @@ describe("Unit: SpectateService", function () {
             );
             expect(rejections).to.deep.equal([]);
             expect(accepted).to.equal(true);
+        });
+
+        it("chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainBeforeSync",
+                    mutate: appendForgedInboundSuccessor
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window reduced locally during sync → accepted, its inbound blocks stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: () => {} }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
+        });
+
+        it("window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                { reduction: "local", mutate: appendForgedInboundSuccessor }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["served reduction reverts"]);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+        });
+
+        it("unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: redirectDisputesToForkWithoutWindow
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
+            expect(r.responderBlacklisted).to.equal(true);
+            expect(r.requesterForkId).to.equal(r.sourceForkId);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "local",
+                    mutate: redirectDisputesToChannelWithoutWindow
+                }
+            );
+            expect(r.accepted).to.equal(false);
+            expect(r.rejections).to.deep.equal(["dispute window mismatch"]);
+            expect(r.responderBlacklisted).to.equal(true);
+            expect(r.requesterForkId).to.equal(r.sourceForkId);
+            expect(r.localReducedForkId).to.equal(ethers.ZeroHash);
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "chainAfterFinalityRead",
+                    mutate: appendForgedInboundSuccessor
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal([]);
+            expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
+        });
+
+        it("window already reduced locally by a concurrent sync, with a fabricated inbound successor → accepted, only the concurrent sync's genuine inbound blocks stored", async function () {
+            const r = await applyDisputeWindowInboundSyncPayload(
+                TestSession.getHarness(),
+                {
+                    reduction: "concurrentLocalSync",
+                    mutate: appendForgedInboundSuccessor
+                }
+            );
+            expect(r.rejections).to.deep.equal([]);
+            expect(r.accepted).to.equal(true);
+            expect(r.appliedInboundHashes.length).to.equal(
+                r.servedInboundHashes.length + 1
+            );
+            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
+            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
         });
     });
 
