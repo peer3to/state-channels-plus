@@ -278,7 +278,7 @@ methods }`. Never interleave a field declaration between methods. When adding a
   below) + a `StateChannelManagerInterface` decl; TS calls
   `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
-  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
+  `verifyMilestones`). Broadly-shared primitive → `internal`
   `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
   `public` wrapper on `UtilityFacet` when TS or a test needs to call it
   (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
@@ -398,6 +398,11 @@ limit, so it implements only what needs its own storage and composition (`open`,
 - Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
 
 ### Required Human review decisions
+
+- When the human makes a review decision in this conversation, record it in the
+  assessment and ready-to-post reply, and update affected decision/finding records.
+  Do not ask for the same decision again. Keep drafts in the review UI’s supported
+  reply section; do not post them without an explicit request.
 
 - When an automated review flags an unresolved design choice, implementing agents
   must ask their human unless the specification or an existing human decision

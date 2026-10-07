@@ -52,6 +52,7 @@ const {
     nextSampleDelayMs
 } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const {
+    allowsWorkerAssignment,
     buildSlotEnv,
     holdReason
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
@@ -77,6 +78,67 @@ function steadyClock() {
 }
 
 describe("distributed worker scheduler", function () {
+    it("holds chain assignments for accounts while admitting other tiers and retries after release", async function () {
+        const taskResources = new TaskResourcePool({
+            baseEnv: {},
+            slots: [],
+            accountPartitions: new AccountPartitionPool(1)
+        });
+        const lease = taskResources.acquire({ runner: "hardhat" });
+        let samples = 0;
+        const holds: string[] = [];
+        const options = {
+            taskResources,
+            scheduler: { options: { schedule: "fifo" }, bufferedCount: 1 },
+            resources: {
+                async allows() {
+                    samples++;
+                    return true;
+                }
+            },
+            config: { concurrencyCap: 40, taskCount: 3 },
+            logging: {
+                hold({ reason }: { reason: string }) {
+                    holds.push(reason);
+                }
+            }
+        };
+        const chain = { seq: 1, task: { runner: "hardhat" } };
+        try {
+            expect(
+                await allowsWorkerAssignment(options, 1, chain, [])
+            ).to.equal(false);
+            expect(samples).to.equal(0);
+            expect(holds).to.deep.equal([
+                "waiting for a funded account partition"
+            ]);
+            expect(
+                await allowsWorkerAssignment(
+                    options,
+                    1,
+                    { task: { runner: "forge" } },
+                    []
+                )
+            ).to.equal(true);
+            expect(
+                await allowsWorkerAssignment(
+                    options,
+                    1,
+                    { task: { runner: "browser" } },
+                    []
+                )
+            ).to.equal(true);
+            expect(samples).to.equal(2);
+            lease.release();
+            expect(
+                await allowsWorkerAssignment(options, 0, chain, [])
+            ).to.equal(true);
+            expect(samples).to.equal(3);
+        } finally {
+            lease.release();
+        }
+    });
+
     it("accepts default cost scheduling and rejects invalid scheduling flags", function () {
         expect(parseCliArgs(["node", "runner"])).to.include({
             schedule: "cost",
@@ -1158,6 +1220,7 @@ describe("distributed worker scheduler", function () {
             path.join(os.tmpdir(), "memory-admission-")
         );
         let containerGb = 3;
+        let inactiveFileGb = 0;
         let boundedContainer = true;
         let idleTicks = 1000;
         try {
@@ -1193,6 +1256,8 @@ describe("distributed worker scheduler", function () {
                         if (file === "/proc/self/cgroup") return "0::/worker\n";
                         if (!boundedContainer && file.includes("/memory."))
                             throw new Error("ENOENT");
+                        if (file.endsWith("/memory.stat"))
+                            return `inactive_file ${inactiveFileGb * 1024 ** 3}\n`;
                         if (file.endsWith("/memory.current"))
                             return String(containerGb * 1024 ** 3);
                         if (file.endsWith("/memory.max"))
@@ -1221,6 +1286,14 @@ describe("distributed worker scheduler", function () {
             containerGb = 8;
             expect(await resources.allows(3, 40, admission)).to.equal(false);
             expect(resources.lastHoldReason).to.equal("memory");
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            containerGb = 9.5;
+            inactiveFileGb = 6.5;
+            expect(await resources.allows(0, 40, admission)).to.equal(true);
+            expect(resources.costBudget({ cores: 0, rssGb: 0 }).rssGb).to.equal(
+                5
+            );
+            inactiveFileGb = 0;
             expect(await resources.allows(0, 40, admission)).to.equal(false);
             boundedContainer = false;
             await resources.sample();

@@ -5,6 +5,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ZeroAddress } from "ethers";
@@ -183,20 +184,6 @@ export async function computeLocalReduction(
                 reducedForkId: computation.reducedForkId
             };
         },
-        { forkId },
-        { timeoutMs: h.event.hostExecTimeoutMs() }
-    );
-}
-
-/** `disputerIndex` uploads its own dispute of `forkId` through the real `dispute()`. */
-export async function disputeOnHost(
-    h: MathPeerTestHarness,
-    disputerIndex: number,
-    forkId: ForkId
-): Promise<void> {
-    await h.execOnHost(
-        h.getPeer(disputerIndex),
-        (sm, args) => sm.disputeManager.dispute(args.forkId),
         { forkId },
         { timeoutMs: h.event.hostExecTimeoutMs() }
     );
@@ -434,50 +421,6 @@ export async function prepareLateFalseTimeoutDispute(
     };
 }
 
-/**
- * Remove one stored snapshot from a peer (the storage has no delete API).
- * Stages a broken data-availability guarantee: the peer lacks a snapshot it
- * must hold.
- */
-export async function removeStoredSnapshot(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    snapshotHash: Hash
-): Promise<boolean> {
-    return h.execOnHost(
-        h.getPeer(peerIndex),
-        (sm, args) => {
-            const snapshots = sm.storage.stateSnapshots as unknown as {
-                snapshotsByHash: Map<Hash, unknown>;
-            };
-            return snapshots.snapshotsByHash.delete(args.snapshotHash);
-        },
-        { snapshotHash }
-    );
-}
-
-/**
- * Remove one stored state-machine state from a peer (the storage has no
- * delete API). Stages a broken data-availability guarantee: the peer lacks
- * the full state of a finalized snapshot it holds.
- */
-export async function removeStoredState(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    stateHash: Hash
-): Promise<boolean> {
-    return h.execOnHost(
-        h.getPeer(peerIndex),
-        (sm, args) => {
-            const states = sm.storage.stateMachineStates as unknown as {
-                statesByHash: Map<Hash, unknown>;
-            };
-            return states.statesByHash.delete(args.stateHash);
-        },
-        { stateHash }
-    );
-}
-
 /** The state-machine state hash a peer's stored snapshot at `height` commits to. */
 export async function storedStateHashAt(
     h: MathPeerTestHarness,
@@ -555,3 +498,5 @@ export async function stageAuditorBehindLastFinalBlock(h: MathPeerTestHarness) {
     }, h.event.protocolEventTimeoutMs());
     return { forkId, writer, auditor, others, authored, height };
 }
+
+export { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";

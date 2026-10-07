@@ -8,6 +8,7 @@ import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mir
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
+    proofHeights,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
 import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
@@ -61,15 +62,6 @@ export type FreshApplyOptions = ApplyOptions & {
     /** Runs once the fresh requester is held, before the first payload is applied. */
     beforeApply?: (requester: Peer) => Promise<void>;
 };
-
-/** The heights of each milestone's blocks. */
-export function proofHeights(payload: SyncPayload): number[][] {
-    return payload.stateProof.milestones.map((milestone) =>
-        milestone.blockConfirmations.map(
-            (confirmation) => Block.fromBlockConfirmation(confirmation).height
-        )
-    );
-}
 
 /**
  * The blocks `payload` serves, as they would be stored from it alone: per
@@ -536,7 +528,7 @@ export async function applyOnFreshRequester(
  * Every running peer serves `payload` and a fresh spectator runs its real
  * initial sync to SYNCED; the peers serve honestly again after it.
  */
-export async function syncSpectatorOnServedPayload(
+export async function syncSpectatorFromAllRunningPeers(
     h: MathPeerTestHarness,
     payload: SyncPayload
 ): Promise<Peer> {
@@ -1097,7 +1089,7 @@ export async function syncAboveHeldQueuedBlock(h: MathPeerTestHarness) {
  * unposted and the change stays above the genesis anchor. `release` lets the
  * held sends go; call it before the test ends.
  */
-export async function stageUnpostedLeave(h: MathPeerTestHarness) {
+export async function stageHeldUnpostedLeave(h: MathPeerTestHarness) {
     await h.lifecycle.start(4, 2);
     const forkId = String(h.activeForkId!);
     for (const index of [0, 1, 2, 3])
@@ -1181,3 +1173,5 @@ export async function holdCanonicalProofWalk(
             })
     };
 }
+
+export { proofHeights } from "@test/fixtures/MilestoneSyncStaging";

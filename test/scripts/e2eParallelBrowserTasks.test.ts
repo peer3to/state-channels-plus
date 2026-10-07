@@ -764,7 +764,9 @@ describe("browser tier selection", function () {
                 EMPTY_TIER,
                 EMPTY_TIER
             )
-        ).to.contain("--browser-test-pattern");
+        )
+            .to.contain("--browser-test-pattern")
+            .and.contain("--test-browser=false");
     });
 
     it("reports a browser pattern that selects no runnable gate", function () {

@@ -92,7 +92,7 @@ function validateDiscoveryResults(
         return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.browserTestPattern !== undefined && !selection.includeBrowser) {
-        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--no-browser=${!cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--test-browser=${cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
         return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;

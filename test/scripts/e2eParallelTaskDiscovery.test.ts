@@ -31,6 +31,40 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/taskWire.js");
 
 describe("parallel Mocha task discovery", function () {
+    it("reuses the discovery inventory for pruning and refreshes changed source", function () {
+        const {
+            readMochaTestInventory
+        } = require("../../scripts/e2e-parallel/shared/taskDiscovery.js");
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "discovery-inventory-")
+        );
+        const file = path.join(root, "cases.test.ts");
+        try {
+            fs.writeFileSync(
+                file,
+                'it("active", () => {}); it.skip("inactive", () => {});'
+            );
+            discoverTasks(root);
+            const first = readMochaTestInventory(file);
+            expect(readMochaTestInventory(file)).to.equal(first);
+            expect(
+                first.all.tests.map(
+                    (test: { fullTitle: string }) => test.fullTitle
+                )
+            ).to.deep.equal(["active", "inactive"]);
+            fs.writeFileSync(file, 'it("replacement", () => {});');
+            const next = readMochaTestInventory(file);
+            expect(next).not.to.equal(first);
+            expect(
+                next.all.tests.map(
+                    (test: { fullTitle: string }) => test.fullTitle
+                )
+            ).to.deep.equal(["replacement"]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("excludes optional runner and browser cases unless enabled", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "optional-tests-"));
         try {

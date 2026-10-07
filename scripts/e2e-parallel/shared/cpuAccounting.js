@@ -80,7 +80,18 @@ function readMemorySnapshot(options = {}) {
         limit <= 0
     )
         return undefined;
-    return { usedGb: current / 1024 ** 3, limitGb: limit / 1024 ** 3 };
+    // Inactive file cache is reclaimable; retain anonymous, active file and
+    // kernel memory in the admission estimate. Missing stats stay conservative.
+    const stats = parseKeyValues(
+        tryRead(readFile, `${root}/memory.stat`) || ""
+    );
+    const inactiveFile = Number.isFinite(stats.inactive_file)
+        ? Math.max(0, Math.min(current, stats.inactive_file))
+        : 0;
+    return {
+        usedGb: (current - inactiveFile) / 1024 ** 3,
+        limitGb: limit / 1024 ** 3
+    };
 }
 
 // /proc/stat first line: user nice system idle iowait irq softirq steal ...

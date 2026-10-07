@@ -50,11 +50,38 @@ function collectDescribeTitlesFromIt(itCall) {
     return titles;
 }
 
-function extractMochaTests(filePath, { includeInactive = false } = {}) {
+// One inventory per source text, shared by discovery and run-end cost pruning.
+// Values contain plain declarations, not retained ts-morph projects.
+const mochaInventories = new Map();
+
+function readMochaTestInventory(filePath) {
+    const file = path.resolve(filePath);
+    const source = fs.readFileSync(file, "utf8");
+    const cached = mochaInventories.get(file);
+    if (cached?.source === source) return cached;
     const project = new Project();
-    const sourceFile = project.addSourceFileAtPath(filePath);
-    if (includeInactive && sourceFile.compilerNode.parseDiagnostics?.length)
+    // Replace only the project's in-memory source; the file already exists on disk.
+    const sourceFile = project.createSourceFile(file, source, {
+        overwrite: true
+    });
+    const inventory = {
+        source,
+        malformed: !!sourceFile.compilerNode.parseDiagnostics?.length,
+        active: extractMochaDeclarations(sourceFile, filePath, false),
+        all: extractMochaDeclarations(sourceFile, filePath, true)
+    };
+    mochaInventories.set(file, inventory);
+    return inventory;
+}
+
+function extractMochaTests(filePath, { includeInactive = false } = {}) {
+    const inventory = readMochaTestInventory(filePath);
+    if (includeInactive && inventory.malformed)
         throw new Error(`Cannot inspect malformed test source: ${filePath}`);
+    return includeInactive ? inventory.all : inventory.active;
+}
+
+function extractMochaDeclarations(sourceFile, filePath, includeInactive) {
     const tests = [];
     let requiresFileFallback = false;
 
@@ -326,6 +353,7 @@ module.exports = {
     isDescribeCallee,
     collectDescribeTitlesFromIt,
     extractMochaTests,
+    readMochaTestInventory,
     enumerateMochaTests,
     escapeRegex,
     sanitizeFileName,

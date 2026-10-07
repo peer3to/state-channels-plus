@@ -1,6 +1,7 @@
 const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
+const { PREPARATION_VERSION } = require("./workspaceCache");
 const { buildWorkerEnvironment } = require("./remoteEnvironment");
 
 function run(command, args, options) {
@@ -95,7 +96,7 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
             .createHash("sha256")
             .update(
                 JSON.stringify({
-                    version: 1,
+                    version: PREPARATION_VERSION,
                     repository: repository.path,
                     nativeModules: repository.verifyNativeModules,
                     files: (manifest.files || []).filter((entry) =>

@@ -74,7 +74,45 @@ function holdReason(options) {
     return `cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
 }
 
+// Shared owner of the distributed worker's account and resource admission.
+async function allowsWorkerAssignment(
+    { scheduler, taskResources, resources, config, logging },
+    running,
+    assignment,
+    activeAssignments
+) {
+    const schedule = scheduler.options.schedule;
+    const accountsAvailable = taskResources.canAcquire(assignment?.task);
+    const allowed =
+        accountsAvailable &&
+        (await resources.allows(
+            running,
+            config.concurrencyCap,
+            admissionCost(schedule, assignment, activeAssignments)
+        ));
+    if (!allowed) {
+        const reason = !accountsAvailable
+            ? "waiting for a funded account partition"
+            : holdReason({
+                  schedule,
+                  running,
+                  concurrencyCap: config.concurrencyCap,
+                  resourceGate: resources,
+                  memBoundGb: config.memBoundGb,
+                  targetLoad: config.targetLoad
+              });
+        logging.hold({
+            seq: assignment?.seq ?? scheduler.bufferedAssignment?.seq ?? 1,
+            total: config.taskCount,
+            reason,
+            buffered: scheduler.bufferedCount
+        });
+    }
+    return allowed;
+}
+
 module.exports = {
+    allowsWorkerAssignment,
     admissionCost,
     budgetHoldReason,
     buildSlotEnv,

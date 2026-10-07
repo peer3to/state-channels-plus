@@ -3,9 +3,21 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## PR #520 author decisions (2026-10-07)
+
+Luka confirms the deliberate fixture timing increases, including `balanceInvariant`’s 15-second evidence
+window, as exceptions permitted by the test guidance. Keep PR #520 targeting `crew/cost-scheduler`;
+its base-relative integration scope is intentional. Neither decision certifies runtime tests or closes
+unrelated protocol findings. The P2P timing changes were also explicitly requested earlier.
+
+Luka deferred SO1 and its complete local/on-chain reduction gas investigation outside this PR; see
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985).
+Successful on-chain replay must be established in the follow-up. Local exhaustion alone does not prove
+on-chain impossibility, and this PR does not change reduction failure handling.
+
 ## Local discovery endpoint replacement
 
-The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Full cost run 435 and FIFO (`-w 6`) run 436 each passed all 3,405 tasks on the final tree, including Forge and both browser gates, with no starvation or infrastructure retries.
+The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
 
 ## Runtime cleanup and context forwarding
 

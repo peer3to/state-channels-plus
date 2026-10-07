@@ -1883,6 +1883,10 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public deleteStoredState(stateHash: Hash): boolean {
+        return this.service.deleteStoredState(stateHash);
+    }
+
     /**
      * Prune this peer's snapshots and application states below `anchorHeight`
      * (the anchor's are kept); call it before pruning the blocks.

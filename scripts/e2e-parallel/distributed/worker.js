@@ -9,8 +9,7 @@ const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { processScanStats, ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
 const {
-    admissionCost,
-    holdReason,
+    allowsWorkerAssignment,
     requestCostBudget
 } = require("../shared/scheduling");
 const logging = require("../shared/logging");
@@ -208,41 +207,13 @@ async function start(config) {
         concurrencyCap: config.concurrencyCap,
         retryMs: config.schedulerTickMs,
         prefetch: true,
-        canRun: async (running, assignment, activeAssignments) => {
-            const schedule = scheduler.options.schedule;
-            const accountsAvailable = taskResources.canAcquire(
-                assignment?.task
-            );
-            const allowed =
-                accountsAvailable &&
-                (await resources.allows(
-                    running,
-                    config.concurrencyCap,
-                    admissionCost(schedule, assignment, activeAssignments)
-                ));
-            if (!allowed) {
-                const reason = !accountsAvailable
-                    ? "waiting for a funded account partition"
-                    : holdReason({
-                          schedule,
-                          running,
-                          concurrencyCap: config.concurrencyCap,
-                          resourceGate: resources,
-                          memBoundGb: config.memBoundGb,
-                          targetLoad: config.targetLoad
-                      });
-                logging.hold({
-                    seq:
-                        assignment?.seq ??
-                        scheduler.bufferedAssignment?.seq ??
-                        1,
-                    total: config.taskCount,
-                    reason,
-                    buffered: scheduler.bufferedCount
-                });
-            }
-            return allowed;
-        },
+        canRun: (running, assignment, activeAssignments) =>
+            allowsWorkerAssignment(
+                { scheduler, taskResources, resources, config, logging },
+                running,
+                assignment,
+                activeAssignments
+            ),
         requestTask: async () => {
             const costBudget = requestCostBudget(
                 scheduler.options.schedule,

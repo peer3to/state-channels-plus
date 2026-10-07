@@ -193,10 +193,15 @@ function deletedCostChecker(projectRoot) {
                     return true;
                 }
                 if (runner === "hardhat") {
-                    const { extractMochaTests } = require("./taskDiscovery");
-                    const found = extractMochaTests(file, {
-                        includeInactive: true
-                    });
+                    const {
+                        readMochaTestInventory
+                    } = require("./taskDiscovery");
+                    const inventory = readMochaTestInventory(file);
+                    if (inventory.malformed)
+                        throw new Error(
+                            `Cannot inspect malformed test source: ${file}`
+                        );
+                    const found = inventory.all;
                     if (!found.requiresFileFallback)
                         titles = new Set(
                             found.tests.map((test) => test.fullTitle)
@@ -311,17 +316,25 @@ class CostCache {
                 : metadata.starveCount > 0
                   ? value * STARVED_COST_FACTOR
                   : value;
-        const peakRssGb = inflate(attempt.peakRssGb);
+        const previous = this.resolve(task);
+        const measuredRssGb = inflate(attempt.peakRssGb);
+        const peakRssGb =
+            attempt.code === 0
+                ? measuredRssGb
+                : Math.max(measuredRssGb ?? 0, previous.rssGb);
         const measuredCores = inflate(attempt.avgCores);
         // A failed or stalled attempt must not make the next admission cheaper.
         const avgCores =
             attempt.code === 0
                 ? measuredCores
-                : Math.max(measuredCores ?? 0, this.resolve(task).cores);
+                : Math.max(measuredCores ?? 0, previous.cores);
         if (pending.sample) this.addToFileSums(task, pending.sample, -1);
         pending.sample = {
             starved: metadata.starveCount > 0,
-            durationMs: attempt.durationMs,
+            durationMs:
+                attempt.code === 0
+                    ? attempt.durationMs
+                    : Math.max(attempt.durationMs, previous.durationMs),
             peakRssGb,
             avgCores,
             measurementReason:
@@ -482,6 +495,7 @@ class CostCache {
         }
         let changed = false;
         for (const [key, { sample, starved, succeeded }] of this.pending) {
+            if (!costs[key] && !succeeded && !starved) continue;
             if (costs[key] && !starved && !(costs[key].starved && succeeded))
                 continue;
             const next = committedCost(sample, costs[key]);

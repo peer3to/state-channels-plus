@@ -55,8 +55,6 @@ const DEFAULT_TASK_COST = { durationMs: 30000, cores: 1, rssGb: 2 };
 // A starved attempt's measured cores and memory are stored this much higher,
 // so the next run admits it as more expensive; a clean retry replaces it.
 const STARVED_COST_FACTOR = 1.5;
-// A run that writes the cache rewrites a test's committed cost when one of its
-// values moved by more than this fraction.
 // Why a task's peakRssGb/avgCores are null: the sampler found no process tree,
 // or the attempt came from a worker that predates the measurements.
 const MEASUREMENT_REASONS = Object.freeze([

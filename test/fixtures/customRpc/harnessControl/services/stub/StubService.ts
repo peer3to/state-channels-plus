@@ -2466,6 +2466,13 @@ export class StubService extends ANetworkRpcService<
         snapshots["snapshotsByHash"].delete(snapshotHash);
     }
 
+    /** Remove one required application state; session teardown discards the peer. */
+    public deleteStoredState(stateHash: Hash): boolean {
+        return this.sm.storage.stateMachineStates["statesByHash"].delete(
+            stateHash
+        );
+    }
+
     /**
      * Test-harness pruning of the snapshots and application states below an
      * anchor: for every stored block of `forkId` below `anchorHeight`, its

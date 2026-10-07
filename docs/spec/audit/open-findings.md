@@ -7,6 +7,42 @@
 Known defects belong here rather than in an open-question register. A finding links its owning
 specification, implementation mirror, and verification plan as those owners are populated.
 
+## Sync reduction gas and failure attribution
+
+| ID                                                                              | Current defect                                                                                                                                                                              | Disposition                                                                                              |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| <a id="find-sync-reduction-gas-1-aje985"></a>`FIND-SYNC-REDUCTION-GAS-1-AJE985` | A local sync reduction out-of-gas is classified as invalid served evidence and can blacklist its responder; end-to-end reduction gas sufficiency is not established by that classification. | Open; high. Luka explicitly deferred all remediation and related coverage outside PR #520 on 2026-10-07. |
+
+**Confirmed by code inspection.** [SpectateService’s reduction catch](../../../src/rpc/network/services/spectate/SpectateService.ts#L333)
+calls `rejectSync` for errors recognized by [isLocalEvmExecutionFailure](../../../src/utils/evmErrorHandler.ts#L88).
+That classifier accepts the same prefix which [ContractExecutor](../../../src/evm/contractExecutor/ContractExecutor.ts#L185)
+uses for EVM out-of-gas. The consequence is a peer accusation for a local execution failure.
+The [local gas grant](../../../src/evm/contractExecutor/ContractExecutor.ts#L43) is finite and funds each whole call;
+its transition replay requirement does not establish a bound on all reduction work, proof checks and state restoration.
+The [local-mirror failure rule](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys) forbids turning local resource failures into verdicts.
+The [sync failure rule](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) separates invalid evidence from internal failures.
+
+**Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
+and no valid reduction was demonstrated to exceed an on-chain block gas limit. Local out-of-gas does not
+prove on-chain impossibility: the chain transaction can receive a different gas grant. Conversely, increasing
+the local grant or rethrowing the exception is not proof of successful on-chain replay. Existing
+[local EVM gas tests](../verification/tests/test/evm/InvalidStateTransitionError.test.ts.md) concern transition/call-frame
+failures, not a complete reduction admission-to-settlement guarantee.
+
+**Engineer disposition (Luka, 2026-10-07).** Address this later, not in PR #520. A valid reduction must be
+able to replay successfully on-chain; the follow-up must investigate the complete gas/liveness boundary,
+not merely change the blacklist catch. This is a scope deferral, not a claim that the risk is fixed or safe.
+No production behavior or gas configuration is changed for this finding in this PR.
+
+**Follow-up obligations.** Establish supported reduction/input bounds and measure the real reduction path
+against local execution grants and chain block/transaction limits. Reproduce local exhaustion with valid
+served evidence; verify failure without blaming an honest responder and recovery with sufficient gas.
+Demonstrate successful submission and settlement on-chain for the supported worst-case reduction, including
+proof verification and state restoration. If supported inputs cannot fit, have the engineer decide the
+protocol/admission remedy. Keep genuine invalid-evidence and executor/transport failure oracles distinct.
+The [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+remains subject to this finding; the gas/liveness evidence is outstanding.
+
 ## Retained proof evidence and installed history
 
 | ID                                                                            | Current defect                                                                                            | Disposition                                                                            |

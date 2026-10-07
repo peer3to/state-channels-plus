@@ -221,7 +221,7 @@ describe("task cost cache", function () {
         }
     });
 
-    it("keeps the previous CPU estimate after a slower failed attempt and persists it", function () {
+    it("keeps previous resource estimates after an early failed attempt and persists them", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-failed-"));
         try {
             const cache = new CostCache({ projectRoot: root });
@@ -230,14 +230,24 @@ describe("task cost cache", function () {
             const next = new CostCache({ projectRoot: root });
             next.record(
                 example,
-                { ...sample, code: 1, durationMs: 96776, avgCores: 0.357 },
+                {
+                    ...sample,
+                    code: 1,
+                    durationMs: 1,
+                    peakRssGb: 0.1,
+                    avgCores: 0.357
+                },
                 metadata
             );
-            expect(next.resolve(example).cores).to.equal(0.922);
+            expect(next.resolve(example)).to.include({
+                cores: 0.922,
+                rssGb: 0.5,
+                durationMs: 100
+            });
             next.commit();
             expect(
-                new CostCache({ projectRoot: root }).resolve(example).cores
-            ).to.equal(0.922);
+                new CostCache({ projectRoot: root }).resolve(example)
+            ).to.include({ cores: 0.922, rssGb: 0.5, durationMs: 100 });
             next.record(example, { ...sample, avgCores: 0.357 }, metadata);
             expect(next.resolve(example).cores).to.equal(0.357);
         } finally {
@@ -282,6 +292,20 @@ describe("task cost cache", function () {
                 metadata
             );
             expect(cache.resolve(example).cores).to.equal(before);
+            cache.commit();
+            expect(fs.existsSync(path.join(root, "test-costs.json"))).to.equal(
+                false
+            );
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))
+            ).to.have.property(cache.key(example));
+            cache.record(example, sample, metadata);
+            cache.commit();
+            expect(
+                readTasks(path.join(root, "test-costs.json"))[
+                    cache.key(example)
+                ]
+            ).to.include({ durationMs: 100, avgCores: 0.3, peakRssGb: 0.5 });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -534,12 +558,16 @@ describe("task cost cache", function () {
             cache.record(other, measured, metadata);
             cache.commit();
             // A run whose final attempt starved keeps the inflated sample,
-            // and the 50% rise rewrites the committed cost.
+            // which temporarily replaces the committed baseline.
             cache = new CostCache({ projectRoot: root });
-            cache.record(other, measured, {
-                ...starved,
-                disposition: "complete"
-            });
+            cache.record(
+                other,
+                { ...measured, code: 1 },
+                {
+                    ...starved,
+                    disposition: "complete"
+                }
+            );
             cache.commit();
             const tasks = JSON.parse(
                 fs.readFileSync(

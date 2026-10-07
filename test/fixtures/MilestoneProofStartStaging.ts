@@ -8,6 +8,7 @@ import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { hash as randomHash, hexString } from "@test/factory";
 import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
+import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
 import type { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -179,11 +180,11 @@ export async function stageSplitStartAuditors(
     // staging sanity: the trusted starts the audits will walk from
     for (const index of others)
         expect(
-            await getLocalFinalHeight(h, index, forkId),
+            await readLocalFinalizedHeight(h, index, forkId),
             `peer ${index} must know the head final`
         ).to.equal(finalHeight);
     expect(
-        await getLocalFinalHeight(h, earlier, forkId),
+        await readLocalFinalizedHeight(h, earlier, forkId),
         "the earlier-start auditor must know only the block below the hop final"
     ).to.equal(hopHeight - 1);
 
@@ -678,25 +679,6 @@ export function expectHeadAndTailProof(
     expect(run.length).to.equal(2);
     expect(blockHeightOf(run[0])).to.equal(headHeight);
     expect(blockHeightOf(run[1])).to.equal(headHeight + 1);
-}
-
-/** The height of `peerIndex`'s latest locally finalized point (its audit's first trusted start). */
-async function getLocalFinalHeight(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    forkId: ForkId
-): Promise<number | null> {
-    return await h.execOnHost(
-        h.getPeer(peerIndex),
-        async (sm, args) => {
-            const snapshot =
-                await sm.agreementManager.getLocalFinalizedSnapshot(
-                    args.forkId
-                );
-            return snapshot ? snapshot.blockHeight : null;
-        },
-        { forkId }
-    );
 }
 
 function blockHeightOf(confirmation: BlockConfirmationStruct): number {

@@ -18,7 +18,7 @@ import {
     invalidTransitionChallenge,
     onlyAuditorKills,
     prependStoredBlocks,
-    relinkBlock,
+    relinkChallengeBlock,
     reissueBlock,
     signersOf,
     replaceAuthorSignature,
@@ -445,7 +445,7 @@ describe("E2E: dispute validation / anchor counters and block-challenge boundary
                 async (dispute) => {
                     expectLastRunHeights(dispute, [0, 1]);
                     await reissueBlock(h, dispute, 0, withForgedBody);
-                    await relinkBlock(h, dispute, 1);
+                    await relinkChallengeBlock(h, dispute, 1);
                 },
                 { markMalicious: true }
             );

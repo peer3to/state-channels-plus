@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { dependencyCheckpoint } from "../fixtures/distributed/dependencyCheckpoint";
 import { expect } from "chai";
 import fs from "fs";
 import os from "os";
@@ -77,6 +78,69 @@ describe("distributed workspace preparation", function () {
             expect(installs).to.equal(4);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("reinstalls dependencies after a preparation version bump", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.markPreviousVersion();
+            await fixture.prepare();
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("reinstalls dependencies when npm configuration changes", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files.push({
+                path: "project/.npmrc",
+                sha256: "changed"
+            });
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("reinstalls dependencies when workspace configuration changes", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files.push({
+                path: "project/pnpm-workspace.yaml",
+                sha256: "changed"
+            });
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(2);
+        } finally {
+            fixture.close();
+        }
+    });
+
+    it("removes the dependency checkpoint after an install failure and retries", async function () {
+        const fixture = dependencyCheckpoint();
+        try {
+            await fixture.prepare();
+            fixture.manifest.files[0].sha256 = "changed";
+            fixture.state.failInstall = true;
+            await expect(fixture.prepare()).to.be.rejectedWith(
+                "install failed"
+            );
+            expect(fs.existsSync(fixture.marker)).to.equal(false);
+            fixture.state.failInstall = false;
+            await fixture.prepare();
+            await fixture.prepare();
+            expect(fixture.state.installs).to.equal(3);
+            expect(fs.existsSync(fixture.marker)).to.equal(true);
+        } finally {
+            fixture.close();
         }
     });
 

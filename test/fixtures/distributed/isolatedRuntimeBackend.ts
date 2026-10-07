@@ -29,6 +29,7 @@ export class TestIsolatedRuntimeBackend {
     readonly firstStartStarted: Promise<void>;
     readonly firstWorkspaceOfferReceived: Promise<void>;
     preparationDelayMs = 0;
+    preparationGate?: Promise<void>;
     preparationFailureDelayMs = 0;
     preparationStatusIntervalMs = 0;
     stopDelayMs = 0;
@@ -197,7 +198,9 @@ export class TestIsolatedRuntimeBackend {
                             );
                             stdout.write(encodeEnvironmentFrame("PREPARED"));
                         };
-                        if (this.preparationDelayMs > 0) {
+                        if (this.preparationGate) {
+                            void this.preparationGate.then(complete);
+                        } else if (this.preparationDelayMs > 0) {
                             const activity = this.preparationStatusIntervalMs
                                 ? setInterval(
                                       () =>

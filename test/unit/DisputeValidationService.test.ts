@@ -1430,7 +1430,7 @@ describe("Unit: DisputeValidationService", function () {
             await h
                 .control(block1Author)
                 .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request();
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
 
             const run = await h.dispute.auditDispute(1, dispute);
             expect(run).to.include({ outcome: "returned", isValid: true });

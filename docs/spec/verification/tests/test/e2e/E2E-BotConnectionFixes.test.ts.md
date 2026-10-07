@@ -6,6 +6,8 @@
 
 Exercises founder discovery, leave completion, successor-fork synchronization, initial-peer eligibility and force-join timing across real peers and chain state.
 
+The uninstalled-successor sync scenario delegates to the same staging owner as the component case.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                       |

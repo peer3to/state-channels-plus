@@ -188,6 +188,76 @@ describe("distributed parallel runner", function () {
         }
     });
 
+    it("cancels cold preparation without waiting for it to finish", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        let releasePreparation!: () => void;
+        backend.preparationGate = new Promise<void>((resolve) => {
+            releasePreparation = resolve;
+        });
+        const emptyDigest = crypto.createHash("sha256").digest("hex");
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
+            workspaceId: "9".repeat(64),
+            sourceDigest: "source",
+            rootProjectPath: ".",
+            repositories: [],
+            files: [
+                {
+                    path: "identity.txt",
+                    bytes: 8,
+                    sha256: "8".repeat(64),
+                    mode: 420
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: 8
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("run-one");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest },
+                Buffer.from(JSON.stringify(manifest.files))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...manifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptyDigest
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptyDigest
+            });
+            await waitFor(() =>
+                backend.frameKinds().includes("SOURCE_COMPLETE")
+            );
+            await orchestrator.send(worker.name, "CANCEL");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+            expect(
+                [...backend.preparedFiles.values()].some((files) =>
+                    files.has("identity.txt")
+                )
+            ).to.equal(false);
+            expect(backend.frameKinds()).not.to.include("RUN_CONFIG");
+        } finally {
+            releasePreparation();
+            await pool.close();
+        }
+    });
+
     it("records the discovery server lifecycle before closing its log", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "discovery-lifecycle-")

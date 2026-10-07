@@ -71,16 +71,6 @@ function resourceFailure(error, phase) {
     return true;
 }
 
-function dependencyFiles(repository) {
-    const prefix = `${repository.path}/`;
-    return new Set([
-        `${prefix}package.json`,
-        `${prefix}pnpm-lock.yaml`,
-        `${prefix}yarn.lock`,
-        `${prefix}package-lock.json`
-    ]);
-}
-
 async function workspaceOffer(payload) {
     if (!setup) throw new Error("Environment setup is required first");
     if (offer) throw new Error("Workspace offer is already active");
@@ -153,21 +143,6 @@ async function completeSource(payload) {
                 cacheDependencies: true,
                 commandRunner: new IsolatedGuestCommandRunner(),
                 env: {},
-                shouldInstall(repository) {
-                    return (
-                        cache.preparationChanged ||
-                        !fs.existsSync(
-                            path.join(
-                                cache.workspace,
-                                repository.path,
-                                "node_modules"
-                            )
-                        ) ||
-                        cache.changed.some((entry) =>
-                            dependencyFiles(repository).has(entry)
-                        )
-                    );
-                },
                 selectPrepareScript: (repository) =>
                     selectPrepareScript(
                         repository,

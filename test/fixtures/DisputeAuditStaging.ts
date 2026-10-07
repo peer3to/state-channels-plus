@@ -11,6 +11,7 @@ import { syncSpectatorOnServedPayload } from "@test/fixtures/MilestoneSyncStagin
 import { stageMirrorMissingConsumedTopUp } from "@test/fixtures/MirrorDivergenceStaging";
 import {
     addFreshSpectator,
+    readLocalFinalizedHeight,
     joinAsPendingParticipant,
     readWindowReduction,
     waitForChainInboundHead
@@ -39,13 +40,7 @@ export async function localFinalizedHeight(
     h: MathPeerTestHarness,
     peerIndex: number
 ): Promise<number | null> {
-    return await h.execOnHost(
-        h.getPeer(peerIndex),
-        async (sm, args) =>
-            (await sm.agreementManager.getLocalFinalizedSnapshot(args.forkId))
-                ?.blockHeight ?? null,
-        { forkId: h.activeForkId! }
-    );
+    return readLocalFinalizedHeight(h, peerIndex, h.activeForkId!);
 }
 
 /** Whether `peerIndex`'s local diamond holds a same-fork non-genesis anchor. */

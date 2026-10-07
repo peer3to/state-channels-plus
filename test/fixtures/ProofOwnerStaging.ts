@@ -12,6 +12,7 @@ import {
     chainSnapshot,
     syncSpectatorOnServedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
+import { suppressTimeoutChecks as suppressTimeouts } from "@test/fixtures/OlderDisputeStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
@@ -372,15 +373,6 @@ export async function postSnapshotFrom(
     return h.execOnHost(h.getPeer(peerIndex), (sm) =>
         sm.snapshotUpdateService.postStateSnapshotWait(sm.forkId)
     );
-}
-
-/** Suppress every listed peer's participant-timeout check. */
-export async function suppressTimeouts(
-    h: MathPeerTestHarness,
-    peerIndices: number[]
-): Promise<void> {
-    for (const index of peerIndices)
-        await h.rpcStub.suppressTimeoutCheck(index);
 }
 
 /**
@@ -1706,3 +1698,5 @@ export async function stageExactJoinAboveView(h: MathPeerTestHarness) {
         frozenNextHeight: before
     };
 }
+
+export { suppressTimeoutChecks as suppressTimeouts } from "@test/fixtures/OlderDisputeStaging";

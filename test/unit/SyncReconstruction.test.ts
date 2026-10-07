@@ -19,10 +19,10 @@ import {
     stageAnchoredHistory,
     stageConflictingOverlapPayload,
     stageMergedSignaturePayload,
-    stageUnpostedLeave,
+    stageHeldUnpostedLeave,
     stageSeparatedEvidencePayload,
     storedBlocks,
-    syncSpectatorOnServedPayload
+    syncSpectatorFromAllRunningPeers
 } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -239,7 +239,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
         it("U58: a proof carrying a finalized participant change above the construction anchor → the change point is stored and the rebuilt proof proves that hop and verifies on chain", async function () {
             const h = TestSession.getHarness();
             const { forkId, changeHeight, remaining, release } =
-                await stageUnpostedLeave(h);
+                await stageHeldUnpostedLeave(h);
             try {
                 expect(
                     (await chainSnapshot(h)).isGenesis,
@@ -620,7 +620,10 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             const h = TestSession.getHarness();
             const { forkId, latestHeight, payload, first, support } =
                 await stageSeparatedEvidencePayload(h);
-            const spectator = await syncSpectatorOnServedPayload(h, payload);
+            const spectator = await syncSpectatorFromAllRunningPeers(
+                h,
+                payload
+            );
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: [0, 1, 2],
@@ -644,7 +647,10 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             const h = TestSession.getHarness();
             const { forkId, latestHeight, payload, first, support } =
                 await stageSeparatedEvidencePayload(h);
-            const spectator = await syncSpectatorOnServedPayload(h, payload);
+            const spectator = await syncSpectatorFromAllRunningPeers(
+                h,
+                payload
+            );
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],

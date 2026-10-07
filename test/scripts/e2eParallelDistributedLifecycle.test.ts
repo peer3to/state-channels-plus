@@ -778,7 +778,7 @@ describe("distributed worker pool lifecycle", function () {
                 sha256: emptySourceSha256
             });
             await orchestrator.waitFor(worker.name, "PREPARED");
-            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.send(worker.name, "RUN_COMPLETE");
             await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
 
             const restart = orchestrator.checkpoint();

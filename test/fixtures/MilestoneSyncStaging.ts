@@ -5,6 +5,7 @@ import { Block, StateSnapshot } from "@/models";
 import { Status, type SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { latestSyncFromResponderBehindDerivedFork } from "@test/fixtures/BotConnectionFixesStaging";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import type { StateProofVerification } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
@@ -823,52 +824,14 @@ export async function stageSyncedThroughParticipation(h: MathPeerTestHarness) {
 export async function syncLatestFromUninstalledSuccessor(
     h: MathPeerTestHarness
 ) {
-    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
-    const responder = h.getPeer(0);
-    const requester = h.getPeer(2);
-    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
-        outcome: "hold",
-        at: "setState"
-    });
-    try {
-        await h.control(responder).stub.startTryReduce(sourceForkId).request();
-        await waitFor(
-            async () => (await hold.entered()) === 1,
-            h.event.protocolEventTimeoutMs()
-        );
-        const responderFork = await h
-            .control(responder)
-            .query.getForkId()
-            .request();
-        await h
-            .control(requester)
-            .spectate.startSync(responder.address)
-            .request();
-        await waitFor(
-            async () =>
-                (await h.control(requester).query.getForkId().request()) !==
-                sourceForkId,
-            h.event.protocolEventTimeoutMs()
-        );
-        return {
-            sourceForkId,
-            responderFork,
-            requesterFork: await h
-                .control(requester)
-                .query.getForkId()
-                .request(),
-            requesterBlacklistedResponder: await h
-                .control(requester)
-                .query.isBlacklisted(responder.address)
-                .request(),
-            responderBlacklistedRequester: await h
-                .control(responder)
-                .query.isBlacklisted(requester.address)
-                .request()
-        };
-    } finally {
-        await hold.release();
-    }
+    const result = await latestSyncFromResponderBehindDerivedFork(h);
+    return {
+        sourceForkId: result.sourceForkId,
+        responderFork: result.responderOwnFork,
+        requesterFork: result.observerForkId,
+        requesterBlacklistedResponder: result.observerBlacklistedResponder,
+        responderBlacklistedRequester: result.responderBlacklistedObserver
+    };
 }
 
 /**
