@@ -58,6 +58,7 @@ import {
 } from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import type { ContractTransactionResponse } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -1102,7 +1103,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const target = service as unknown as {
             submitOpening: (
                 ...parameters: unknown[]
-            ) => Promise<ethers.ContractTransactionResponse>;
+            ) => Promise<ContractTransactionResponse>;
         };
         if (!this.service.stubOriginals.has("openingSubmission")) {
             this.service.stubOriginals.set(
