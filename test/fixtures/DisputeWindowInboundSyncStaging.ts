@@ -115,6 +115,12 @@ export function redirectDisputesToChannelWithoutWindow(
  *   and before peer 2 fetches the window;
  * - `concurrentLocalSync`: after peer 2 persists the window, a second sync of
  *   peer 0's genuine payload reduces it in peer 2's local diamond first.
+ * A missing inbound run is fatal for dispute and audit work, so with the
+ * whole handler held (`chainEvent`) peer 2 is also kept out of that work while
+ * it lacks the top-up: its own dispute is suppressed and its subscribed
+ * dispute logs are dropped. A replaying `releaseHolds` gives it back that work
+ * only once the replayed top-up is stored. With the other holds peer 2's
+ * dispute and audits fail, and the caller settles those errors.
  * The chain snapshot stays on the source fork. The holds stay until
  * `releaseHolds`. Besides the inbound storage it reports whether peer 2
  * blacklisted peer 0, peer 2's fork and its local window's reduced fork.
@@ -134,10 +140,26 @@ async function stageAndApplyDisputeWindowInboundSync(
     let inboundHold: {
         release: (options: { replay: boolean }) => Promise<void>;
     };
+    let restoreRequesterDisputeWork: (() => Promise<void>) | undefined;
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
         // peer 2 lacks the top-up, so only the others are awaited
         disputingPeerIndices: [0, 3],
         beforeDispute: async () => {
+            if (options.requesterInboundHold === "chainEvent") {
+                const requesterStub = h.control(
+                    h.getPeer(REQUESTER_INDEX)
+                ).stub;
+                await requesterStub.stubSuppressDisputeInitiation().request();
+                const restoreDisputeLogs =
+                    await h.rpcStub.holdDisputeCommittedEvents(
+                        REQUESTER_INDEX,
+                        { passFirst: false }
+                    );
+                restoreRequesterDisputeWork = async () => {
+                    await restoreDisputeLogs(false);
+                    await requesterStub.restoreDisputeInitiation().request();
+                };
+            }
             const dropped =
                 options.requesterInboundHold === "droppedLog"
                     ? await h.rpcStub.dropInboundMessageLogs(REQUESTER_INDEX)
@@ -163,6 +185,19 @@ async function stageAndApplyDisputeWindowInboundSync(
     );
     const releaseHolds = async (replay: boolean) => {
         await inboundHold.release({ replay });
+        if (restoreRequesterDisputeWork) {
+            // the replay is fire-and-forget: peer 2 takes dispute and audit
+            // work back only once it stores the top-up the reduce applies
+            if (replay)
+                await waitFor(
+                    async () =>
+                        (await requesterControl.query
+                            .getInboundMessageBlock(servedInboundHashes.at(-1)!)
+                            .request()) !== null,
+                    h.event.protocolEventTimeoutMs()
+                );
+            await restoreRequesterDisputeWork();
+        }
         for (const race of reductionRaces)
             await race.release({
                 replayEvents: replay,
@@ -382,9 +417,18 @@ export async function assertSyncedParticipantNeverSignsInjectedInbound(
     const genuineTopUpHash = servedInboundHashes.at(-1)!;
 
     await releaseHolds(true);
+    const keptOutOfAudits = requesterInboundLoss === "heldEvent";
+    // a held handler kept peer 2 out of audit work: it never handled the
+    // window's dispute logs, its window came from the sync
+    if (keptOutOfAudits)
+        expect(
+            h.event.getEventCallCount(REQUESTER_INDEX, "onDisputeCommitted")
+        ).to.equal(0);
     const { newForkId } = await h.dispute.resolveDisputeWait({
         forkId: sourceForkId,
-        honestPeerIndices: participantIndices
+        honestPeerIndices: participantIndices,
+        // peers 0 and 3 committed during staging; peer 2 handled none
+        expectedDisputesCommittedPerPeer: keptOutOfAudits ? 0 : 1
     });
     expect(newForkId).to.equal(reducedForkId);
     const requester = h.getPeer(REQUESTER_INDEX);
