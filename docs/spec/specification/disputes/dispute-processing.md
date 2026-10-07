@@ -265,8 +265,7 @@ judges the claim, never from a local copy that may disagree with it. When the ch
 (so the post can extend the writer's time), no claim is submitted until the post is recovered and its time plus the wait has
 passed, and the claim's minimum timestamp is no earlier than that; a junk post therefore only delays the claim. A raised
 minimum is checked again against the dispute window as the chain records it (a local mirror may not have seen the window yet),
-so no claim the chain would refuse is stored. A failed chain read
-of the predecessor commitment re-arms the check rather than dropping a due timeout. Recheck fork relevance, disposal, membership,
+so no claim the chain would refuse is stored. A failed chain read of the predecessor commitment or of the dispute window re-arms the check rather than dropping a due timeout. Recheck fork relevance, disposal, membership,
 block arrival, calldata and window eligibility. A changed fork, disposed runtime or accepted target
 block stops obsolete work. A window created before the timeout minimum remains ineligible; waiting
 cannot change its creation time. Another refusal of either kind may schedule another check. No earlier admission,

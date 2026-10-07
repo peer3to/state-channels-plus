@@ -2,7 +2,7 @@ import {
     CHAIN_READ_FAILED_RECHECK_REASON,
     EARLY_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
-import { Status, timeoutWaitTime } from "@/types";
+import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
@@ -14,6 +14,7 @@ import {
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
@@ -840,10 +841,11 @@ describe("Unit: ParticipantTimeoutService", function () {
                     },
                     { forkId, height, writer: author.address }
                 );
-                // an early check first waits out the writer's deadline
+                // an early check first waits out the writer's deadline (the
+                // protocol budget for this time config covers it)
                 await waitFor(
                     async () => (await validationRetries()).length > 0,
-                    (timeoutWaitTime(RECHECK_TIME_CONFIG, height) + 15) * 1000
+                    protocolEventTimeoutMs(RECHECK_TIME_CONFIG)
                 );
                 expect((await validationRetries())[0].delayMs).to.equal(1000);
             } finally {

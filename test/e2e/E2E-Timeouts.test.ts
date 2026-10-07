@@ -7,6 +7,7 @@ import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroAddress } from "ethers";
@@ -623,8 +624,7 @@ describe("E2E: Timeouts", function () {
                                 .stub.getTimeoutBuildObservation()
                                 .request()
                         ).entered === 1,
-                    (timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height) + 15) *
-                        1000
+                    protocolEventTimeoutMs(MOVED_DEADLINE_TIME_CONFIG)
                 );
                 const parentPostTimestamp = await postParent();
                 await h.control(observer).stub.releaseTimeoutBuild().request();

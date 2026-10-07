@@ -1,8 +1,16 @@
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+import type Block from "@/models/Block";
 
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
-import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
+import {
+    Address,
+    BlockCalldata,
+    BlockHeight,
+    Bytes,
+    ForkId,
+    Timestamp
+} from "@/types/types";
 import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -189,11 +197,18 @@ export default class ParticipantTimeoutService {
                 sm.storage.blockCalldata.getMatchingBlockCalldata(
                     previousBlockOrSnapshot.block
                 );
-            if (matchingPreviousCalldata) {
+            if (
+                matchingPreviousCalldata &&
+                this.writerGainsTimeFromPost(
+                    previousBlockOrSnapshot.block,
+                    participantAddress
+                )
+            ) {
                 difference =
-                    matchingPreviousCalldata.onChainTimestamp +
-                    timeoutWaitTimeSeconds(sm.timeConfig, blockHeight) -
-                    Clock.getTimeInSeconds();
+                    this.postedTimeoutMinimum(
+                        matchingPreviousCalldata,
+                        blockHeight
+                    ) - Clock.getTimeInSeconds();
                 if (difference > 0) {
                     // There's a chance that the on-chain timestamp will not persist if the BlockConfirmation pipeline didn't decide to persist the block since most likely the calldata is junk
                     // This is not a problem since on the next run difference < 0 -> force timeout
@@ -412,7 +427,7 @@ export default class ParticipantTimeoutService {
         if (
             previousBlockProducerPostedCalldata &&
             !previousBlock!.onChainTimestamp &&
-            !previousBlock!.findSignature(participantAddress)
+            this.writerGainsTimeFromPost(previousBlock!, participantAddress)
         ) {
             const recovered = sm.storage.blockCalldata.getBlockCalldata(
                 forkId,
@@ -420,9 +435,7 @@ export default class ParticipantTimeoutService {
                 previousBlock!.author
             );
             const postedMinimum =
-                recovered &&
-                recovered.onChainTimestamp +
-                    timeoutWaitTimeSeconds(sm.timeConfig, blockHeight);
+                recovered && this.postedTimeoutMinimum(recovered, blockHeight);
             // not recovered yet, or the post's deadline is still ahead
             // -> re-run the check instead of claiming a stale minimum
             const remainingMs = postedMinimum
@@ -566,6 +579,27 @@ export default class ParticipantTimeoutService {
             TIMEOUT_RECHECK_DELAY_MS,
             CHAIN_READ_FAILED_RECHECK_REASON,
             isForced
+        );
+    }
+
+    // Whether a predecessor's on-chain post can extend the writer's deadline,
+    // as the timeout-too-early proof judges it: a writer that signed the
+    // predecessor forfeited that extra time.
+    private writerGainsTimeFromPost(
+        previousBlock: Block,
+        participantAddress: Address
+    ): boolean {
+        return !previousBlock.findSignature(participantAddress);
+    }
+
+    // The earliest valid timeout minimum after a predecessor post.
+    private postedTimeoutMinimum(
+        post: BlockCalldata,
+        blockHeight: BlockHeight
+    ): Timestamp {
+        return (
+            post.onChainTimestamp +
+            timeoutWaitTimeSeconds(this.stateManager.timeConfig, blockHeight)
         );
     }
 }
