@@ -26,8 +26,10 @@ async function reservePort(): Promise<number> {
  * snapshots) are safe here and only here: no other test shares the node.
  */
 export async function withIsolatedHardhatNode<T>(
-    use: (provider: JsonRpcProvider) => Promise<T>
+    use: (provider: JsonRpcProvider) => Promise<T>,
+    options: { chainId?: number } = {}
 ): Promise<T> {
+    const chainId = options.chainId ?? 31337;
     const port = await reservePort();
     const child = spawn(
         process.execPath,
@@ -36,12 +38,13 @@ export async function withIsolatedHardhatNode<T>(
             env: {
                 ...process.env,
                 HARDHAT_NODE_HOST: "127.0.0.1",
-                HARDHAT_NODE_PORT: String(port)
+                HARDHAT_NODE_PORT: String(port),
+                HARDHAT_CHAIN_ID: String(chainId)
             },
             stdio: "ignore"
         }
     );
-    const provider = new JsonRpcProvider(`http://127.0.0.1:${port}`, 31337, {
+    const provider = new JsonRpcProvider(`http://127.0.0.1:${port}`, chainId, {
         staticNetwork: true
     });
     try {

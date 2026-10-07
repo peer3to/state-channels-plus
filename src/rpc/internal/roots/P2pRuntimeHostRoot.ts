@@ -176,7 +176,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         // but its failure must still settle the paired client's `ready` promise.
         this.chainContext = await createRuntimeChainContext(
             payload.config,
-            payload.signerSecret
+            payload.signerSecret,
+            this.rootLogger
         );
         const { signer } = this.chainContext;
         const signerAddress = (this.signerAddress = await signer.getAddress());
@@ -434,6 +435,13 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                         // destroy then rejects as unhandled.
                         if (provider && !Clock.ownsProvider(provider))
                             await provider.destroy();
+                        // The Clock keeps reading through it, but this
+                        // runtime's node reconnects and their logs end here;
+                        // the Clock destroys it once a new provider replaces it.
+                        else if (provider) {
+                            provider.stopReconnecting();
+                            Clock.releaseProvider(provider);
+                        }
                     } finally {
                         if (runtimeHandle) {
                             await runtimeHandle.stateManager.dispose();

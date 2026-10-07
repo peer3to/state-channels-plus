@@ -640,6 +640,37 @@ declared it abandoned. The residual risk is local: only local executor calls are
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
 
+## Multiple RPC endpoints — chain observation
+
+The runtime now reaches the chain through an ordered endpoint list
+([`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)). Each request uses
+the first connected endpoint and fails over when it drops; a transaction is never sent to two
+endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)). Every endpoint streams
+the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
+watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
+across streams; removed events are ignored and lagging deliveries below the watermark are dropped
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
+head or is abandoned, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold released at once, when its
+socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
+replaced, or on disposal. After a failed window the remaining windows are read through the first
+connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
+reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
+is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
+reopened endpoint's subscription never delivered. When the reopened endpoint answers its head request
+with an error, the request is retried on it with the backoff and nothing is read meanwhile; the
+catch-up never falls back to the first connected endpoint's own head. Endpoint URLs are
+logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
+the reopened endpoint's head, or the reopened endpoint keeps failing its head request, and the reopened
+socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
+block states are not pruned, every recovery query reads from the held block, and the reopened socket's
+live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay
+applied; a socket drop in the middle of one block's events can leave part of a block below the
+watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
+and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
+
 ## Milestone-only proof update — current assessment
 
 The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis

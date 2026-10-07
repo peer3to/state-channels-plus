@@ -7,10 +7,15 @@ import { assertListenerStopWindow } from "@test/fixtures/EventListenerStopFixtur
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { hexlify, zeroPadValue } from "ethers";
+import { AbiCoder, hexlify, keccak256, zeroPadValue } from "ethers";
 
 // mirrors LOG_RECOVERY_ATTEMPTS in EventSyncService
 const LOG_RECOVERY_ATTEMPTS = 3;
+/** The handlers a catch-up of the channel's subscribed logs can dispatch. */
+const CATCH_UP_HANDLERS = [
+    "onChannelOpened",
+    "onInboundMessagesProcessed"
+] as const;
 
 describe("EventSyncService", function () {
     it("drops subscription callbacks while stop is still draining scheduled work", async () => {
@@ -345,6 +350,76 @@ describe("EventSyncService", function () {
             await restoreEvents(false);
         });
 
+        it("a recovery read across several windows survives a failed middle window and dispatches each dispute once", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2,
+                    harnessOptions: {
+                        rpcNodeProxiesByPeer: { [observerIndex]: 1 },
+                        // one block per window: every recovery spans several
+                        configOverrides: { LOG_QUERY_MAX_BLOCKS: 1 }
+                    }
+                });
+            const [proxy] = h.getRpcNodeProxies(observerIndex);
+            await restoreEvents(false);
+            await h.event.settleContractEvents(observerIndex);
+            const committedBefore = h.event.getEventCallCount(
+                observerIndex,
+                "onDisputeCommitted"
+            );
+            const windowsBefore = proxy.forwardedLogWindows().length;
+            // the first attempt reads one window, then its second window fails
+            proxy.failRequestAfter("eth_getLogs", 1);
+
+            const recoveredCount = await h
+                .control(h.getPeer(observerIndex))
+                .dispute.recoverCommittedDisputes(forkId)
+                .request();
+
+            const failedWindows = proxy.failedLogWindows();
+            expect(failedWindows.length).to.equal(1);
+            const [[failedFrom]] = failedWindows;
+            const committedLogs = [
+                ...(await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommitted(h.channelId)
+                )),
+                ...(await h.channelManager.queryFilter(
+                    h.channelManager.filters.DisputeCommittedWithAuditingData(
+                        h.channelId
+                    )
+                ))
+            ];
+            // premise - a dispute commit lies in or after the failed window,
+            // so recovering it needed a later attempt
+            expect(
+                Math.max(...committedLogs.map((log) => log.blockNumber))
+            ).to.be.at.least(failedFrom);
+            // a later attempt read the failed window again
+            expect(
+                proxy
+                    .forwardedLogWindows()
+                    .slice(windowsBefore)
+                    .filter(([fromBlock]) => fromBlock === failedFrom).length
+            ).to.be.at.least(2);
+            if (recoveredCount === null)
+                throw new Error("Expected the window to be recovered");
+            expect(recoveredCount).to.be.greaterThan(0);
+            await h.event.settleContractEvents(observerIndex);
+            expect(
+                h.event.getEventCallCount(observerIndex, "onDisputeCommitted") -
+                    committedBefore
+            ).to.equal(recoveredCount);
+
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+        });
+
         it("dispute window-span read fails → failed recovery, no throw", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
@@ -374,6 +449,317 @@ describe("EventSyncService", function () {
                 keepTasksHeld: true
             });
             await restoreEvents(false);
+        });
+    });
+
+    describe("scheduleLog deduplication", function () {
+        it("dispatches a log a second stream delivers again only once", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("duplicate")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(0);
+        });
+
+        it("dispatches a log re-mined in another block after a reorg as a new event", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("reorged")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(1);
+        });
+
+        it("ignores a log a reorg removed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("removed")
+                .request();
+
+            expect(probe.handlerCalls).to.equal(0);
+        });
+    });
+
+    describe("scheduleStreamedLog", function () {
+        it("drops a lagging node's log below the watermark", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            // a later block completes, so the watermark passes the opening
+            // block and that block's dedup keys are pruned
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeStreamedLogBelowWatermark()
+                .request();
+
+            // premise - the opening log is below the watermark
+            expect(probe.watermark).to.be.greaterThan(probe.logBlockNumber);
+            expect(probe.handlerCalls).to.equal(0);
+        });
+    });
+
+    describe("scheduleStreamedLog at the watermark", function () {
+        it("dispatches a never-seen log in the watermark block", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            const probe = await h
+                .control(h.getPeer(1))
+                .validation.probeInboundLogRedelivery("reorgedAtWatermark")
+                .request();
+
+            // premise - the log's block is the completed watermark itself
+            expect(probe.watermark).to.equal(probe.logBlockNumber);
+            expect(probe.handlerCalls).to.equal(1);
+        });
+    });
+
+    describe("holdWatermark", function () {
+        it("keeps the watermark at its block while a later block completes, and publishes that block on release", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const validation = h.control(h.getPeer(1)).validation;
+            const watermark = await validation.getEventWatermark().request();
+            if (watermark === null) throw new Error("Expected a watermark");
+            const holdId = await validation.holdEventWatermark().request();
+            const callsBefore = h.event.getEventCallCount(
+                1,
+                "onInboundMessagesProcessed"
+            );
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.event.settleContractEvents(1);
+            const [topUpLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.InboundMessagesProcessed(
+                        h.channelId
+                    )
+                )
+            ).slice(-1);
+
+            // premise - the later block's log was processed while held
+            expect(
+                h.event.getEventCallCount(1, "onInboundMessagesProcessed")
+            ).to.equal(callsBefore + 1);
+            expect(topUpLog.blockNumber).to.be.greaterThan(watermark);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                watermark
+            );
+            expect(
+                await validation.releaseEventWatermark(holdId).request()
+            ).to.equal(topUpLog.blockNumber);
+        });
+
+        it("a repeated release does not release another hold", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const validation = h.control(h.getPeer(1)).validation;
+            const watermark = await validation.getEventWatermark().request();
+            if (watermark === null) throw new Error("Expected a watermark");
+            const firstHold = await validation.holdEventWatermark().request();
+            const secondHold = await validation.holdEventWatermark().request();
+
+            await validation.releaseEventWatermark(firstHold).request();
+            await validation.releaseEventWatermark(firstHold).request();
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+            await h.event.settleContractEvents(1);
+            const [topUpLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.InboundMessagesProcessed(
+                        h.channelId
+                    )
+                )
+            ).slice(-1);
+
+            expect(topUpLog.blockNumber).to.be.greaterThan(watermark);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                watermark
+            );
+            expect(
+                await validation.releaseEventWatermark(secondHold).request()
+            ).to.equal(topUpLog.blockNumber);
+        });
+
+        it("holds at the given start block before any block completed, and publishes the channel's first block on release", async function () {
+            const h = TestSession.getHarness();
+            const label = "event-sync-hold-before-watermark";
+            const channelId = keccak256(
+                AbiCoder.defaultAbiCoder().encode(["string"], [label])
+            );
+            const observer = 2;
+            await h.setup(3, { autoConnect: false, channelId: label });
+            await h.setChannelId(channelId);
+            const validation = h.control(h.getPeer(observer)).validation;
+            // premise - no block of the channel completed yet
+            expect(await validation.getEventWatermark().request()).to.equal(
+                null
+            );
+            const startBlock = await h.provider.getBlockNumber();
+            const holdId = await validation
+                .holdEventWatermark(startBlock)
+                .request();
+            const openedBefore = h.event.getEventCallCount(
+                observer,
+                "onChannelOpened"
+            );
+
+            await h.lifecycle.openChannelForParticipants([0, 1], {
+                observePeerIndices: [0, 1]
+            });
+            await waitFor(
+                () =>
+                    h.event.getEventCallCount(observer, "onChannelOpened") >
+                    openedBefore
+            );
+            await h.event.settleContractEvents(observer);
+            const [openedLog] = (
+                await h.channelManager.queryFilter(
+                    h.channelManager.filters.ChannelOpened(channelId)
+                )
+            ).slice(-1);
+
+            // premise - the opening completed a block after the hold's start
+            expect(openedLog.blockNumber).to.be.greaterThan(startBlock);
+            expect(await validation.getEventWatermark().request()).to.equal(
+                null
+            );
+            expect(
+                await validation.releaseEventWatermark(holdId).request()
+            ).to.equal(openedLog.blockNumber);
+        });
+    });
+
+    describe("catchUpLogs", function () {
+        it("schedules the log this peer's subscription lost", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const lagging = 2;
+            const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            const inboundHead = await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request();
+            // premise - the delivery really was lost
+            await dropped.waitUntilDropped();
+            await dropped.release();
+            expect(
+                await h
+                    .control(h.getPeer(lagging))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).not.to.equal(inboundHead);
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(lagging);
+            const callsBefore = h.event.getEventCallCounts(
+                lagging,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(lagging))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await waitFor(
+                () =>
+                    h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS) >
+                    callsBefore
+            );
+            await h.event.settleContractEvents(lagging);
+            expect(
+                h.event.getEventCallCounts(lagging, CATCH_UP_HANDLERS)
+            ).to.equal(callsBefore + 1);
+            expect(
+                await h
+                    .control(h.getPeer(lagging))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).to.equal(inboundHead);
+        });
+
+        it("does not dispatch the channel's opening logs again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+
+            // the watermark is the opening block, so the read includes its
+            // ChannelOpened and genesis inbound logs
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(1))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
+        });
+
+        it("does not dispatch a log this peer already processed again", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address
+            });
+
+            // every earlier handler call has reached the spies
+            await h.event.settleContractEvents(1);
+            const callsBefore = h.event.getEventCallCounts(
+                1,
+                CATCH_UP_HANDLERS
+            );
+
+            const read = await h
+                .control(h.getPeer(1))
+                .validation.runCatchUpFromFirstNode()
+                .request();
+
+            expect(read).to.equal(true);
+            await h.event.settleContractEvents(1);
+            expect(h.event.getEventCallCounts(1, CATCH_UP_HANDLERS)).to.equal(
+                callsBefore
+            );
         });
     });
 

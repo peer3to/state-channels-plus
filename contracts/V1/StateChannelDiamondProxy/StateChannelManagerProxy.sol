@@ -194,6 +194,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
+        // Opening terms are valid up to and including their deadline, the same boundary as joinChannel
+        require(
+            openChannelData.deadlineTimestamp >= block.timestamp,
+            RaceConditionOpenChannelExpired(openChannelData.deadlineTimestamp, block.timestamp)
+        );
 
         require(
             openChannelData.participants.length <= _getMaxChannelParticipants(),
@@ -221,9 +226,12 @@ contract StateChannelManagerProxy is StateChannelCommon {
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            openChannelData.participants, openChannelConfirmation.encodedOpenChannel, openChannelConfirmation.signatures
-        );
+        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(
+                openChannelData.participants,
+                openChannelConfirmation.encodedOpenChannel,
+                openChannelConfirmation.signatures
+            );
         require(isValid, reason);
 
         JoinChannel[] memory joinChannels = new JoinChannel[](openChannelData.participants.length);
@@ -263,10 +271,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: genesisSnapshotData,
-            forkId: forkId,
-            blockHeight: 0,
-            timestamp: block.timestamp
+            snapshotData: genesisSnapshotData, forkId: forkId, blockHeight: 0, timestamp: block.timestamp
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;

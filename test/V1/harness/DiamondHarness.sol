@@ -119,11 +119,24 @@ abstract contract DiamondHarness is Test {
         uint256[] memory amounts,
         bool isAtomic
     ) internal view returns (OpenChannelConfirmation memory) {
+        return _openChannelConfirmationWithDeadline(
+            channelId, participantPrivateKeys, amounts, isAtomic, block.timestamp + 1 days
+        );
+    }
+
+    /// The same signed open-channel request with caller-chosen terms deadline.
+    function _openChannelConfirmationWithDeadline(
+        bytes32 channelId,
+        uint256[] memory participantPrivateKeys,
+        uint256[] memory amounts,
+        bool isAtomic,
+        uint256 deadlineTimestamp
+    ) internal pure returns (OpenChannelConfirmation memory) {
         OpenChannel memory openChannel;
         openChannel.channelId = channelId;
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
-        openChannel.deadlineTimestamp = block.timestamp + 1 days;
+        openChannel.deadlineTimestamp = deadlineTimestamp;
         openChannel.isAtomic = isAtomic;
 
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {

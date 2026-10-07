@@ -1,6 +1,7 @@
 import {
     DEFAULT_JOIN_AMOUNT,
     OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
@@ -428,7 +429,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 data: expectedData
             },
             {
-                nowSeconds,
+                minSeconds: nowSeconds + OPEN_CHANNEL_MIN_REMAINING_SECONDS,
                 maxSeconds: nowSeconds + OPEN_CHANNEL_DEADLINE_SECONDS * 2
             }
         );

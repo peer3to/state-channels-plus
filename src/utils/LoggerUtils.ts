@@ -226,6 +226,38 @@ export class LoggerUtils {
         };
     }
 
+    /**
+     * One RPC node endpoint without its path, query or credentials: provider
+     * URLs often carry an API key there, and logs are shipped off the host.
+     */
+    static getRpcNodeMetadata(nodeUrl: string) {
+        try {
+            const url = new URL(nodeUrl);
+            return { rpcNode: `${url.protocol}//${url.host}` };
+        } catch {
+            return { rpcNode: "unparseable URL" };
+        }
+    }
+
+    /** Several RPC node endpoints, each without path, query or credentials. */
+    static getRpcNodesMetadata(nodeUrls: readonly string[]) {
+        return {
+            rpcNodes: nodeUrls.map(
+                (url) => this.getRpcNodeMetadata(url).rpcNode
+            )
+        };
+    }
+
+    /** Chain coordinates of one contract log. */
+    static getContractLogMetadata(log: ethers.Log) {
+        return {
+            blockNumber: log.blockNumber,
+            blockHash: log.blockHash,
+            logIndex: log.index,
+            transactionHash: log.transactionHash
+        };
+    }
+
     /** Metadata of the aggregated gas usage table: the rows and their count. */
     static getGasUsageMetadata(gasUsage: GasUsageRow[]) {
         return { functionCount: gasUsage.length, gasUsage };

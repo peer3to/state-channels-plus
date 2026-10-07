@@ -447,6 +447,18 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return window.evidence.disputeCommitments.map(String);
     }
 
+    /** Reduced fork the local diamond records for `forkId`'s window (zero hash when unreduced). */
+    public async getLocalDisputeWindowReducedForkId(
+        forkId: ForkId
+    ): Promise<ForkId> {
+        const [window] =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                this.service.sm.channelId,
+                [forkId]
+            );
+        return window.reducedResult.forkId as ForkId;
+    }
+
     /** Encoded (`Type.StateSnapshot`) snapshot with `snapshotHash`, or null. */
     public getStateSnapshotStructByHash(
         snapshotHash: Hash
