@@ -14,6 +14,9 @@ export const EARLY_TIMEOUT_RECHECK_REASON =
     "timeoutParticipantAfterEarlySubmission";
 export const MISMATCH_TIMEOUT_RECHECK_REASON =
     "timeoutParticipantAfterPreviousProducerMismatch";
+// scheduleCheck reason when the predecessor posted during timeout construction
+export const PREDECESSOR_POSTED_RECHECK_REASON =
+    "timeoutParticipantAfterPredecessorPosted";
 
 /**
  * Owns the participant-timeout check: schedules it, decides whether the
@@ -398,11 +401,49 @@ export default class ParticipantTimeoutService {
                   )
               ).found
             : false;
+        // A predecessor post this check has not applied yet may grant the
+        // writer extra time (only if the writer did not sign that block, as
+        // the timeout-too-early proof judges it). Never pair the post with a
+        // stale minimum: claim no earlier than the post time plus the wait. A
+        // junk post would grant nothing, so waiting for it only costs time.
+        let minTimeStamp = timeoutMinTimestamp;
+        if (
+            previousBlockProducerPostedCalldata &&
+            !previousBlock!.onChainTimestamp &&
+            !previousBlock!.findSignature(participantAddress)
+        ) {
+            const recovered = sm.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                previousBlock!.height,
+                previousBlock!.author
+            );
+            const postedMinimum =
+                recovered &&
+                recovered.onChainTimestamp +
+                    timeoutWaitTimeSeconds(sm.timeConfig, blockHeight);
+            // not recovered yet, or the post's deadline is still ahead
+            // -> re-run the check instead of claiming a stale minimum
+            const remainingMs = postedMinimum
+                ? (postedMinimum - Clock.getTimeInSeconds()) * 1000
+                : 0;
+            if (!postedMinimum || remainingMs > 0) {
+                this.scheduleCheck(
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    Math.max(TIMEOUT_RECHECK_DELAY_MS, remainingMs),
+                    PREDECESSOR_POSTED_RECHECK_REASON,
+                    isForced
+                );
+                return;
+            }
+            minTimeStamp = Math.max(minTimeStamp, postedMinimum);
+        }
 
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),
             blockHeight: BigInt(blockHeight),
-            minTimeStamp: timeoutMinTimestamp,
+            minTimeStamp,
             isForced: isForced,
             previousBlockProducer: previousBlock
                 ? previousBlock.author.toString()

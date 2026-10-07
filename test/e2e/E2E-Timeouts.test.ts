@@ -1,4 +1,7 @@
-import { MISMATCH_TIMEOUT_RECHECK_REASON } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import {
+    MISMATCH_TIMEOUT_RECHECK_REASON,
+    PREDECESSOR_POSTED_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -578,6 +581,83 @@ describe("E2E: Timeouts", function () {
                 ).to.equal(true);
             } finally {
                 await uploads.release();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Previous-Producer Post During Timeout Construction", function () {
+        it("M8 a parent post landing during timeout construction re-runs the check instead of submitting the stale deadline", async function () {
+            const h = TestSession.getHarness();
+            const { observer, author, parentAuthor, previous, postParent } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                });
+            const height = previous.height + 1;
+            await h.dispute.suppressDisputeInitiation([
+                parentAuthor.index,
+                author.index
+            ]);
+            // park the observer's check right after it computed its deadline
+            // from the still-unposted parent
+            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { forward: true }
+            );
+            try {
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getTimeoutBuildObservation()
+                                .request()
+                        ).entered === 1,
+                    (timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height) + 15) *
+                        1000
+                );
+                const parentPostTimestamp = await postParent();
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
+
+                // the very first claim already follows the post: no claim
+                // pairing the post with the old deadline was ever submitted
+                const [first] = await uploads.submissions();
+                expect(first.revert).to.equal(null);
+                const timeout = Codec.decode(first.encodedDispute, Type.Dispute)
+                    .input.timeout;
+                expect(timeout.previousBlockProducerPostedCalldata).to.equal(
+                    true
+                );
+                expect(Number(timeout.minTimeStamp)).to.be.at.least(
+                    parentPostTimestamp +
+                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                );
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            PREDECESSOR_POSTED_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+            } finally {
+                await h.control(observer).stub.releaseTimeoutBuild().request();
+                await h
+                    .control(observer)
+                    .stub.restoreTimeoutBuildRecording()
+                    .request();
                 await uploads.restore();
                 await tasks.restore();
             }

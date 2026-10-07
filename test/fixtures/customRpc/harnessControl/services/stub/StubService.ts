@@ -1621,12 +1621,16 @@ export class StubService extends ANetworkRpcService<
         return true;
     }
 
-    public holdTimeoutBuild(): void {
+    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): void {
         const sm = this.p2pManager.stateManager;
-        // the chain read createTimeOutDispute performs for the predecessor;
-        // one-shot, because block-calldata recovery shares this read and must
-        // keep flowing while the construction is parked
-        const contract = sm.stateChannelManagerContract;
+        // "chain": the read createTimeOutDispute performs for the predecessor;
+        // "mirror": the check's own slot read, after its deadline is computed.
+        // One-shot, because block-calldata recovery shares the chain read and
+        // must keep flowing while the construction is parked.
+        const contract =
+            seam === "mirror"
+                ? sm.diamondStateMachine.localDiamondContract
+                : sm.stateChannelManagerContract;
         const original = contract.getBlockCallDataCommitment;
         const store = sm.storage.timeout.storeTimeout.bind(sm.storage.timeout);
         const hold = this.createRpcHold("timeoutBuild");
