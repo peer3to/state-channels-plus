@@ -1623,7 +1623,10 @@ export class StubService extends ANetworkRpcService<
 
     public holdTimeoutBuild(): void {
         const sm = this.p2pManager.stateManager;
-        const contract = sm.diamondStateMachine.localDiamondContract;
+        // the chain read createTimeOutDispute performs for the predecessor;
+        // one-shot, because block-calldata recovery shares this read and must
+        // keep flowing while the construction is parked
+        const contract = sm.stateChannelManagerContract;
         const original = contract.getBlockCallDataCommitment;
         const store = sm.storage.timeout.storeTimeout.bind(sm.storage.timeout);
         const hold = this.createRpcHold("timeoutBuild");
@@ -1634,6 +1637,7 @@ export class StubService extends ANetworkRpcService<
             "getBlockCallDataCommitment",
             async (...args: Parameters<typeof original>) => {
                 const result = await original(...args);
+                if (hold.entered > 0) return result;
                 hold.entered += 1;
                 await hold.gate;
                 return result;

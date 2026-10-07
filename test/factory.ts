@@ -546,6 +546,10 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
     );
 }
 
+// One ABI value for a custom-error parameter: numbers, addresses and bytes as
+// strings, `bool` parameters as real booleans (the string "false" encodes true).
+export type CustomErrorArg = string | boolean;
+
 /**
  * Revert data for `errorName`, with a zero value for every argument the error
  * declares. Derived from the error's own ABI fragment, so a test that only
@@ -555,10 +559,6 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
  *
  * Throws when `errorName` is not a known contract error.
  */
-// One ABI value for a custom-error parameter: numbers, addresses and bytes as
-// strings, `bool` parameters as real booleans (the string "false" encodes true).
-export type CustomErrorArg = string | boolean;
-
 export function encodedCustomErrorRevert(
     errorName: string,
     args?: CustomErrorArg[]

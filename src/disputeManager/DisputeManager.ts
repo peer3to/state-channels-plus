@@ -268,9 +268,15 @@ class DisputeManager {
                         };
                     },
                     // the predecessor's posting state moved the deadline ->
-                    // the recheck recomputes it from the recovered calldata
+                    // drop the refused claim so later disputes on the fork do
+                    // not carry it; the recheck rebuilds it from current evidence
                     RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch:
                         () => {
+                            if (submittedTimeout)
+                                this.storage.timeout.deleteTimeout(
+                                    forkId,
+                                    submittedTimeout
+                                );
                             timeoutRetry = {
                                 delayMs: TIMEOUT_RECHECK_DELAY_MS,
                                 reason: MISMATCH_TIMEOUT_RECHECK_REASON

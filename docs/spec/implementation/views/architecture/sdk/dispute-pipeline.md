@@ -130,7 +130,7 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L582)
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L646)
 assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
 
 1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
@@ -223,7 +223,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   cannot assemble the data abort (spectators fail closed).
 - **Kill period expired:** committed peers still audit and replay to persist reduction data, warn on invalidity, and schedule reduction. They cannot kill after expiry. Thrown audit failures propagate; late-challenge recovery remains open.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L496)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L547)
   with canonical preflight. A peer that already disputed only kills; otherwise the owner sends
   kill then its own replacement in one multicall with expected-slash accounting. Known expired
   kill preflight sends nothing; a late transaction failure propagates rather than becoming a

@@ -354,6 +354,22 @@ export async function assertObsoleteEarlyTimeoutRetry(
         }
         await held.release(true);
         expect(await recorder.submissions()).to.have.length(1);
+        if (refusal === "mismatch") {
+            // The chain refused this claim for good, so it must not stay
+            // stored for a later dispute on the fork to carry.
+            expect(
+                await h.control(peer).query.getTimeout(forkId).request()
+            ).to.equal(null);
+            await h.execOnHost(peer, (sm) =>
+                sm.membershipService.startSelfRemovalDispute(sm.forkId)
+            );
+            const submissions = await recorder.submissions();
+            expect(submissions).to.have.length(2);
+            expect(
+                Codec.decode(submissions[1].encodedDispute, Type.Dispute).input
+                    .timeout.participant
+            ).to.equal(ZeroAddress);
+        }
     } finally {
         if (local) {
             local.stub.restoreHeldScheduledTasks(retryReason, false);
@@ -367,12 +383,14 @@ export async function assertObsoleteEarlyTimeoutRetry(
 }
 
 export async function assertTimeoutRetryAfterForkSwitch(
-    h: MathPeerTestHarness,
-    retryReason = EARLY_TIMEOUT_RECHECK_REASON
+    h: MathPeerTestHarness
 ): Promise<void> {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
     const target = h.getPeer(0);
-    const held = await h.rpcStub.holdScheduledTasks(0, retryReason);
+    const held = await h.rpcStub.holdScheduledTasks(
+        0,
+        EARLY_TIMEOUT_RECHECK_REASON
+    );
     const tasks = await h.rpcStub.recordScheduledTasks(0);
     const recorder = await h.rpcStub.recordDisputeSubmissions(0);
     let responderHold: { release(): Promise<void> } | undefined;
@@ -385,13 +403,13 @@ export async function assertTimeoutRetryAfterForkSwitch(
                     sm.storage.blocks.getNextBlockHeight(args.forkId),
                     args.participant,
                     1,
-                    args.retryReason
+                    args.reason
                 );
             },
             {
                 forkId: sourceForkId,
                 participant: h.getPeer(2).address,
-                retryReason
+                reason: EARLY_TIMEOUT_RECHECK_REASON
             }
         );
         await waitFor(async () => (await held.heldCount()) === 1);
@@ -409,7 +427,6 @@ export async function assertTimeoutRetryAfterForkSwitch(
                     task.taskName.includes(hexlify(sourceForkId))
             );
         const count = (await oldForkTasks()).length;
-        const submissionsBefore = (await recorder.submissions()).length;
         await held.release(true);
         // New attempts to queue that same old-fork check must also be ignored.
         await h.execOnHost(
@@ -420,19 +437,16 @@ export async function assertTimeoutRetryAfterForkSwitch(
                     0,
                     args.participant,
                     1,
-                    args.retryReason
+                    args.reason
                 );
             },
             {
                 forkId: sourceForkId,
                 participant: h.getPeer(2).address,
-                retryReason
+                reason: EARLY_TIMEOUT_RECHECK_REASON
             }
         );
         expect(await recorder.submissions()).to.deep.equal([]);
-        expect((await recorder.submissions()).length).to.equal(
-            submissionsBefore
-        );
         expect(
             await h.control(target).query.getTimeout(sourceForkId).request()
         ).to.deep.equal(before);

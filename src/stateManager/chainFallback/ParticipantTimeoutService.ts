@@ -385,21 +385,19 @@ export default class ParticipantTimeoutService {
         });
 
         const previousBlock = previousBlockOrSnapshot.block;
-        let previousBlockProducerPostedCalldata = false;
-        if (previousBlock) {
-            if (previousBlock.onChainTimestamp) {
-                previousBlockProducerPostedCalldata = true;
-            } else {
-                previousBlockProducerPostedCalldata = (
-                    await sm.diamondStateMachine.localDiamondContract.getBlockCallDataCommitment(
-                        sm.channelId,
-                        forkId,
-                        previousBlock.height,
-                        previousBlock.author
-                    )
-                ).found;
-            }
-        }
+        // The chain judges this claim against its own commitment, so read it
+        // there: a local on-chain timestamp or mirror can disagree with it
+        // (e.g. after a reorg), and a recheck must not rebuild a refused claim.
+        const previousBlockProducerPostedCalldata = previousBlock
+            ? (
+                  await sm.stateChannelManagerContract.getBlockCallDataCommitment(
+                      sm.channelId,
+                      forkId,
+                      previousBlock.height,
+                      previousBlock.author
+                  )
+              ).found
+            : false;
 
         const timeout: TimeoutStruct = {
             participant: participantAddress.toString(),

@@ -1,10 +1,19 @@
 import { MISMATCH_TIMEOUT_RECHECK_REASON } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { timeoutWaitTime } from "@/types";
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { id, ZeroAddress } from "ethers";
+
+// short windows, so the staged parent post and the moved deadline fit one test
+const MOVED_DEADLINE_TIME_CONFIG = {
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 10,
+    evidenceTime: 20
+};
 
 /**
  * E2E Tests for Timeout Management
@@ -457,6 +466,12 @@ describe("E2E: Timeouts", function () {
                     mode: "atLeast"
                 });
 
+                // the commit event can land before the observer's own wait()
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
                 const submissions = await uploads.submissions();
                 const refused = submissions[0];
                 const committed = submissions[submissions.length - 1];
@@ -491,6 +506,74 @@ describe("E2E: Timeouts", function () {
                         task.taskName.startsWith(
                             MISMATCH_TIMEOUT_RECHECK_REASON
                         )
+                    )
+                ).to.equal(true);
+            } finally {
+                await uploads.release();
+                await uploads.restore();
+                await tasks.restore();
+            }
+        });
+    });
+
+    describe("Previous-Producer Mismatch Moves The Deadline", function () {
+        it("M7 a real post of a parent the writer never signed refuses the upload, and the recheck waits for the moved deadline", async function () {
+            const h = TestSession.getHarness();
+            // the writer never signed the parent, so the parent's on-chain
+            // post really extends the writer's deadline
+            const { observer, author, parentAuthor, previous, postParent } =
+                await h.scenario.unpostedParentUnsignedByNextWriter({
+                    timeConfig: MOVED_DEADLINE_TIME_CONFIG
+                });
+            const height = previous.height + 1;
+            await h.dispute.suppressDisputeInitiation([
+                parentAuthor.index,
+                author.index
+            ]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { hold: true, forward: true }
+            );
+            try {
+                // the observer built its claim against the unposted parent
+                await uploads.waitUntilHeld(h.event.hostExecTimeoutMs());
+                const parentPostTimestamp = await postParent();
+                await uploads.release();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
+                });
+                await waitFor(
+                    async () =>
+                        (await uploads.submissions()).at(-1)?.waited === true,
+                    h.event.hostExecTimeoutMs()
+                );
+
+                const submissions = await uploads.submissions();
+                expect(submissions[0].revert?.name).to.equal(
+                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
+                );
+                const committedTimeout = Codec.decode(
+                    submissions[submissions.length - 1].encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                expect(
+                    committedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(true);
+                expect(committedTimeout.participant).to.equal(author.address);
+                expect(Number(committedTimeout.blockHeight)).to.equal(height);
+                // rebuilt against the parent's post, not its own timestamp
+                expect(Number(committedTimeout.minTimeStamp)).to.be.at.least(
+                    parentPostTimestamp +
+                        timeoutWaitTime(MOVED_DEADLINE_TIME_CONFIG, height)
+                );
+                // the recheck waited for the moved deadline instead of
+                // resubmitting at once
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith("timeoutParticipantDelayed")
                     )
                 ).to.equal(true);
             } finally {
