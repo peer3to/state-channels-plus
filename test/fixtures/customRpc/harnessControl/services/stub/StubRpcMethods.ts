@@ -46,6 +46,7 @@ import type {
     Timestamp
 } from "@/types/types";
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
@@ -1203,6 +1204,28 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         if (runHeld) for (const { task } of held) void task();
         return true;
+    }
+
+    /**
+     * Restore scheduling for `prefix`, run its held tasks and wait for each to
+     * finish; returns how many ran, so a caller can prove they executed.
+     */
+    public async runHeldScheduledTasks(prefix: string): Promise<number> {
+        const held = this.service.heldScheduledTasks.get(prefix) ?? [];
+        this.restoreHeldScheduledTasks(prefix, false);
+        for (const { task } of held) {
+            // like TimeoutManager.scheduleTask: a failing task is reported,
+            // not propagated to the caller
+            try {
+                await task();
+            } catch (error) {
+                this.service.sm.logger.warn("held scheduled task failed", {
+                    prefix,
+                    error: errorMessage(error)
+                });
+            }
+        }
+        return held.length;
     }
 
     public holdNextSignature(match?: SignatureBlockMatch): boolean {
@@ -3034,13 +3057,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public stubFailChainCommitmentReads(): boolean {
-        this.service.stubFailChainCommitmentReads();
+    public stubFailChainReads(
+        method:
+            | "getBlockCallDataCommitment"
+            | "getDisputeWindowCreationTimestamp",
+        times: number
+    ): boolean {
+        this.service.stubFailChainReads(method, times);
         return true;
     }
 
-    public restoreChainCommitmentReadFailures(): boolean {
-        this.service.restoreChainCommitmentReadFailures();
+    public getChainReadObservation(): { failed: number; passed: number } {
+        return this.service.getChainReadObservation();
+    }
+
+    public restoreChainReadFailures(): boolean {
+        this.service.restoreChainReadFailures();
         return true;
     }
 

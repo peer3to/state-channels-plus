@@ -489,7 +489,9 @@ export class StubService extends ANetworkRpcService<
     private originalQueueProbe?: SpectateService["sync"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
-    private restoreChainCommitmentReads?: () => void;
+    private restoreChainReads?: () => void;
+    // reads of the stubbed chain method: rejected, then passed through
+    private chainReadObservation = { failed: 0, passed: 0 };
     private timeoutStoreCalls = 0;
     private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
@@ -1675,21 +1677,39 @@ export class StubService extends ANetworkRpcService<
         this.restoreTimeoutBuild = undefined;
     }
 
-    // every chain commitment read rejects until restored (an RPC outage)
-    public stubFailChainCommitmentReads(): void {
+    // the next `times` chain reads of `method` reject (an RPC outage); later
+    // reads, and every read after restore, reach the chain
+    public stubFailChainReads(
+        method:
+            | "getBlockCallDataCommitment"
+            | "getDisputeWindowCreationTimestamp",
+        times: number
+    ): void {
         const contract =
             this.p2pManager.stateManager.stateChannelManagerContract;
-        const original = contract.getBlockCallDataCommitment;
-        Reflect.set(contract, "getBlockCallDataCommitment", async () => {
-            throw new Error("stubbed chain commitment read failure");
+        const original = contract[method];
+        let remaining = times;
+        const observation = { failed: 0, passed: 0 };
+        this.chainReadObservation = observation;
+        Reflect.set(contract, method, async (...args: unknown[]) => {
+            if (remaining > 0) {
+                remaining -= 1;
+                observation.failed += 1;
+                throw new Error(`stubbed chain read failure: ${method}`);
+            }
+            observation.passed += 1;
+            return Reflect.apply(original, contract, args);
         });
-        this.restoreChainCommitmentReads = () =>
-            Reflect.set(contract, "getBlockCallDataCommitment", original);
+        this.restoreChainReads = () => Reflect.set(contract, method, original);
     }
 
-    public restoreChainCommitmentReadFailures(): void {
-        this.restoreChainCommitmentReads?.();
-        this.restoreChainCommitmentReads = undefined;
+    public getChainReadObservation(): { failed: number; passed: number } {
+        return { ...this.chainReadObservation };
+    }
+
+    public restoreChainReadFailures(): void {
+        this.restoreChainReads?.();
+        this.restoreChainReads = undefined;
     }
 
     public holdInitHandshakes(): void {

@@ -6,6 +6,7 @@ import { Status, timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     assertEarlyTimeoutRetry,
+    assertMismatchRetryAfterForkSwitch,
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
     assertConsecutiveMismatchRetry,
@@ -669,6 +670,15 @@ describe("Unit: ParticipantTimeoutService", function () {
             });
         });
 
+        it("M1 a refusal reporting the true-to-false direction re-arms the same way", async function () {
+            const h = TestSession.getHarness();
+            // the handler must not branch on the refusal's direction arguments
+            await assertEarlyTimeoutRetry(h, "send", 1, 1, {
+                expectedPosted: true,
+                foundPosted: false
+            });
+        });
+
         it("M1 a predecessor posted only in the local view → the claim carries the chain's answer and commits", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3);
@@ -726,6 +736,10 @@ describe("Unit: ParticipantTimeoutService", function () {
     });
 
     describe("obsolete mismatch retry", function () {
+        it("M4 an injected mismatch refusal before a verified fork replacement leaves its re-arm nothing to do", async function () {
+            await assertMismatchRetryAfterForkSwitch(TestSession.getHarness());
+        });
+
         it("M4 writer block obsoletes mismatch retry", async function () {
             await assertObsoleteEarlyTimeoutRetry(
                 TestSession.getHarness(),
@@ -758,7 +772,10 @@ describe("Unit: ParticipantTimeoutService", function () {
             );
             await h
                 .control(observer)
-                .stub.stubFailChainCommitmentReads()
+                .stub.stubFailChainReads(
+                    "getBlockCallDataCommitment",
+                    Number.MAX_SAFE_INTEGER
+                )
                 .request();
             try {
                 await waitFor(
@@ -773,7 +790,7 @@ describe("Unit: ParticipantTimeoutService", function () {
                 expect(await uploads.submissions()).to.deep.equal([]);
                 await h
                     .control(observer)
-                    .stub.restoreChainCommitmentReadFailures()
+                    .stub.restoreChainReadFailures()
                     .request();
                 await h.assert.dispute.committedWait({
                     peersIndices: [observer.index],
@@ -783,7 +800,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             } finally {
                 await h
                     .control(observer)
-                    .stub.restoreChainCommitmentReadFailures()
+                    .stub.restoreChainReadFailures()
                     .request();
                 await uploads.restore();
                 await tasks.restore();

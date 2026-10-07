@@ -1,4 +1,5 @@
 import {
+    CHAIN_READ_FAILED_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON,
     PREDECESSOR_POSTED_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
@@ -728,6 +729,14 @@ describe("E2E: Timeouts", function () {
                     height: previous.height,
                     forkId
                 });
+                // the first chain window read fails once: the check must re-arm
+                await h
+                    .control(observer)
+                    .stub.stubFailChainReads(
+                        "getDisputeWindowCreationTimestamp",
+                        1
+                    )
+                    .request();
                 await h.control(observer).stub.releaseTimeoutBuild().request();
 
                 // the check waits out the post-based deadline...
@@ -749,6 +758,28 @@ describe("E2E: Timeouts", function () {
                 expect(
                     await h.control(observer).query.getTimeout(forkId).request()
                 ).to.equal(null);
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            CHAIN_READ_FAILED_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+                // the re-armed check really ran and read the window again
+                expect(
+                    await h
+                        .control(observer)
+                        .stub.getChainReadObservation()
+                        .request()
+                ).to.deep.include({ failed: 1 });
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getChainReadObservation()
+                            .request()
+                    ).passed
+                ).to.be.greaterThan(0);
                 for (const submission of await uploads.submissions()) {
                     expect(
                         Codec.decode(submission.encodedDispute, Type.Dispute)
@@ -756,6 +787,10 @@ describe("E2E: Timeouts", function () {
                     ).to.not.equal(author.address);
                 }
             } finally {
+                await h
+                    .control(observer)
+                    .stub.restoreChainReadFailures()
+                    .request();
                 await restoreDisputeEvents(false);
                 await h.control(observer).stub.releaseTimeoutBuild().request();
                 await h

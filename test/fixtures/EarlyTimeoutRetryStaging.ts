@@ -10,7 +10,10 @@ import { timeoutWaitTime } from "@/types";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type, sleep } from "@/utils";
 import type { CustomErrorArg } from "@test/factory";
-import type { DisputeSubmissionFailureSpec } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import type {
+    DisputeSubmissionFailureSpec,
+    RecordedDisputeSubmission
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -393,7 +396,6 @@ export async function assertTimeoutRetryAfterForkSwitch(
     );
     const tasks = await h.rpcStub.recordScheduledTasks(0);
     const recorder = await h.rpcStub.recordDisputeSubmissions(0);
-    let responderHold: { release(): Promise<void> } | undefined;
     try {
         await h.execOnHost(
             target,
@@ -413,21 +415,150 @@ export async function assertTimeoutRetryAfterForkSwitch(
             }
         );
         await waitFor(async () => (await held.heldCount()) === 1);
-        responderHold = (
-            await syncTargetToUnpostedReduction(h, 0, 2, sourceForkId)
-        ).responderHold;
+        await expectOldForkCheckIgnored(
+            h,
+            sourceForkId,
+            EARLY_TIMEOUT_RECHECK_REASON,
+            {
+                runHeld: held.runHeld,
+                submissions: recorder.submissions,
+                tasks: tasks.tasks
+            },
+            "none"
+        );
+    } finally {
+        await held.release(false);
+        await recorder.restore();
+        await tasks.restore();
+    }
+}
+
+/**
+ * An injected previous-producer mismatch refusal (the stub fails the upload
+ * at send) queues the real handler's re-arm on the target's
+ * fork before that fork is disputed; a verified sync then replaces the fork.
+ * The released re-arm, and any later schedule of that old-fork check, must
+ * create no work.
+ */
+export async function assertMismatchRetryAfterForkSwitch(
+    h: MathPeerTestHarness
+): Promise<void> {
+    let probes:
+        | {
+              release: (runHeld: boolean) => Promise<void>;
+              runHeld: () => Promise<number>;
+              submissions: () => Promise<RecordedDisputeSubmission[]>;
+              tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
+              restore: () => Promise<void>;
+          }
+        | undefined;
+    try {
+        const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
+            beforeDispute: async () => {
+                const target = h.getPeer(0);
+                const forkId = h.activeForkId!;
+                const writer = await h
+                    .control(target)
+                    .query.getNextToWrite()
+                    .request();
+                const installed = await installRetryProbes(
+                    h,
+                    0,
+                    MISMATCH_TIMEOUT_RECHECK_REASON,
+                    {
+                        customError: MISMATCH_TIMEOUT_ERROR,
+                        customErrorArgs: mismatchRefusalArgs(ZeroAddress, 0, {
+                            expectedPosted: false,
+                            foundPosted: true
+                        }),
+                        at: "send",
+                        times: 1
+                    }
+                );
+                const tasks = await h.rpcStub.recordScheduledTasks(0);
+                probes = {
+                    release: installed.held.release,
+                    runHeld: installed.held.runHeld,
+                    submissions: installed.recorder.submissions,
+                    tasks: tasks.tasks,
+                    restore: async () => {
+                        await installed.restore();
+                        await tasks.restore();
+                    }
+                };
+                // the stub refuses the target's own timeout upload; the real
+                // handler queues the held re-arm on the still-current fork
+                await h.execOnHost(
+                    target,
+                    (sm, args) =>
+                        sm.participantTimeoutService["createTimeOutDispute"](
+                            args.forkId,
+                            sm.storage.blocks.getNextBlockHeight(args.forkId),
+                            args.writer,
+                            0
+                        ),
+                    { forkId, writer }
+                );
+                await installed.expectOneHeldRearm(1000);
+            }
+        });
+        // the first upload is the refused timeout claim against the writer
+        const [refused] = await probes!.submissions();
+        expect(
+            Codec.decode(refused.encodedDispute, Type.Dispute).input.timeout
+                .participant
+        ).to.not.equal(ZeroAddress);
+        await expectOldForkCheckIgnored(
+            h,
+            sourceForkId,
+            MISMATCH_TIMEOUT_RECHECK_REASON,
+            probes!,
+            "nothing-new"
+        );
+    } finally {
+        await probes?.release(false);
+        await probes?.restore();
+    }
+}
+
+// Sync the target past `sourceForkId`, release its held old-fork re-arm, then
+// queue that same old-fork check again: neither may submit, touch the old
+// fork's timeout, or schedule more old-fork work.
+async function expectOldForkCheckIgnored(
+    h: MathPeerTestHarness,
+    sourceForkId: ForkId,
+    reason: string,
+    probes: {
+        runHeld: () => Promise<number>;
+        submissions: () => Promise<RecordedDisputeSubmission[]>;
+        tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
+    },
+    // "none": the target must never have uploaded; "nothing-new": uploads the
+    // caller already accounted for may exist, but none may follow the release
+    uploads: "none" | "nothing-new"
+): Promise<void> {
+    const target = h.getPeer(0);
+    const { responderHold } = await syncTargetToUnpostedReduction(
+        h,
+        0,
+        2,
+        sourceForkId
+    );
+    try {
         const before = await h
             .control(target)
             .query.getTimeout(sourceForkId)
             .request();
         const oldForkTasks = async () =>
-            (await tasks.tasks()).filter(
+            (await probes.tasks()).filter(
                 (task) =>
                     task.taskName.startsWith("timeoutParticipant") &&
                     task.taskName.includes(hexlify(sourceForkId))
             );
         const count = (await oldForkTasks()).length;
-        await held.release(true);
+        const submitted = (await probes.submissions()).length;
+        // the held old-fork re-arm really runs, to completion
+        expect(await probes.runHeld()).to.equal(1);
         // New attempts to queue that same old-fork check must also be ignored.
         await h.execOnHost(
             target,
@@ -443,18 +574,17 @@ export async function assertTimeoutRetryAfterForkSwitch(
             {
                 forkId: sourceForkId,
                 participant: h.getPeer(2).address,
-                reason: EARLY_TIMEOUT_RECHECK_REASON
+                reason
             }
         );
-        expect(await recorder.submissions()).to.deep.equal([]);
+        if (uploads === "none")
+            expect(await probes.submissions()).to.deep.equal([]);
+        else expect((await probes.submissions()).length).to.equal(submitted);
         expect(
             await h.control(target).query.getTimeout(sourceForkId).request()
         ).to.deep.equal(before);
         expect((await oldForkTasks()).length).to.equal(count);
     } finally {
-        await held.release(false);
-        await recorder.restore();
-        await tasks.restore();
         await responderHold?.release();
     }
 }

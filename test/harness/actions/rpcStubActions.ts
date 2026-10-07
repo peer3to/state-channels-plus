@@ -89,6 +89,8 @@ export class RpcStubActions<
     ): Promise<{
         heldCount: () => Promise<number>;
         release: (runHeld: boolean) => Promise<void>;
+        /** Release, run every held task to completion; returns how many ran. */
+        runHeld: () => Promise<number>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldScheduledTasks(prefix).request();
@@ -99,7 +101,9 @@ export class RpcStubActions<
                 await ctl()
                     .restoreHeldScheduledTasks(prefix, runHeld)
                     .request();
-            }
+            },
+            runHeld: async () =>
+                await ctl().runHeldScheduledTasks(prefix).request()
         };
     }
 
