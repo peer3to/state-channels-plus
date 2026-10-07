@@ -13,7 +13,6 @@ import type { CustomErrorArg } from "@test/factory";
 import type { DisputeSubmissionFailureSpec } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
-import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 import { ZeroAddress, hexlify } from "ethers";
 
@@ -91,13 +90,12 @@ function didDispute(h: MathPeerTestHarness, peerIndex: number, forkId: ForkId) {
 }
 
 /** Every submission must carry the same timeout as the first, refused one. */
-function expectSameTimeout(encodedDisputes: string[]): TimeoutStruct[] {
+function expectSameTimeout(encodedDisputes: string[]): void {
     const timeouts = encodedDisputes.map(
         (encoded) => Codec.decode(encoded, Type.Dispute).input.timeout
     );
     for (const timeout of timeouts.slice(1))
         expect(timeout).to.deep.equal(timeouts[0]);
-    return timeouts;
 }
 
 export async function assertEarlyTimeoutRetry(
@@ -106,7 +104,7 @@ export async function assertEarlyTimeoutRetry(
     failures: number,
     differenceSeconds = 1,
     mismatch?: MismatchDirection
-): Promise<{ refusedTimeout: TimeoutStruct; committedTimeout: TimeoutStruct }> {
+): Promise<void> {
     await h.lifecycle.timeoutSetup(3);
     // A mismatch needs a stored predecessor block: advance once, so peer 0
     // authored it and observer 2 times out writer 1. Delays are literal so a
@@ -175,7 +173,7 @@ export async function assertEarlyTimeoutRetry(
         });
         const submissions = await probes.recorder.submissions();
         expect(submissions).to.have.length(failures + 1);
-        const timeouts = expectSameTimeout(
+        expectSameTimeout(
             submissions.map((submission) => submission.encodedDispute)
         );
         expect(await didDispute(h, scenario.observerIndex, forkId)).to.equal(
@@ -185,10 +183,6 @@ export async function assertEarlyTimeoutRetry(
         // re-arms are scheduled after the hold's release, past the recorder
         // (see above), so their count is proven by the attempt count instead.
         expect(await probes.retryTasks()).to.have.length(1);
-        return {
-            refusedTimeout: timeouts[0],
-            committedTimeout: timeouts[timeouts.length - 1]
-        };
     } finally {
         await probes.restore();
     }

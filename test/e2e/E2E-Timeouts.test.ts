@@ -1,6 +1,6 @@
+import { MISMATCH_TIMEOUT_RECHECK_REASON } from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import { assertEarlyTimeoutRetry } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -419,16 +419,85 @@ describe("E2E: Timeouts", function () {
     });
 
     describe("Previous-Producer Mismatch Recheck", function () {
-        it("M6 previous producer mismatch rechecks and commits the real timeout slot", async function () {
+        it("M6 a real predecessor post refuses the first upload and the recheck commits rebuilt evidence", async function () {
             const h = TestSession.getHarness();
-            const { refusedTimeout, committedTimeout } =
-                await assertEarlyTimeoutRetry(h, "send", 1, 1, {
-                    expectedPosted: false,
-                    foundPosted: true
+            await h.lifecycle.timeoutSetup(3);
+            // peer 0 authors height 0; nobody writes height 1, so observer 2
+            // times out writer 1 with peer 0 as the previous producer
+            await h.transition.advanceState();
+            const predecessor = h.getPeer(0);
+            const writer = h.getPeer(1);
+            const observer = h.getPeer(2);
+            const forkId = h.activeForkId!;
+            await h.dispute.suppressDisputeInitiation([predecessor.index]);
+            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
+            // Park the observer's first upload (built while height 0 was
+            // unposted), post height 0 for real, then let the upload reach
+            // the real contract: the refusal and the retry are both on chain.
+            const uploads = await h.rpcStub.recordDisputeSubmissions(
+                observer.index,
+                { hold: true, forward: true }
+            );
+            try {
+                await uploads.waitUntilHeld(h.event.hostExecTimeoutMs());
+                const parent = await h
+                    .control(predecessor)
+                    .query.getBlockByHeight(forkId, 0)
+                    .request();
+                await h
+                    .control(predecessor)
+                    .validation.postBlockCalldataOnChain(
+                        parent!.encodedSignedBlock
+                    )
+                    .request();
+                await uploads.release();
+                await h.assert.dispute.committedWait({
+                    peersIndices: [observer.index],
+                    expectedCount: 1,
+                    mode: "atLeast"
                 });
-            expect(committedTimeout).to.deep.equal(refusedTimeout);
-            expect(committedTimeout.participant).to.equal(h.getPeer(1).address);
-            expect(Number(committedTimeout.blockHeight)).to.equal(1);
+
+                const submissions = await uploads.submissions();
+                const refused = submissions[0];
+                const committed = submissions[submissions.length - 1];
+                expect(submissions.length).to.be.greaterThan(1);
+                expect(refused.revert?.name).to.equal(
+                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
+                );
+                expect(committed.revert).to.equal(null);
+                expect(committed.waited).to.equal(true);
+                const refusedTimeout = Codec.decode(
+                    refused.encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                const committedTimeout = Codec.decode(
+                    committed.encodedDispute,
+                    Type.Dispute
+                ).input.timeout;
+                // the retry rebuilt the evidence from the new posting state
+                expect(
+                    refusedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(false);
+                expect(
+                    committedTimeout.previousBlockProducerPostedCalldata
+                ).to.equal(true);
+                expect(committedTimeout.previousBlockProducer).to.equal(
+                    predecessor.address
+                );
+                expect(committedTimeout.participant).to.equal(writer.address);
+                expect(Number(committedTimeout.blockHeight)).to.equal(1);
+                expect(
+                    (await tasks.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            MISMATCH_TIMEOUT_RECHECK_REASON
+                        )
+                    )
+                ).to.equal(true);
+            } finally {
+                await uploads.release();
+                await uploads.restore();
+                await tasks.restore();
+            }
         });
     });
 
