@@ -1,7 +1,6 @@
 import { Codec, Type } from "@/utils";
 import {
     commitmentOf,
-    disputeOnHost,
     holdReductions,
     lastMilestoneFirstBlock,
     latestProofBlock,
@@ -10,6 +9,7 @@ import {
     stageOffWireBlock,
     storedStateHashAt
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";

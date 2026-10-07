@@ -286,7 +286,11 @@ yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 Memory admission leaves 20% of the effective RAM limit as headroom. It adds
 predicted growth of running tests to current process-tree usage, including shared
 infrastructure. On bounded cgroup v2 workers it also checks container-wide usage
-and uses the smaller of the configured and container limits. Raising `--cpu-limit`
+and uses the smaller of the configured and container limits. Busy admission
+subtracts only inactive file cache. With no tests running, the memory hold also
+excludes active file cache so reclaimable pages cannot prevent idle progress;
+process-tree RSS, anonymous/shared memory and kernel memory remain counted.
+Raising `--cpu-limit`
 does not raise this RAM budget. Predictions remain estimates, not a guarantee
 against an individual test exceeding its recorded peak.
 

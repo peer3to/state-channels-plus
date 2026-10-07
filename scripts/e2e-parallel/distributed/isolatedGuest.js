@@ -140,7 +140,6 @@ async function completeSource(payload) {
         try {
             await prepareWorkspace(cache.workspace, manifest, {
                 storeDir: path.join(root, "package-store"),
-                cacheDependencies: true,
                 commandRunner: new IsolatedGuestCommandRunner(),
                 env: {},
                 selectPrepareScript: (repository) =>

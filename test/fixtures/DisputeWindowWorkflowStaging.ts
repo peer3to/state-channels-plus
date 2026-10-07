@@ -498,5 +498,3 @@ export async function stageAuditorBehindLastFinalBlock(h: MathPeerTestHarness) {
     }, h.event.protocolEventTimeoutMs());
     return { forkId, writer, auditor, others, authored, height };
 }
-
-export { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";

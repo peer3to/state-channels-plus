@@ -330,6 +330,7 @@ class ResourceGate {
         this.memSampleSum = 0;
         this.memSampleCount = 0;
         this.occupiedGb = 0;
+        this.idleOccupiedGb = 0;
         this.testGb = 0;
         this.infraGb = 0;
         this.memoryLimitGb = memBoundGb;
@@ -371,6 +372,10 @@ class ResourceGate {
         this.memoryLimitGb = Math.min(
             this.memBoundGb,
             memory?.limitGb ?? this.memBoundGb
+        );
+        this.idleOccupiedGb = Math.max(
+            this.occupiedGb,
+            memory?.idleUsedGb ?? 0
         );
         if (memory) this.occupiedGb = Math.max(this.occupiedGb, memory.usedGb);
         this.peakOccupiedGb = Math.max(this.peakOccupiedGb, this.occupiedGb);
@@ -432,7 +437,9 @@ class ResourceGate {
     ) {
         await this.sample();
         this.lastHoldReason = null;
-        if (this.occupiedGb >= this.memoryLimitGb * MEM_LIMIT_FRACTION)
+        const occupiedGb =
+            running === 0 ? this.idleOccupiedGb : this.occupiedGb;
+        if (occupiedGb >= this.memoryLimitGb * MEM_LIMIT_FRACTION)
             return this.hold("memory");
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");

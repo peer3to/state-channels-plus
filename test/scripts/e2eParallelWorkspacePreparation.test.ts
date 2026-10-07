@@ -50,7 +50,6 @@ describe("distributed workspace preparation", function () {
         let failBuild = true;
         const options = {
             storeDir: path.join(root, "store"),
-            cacheDependencies: true,
             onOutput() {},
             commandRunner: {
                 async run(_command: string, args: string[]) {
@@ -264,46 +263,24 @@ describe("distributed workspace preparation", function () {
     });
 
     it("rebuilds missing native modules once and fails the preparation loudly", async function () {
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "workspace-native-")
-        );
-        const workspace = path.join(root, "workspace");
+        const checkpoint = dependencyCheckpoint({
+            verifyNativeModules: ["scp-missing-native-module"]
+        });
         const calls: Array<{ command: string; args: string[] }> = [];
         try {
-            fs.mkdirSync(path.join(workspace, "project"), { recursive: true });
+            // Write the production checkpoint after a successful first preparation.
+            await checkpoint.prepare();
             let failure: Error | null = null;
             try {
-                await prepareWorkspace(
-                    workspace,
-                    {
-                        repositories: [
-                            {
-                                path: "project",
-                                name: "project",
-                                prepareScript: null,
-                                hasPnpmLock: true,
-                                hasYarnLock: false,
-                                verifyNativeModules: [
-                                    "scp-missing-native-module"
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        storeDir: path.join(root, "store"),
-                        commandRunner: {
-                            async run(command: string, args: string[]) {
-                                calls.push({ command, args });
-                                if (command === "node") {
-                                    throw new Error("native module missing");
-                                }
-                            }
-                        },
-                        shouldInstall: () => false,
-                        env: {},
-                        onOutput() {}
+                await checkpoint.prepare({
+                    commandRunner: {
+                        async run(command: string, args: string[]) {
+                            calls.push({ command, args });
+                            if (command === "node")
+                                throw new Error("native module missing");
+                        }
                     }
-                );
+                });
             } catch (error) {
                 failure = error as Error;
             }
@@ -332,51 +309,27 @@ describe("distributed workspace preparation", function () {
                 }
             ]);
         } finally {
-            fs.rmSync(root, { recursive: true, force: true });
+            checkpoint.close();
         }
     });
 
     it("does not build a linked repository with no source changes", async function () {
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "workspace-unchanged-")
-        );
-        const workspace = path.join(root, "workspace");
+        const checkpoint = dependencyCheckpoint({ prepareScript: "compile" });
         const calls: Array<{ command: string; args: string[] }> = [];
         try {
-            fs.mkdirSync(path.join(workspace, "poker-contracts"), {
-                recursive: true
-            });
-            await prepareWorkspace(
-                workspace,
-                {
-                    repositories: [
-                        {
-                            path: "poker-contracts",
-                            name: "poker-contracts",
-                            prepareScript: "compile",
-                            hasPnpmLock: true,
-                            hasYarnLock: false,
-                            verifyNativeModules: []
-                        }
-                    ]
+            await checkpoint.prepare();
+            await checkpoint.prepare({
+                commandRunner: {
+                    async run(command: string, args: string[]) {
+                        calls.push({ command, args });
+                    }
                 },
-                {
-                    storeDir: path.join(root, "store"),
-                    commandRunner: {
-                        async run(command: string, args: string[]) {
-                            calls.push({ command, args });
-                        }
-                    },
-                    shouldInstall: () => false,
-                    selectPrepareScript: () => null,
-                    env: {},
-                    onOutput() {}
-                }
-            );
-
+                selectPrepareScript: () => null
+            });
             expect(calls).to.deep.equal([]);
+            expect(checkpoint.state.installs).to.equal(1);
         } finally {
-            fs.rmSync(root, { recursive: true, force: true });
+            checkpoint.close();
         }
     });
 

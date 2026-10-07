@@ -88,7 +88,13 @@ function readMemorySnapshot(options = {}) {
     const inactiveFile = Number.isFinite(stats.inactive_file)
         ? Math.max(0, Math.min(current, stats.inactive_file))
         : 0;
+    // Idle progress may reclaim either file LRU. Shared memory is on the anon
+    // lists, so it remains counted along with kernel and anonymous allocations.
+    const activeFile = Number.isFinite(stats.active_file)
+        ? Math.max(0, Math.min(current - inactiveFile, stats.active_file))
+        : 0;
     return {
+        idleUsedGb: (current - inactiveFile - activeFile) / 1024 ** 3,
         usedGb: (current - inactiveFile) / 1024 ** 3,
         limitGb: limit / 1024 ** 3
     };

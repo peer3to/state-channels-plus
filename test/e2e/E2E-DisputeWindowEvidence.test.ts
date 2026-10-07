@@ -4,7 +4,6 @@ import {
     commitmentOf,
     committedDisputeLogs,
     computeLocalReduction,
-    disputeOnHost,
     killedDisputeLogs,
     latestProofBlock,
     releaseReductions,
@@ -14,6 +13,7 @@ import {
     uploadLateLowerStateDispute,
     waitPastKillPeriod
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";

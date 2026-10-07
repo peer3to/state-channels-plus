@@ -12,7 +12,7 @@ import {
     chainSnapshot,
     syncSpectatorOnServedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
-import { suppressTimeoutChecks as suppressTimeouts } from "@test/fixtures/OlderDisputeStaging";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
@@ -464,7 +464,7 @@ export async function stageFinalThenUnfinalizedTail(
     latestHeight: number;
 }> {
     await h.lifecycle.start(3, 2);
-    await suppressTimeouts(h, [0, 1, 2]);
+    await suppressTimeoutChecks(h, [0, 1, 2]);
     const forkId = h.activeForkId!;
     const anchor = options.postAnchor ? await postAnchor(h) : null;
     // the latest author writes again only after both others
@@ -520,7 +520,7 @@ export async function stageFinalBlocks(
     latestHeight: number;
 }> {
     await h.lifecycle.start(3, 2);
-    await suppressTimeouts(h, [0, 1, 2]);
+    await suppressTimeoutChecks(h, [0, 1, 2]);
     const anchor = options.postAnchor
         ? await postAnchor(h, { laggingIndices: options.laggingIndices })
         : null;
@@ -558,7 +558,7 @@ export async function stageMirrorMissingTopUp(
     latestHeight: number;
 }> {
     await h.lifecycle.start(3, 2);
-    await suppressTimeouts(h, [0, 1, 2]);
+    await suppressTimeoutChecks(h, [0, 1, 2]);
     let anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
     const held = await h.mirror.holdUpdates(
         options.laggingIndex,
@@ -709,13 +709,13 @@ export async function stageJoinHopWithLaterFinalPoint(
     latestHeight: number;
 }> {
     await h.lifecycle.start(2, 0);
-    await suppressTimeouts(h, [0, 1]);
+    await suppressTimeoutChecks(h, [0, 1]);
     const { peer: spectator } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1],
         minimumBlocks: 2,
         maximumBlocks: 20
     });
-    await suppressTimeouts(h, [spectator.index]);
+    await suppressTimeoutChecks(h, [spectator.index]);
     await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
     let anchor: { hash: string; height: number } | null = null;
     if (options.postAnchor) {
@@ -867,13 +867,13 @@ export async function stageFinalJoinThenUnfinalizedTail(
     latestHeight: number;
 }> {
     await h.lifecycle.start(2, 0);
-    await suppressTimeouts(h, [0, 1]);
+    await suppressTimeoutChecks(h, [0, 1]);
     const { peer: spectator } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1],
         minimumBlocks: 2,
         maximumBlocks: 20
     });
-    await suppressTimeouts(h, [spectator.index]);
+    await suppressTimeoutChecks(h, [spectator.index]);
     await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
     const forkId = h.activeForkId!;
     const query = h.control(h.getPeer(0)).query;
@@ -974,13 +974,13 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     latestHeight: number;
 }> {
     await h.lifecycle.start(2, 0);
-    await suppressTimeouts(h, [0, 1]);
+    await suppressTimeoutChecks(h, [0, 1]);
     const { peer: joiner } = await h.join.addSpectatorAuthoring({
         authoringPeerIndices: [0, 1],
         minimumBlocks: 2,
         maximumBlocks: 20
     });
-    await suppressTimeouts(h, [joiner.index]);
+    await suppressTimeoutChecks(h, [joiner.index]);
     await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
     await h.join.joinChannelWait({ joiner });
     await h.assert.storage.honestPeersObserveInboundMessageWait();
@@ -1146,7 +1146,7 @@ export async function stageFinalityFromNextBlock(
     beforeVirtualVotes?: () => Promise<void>
 ): Promise<{ forkId: ForkId; observerIndex: number }> {
     await h.lifecycle.start(3, 2);
-    await suppressTimeouts(h, [0, 1, 2]);
+    await suppressTimeoutChecks(h, [0, 1, 2]);
     const forkId = h.activeForkId!;
     const observerIndex = 1;
     // Muted gossip must not be bypassed by fallback calldata while a caller
@@ -1698,5 +1698,3 @@ export async function stageExactJoinAboveView(h: MathPeerTestHarness) {
         frozenNextHeight: before
     };
 }
-
-export { suppressTimeoutChecks as suppressTimeouts } from "@test/fixtures/OlderDisputeStaging";

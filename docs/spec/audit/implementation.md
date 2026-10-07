@@ -3,6 +3,20 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## PR #520 second-review corrections (2026-10-07)
+
+The local-first revert behavior is unchanged: local errors propagate without a chain fallback.
+The [local-mirror test plan](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1)
+now names separate fatal-revert permutations for the four audit predicates and dispute construction.
+Their existing declarations are mapped in the
+[audit-read report](../verification/tests/test/unit/DisputeValidationServiceLocalFirst.test.ts.md)
+and [construction report](../verification/tests/test/unit/DisputeManagerLocalFirst.test.ts.md).
+The [local binding report](../implementation/source/src/utils/localDiamond.ts.md) also removes
+obsolete revert-fallback claims and gives the helper's two revert tests explicit obligations.
+This repairs traceability, not the deferred sync-reduction gas finding; that finding remains open.
+Runtime validation is recorded in the private round-two assessment; this paragraph makes no
+claim that the full gate passed on the modified tree.
+
 ## PR #520 author decisions (2026-10-07)
 
 Luka confirms the deliberate fixture timing increases, including `balanceInvariant`’s 15-second evidence

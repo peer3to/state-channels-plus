@@ -1173,5 +1173,3 @@ export async function holdCanonicalProofWalk(
             })
     };
 }
-
-export { proofHeights } from "@test/fixtures/MilestoneSyncStaging";

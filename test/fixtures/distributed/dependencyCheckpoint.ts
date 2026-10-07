@@ -11,13 +11,25 @@ const {
     prepareWorkspace
 } = require("../../../scripts/e2e-parallel/distributed/workspacePreparation");
 
-export function dependencyCheckpoint() {
+export function dependencyCheckpoint(
+    repository: {
+        prepareScript?: string;
+        verifyNativeModules?: string[];
+    } = {}
+) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "dependency-input-"));
     const cwd = path.join(root, "project");
     const storeDir = path.join(root, "store");
     fs.mkdirSync(path.join(cwd, "node_modules"), { recursive: true });
     const manifest = {
-        repositories: [{ path: "project", name: "project", hasPnpmLock: true }],
+        repositories: [
+            {
+                path: "project",
+                name: "project",
+                hasPnpmLock: true,
+                ...repository
+            }
+        ],
         files: [{ path: "project/pnpm-lock.yaml", sha256: "lock" }]
     };
     const state = { installs: 0, failInstall: false };
@@ -29,10 +41,16 @@ export function dependencyCheckpoint() {
         manifest,
         state,
         marker,
-        async prepare() {
+        async prepare(
+            options: {
+                commandRunner?: {
+                    run(command: string, args: string[]): Promise<void>;
+                };
+                selectPrepareScript?: () => null;
+            } = {}
+        ) {
             await prepareWorkspace(root, manifest, {
                 storeDir,
-                cacheDependencies: true,
                 onOutput() {},
                 commandRunner: {
                     async run(_command: string, args: string[]) {
@@ -42,7 +60,8 @@ export function dependencyCheckpoint() {
                                 throw new Error("install failed");
                         }
                     }
-                }
+                },
+                ...options
             });
         },
         markPreviousVersion() {

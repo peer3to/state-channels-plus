@@ -108,30 +108,25 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 })
             )
             .digest("hex");
-        const dependencyMarker = options.cacheDependencies
-            ? path.join(
-                  storeDir,
-                  `prepared-dependencies-${crypto.createHash("sha256").update(cwd).digest("hex")}.json`
-              )
-            : null;
+        const dependencyMarker = path.join(
+            storeDir,
+            `prepared-dependencies-${crypto.createHash("sha256").update(cwd).digest("hex")}.json`
+        );
         const dependenciesPresent = fs.existsSync(
             path.join(cwd, "node_modules")
         );
         const dependenciesPrepared =
-            dependencyMarker &&
             dependenciesPresent &&
             fs.existsSync(dependencyMarker) &&
             fs.readFileSync(dependencyMarker, "utf8") === dependencyDigest;
-        const install = options.cacheDependencies
-            ? !dependenciesPrepared
-            : options.shouldInstall?.(repository) !== false;
+        const install = !dependenciesPrepared;
         options.onStage?.(
             install
                 ? `Installing dependencies for ${repository.name}`
                 : `Reusing dependencies for ${repository.name}`
         );
         if (install) {
-            if (dependencyMarker) fs.rmSync(dependencyMarker, { force: true });
+            fs.rmSync(dependencyMarker, { force: true });
             options.onOutput(
                 "stdout",
                 Buffer.from(`Installing ${repository.name}\n`)
@@ -196,8 +191,7 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
         }
         // Persist only after installation and native validation succeeded. A later
         // compiler failure must not invalidate completed dependency preparation.
-        if (dependencyMarker)
-            fs.writeFileSync(dependencyMarker, dependencyDigest);
+        fs.writeFileSync(dependencyMarker, dependencyDigest);
         const prepareScript = options.selectPrepareScript
             ? options.selectPrepareScript(repository)
             : repository.prepareScript;

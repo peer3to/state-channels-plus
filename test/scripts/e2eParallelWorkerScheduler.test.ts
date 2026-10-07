@@ -1221,6 +1221,7 @@ describe("distributed worker scheduler", function () {
         );
         let containerGb = 3;
         let inactiveFileGb = 0;
+        let activeFileGb = 0;
         let boundedContainer = true;
         let idleTicks = 1000;
         try {
@@ -1257,7 +1258,7 @@ describe("distributed worker scheduler", function () {
                         if (!boundedContainer && file.includes("/memory."))
                             throw new Error("ENOENT");
                         if (file.endsWith("/memory.stat"))
-                            return `inactive_file ${inactiveFileGb * 1024 ** 3}\n`;
+                            return `inactive_file ${inactiveFileGb * 1024 ** 3}\nactive_file ${activeFileGb * 1024 ** 3}\n`;
                         if (file.endsWith("/memory.current"))
                             return String(containerGb * 1024 ** 3);
                         if (file.endsWith("/memory.max"))
@@ -1294,6 +1295,15 @@ describe("distributed worker scheduler", function () {
                 5
             );
             inactiveFileGb = 0;
+            activeFileGb = 6.5;
+            // An idle worker progresses through hot file-cache pressure.
+            expect(await resources.allows(0, 40, admission)).to.equal(true);
+            // Busy admission and its cost budget retain the conservative estimate.
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.costBudget({ cores: 0, rssGb: 0 }).rssGb).to.equal(
+                -1.5
+            );
+            activeFileGb = 0;
             expect(await resources.allows(0, 40, admission)).to.equal(false);
             boundedContainer = false;
             await resources.sample();

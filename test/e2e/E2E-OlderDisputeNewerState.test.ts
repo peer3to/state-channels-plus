@@ -1,7 +1,6 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
-import { disputeOnHost } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     addFreshSpectator,
     assertNewerStateAnswersOlderDispute,
@@ -13,6 +12,7 @@ import {
     waitForChainInboundHead
 } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 

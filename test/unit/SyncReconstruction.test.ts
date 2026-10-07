@@ -4,12 +4,12 @@ import {
     chainSnapshot,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
+import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
     applyOnFreshRequester,
     constructProof,
     craftProofBlock,
     postSnapshotAt,
-    proofHeights,
     servedBlock,
     servedProjections,
     servedRunPayload,
