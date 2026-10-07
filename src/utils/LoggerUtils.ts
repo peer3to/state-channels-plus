@@ -49,7 +49,7 @@ import {
     DisputeFraudProofStruct,
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ethers } from "ethers";
+import { ethers, type BigNumberish } from "ethers";
 
 export type InitHandshakeMessage =
     | "request"
@@ -223,6 +223,38 @@ export class LoggerUtils {
             functionSelector,
             functionName: this.getFunctionName(functionSelector),
             calldataBytes: ethers.dataLength(encodedData)
+        };
+    }
+
+    /**
+     * One RPC node endpoint without its path, query or credentials: provider
+     * URLs often carry an API key there, and logs are shipped off the host.
+     */
+    static getRpcNodeMetadata(nodeUrl: string) {
+        try {
+            const url = new URL(nodeUrl);
+            return { rpcNode: `${url.protocol}//${url.host}` };
+        } catch {
+            return { rpcNode: "unparseable URL" };
+        }
+    }
+
+    /** Several RPC node endpoints, each without path, query or credentials. */
+    static getRpcNodesMetadata(nodeUrls: readonly string[]) {
+        return {
+            rpcNodes: nodeUrls.map(
+                (url) => this.getRpcNodeMetadata(url).rpcNode
+            )
+        };
+    }
+
+    /** Chain coordinates of one contract log. */
+    static getContractLogMetadata(log: ethers.Log) {
+        return {
+            blockNumber: log.blockNumber,
+            blockHash: log.blockHash,
+            logIndex: log.index,
+            transactionHash: log.transactionHash
         };
     }
 
@@ -542,9 +574,7 @@ export class LoggerUtils {
         const thresholdAddresses = new Set<Address>(
             storage?.getParticipantsUnion(block.coordinates) || []
         );
-        const allSigners = block.allSignerAddresses;
-        const allSignersSet =
-            allSigners instanceof Set ? allSigners : new Set(allSigners || []);
+        const allSignersSet = block.acceptedSignerAddresses;
         const didntSign = difference(thresholdAddresses, allSignersSet);
         return {
             author: String(block.author),
@@ -779,21 +809,13 @@ export class LoggerUtils {
                 )
             })
         );
-        const signedBlocks = stateProof.signedBlocks.map((block) =>
-            this.getBlockMetadata(block)
-        );
         const milestonesCount = milestones.length;
-        const signedBlocksCount = signedBlocks.length;
         const latestBlockHeight =
-            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ??
-            signedBlocks.at(-1)?.blockHeight ??
-            0;
+            milestones.at(-1)?.confirmations.at(-1)?.blockHeight ?? 0;
         return {
             latestBlockHeight,
             milestonesCount,
-            signedBlocksCount,
-            milestones,
-            signedBlocks
+            milestones
         };
     }
 
@@ -837,9 +859,7 @@ export class LoggerUtils {
                 if (sp) return this.getStateProofMetadata(sp);
                 return {
                     undecodable: true,
-                    milestonesCount: disputeInput.stateProof.milestones.length,
-                    signedBlocksCount:
-                        disputeInput.stateProof.signedBlocks.length
+                    milestonesCount: disputeInput.stateProof.milestones.length
                 };
             })()
         };
@@ -889,28 +909,12 @@ export class LoggerUtils {
     static getDisputeFraudProofMeta(
         disputeFraudProof: DisputeFraudProofStruct
     ) {
-        let resolvedKillReason: DisputeFraudProofType | string | undefined;
-        const proofType = disputeFraudProof.proofType;
-        if (typeof proofType === "bigint") {
-            resolvedKillReason = Number(proofType) as DisputeFraudProofType;
-        } else if (typeof proofType === "number") {
-            resolvedKillReason = proofType as DisputeFraudProofType;
-        } else {
-            resolvedKillReason = Number(proofType) as DisputeFraudProofType;
-        }
-
-        const killReasonStr =
-            resolvedKillReason === undefined
-                ? undefined
-                : typeof resolvedKillReason === "string"
-                  ? resolvedKillReason
-                  : this.enumToString(
-                        DisputeFraudProofType,
-                        resolvedKillReason
-                    );
-
         return {
-            killReason: killReasonStr,
+            killReason: this.formatProofType(
+                disputeFraudProof.proofType,
+                DisputeFraudProofType,
+                toSolidityDisputeFraudProofType
+            ),
             participant: String(disputeFraudProof.participant),
             dispute: this.getDisputeMetadata(disputeFraudProof.dispute)
         };
@@ -920,42 +924,24 @@ export class LoggerUtils {
         return fraudProofs.map((fp) => ({
             participant: fp.participant,
             proofType: this.formatProofType(
-                typeof fp.proofType === "string"
-                    ? Number(fp.proofType)
-                    : fp.proofType
+                fp.proofType,
+                FraudProofType,
+                toSolidityFraudProofType
             )
         }));
     }
 
-    private static formatProofType(proofType: number | bigint): string {
-        const numValue =
-            typeof proofType === "bigint" ? Number(proofType) : proofType;
-
-        for (const key in FraudProofType) {
-            const enumValue =
-                FraudProofType[key as keyof typeof FraudProofType];
-            if (
-                typeof enumValue === "number" &&
-                toSolidityFraudProofType(enumValue) === numValue
-            ) {
-                return key;
-            }
-        }
-
-        for (const key in DisputeFraudProofType) {
-            const enumValue =
-                DisputeFraudProofType[
-                    key as keyof typeof DisputeFraudProofType
-                ];
-            if (
-                typeof enumValue === "number" &&
-                toSolidityDisputeFraudProofType(enumValue) === numValue
-            ) {
-                return key;
-            }
-        }
-
-        // Fallback
-        return `UNKNOWN(${numValue})`;
+    /** The enum key whose Solidity value the chain carries as `proofType`. */
+    private static formatProofType<T extends number>(
+        proofType: BigNumberish,
+        types: Record<string, string | T>,
+        toSolidity: (value: T) => number
+    ): string {
+        const numValue = Number(proofType);
+        const key = Object.keys(types).find((name) => {
+            const value = types[name];
+            return typeof value === "number" && toSolidity(value) === numValue;
+        });
+        return key ?? `UNKNOWN(${numValue})`;
     }
 }

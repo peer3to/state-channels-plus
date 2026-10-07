@@ -35,6 +35,16 @@ function requiresChainSlot(task) {
     return normalizeTaskRunner(task.runner) === TASK_RUNNERS.HARDHAT;
 }
 
+/** Every runner a task needs: its own, plus what its test file declares. */
+function runnersNeededByTask(task) {
+    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
+}
+
+/** Whether only a browser-capable worker can run `task`. */
+function requiresBrowser(task) {
+    return runnersNeededByTask(task).includes(TASK_RUNNERS.BROWSER);
+}
+
 /** How many tasks in a run belong to one tier. */
 function countTasksForRunner(tasks, runner) {
     const selected = normalizeTaskRunner(runner);
@@ -145,6 +155,8 @@ module.exports = {
     FORGE_BIN,
     normalizeTaskRunner,
     requiresChainSlot,
+    runnersNeededByTask,
+    requiresBrowser,
     countTasksForRunner,
     tierBuildFailure,
     forgeBuildFailure,

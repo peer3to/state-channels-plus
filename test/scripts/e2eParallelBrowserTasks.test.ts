@@ -597,6 +597,8 @@ describe("browser tier admission", function () {
                 infraPids: () => [],
                 tickMs: 1,
                 resourceGate: STUB_RESOURCE_GATE,
+                projectRoot: logDir,
+                costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
                     _args: string[],
@@ -656,12 +658,24 @@ describe("browser task wire protocol", function () {
 });
 
 describe("browser tier selection", function () {
-    it("discovers the Mocha, forge and browser tiers by default", function () {
+    it("omits the browser tier by default", function () {
         expect(resolveDiscoverySelection(parseCliArgs(argv()))).to.deep.equal({
+            includeMocha: true,
+            includeForge: true,
+            includeBrowser: false
+        });
+    });
+
+    it("includes optional tiers through the explicit CI flags", function () {
+        const cli = parseCliArgs(
+            argv("--test-browser", "--test-parallel-script")
+        );
+        expect(resolveDiscoverySelection(cli)).to.deep.equal({
             includeMocha: true,
             includeForge: true,
             includeBrowser: true
         });
+        expect(cli).to.have.property("testParallelScript", true);
     });
 
     it("drops every other tier for --browser-only", function () {
@@ -750,7 +764,9 @@ describe("browser tier selection", function () {
                 EMPTY_TIER,
                 EMPTY_TIER
             )
-        ).to.contain("--browser-test-pattern");
+        )
+            .to.contain("--browser-test-pattern")
+            .and.contain("--test-browser=false");
     });
 
     it("reports a browser pattern that selects no runnable gate", function () {

@@ -22,7 +22,7 @@ const TASK_RUNNERS = path.join(
 const scratchRoots: string[] = [];
 
 /** A throwaway directory under temp/, tracked for cleanup. */
-export function scratchRoot(prefix: string) {
+function scratchRoot(prefix: string) {
     fs.mkdirSync(path.join(REPO_ROOT, "temp"), { recursive: true });
     const root = fs.mkdtempSync(path.join(REPO_ROOT, "temp", prefix));
     scratchRoots.push(root);
@@ -56,7 +56,7 @@ export function writeGate(body: string) {
 }
 
 /** An executable build command that runs `body` through /bin/sh. */
-export function writeBuildCommand(name: string, body: string) {
+function writeBuildCommand(name: string, body: string) {
     const root = scratchRoot("browser-build-");
     const command = path.join(root, name);
     fs.writeFileSync(command, `#!/bin/sh\n${body}\n`);
@@ -217,8 +217,7 @@ export function runGateLaunchProbe(
         encoding: "utf8",
         env: {
             ...process.env,
-            ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
-            SCP_BROWSER_CONTAINED: ""
+            ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {})
         }
     });
     return `${result.stdout}${result.stderr}`;
@@ -243,8 +242,7 @@ export function runChromiumPreCheck(browsersPath?: string) {
         encoding: "utf8",
         env: {
             ...process.env,
-            ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
-            SCP_BROWSER_CONTAINED: ""
+            ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {})
         }
     });
     return `${result.stdout}${result.stderr}`;

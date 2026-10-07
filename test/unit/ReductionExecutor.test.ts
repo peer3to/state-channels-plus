@@ -13,17 +13,15 @@ describe("Unit: ReductionExecutor", function () {
     describe("reduce data unavailable", function () {
         it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
             const h = TestSession.getHarness();
-            // The staging's offender is the next writer after two blocks,
-            // peer 2, and the reduction slashes it; the lagging peer under
-            // test must therefore be another participant. With peer 2 as the
-            // lagging peer this case only passed because an aborted runtime
-            // kept reducing after disposal, which the terminal reduction
-            // owner no longer allows.
-            const laggingIndex = 1;
-            const { forkId, held } =
-                await h.scenario.stageDisputeOverHeldInboundGap({
-                    laggingIndex: laggingIndex
-                });
+            // the reading peer is a synced spectator: it does not audit, so it
+            // holds the window while the run stays unavailable. a
+            // participant's audit of that window throws on the run (fatal),
+            // so a participant never reaches the reduce with it missing
+            const {
+                forkId,
+                held,
+                spectatorIndex: laggingIndex
+            } = await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
             const scheduled =
                 await h.rpcStub.recordScheduledTasks(laggingIndex);
 
@@ -80,7 +78,7 @@ describe("Unit: ReductionExecutor", function () {
                     .query.getStatus()
                     .request(),
                 "a deferred reduction must not evict the peer"
-            ).to.equal(Status.PARTICIPATING);
+            ).to.equal(Status.SYNCED);
             expect(
                 await h
                     .control(h.getPeer(laggingIndex))
@@ -248,7 +246,7 @@ describe("Unit: ReductionExecutor", function () {
 
         it("a re-dispatched dispute log that fails again → failed attempt, not a fatal", async function () {
             const h = TestSession.getHarness();
-            const { forkId, race, restoreEvents } =
+            const { forkId } =
                 await h.scenario.disputeWithSuppressedCommitEvents({
                     observerIndex,
                     maliciousPeerIndex
@@ -277,12 +275,9 @@ describe("Unit: ReductionExecutor", function () {
             ).to.be.greaterThan(0);
             await failing.restore();
 
-            await race.release({
-                replayEvents: false,
-                runHeldTasks: false,
-                keepTasksHeld: true
-            });
-            await restoreEvents(false);
+            // Keep event and timer holds until harness disposal. Restoring only
+            // event handlers lets a late chain event await a deferred reduction
+            // whose retry timer is still held, hanging the detached-promise drain.
         });
 
         it("unreadable dispute window → the reduction is not challenged", async function () {
@@ -322,6 +317,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index
@@ -365,6 +367,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index,

@@ -1,6 +1,7 @@
 import {
     DEFAULT_JOIN_AMOUNT,
     OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
@@ -57,6 +58,8 @@ type MatchedAttempt = LobbyMatch & {
     proposalRequestInFlight: boolean;
     openingSubmissionStarted: boolean;
     observedOpenHandoff: boolean;
+    /** This runtime's ChannelOpened handling (genesis install) finished. */
+    ownGenesisInstalled: boolean;
     classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
     unsubscribeDisconnected?: () => void;
@@ -239,6 +242,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             proposalRequestInFlight: false,
             openingSubmissionStarted: false,
             observedOpenHandoff: false,
+            ownGenesisInstalled: false,
             outcomePromise,
             resolveOutcome
         };
@@ -278,6 +282,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         const attempt = this.state.attempt;
         if (!attempt || attempt.channelId !== channelId) return;
         this.state.channelOpened = true;
+        attempt.ownGenesisInstalled = true;
         attempt.classifyObservedOpening = this.classifyObservedOpening(attempt);
     }
 
@@ -424,7 +429,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 data: expectedData
             },
             {
-                nowSeconds,
+                minSeconds: nowSeconds + OPEN_CHANNEL_MIN_REMAINING_SECONDS,
                 maxSeconds: nowSeconds + OPEN_CHANNEL_DEADLINE_SECONDS * 2
             }
         );
@@ -893,6 +898,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             participants.includes(me) &&
             participants.includes(attempt.peerAddress)
         ) {
+            // A founder completes, and so announces, only after its own
+            // genesis is installed; before that its runtime would act as an
+            // observer and wait for an initial sync. The ChannelOpened
+            // handling classifies again once the genesis is in.
+            if (!attempt.ownGenesisInstalled) return;
             this.completeOpenedAttempt(attempt);
             return;
         }
@@ -917,9 +927,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     ): Promise<void> {
         try {
             await tx.wait();
-            if (this.state.attempt !== attempt) return;
-            await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
-            await this.classifyObservedOpening(attempt);
+            // The landed opening completes from this runtime's ChannelOpened
+            // handling; marking the founder OPENED here would make it an
+            // observer.
         } catch (error) {
             if (this.state.attempt !== attempt) return;
             if (attempt.mode === "targeted") {

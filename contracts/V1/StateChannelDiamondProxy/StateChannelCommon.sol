@@ -11,6 +11,23 @@ import "./utils/BlockUtils.sol";
 import "./UtilityFacetInterface.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
+    /// The walk state before a milestone.
+    struct WalkCursor {
+        /// the walk starts from the same-fork non-genesis anchor `start`, else from the fork genesis `start`
+        bool useOnChainSnapshot;
+        StateSnapshot start;
+        bool hasKeptMilestone;
+        /// the first height of the last kept milestone
+        uint256 previousFirstHeight;
+    }
+
+    /// The distinct `expected` participants among a run's signers.
+    struct ThresholdTally {
+        address[] expected;
+        address[] set;
+        uint256 count;
+    }
+
     function _getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
         internal
         view
@@ -440,32 +457,22 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return _isSnapshotLinkedToLatestBlock(dispute, latestStateSnapshot);
     }
 
-    function _isLatestFinalizedStateLinkedToLatestFinalizedBlock(
-        Dispute memory dispute,
-        StateSnapshot memory latestFinalizedStateSnapshot,
-        bytes memory latestFinalizedStateMachineState
-    ) internal pure returns (bool) {
-        bytes32 snapshotHash = keccak256(abi.encode(latestFinalizedStateSnapshot));
-        if (
-            latestFinalizedStateSnapshot.snapshotData.stateMachineStateHash
-                != keccak256(latestFinalizedStateMachineState)
-        ) {
-            return false;
-        }
+    /// The on-chain anchor of `forkId`: the on-chain snapshot, and whether a state proof can start from it.
+    function _getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
+        internal
+        view
+        returns (bool canUseOnChainSnapshot, StateSnapshot memory onChainSnapshot)
+    {
+        onChainSnapshot = stateSnapshots[channelId];
+        canUseOnChainSnapshot = _canStartFromOnChainSnapshot(onChainSnapshot, forkId);
+    }
 
-        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
-        if (milestones.length > 0) {
-            MilestoneProof memory lastMilestone = milestones[milestones.length - 1];
-            if (lastMilestone.blockConfirmations.length == 0) {
-                return false;
-            }
-
-            Block memory latestFinalizedBlock =
-                abi.decode(lastMilestone.blockConfirmations[0].signedBlock.encodedBlock, (Block));
-            return latestFinalizedBlock.stateSnapshotHash == snapshotHash;
-        }
-
-        return dispute.input.forkId == keccak256(abi.encode(latestFinalizedStateSnapshot.snapshotData));
+    /// `snapshot` is on `forkId` and a block commits to it. The genesis (its data hashes to the fork ID, at height 0)
+    /// is excluded: no block commits to it, block 0 only links back to it through `previousBlockHash`. Block zero's
+    /// resulting snapshot also has height 0, but its data does not hash to the fork ID.
+    function _canStartFromOnChainSnapshot(StateSnapshot memory snapshot, bytes32 forkId) internal pure returns (bool) {
+        return snapshot.forkId == forkId
+            && (snapshot.blockHeight != 0 || keccak256(abi.encode(snapshot.snapshotData)) != forkId);
     }
 
     function _isDataLinkedToDisputeInput(
@@ -654,5 +661,506 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         emit DisputeReducedResultCommitted(
             channelId, disputeWindow.forkId, reducedForkId, reductionTimestamp, msg.sender
         );
+    }
+
+    /**
+     * The one state-proof walk from `start`: the same-fork non-genesis anchor, else the fork genesis. Milestones
+     * wholly below the anchor are dropped. The run holding the anchor commits it at the anchor height and needs no
+     * threshold. Every other kept milestone proves its first block by the union threshold of the last final point
+     * and its resulting snapshot; only a genesis block 0 of a single-milestone proof may stay unfinalized (then the
+     * whole run is the unfinalized tail). Every kept block decodes, stays on the channel and fork, links by hash and
+     * height + 1 and carries its author's signature. Supplied evidence that does not fit the proof (a snapshot count
+     * other than one per milestone, or a snapshot its block does not commit to) is reported as `snapshotMismatch`.
+     * Each milestone is one step (`_walkMilestone`); a failed walk names the failing step.
+     */
+    function _walkStateProof(ProofWalkInput memory input, StateSnapshot memory start)
+        internal
+        view
+        returns (ProofWalkResult memory result)
+    {
+        MilestoneProof[] memory milestones = input.stateProof.milestones;
+        if (milestones.length != input.milestoneSnapshots.length) {
+            result.snapshotMismatch = true;
+            return result;
+        }
+        WalkCursor memory cursor;
+        if (!_openWalk(input, start, cursor)) return result;
+        result.usedNonGenesisStart = cursor.useOnChainSnapshot;
+        result.startSnapshot = cursor.start;
+        result.finalizedSnapshot = cursor.start;
+        for (uint256 i = 0; i < milestones.length; i++) {
+            result.failedMilestoneIndex = i;
+            if (!_walkMilestone(input, i, input.milestoneSnapshots[i], cursor, result)) return result;
+        }
+        result.failedMilestoneIndex = 0;
+        result.valid = true;
+    }
+
+    /**
+     * One step of the walk alone: milestone `milestoneIndex` from the state the walk reaches before it, with the
+     * walk's rules. The step starts from the anchor or the genesis when no earlier milestone is kept, the anchor
+     * after the run holding it, else `previousSnapshot`, which must be the one milestone i-1's first block commits to
+     * (else this is not the failing step). `resultingSnapshot` is milestone i's, read when it proves a threshold hop.
+     * With `hasBlockIndex` only block `blockIndex` and its predecessor are judged by the per-block rules (decoding,
+     * fork and channel, link, signatures). A step can fail only when the full walk fails.
+     */
+    function _isStateProofStepFault(
+        ProofWalkInput memory input,
+        StateSnapshot memory start,
+        uint256 milestoneIndex,
+        bool hasBlockIndex,
+        uint256 blockIndex,
+        StateSnapshot memory previousSnapshot,
+        StateSnapshot memory resultingSnapshot
+    ) internal view returns (bool isFault, bool snapshotMismatch) {
+        if (milestoneIndex >= input.stateProof.milestones.length) {
+            return (false, false);
+        }
+        WalkCursor memory cursor;
+        ProofWalkResult memory result;
+        // the walk's start belongs to its first step
+        if (!_openWalk(input, start, cursor)) return (milestoneIndex == 0, false);
+        result.finalizedSnapshot = cursor.start;
+        if (milestoneIndex != 0 && !_resumeWalk(input, milestoneIndex, previousSnapshot, cursor, result)) {
+            return (false, false);
+        }
+        if (hasBlockIndex) return (_isPointedBlockFault(input, milestoneIndex, blockIndex, cursor), false);
+        bool isStepValid = _walkMilestone(input, milestoneIndex, resultingSnapshot, cursor, result);
+        return (!isStepValid && !result.snapshotMismatch, result.snapshotMismatch);
+    }
+
+    /// The walk's start: the same-fork non-genesis anchor `start`, else the fork genesis. An empty proof is the fork
+    /// genesis.
+    function _openWalk(ProofWalkInput memory input, StateSnapshot memory start, WalkCursor memory cursor)
+        internal
+        view
+        returns (bool)
+    {
+        uint256 milestoneCount = input.stateProof.milestones.length;
+        cursor.useOnChainSnapshot = milestoneCount != 0 && _canStartFromOnChainSnapshot(start, input.forkId);
+        cursor.start = start;
+        if (cursor.useOnChainSnapshot) return true;
+        (bool isGenesisLinked, bool hasGenesisTimestamp, StateSnapshot memory genesis) =
+            _getGenesisSnapshot(input, start);
+        if (!isGenesisLinked) return false;
+        // block zero links to the dated genesis; only an empty proof does not need the date
+        if (!hasGenesisTimestamp && milestoneCount != 0) return false;
+        cursor.start = genesis;
+        return true;
+    }
+
+    /// The walk state before milestone `milestoneIndex`, from milestone i-1 alone. False when milestone i-1 cannot
+    /// lead to it: its step fails there, or `previousSnapshot` is not the one its first block commits to.
+    function _resumeWalk(
+        ProofWalkInput memory input,
+        uint256 milestoneIndex,
+        StateSnapshot memory previousSnapshot,
+        WalkCursor memory cursor,
+        ProofWalkResult memory result
+    ) internal view returns (bool) {
+        MilestoneProof memory previous = input.stateProof.milestones[milestoneIndex - 1];
+        if (previous.blockConfirmations.length == 0) return false;
+        // only a prefix lies below the anchor: a skipped predecessor keeps the walk at its start
+        if (cursor.useOnChainSnapshot && _isMilestoneBelow(previous, cursor.start.blockHeight)) return true;
+        cursor.hasKeptMilestone = true;
+        (bool decoded, Block memory previousFirstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            previous.blockConfirmations[0].signedBlock.encodedBlock
+        );
+        if (!decoded) return false;
+        cursor.previousFirstHeight = previousFirstBlock.transaction.header.transactionCnt;
+        // the run holding the anchor keeps the walk at the anchor
+        if (cursor.useOnChainSnapshot && cursor.previousFirstHeight <= cursor.start.blockHeight) return true;
+        if (keccak256(abi.encode(previousSnapshot)) != previousFirstBlock.stateSnapshotHash) return false;
+        result.finalizedSnapshot = previousSnapshot;
+        return true;
+    }
+
+    /// One step of the walk: milestone `milestoneIndex` from `cursor`, with `resultingSnapshot` as its hop evidence.
+    function _walkMilestone(
+        ProofWalkInput memory input,
+        uint256 milestoneIndex,
+        StateSnapshot memory resultingSnapshot,
+        WalkCursor memory cursor,
+        ProofWalkResult memory result
+    ) internal view returns (bool) {
+        MilestoneProof memory milestone = input.stateProof.milestones[milestoneIndex];
+        uint256 length = milestone.blockConfirmations.length;
+        if (length == 0) return false;
+        result.replayBlockIndex = length;
+        // wholly below the anchor: history before the anchor is not checked, malformed or not. Only a prefix
+        // of the proof can lie below it: the last milestone is the proof's latest state.
+        if (cursor.useOnChainSnapshot && _isMilestoneBelow(milestone, cursor.start.blockHeight)) {
+            return !cursor.hasKeptMilestone;
+        }
+        cursor.hasKeptMilestone = true;
+        // only its height is read here: a block before the anchor block is history below the anchor
+        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[0].signedBlock.encodedBlock
+        );
+        if (!firstDecoded) return _blockFault(result, 0);
+
+        uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
+        if (firstHeight < cursor.previousFirstHeight) return false;
+        cursor.previousFirstHeight = firstHeight;
+
+        if (cursor.useOnChainSnapshot && firstHeight <= cursor.start.blockHeight) {
+            return _walkAnchorRun(input, milestone, firstHeight, cursor.start, result);
+        }
+        // a threshold hop is checked from its first block: it must be on the channel and fork
+        (bool isOnFork,) = _tryDecodeRequiredBlock(input, milestone, 0);
+        if (!isOnFork) return _blockFault(result, 0);
+        // block zero links back to the genesis through previousBlockHash; that alone does not finalize it
+        bool isGenesisZero = !cursor.useOnChainSnapshot && firstHeight == 0;
+        if (isGenesisZero && firstBlock.previousBlockHash != keccak256(abi.encode(cursor.start))) return false;
+        // the supplied snapshot is judged first: forged evidence never reads as an invalid proof
+        if (keccak256(abi.encode(resultingSnapshot)) != firstBlock.stateSnapshotHash) {
+            result.snapshotMismatch = true;
+            return false;
+        }
+        (bool isLinked, bool isThresholdReached) = _walkThresholdHop(input, milestone, resultingSnapshot, result);
+        if (!isLinked) return false;
+        return _settleThresholdHop(
+            resultingSnapshot, isThresholdReached, isGenesisZero && input.stateProof.milestones.length == 1, result
+        );
+    }
+
+    /// Block `blockIndex` of milestone `milestoneIndex` breaks a per-block rule of the walk from `cursor`. A block
+    /// the walk does not check (a skipped milestone, history before the anchor block) is no fault.
+    function _isPointedBlockFault(
+        ProofWalkInput memory input,
+        uint256 milestoneIndex,
+        uint256 blockIndex,
+        WalkCursor memory cursor
+    ) internal view returns (bool) {
+        MilestoneProof memory milestone = input.stateProof.milestones[milestoneIndex];
+        if (blockIndex >= milestone.blockConfirmations.length) return false;
+        (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
+        if (!isKept) return false;
+        // the walk reads the first block's height before any other block
+        if (!hasHeight) return blockIndex == 0;
+        if (blockIndex < fromIndex) return false;
+        BlockConfirmation memory confirmation = milestone.blockConfirmations[blockIndex];
+        (bool decoded, Block memory current) =
+            UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(confirmation.signedBlock.encodedBlock);
+        Block memory previousBlock;
+        bytes memory previousEncodedBlock;
+        if (blockIndex != fromIndex) {
+            previousEncodedBlock = milestone.blockConfirmations[blockIndex - 1].signedBlock.encodedBlock;
+            bool previousDecoded;
+            (previousDecoded, previousBlock) =
+                UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(previousEncodedBlock);
+            // an undecodable predecessor is its own step's fault
+            if (!previousDecoded) return false;
+        }
+        ThresholdTally memory noTally;
+        return !_walkBlock(
+            input.channelId,
+            input.forkId,
+            confirmation,
+            decoded,
+            current,
+            blockIndex != fromIndex,
+            previousEncodedBlock,
+            previousBlock,
+            noTally
+        );
+    }
+
+    /// Where the walk from `cursor` checks `milestone`'s blocks: none when it lies wholly below the anchor
+    /// (`isKept` false); from the anchor block in the run holding the anchor, else from its first block. Without
+    /// `hasHeight` the first block does not decode, so only it is judged.
+    function _checkedRunStart(MilestoneProof memory milestone, WalkCursor memory cursor)
+        internal
+        view
+        returns (bool isKept, bool hasHeight, uint256 fromIndex)
+    {
+        if (cursor.useOnChainSnapshot && _isMilestoneBelow(milestone, cursor.start.blockHeight)) {
+            return (false, false, 0);
+        }
+        (bool firstDecoded, Block memory firstBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[0].signedBlock.encodedBlock
+        );
+        if (!firstDecoded) return (true, false, 0);
+        uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
+        if (cursor.useOnChainSnapshot && firstHeight <= cursor.start.blockHeight) {
+            fromIndex = cursor.start.blockHeight - firstHeight;
+        }
+        return (true, true, fromIndex);
+    }
+
+    function _blockFault(ProofWalkResult memory result, uint256 blockIndex) internal pure returns (bool) {
+        result.isBlockFault = true;
+        result.failedBlockIndex = blockIndex;
+        return false;
+    }
+
+    /// The run holding the anchor: its block at the anchor height, `anchor.blockHeight - firstHeight` positions into
+    /// the run (the same offset block-specific eligibility uses), commits the anchor, and the blocks from there link.
+    /// Blocks before it are history below the anchor and are not checked.
+    function _walkAnchorRun(
+        ProofWalkInput memory input,
+        MilestoneProof memory milestone,
+        uint256 firstHeight,
+        StateSnapshot memory anchor,
+        ProofWalkResult memory result
+    ) internal view returns (bool) {
+        uint256 offset = anchor.blockHeight - firstHeight;
+        if (offset >= milestone.blockConfirmations.length) return false;
+        (bool decoded, Block memory anchorBlock) = _tryDecodeRequiredBlock(input, milestone, offset);
+        if (!decoded) return _blockFault(result, offset);
+        if (
+            anchorBlock.transaction.header.transactionCnt != anchor.blockHeight
+                || anchorBlock.stateSnapshotHash != keccak256(abi.encode(anchor))
+        ) return false;
+        (bool isLinked,,, uint256 failedIndex) =
+            _walkMilestoneBlocks(input.channelId, input.forkId, milestone, offset, new address[](0));
+        if (!isLinked) return _blockFault(result, failedIndex);
+        result.replayBlockIndex = offset + 1;
+        return true;
+    }
+
+    /// A milestone proving its first block by the union threshold of the last final point and `resultingSnapshot`,
+    /// which matches its first block. False `isLinked` when the hop cannot be proven.
+    function _walkThresholdHop(
+        ProofWalkInput memory input,
+        MilestoneProof memory milestone,
+        StateSnapshot memory resultingSnapshot,
+        ProofWalkResult memory result
+    ) internal view returns (bool isLinked, bool isThresholdReached) {
+        // a hop's consumed joiners are read from stored inbound blocks: a run this storage does not hold (a lagging
+        // mirror) cannot prove the hop, so the caller's next tier decides
+        if (
+            !_isInboundRunStored(
+                input.channelId,
+                resultingSnapshot.snapshotData.latestInboundMessageBlockHash,
+                result.finalizedSnapshot.snapshotData.latestInboundMessageBlockHash
+            )
+        ) return (false, false);
+        address[] memory expectedParticipants = _deriveMilestoneUnionParticipants(
+            input.channelId, result.finalizedSnapshot.snapshotData, resultingSnapshot.snapshotData
+        );
+        uint256 thresholdCount;
+        uint256 failedIndex;
+        (isLinked, thresholdCount,, failedIndex) =
+            _walkMilestoneBlocks(input.channelId, input.forkId, milestone, 0, expectedParticipants);
+        if (!isLinked) return (_blockFault(result, failedIndex), false);
+        return (true, thresholdCount == expectedParticipants.length);
+    }
+
+    function _settleThresholdHop(
+        StateSnapshot memory resultingSnapshot,
+        bool isThresholdReached,
+        bool allowUnfinalized,
+        ProofWalkResult memory result
+    ) internal pure returns (bool) {
+        if (isThresholdReached) {
+            result.finalizedSnapshot = resultingSnapshot;
+            result.replayBlockIndex = 1;
+            return true;
+        }
+        if (allowUnfinalized) {
+            // an unfinalized genesis block zero: the only run is the unfinalized tail
+            result.replayBlockIndex = 0;
+            return true;
+        }
+        return false;
+    }
+
+    /// The milestone's last block decodes to a height below `height`.
+    function _isMilestoneBelow(MilestoneProof memory milestone, uint256 height) internal view returns (bool) {
+        (bool decoded, Block memory lastBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[milestone.blockConfirmations.length - 1].signedBlock.encodedBlock
+        );
+        return decoded && lastBlock.transaction.header.transactionCnt < height;
+    }
+
+    /// Decodes the block at `blockIndex` and checks its channel and fork.
+    function _tryDecodeRequiredBlock(ProofWalkInput memory input, MilestoneProof memory milestone, uint256 blockIndex)
+        internal
+        view
+        returns (bool, Block memory decodedBlock)
+    {
+        bool decoded;
+        (decoded, decodedBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[blockIndex].signedBlock.encodedBlock
+        );
+        return (
+            decoded && decodedBlock.transaction.header.channelId == input.channelId
+                && decodedBlock.transaction.header.forkId == input.forkId,
+            decodedBlock
+        );
+    }
+
+    /// The fork genesis as a snapshot: the start snapshot itself when it is this fork's genesis, else the input genesis
+    /// data (it must hash to the fork ID), dated through its origin fork (also for a reduced fork not adopted on chain).
+    function _getGenesisSnapshot(ProofWalkInput memory input, StateSnapshot memory startSnapshot)
+        internal
+        view
+        returns (bool isLinked, bool hasTimestamp, StateSnapshot memory genesisSnapshot)
+    {
+        if (startSnapshot.forkId == input.forkId && !_canStartFromOnChainSnapshot(startSnapshot, input.forkId)) {
+            return (true, true, startSnapshot);
+        }
+        if (!_isGenesisSnapshotDataLinkedToFork(input.forkId, input.genesisStateSnapshotData)) {
+            return (false, false, genesisSnapshot);
+        }
+        genesisSnapshot.snapshotData = input.genesisStateSnapshotData;
+        genesisSnapshot.forkId = input.forkId;
+        (hasTimestamp, genesisSnapshot.timestamp) =
+            _getGenesisTimestamp(input.channelId, input.genesisStateSnapshotData.originForkId, input.forkId);
+        return (true, hasTimestamp, genesisSnapshot);
+    }
+
+    /// The required signers of a hop: the previous and resulting participants, plus every joiner whose JOIN the hop
+    /// consumes (on-chain inbound blocks between the two snapshots' inbound hashes).
+    function _deriveMilestoneUnionParticipants(
+        bytes32 channelId,
+        SnapshotData memory previousSnapshotData,
+        SnapshotData memory resultingSnapshotData
+    ) internal view returns (address[] memory expectedParticipants) {
+        expectedParticipants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            previousSnapshotData.participants, resultingSnapshotData.participants
+        );
+        address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
+            channelId,
+            resultingSnapshotData.latestInboundMessageBlockHash,
+            previousSnapshotData.latestInboundMessageBlockHash
+        );
+        return UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            expectedParticipants, pendingParticipants
+        );
+    }
+
+    /**
+     * Walks `milestone` from `fromIndex`: every block decodes, stays on `forkId` and the run's channel, links to its
+     * predecessor by hash and height + 1, and carries its author's signature. Counts the distinct
+     * `expectedParticipants` among the authors and confirmation signers. `failedIndex` is the first block that
+     * breaks a rule.
+     */
+    function _walkMilestoneBlocks(
+        bytes32 channelId,
+        bytes32 forkId,
+        MilestoneProof memory milestone,
+        uint256 fromIndex,
+        address[] memory expectedParticipants
+    )
+        internal
+        view
+        returns (bool isLinked, uint256 thresholdCount, bytes32 fromBlockSnapshotHash, uint256 failedIndex)
+    {
+        // TODO - need a gas limit on verifyMilestone and on the state-proof walk, so large proofs that can't be verified won't be spammed
+        if (fromIndex >= milestone.blockConfirmations.length) {
+            return (false, 0, bytes32(0), fromIndex);
+        }
+        ThresholdTally memory tally =
+            ThresholdTally(expectedParticipants, new address[](expectedParticipants.length), 0);
+        bytes memory previousEncodedBlock;
+        Block memory previousBlock;
+        for (uint256 i = fromIndex; i < milestone.blockConfirmations.length; i++) {
+            BlockConfirmation memory currentBlockConfirmation = milestone.blockConfirmations[i];
+            (bool decoded, Block memory currentBlock) = UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(
+                currentBlockConfirmation.signedBlock.encodedBlock
+            );
+            if (
+                !_walkBlock(
+                    channelId,
+                    forkId,
+                    currentBlockConfirmation,
+                    decoded,
+                    currentBlock,
+                    i != fromIndex,
+                    previousEncodedBlock,
+                    previousBlock,
+                    tally
+                )
+            ) return (false, 0, bytes32(0), i);
+            if (i == fromIndex) fromBlockSnapshotHash = currentBlock.stateSnapshotHash;
+            previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
+            previousBlock = currentBlock;
+        }
+        return (true, tally.count, fromBlockSnapshotHash, 0);
+    }
+
+    /**
+     * The per-block rules of a walked run, for one block: it decoded and is on `forkId`; the run's first checked
+     * block names `channelId`, a later one links to `previousBlock` by channel, hash and height + 1; it carries its
+     * author's signature and every confirmation signature recovers. Counts its signers into `tally`.
+     */
+    function _walkBlock(
+        bytes32 channelId,
+        bytes32 forkId,
+        BlockConfirmation memory confirmation,
+        bool decoded,
+        Block memory currentBlock,
+        bool hasPrevious,
+        bytes memory previousEncodedBlock,
+        Block memory previousBlock,
+        ThresholdTally memory tally
+    ) internal view returns (bool) {
+        if (!decoded || currentBlock.transaction.header.forkId != forkId) return false;
+        if (hasPrevious) {
+            if (
+                currentBlock.transaction.header.channelId != previousBlock.transaction.header.channelId
+                    || currentBlock.previousBlockHash != keccak256(previousEncodedBlock)
+                    || !_isNextHeight(previousBlock, currentBlock)
+            ) return false;
+        } else if (channelId != bytes32(0) && currentBlock.transaction.header.channelId != channelId) {
+            return false;
+        }
+        bytes memory encodedBlock = confirmation.signedBlock.encodedBlock;
+        (address adr, bool isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
+            encodedBlock, confirmation.signedBlock.signature
+        );
+        if (!isValid || adr != currentBlock.transaction.header.participant) return false;
+        // This doesn't check if the signer is a participant -> if it's a dishonest block it will fail on the STF and the dispute will be slashed
+        _tally(tally, adr);
+        for (uint256 j = 0; j < confirmation.signatures.length; j++) {
+            (adr, isValid) = UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(
+                encodedBlock, confirmation.signatures[j]
+            );
+            if (!isValid) return false;
+            _tally(tally, adr);
+        }
+        return true;
+    }
+
+    function _tally(ThresholdTally memory tally, address adr) internal pure {
+        tally.count = _tryInsertAddressInThresholdSet(adr, tally.set, tally.count, tally.expected);
+    }
+
+    /// Every inbound block from `upperInboundHash` down to `lowerInboundHash` is stored.
+    function _isInboundRunStored(bytes32 channelId, bytes32 upperInboundHash, bytes32 lowerInboundHash)
+        internal
+        view
+        returns (bool)
+    {
+        bytes32 inboundHash = upperInboundHash;
+        while (inboundHash != lowerInboundHash) {
+            if (inboundHash == bytes32(0) || !_hasInboundMessageBlock(channelId, inboundHash)) return false;
+            inboundHash = inboundMessageBlockMap[channelId][inboundHash].previousBlockHash;
+        }
+        return true;
+    }
+
+    /// `current` is the height right after `previous`, without overflowing at the maximum height.
+    function _isNextHeight(Block memory previous, Block memory current) internal pure returns (bool) {
+        uint256 currentHeight = current.transaction.header.transactionCnt;
+        return currentHeight != 0 && currentHeight - 1 == previous.transaction.header.transactionCnt;
+    }
+
+    function _tryInsertAddressInThresholdSet(
+        address adr,
+        address[] memory thresholdSet,
+        uint256 currentThresholdCount,
+        address[] memory expectedParticipants
+    ) internal pure returns (uint256) {
+        for (uint256 i = 0; i < expectedParticipants.length; i++) {
+            if (expectedParticipants[i] == adr && thresholdSet[i] != adr) {
+                thresholdSet[i] = adr;
+                return currentThresholdCount + 1;
+            }
+        }
+
+        return currentThresholdCount;
     }
 }

@@ -81,17 +81,18 @@ export async function stageHeldEvidenceComparisonRace(h: MathPeerTestHarness) {
     return { auditorIndex, recorder };
 }
 
-const EVIDENCE_UPLOAD_FAILURE_MESSAGE = "stubbed evidence upload failure";
+export const EVIDENCE_UPLOAD_FAILURE_MESSAGE =
+    "stubbed evidence upload failure";
 
 /**
  * Four peers, one invalid state transition, two disputes that land one after
  * the other. The auditor asked to leave, so its own dispute adds a
  * self-removal the window lacks: its first comparison answers "more
  * evidence". That comparison is held until the auditor's upload is armed to
- * fail once (a send failure that is no custom error: the upload is simply
- * lost), then released. The second disputer's upload waits at its send until
- * the auditor's first audit completed, then lands. Returns right after that
- * release, with the failed first upload.
+ * fail once (a send failure that is no custom error, so it fails the first
+ * audit), then released. The second disputer's upload stays held at its send.
+ * Returns once the failed first upload is recorded; the caller releases
+ * `secondUpload` after the first audit has failed.
  */
 export async function stageEvidenceUploadRetry(h: MathPeerTestHarness) {
     await h.scenario.preDisputeSetup({ peerCount: 4 });
@@ -132,12 +133,18 @@ export async function stageEvidenceUploadRetry(h: MathPeerTestHarness) {
         }
     );
     await recorder.releaseHeld("forward");
-    await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 1);
+    await waitFor(
+        async () => (await auditorUploads.submissions()).length > 0,
+        h.event.protocolEventTimeoutMs()
+    );
     const firstUploads = await auditorUploads.submissions();
-
-    await secondUpload.waitUntilHeld();
-    await secondUpload.release();
-    return { auditorIndex, firstUploads, auditorUploads, recorder };
+    return {
+        auditorIndex,
+        firstUploads,
+        auditorUploads,
+        secondUpload,
+        recorder
+    };
 }
 
 /**
@@ -306,7 +313,7 @@ export async function stageEvidenceComparisonReplacedAfterKill(
 }
 
 /** Peer `killerIndex` kills the spam dispute `spammer` uploaded on `forkId`. */
-async function killSpamDispute(
+export async function killSpamDispute(
     h: MathPeerTestHarness,
     killerIndex: number,
     spammer: Address,

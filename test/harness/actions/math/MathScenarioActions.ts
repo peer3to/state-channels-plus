@@ -110,6 +110,46 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     /**
+     * The committed settled-path dispute over an inbound gap, seen by a synced
+     * spectator whose InboundMessagesProcessed handler is held. Spectators do
+     * not audit, so the spectator persists the window and schedules its
+     * reduction while the inbound run that reduction applies stays
+     * unavailable until release. A participant cannot stage this: its audit
+     * of the same window throws on the unavailable run.
+     */
+    async stageSpectatedDisputeOverHeldInboundGap() {
+        await this.harness.setup(3, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        await this.harness.lifecycle.openChannel();
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        // no transition is scheduled while the spectator syncs
+        const spectatorIndex = (await this.harness.join.addSpectatorWait())
+            .index;
+        const held =
+            await this.harness.rpcStub.holdInboundMessageEvents(spectatorIndex);
+        // the invalid block below would reach the spectator by gossip, and a
+        // spectator drops the feed on it (abort) -> it would never see the
+        // dispute. it follows the dispute from chain events only
+        await this.harness.network.blacklistAndDisconnectPeer(spectatorIndex);
+        const { forkId, disputerIndex } =
+            await this.stageCommittedDisputeOverInboundGap({
+                laggingIndex: spectatorIndex
+            });
+        // the spectator persisted the window (the hook fires after its
+        // handler completed)
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: [spectatorIndex],
+            expectedCount: 1
+        });
+        return { forkId, held, spectatorIndex, disputerIndex };
+    }
+
+    /**
      * 3 peers, two finalized transitions, then a top-up of an existing
      * participant: block turns and the final-by-everyone head stay intact, so
      * disputes take the settled path, and the chain's inbound head ends up above
@@ -491,6 +531,12 @@ export class MathScenarioActions extends ScenarioActions {
          * peers alone wait on the join.
          */
         laggingInboundPeerIndex?: number;
+        /**
+         * Drop the lagging peer's join log instead of holding its handler: an
+         * explicit query still applies the log, so on-demand recovery heals
+         * the gap.
+         */
+        recoverableLaggingInbound?: boolean;
     }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
         const timeConfig = {
             evidenceTime: 12,
@@ -503,10 +549,17 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig
         });
         const laggingIndex = options?.laggingInboundPeerIndex;
+        const recoverable = options?.recoverableLaggingInbound ?? false;
         const held =
-            laggingIndex === undefined
+            laggingIndex === undefined || recoverable
                 ? undefined
                 : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
+        const dropped =
+            laggingIndex === undefined || !recoverable
+                ? undefined
+                : await this.harness.rpcStub.dropInboundMessageLogs(
                       laggingIndex
                   );
         const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
@@ -519,13 +572,14 @@ export class MathScenarioActions extends ScenarioActions {
                           .map((peer) => peer.index)
                           .filter((index) => index !== laggingIndex)
         });
+        await dropped?.waitUntilDropped();
 
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
         return {
             releaseLaggingInbound: held
                 ? () => held.release({ replay: true })
-                : undefined
+                : dropped?.release
         };
     }
 
@@ -966,16 +1020,19 @@ export class MathScenarioActions extends ScenarioActions {
         peerCount?: number;
         initialBlocks?: number;
         passFirst?: boolean;
+        /** Harness options of the session, e.g. RPC node proxies. */
+        harnessOptions?: HarnessOptions;
     }) {
         const {
             observerIndex,
             maliciousPeerIndex,
             peerCount = 4,
             initialBlocks = 2,
-            passFirst = false
+            passFirst = false,
+            harnessOptions
         } = options;
         const h = this.harness;
-        await h.lifecycle.start(peerCount, initialBlocks);
+        await h.lifecycle.start(peerCount, initialBlocks, harnessOptions);
         const forkId = h.activeForkId!;
 
         const race = await h.rpcStub.holdReductionRace(observerIndex);

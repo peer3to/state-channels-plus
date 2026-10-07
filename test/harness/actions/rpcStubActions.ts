@@ -711,6 +711,28 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Hold only the inbound storage write of a peer's InboundMessagesProcessed
+     * handler: its local diamond still applies the event, while inbound
+     * storage lags it.
+     */
+    async holdInboundMessageStorage(peerIndex: number): Promise<{
+        /** Restore the storage write; held writes replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldInboundMessageStorage().request();
+        this.logger.debug(
+            `Holding inbound storage writes on peer ${peerIndex}`
+        );
+        return {
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageStorage(replay).request();
+            }
+        };
+    }
+
     async dropSlashLogs(peerIndex: number) {
         return this.dropEventLogs(peerIndex, ["ChainSlashed", "DisputeKilled"]);
     }
@@ -956,17 +978,63 @@ export class RpcStubActions<
         };
     }
 
-    /** Keep a peer out of a kill race. Returns a teardown. */
+    /**
+     * Park the peer's audit proof walks (after the audit's pre-walk checks,
+     * before the walk, its replay and persistence). `waitUntilHeld` resolves
+     * once walks of proofs ending at every given block hash are parked (a
+     * hash listed twice needs two parked walks); `release` lets one of them
+     * continue; `restore` releases the rest.
+     */
+    async holdProofWalks(peerIndex: number): Promise<{
+        waitUntilHeld: (latestBlockHashes: string[]) => Promise<void>;
+        release: (latestBlockHash: string) => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldProofWalks().request();
+        return {
+            waitUntilHeld: (latestBlockHashes) =>
+                waitFor(async () => {
+                    const held = await ctl()
+                        .getHeldProofWalkBlockHashes()
+                        .request();
+                    return latestBlockHashes.every(
+                        (hash) =>
+                            held.filter((parked) => parked === hash).length >=
+                            latestBlockHashes.filter(
+                                (wanted) => wanted === hash
+                            ).length
+                    );
+                }, this.harness.event.protocolEventTimeoutMs()),
+            release: async (latestBlockHash) => {
+                if (
+                    !(await ctl()
+                        .releaseHeldProofWalk(latestBlockHash)
+                        .request())
+                )
+                    throw new Error(
+                        `No parked proof walk ends at ${latestBlockHash}`
+                    );
+            },
+            restore: async () => {
+                await ctl().restoreProofWalks().request();
+            }
+        };
+    }
+
     /**
      * Park a peer's auditing-data rebuilds until `release`; `waitUntilHeld`
      * resolves once a rebuild is parked.
      */
-    async holdAuditingDataRebuild(peerIndex: number): Promise<{
+    async holdAuditingDataRebuild(
+        peerIndex: number,
+        at: "output" | "auditingData" = "output"
+    ): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         release: () => Promise<void>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldAuditingDataRebuild().request();
+        await ctl().stubHoldAuditingDataRebuild(at).request();
         return {
             waitUntilHeld: (
                 timeoutMs = this.harness.event.protocolEventTimeoutMs()

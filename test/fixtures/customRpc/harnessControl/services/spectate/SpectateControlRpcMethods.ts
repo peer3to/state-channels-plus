@@ -92,12 +92,29 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
-    public async persistSyncPayload(
-        encodedSyncPayload: string
-    ): Promise<{ shouldAbort: boolean }> {
-        const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
-        return this.service.spectate.persistSyncPayload(payload);
+    /**
+     * Run the real `reduceAndFinalizeLocally` on one window of an encoded sync
+     * payload, expecting its `reducedForkId`; true when this call committed it.
+     */
+    public async reduceSyncWindowLocally(
+        encodedSyncPayload: string,
+        windowIndex: number
+    ): Promise<boolean> {
+        const window = Codec.decode(encodedSyncPayload, Type.SyncPayload)
+            .disputeWindows[windowIndex];
+        if (!window) throw new Error("No dispute window at this index");
+        return this.service.sm.diamondStateMachine.reduceAndFinalizeLocally(
+            window.disputeConfirmations.map((disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+            ),
+            window.latestStateSnapshot,
+            window.latestEncodedStateMachineState,
+            window.inboundMessageBlocksAppliedInReduce,
+            window.reducedForkId
+        );
     }
 
     /** Store a block straight into storage (`justPersist`); returns its hash. */

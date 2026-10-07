@@ -20,8 +20,7 @@ export const MilestoneProofEthersType = `tuple(
 )`;
 
 export const StateProofEthersType = `tuple(
-    ${MilestoneProofEthersType}[] milestones,
-    ${SignedBlockEthersType}[] signedBlocks
+    ${MilestoneProofEthersType}[] milestones
 )`;
 
 export const FraudProofEthersType = `tuple(
@@ -149,7 +148,12 @@ export const DisputeInvalidOutputStateProofEthersType = `tuple(
 )`;
 
 export const DisputeInvalidStateProofProofEthersType = `tuple(
-    ${DisputeAuditingDataEthersType} auditingData
+    uint256 milestoneIndex,
+    bool hasBlockIndex,
+    uint256 blockIndex,
+    ${DisputeAuditingDataEthersType} auditingData,
+    ${StateSnapshotEthersType} previousStateSnapshot,
+    ${StateSnapshotEthersType} resultingStateSnapshot
 )`;
 
 export const DisputeInvalidBalanceInvariantProofEthersType = `tuple(
@@ -213,16 +217,38 @@ export const TimeoutTooEarlyProofEthersType = `tuple(
 
 export const DisputeInvalidBlockInStateProofApplyFraudProofEthersType = `tuple(
     ${FraudProofEthersType} fraudProof,
-    uint256 blockIndexInUnfinalizedPartOfStateProof
+    uint256 blockIndex
 )`;
 
 export const DisputeBlockAuthorNotParticipantProofEthersType = `tuple(
-    uint256 blockIndexInUnfinalizedPartOfStateProof,
+    uint256 blockIndex,
     ${SignedBlockEthersType} previousBlock,
     ${StateSnapshotEthersType} previousStateSnapshot,
     ${StateSnapshotEthersType} resultingStateSnapshot
 )`;
 
 export const DisputeInvalidBlockStructureProofEthersType = `tuple(
-    uint256 blockIndexInUnfinalizedPartOfStateProof
+    uint256 blockIndex
+)`;
+
+export const DisputeStateProofBelowOnChainAnchorProofEthersType = `tuple(
+    bool __
+)`;
+
+export const ProofWalkInputEthersType = `tuple(
+    bytes32 channelId,
+    bytes32 forkId,
+    ${StateProofEthersType} stateProof,
+    ${SnapshotDataEthersType} genesisStateSnapshotData,
+    ${StateSnapshotEthersType}[] milestoneSnapshots
+)`;
+
+export const TimeoutSupersededByFinalStateProofEthersType = `tuple(
+    ${ProofWalkInputEthersType} finalProof
+)`;
+
+export const DisputeConflictsWithFinalStateProofEthersType = `tuple(
+    ${ProofWalkInputEthersType} finalProof,
+    uint256 milestoneIndex,
+    uint256 blockIndex
 )`;

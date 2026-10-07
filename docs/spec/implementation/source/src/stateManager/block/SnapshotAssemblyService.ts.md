@@ -23,6 +23,8 @@ Assembles the next state snapshot for a transaction: carries the previous snapsh
 
 ## Key design decisions
 
+Snapshot construction receives the already verified predecessor snapshot from computeStateTransition. It does not re-read coordinate history inside createStateSnapshot; this preserves the replay attempt's selected predecessor. See [SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L148).
+
 1. **One assembly owner.** Block production and snapshot posting build every snapshot here; the writer-turn rule and state-machine refusal are reported, never patched around.
 
 ## Inputs, outputs, state, and side effects
@@ -39,9 +41,9 @@ Assembles the next state snapshot for a transaction: carries the previous snapsh
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                          | Specification IDs |
-| ---------------------------------------------------------------------------------------------------- | ----------------- |
-| [SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts) |                   |
+| Source file                                                                                          | Specification IDs                                                                          |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [SnapshotAssemblyService.ts](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts) | [`REQ-SP-9-RNXP56`](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -65,8 +67,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                    | Gap / divergence           |
+| ------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| [`REQ-SP-9-RNXP56`](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56) | Covered               | **Here:** snapshot assembly uses the caller-supplied predecessor snapshot during transition ([source](../../../../../../../src/stateManager/block/SnapshotAssemblyService.ts#L90)). **Other files:** [BlockIngestService](../ingest/BlockIngestService.ts.md) selects the replay predecessor; [AgreementManager](../../agreementManager/AgreementManager.ts.md) verifies its trusted start. | None in this contribution. |
 
 ## Component test obligations
 

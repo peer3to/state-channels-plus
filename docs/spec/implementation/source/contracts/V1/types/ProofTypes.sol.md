@@ -23,6 +23,8 @@ Proof carrier structs (FraudProof, DisputeFraudProof, state-proof elements).
 
 ## Key design decisions
 
+StateProof contains only milestones. MilestoneProof holds a linked run: threshold-final first block, a trusted anchor, or the permitted genesis-zero case. ProofWalkInput binds channel/fork, proof, genesis and one snapshot slot per milestone. ProofWalkResult carries validity, the actual selected start with an explicit non-genesis flag, authenticated final snapshot, replay position and fault pointer; failed walks do not authorize use of their success fields. The counter enum appends below-anchor, timeout-superseded and final-conflict families. See [ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol#L18).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

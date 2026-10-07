@@ -2,7 +2,6 @@
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { Codec, Type, hash, sleep } from "@/utils";
 import { expect } from "chai";
-import { hexlify } from "ethers";
 
 export async function assertStateOnlyContribution(
     h: MathPeerTestHarness,
@@ -53,20 +52,11 @@ export async function assertStateOnlyContribution(
           ]);
     const transaction = await contract.multicall([upload]);
     await transaction.wait();
-    const verdict = await h
-        .control(h.getPeer(2))
-        .dispute.runDisputeValidation(
-            hexlify(Codec.encode(contribution.dispute, Type.Dispute)),
-            {
-                encodedAuditingData: hexlify(
-                    Codec.encode(
-                        contribution.auditingData,
-                        Type.DisputeAuditingData
-                    )
-                )
-            }
-        )
-        .request();
+    const verdict = await h.dispute.auditDispute(
+        2,
+        contribution.dispute,
+        contribution.auditingData
+    );
     expect(verdict.outcome).to.equal("returned");
     expect(verdict.storedProof).to.equal(undefined);
     if (verdict.outcome === "returned") expect(verdict.isValid).to.equal(true);

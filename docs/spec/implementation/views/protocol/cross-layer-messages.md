@@ -164,35 +164,25 @@ not used` in code).
 - **Current:** debug `console.log` calls remain in `verifyBalanceInvariantCheckSnapshot`
   (hardhat's `console.sol`). Must be removed for production deployment.
 
-### 3.2 Abort conditions (Current, enumerated)
+### 3.2 Sync verification and failure boundaries
 
-Request path (peer blacklisted; sync abandoned):
+The [spectate view](../architecture/sdk/rpc/spectate.md) and
+[SpectateService report](../../source/src/rpc/network/services/spectate/SpectateService.ts.md)
+own the current algorithm. Sync is awaited and coalesces applicable in-flight requests.
+Request timeout, refusal or transport loss takes a counted close and returns false. Invalid
+payload evidence is rejected with a peer verdict; internal execution and chain-read errors
+propagate fatally. The caller owns initial-runtime shutdown or established-runtime recovery.
 
-1. RPC timeout, transport error, or the responder declining (responder returns `undefined` for:
-   malformed/unsafe requested height, a fork it cannot prove as the derived tip, a height above
-   its latest, or a missing state proof).
+Verification establishes the fork lineage, genesis, milestone proof from the successful trusted
+start, outbound ranges, final-state bytes and balance invariant. It does not simulate snapshot
+adoption. Pinned requests accept their fork or a verified successor; same-fork results must reach
+the requested minimum. Latest mode derives the latest provable fork from chain dispute state.
 
-Verification path (`applySyncResponse`; each aborts the sync): 2. Payload fails to decode, or any verification step throws. 3. Round-trip time exceeds `agreementTime`. 4. A claimed dispute window does not exist on-chain or its kill period has not expired. 5. More than one dispute window still needs reduction. 6. A window's locally recomputed reduction does not match the payload's claimed successor fork. 7. The tip fork's genesis snapshot is inconsistent (fork mismatch, not genesis-shaped, or state
-hash ≠ hash of supplied encoded state). 8. The on-chain snapshot is already ahead of the proved height (stale proof). 9. Either outbound message-block range fails `verifyOutboundMessageBlocks`. 10. Latest-mode: the tip fork is disputed on-chain. Pinned mode: tip fork ≠ requested fork. 11. The milestone state proof fails `verifyMilestones`. 12. The latest finalized state hash does not match the supplied encoded state. 13. The channel-balance invariant fails (`verifyBalanceInvariantCheckSnapshot`, §6). 14. The simulated on-chain advance (`multicall` `staticCall` of pending `reduceAndFinalize` +
-`updateStateSnapshotFork` + `updateStateSnapshotSameFork`) reverts. 15. A proved finalized block conflicts with a block already in local storage. 16. Replaying an unfinalized block through the confirmation pipeline fails. 17. Pinned mode: the proof's latest block does not reach the requested height.
-
-Abort semantics ([`SpectateService.abort`](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L99)):
-if the node is not yet participating (or pending), the whole state manager aborts — a full local
-stop with no residue; if it is already a participant using spectate-sync for recovery, only the
-offending peer is cut and blacklisted. While spectating,
-`SpectatingValidationStrategy` keeps the same fail-closed split: provable participant fraud
-(double-sign, invalid transition, forged inbound block, objective bad timestamp) → abort and stop
-following; non-provable junk (outsider authors, malformed linkage, stray signatures) → drop and
-blacklist the sender, keep spectating.
-
-- **[`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5).** Spectating MUST NOT create any on-chain or channel obligation; every abort path
-  MUST leave no partial local commitment that could later bind the spectator. **Current:**
-  persistence happens only after all verification (steps 2–14) succeeds, under the state-manager
-  mutex, and is skipped when local storage is already ahead.
-- **Current:** a code TODO notes the local simulation of snapshot updates "need[s] dummy
-  contracts to process withdrawals" — a consumer facet whose `withdraw` touches real external
-  state may make simulation infeasible for spectators. **Open question:** how are
-  consumer-facet side effects stubbed during spectate simulation?
+Verified persistence precedes sequential tail replay. If a later replay block fails, earlier
+verified progress may remain. Sync itself submits no transaction and creates no deposit or signing
+obligation for a spectator. This distinction matters for
+[`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5):
+retained verified data is not a channel commitment. No rollback of all local storage is promised.
 
 ### 4.2 Current / Intended divergences and open questions
 
@@ -346,7 +336,7 @@ This table records whether the repository currently implements each requirement.
 | [`REQ-MSG-6-MZNQAM`](../../../specification/settlement/cross-layer-messages.md#req-msg-6-mznqam)   | Covered               | [StateSnapshotFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L3)                                                                                                                                                                           | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-6-MZNQAM`](../../../specification/settlement/cross-layer-messages.md#req-msg-6-mznqam).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.   | None.            |
 | [`REQ-MSG-7-Q40Q3R`](../../../specification/settlement/cross-layer-messages.md#req-msg-7-q40q3r)   | Covered               | `RaceConditionPendingInboundNotConsumed`; [SnapshotUpdateService](../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L37)                                                                                                                                     | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-7-Q40Q3R`](../../../specification/settlement/cross-layer-messages.md#req-msg-7-q40q3r).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.   | None.            |
 | [`REQ-MSG-8-N1ECJ5`](../../../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5)   | Covered               | No contract entry point processes an `ExitChannel` outside `_updateStateSnapshot`                                                                                                                                                                                                  | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-8-N1ECJ5`](../../../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.   | None.            |
-| [`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)   | Covered               | [SpectateService.applySyncResponse / abort](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L98); [SpectatingValidationStrategy](../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21)                                       | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.   | None.            |
+| [`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)   | Covered               | [SpectateService.applySyncResponse / abort](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L100); [SpectatingValidationStrategy](../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L21)                                      | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-9-BFN9P5`](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants.   | None.            |
 | [`REQ-MSG-10-7JS45Q`](../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q) | Covered               | [JoinChannelFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L3); [JoinChannelService.ts](../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L1)                                                                        | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-10-7JS45Q`](../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
 | [`REQ-MSG-11-VS3ZGC`](../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc) | Covered               | [StateManager.maybeInitiateForceJoinDispute](../../../../../src/stateManager/StateManager.ts#L483); [DisputeVerificationFacet.reduce](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L60) inbound-tip selection                                 | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-11-VS3ZGC`](../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |
 | [`REQ-MSG-12-1RRB0W`](../../../specification/settlement/cross-layer-messages.md#req-msg-12-1rrb0w) | Covered               | [verifyBalanceInvariantCheckSnapshot](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L480), routed to the diamond boundary and declared on [StateChannelManagerInterface](../../../../../contracts/V1/StateChannelManagerInterface.sol#L185)    | See the design section above; requirement-specific mechanism and hidden-assumption review pending. | Apply every [`REQ-MSG-12-1RRB0W`](../../../specification/settlement/cross-layer-messages.md#req-msg-12-1rrb0w).T\*` permutation through the listed concrete boundaries, including implementation-only failure, recovery, persistence, concurrency, and platform variants. | None.            |

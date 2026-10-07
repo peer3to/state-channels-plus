@@ -26,7 +26,6 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-37-0Y7YWS`](open-questions.md#oq-37-0y7yws)                                                     | Harness-control RPC root: unguarded, network-reachable, and published in the package                                              | Code            | [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4, [security/open-security-review.md](../audit/security-assessment.md)                                      | Open                              |
 | [`OQ-38-1RBXV3`](open-questions.md#oq-38-1rbxv3)                                                     | Production transport deduplication during targeted derived-to-raw topic handoff lacks automated evidence                          | Code            | [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md)                                                                                                              | Accepted evidence gap             |
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062) | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
-| [`OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385`](open-questions.md#oq-impl-sync-in-flight-1-wc8385)               | Ordinary sync collision before intake eligibility recheck                                                                         | Engineer review | [Owner](source/src/stateManager/ingest/BlockQueueManager.ts.md)                                                                                                                                       | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                   | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
 | [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                               | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
 
@@ -198,7 +197,7 @@ next-author refusal clause marked as this open decision.
 
 Grouped smaller items, each a code TODO or observed race: the TypeScript
 `onStateSnapshotUpdated` handler is not `(blockNumber, logIndex)`-ordered, unlike the
-LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Kill-period and dispute-fraud-proof slashing semantics)](../specification/open-questions.md#oq-1-ntjba1)). See
+LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Remaining dispute economics and timing policy)](../specification/open-questions.md#oq-1-ntjba1)). See
 [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), and
 [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md).
 
@@ -306,14 +305,6 @@ Future implementation design; non-blocking for this queue change. The desired be
 [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../specification/protocol-model/state-machines.md#req-sm-11-vvp01c) permits local participation before chain adoption. Preserve chain dispute eligibility,
 and distinguish local signing, local finality, transaction submission, and confirmed adoption. Do not
 add a second snapshot publisher or claim a submitted transaction already grants dispute standing.
-
-<a id="oq-impl-sync-in-flight-1-wc8385"></a>
-
-## OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385 — Ordinary sync collision before intake eligibility recheck
-
-The engineer chose an unconditional cached eligibility recheck after ingress sync. Ordinary sync currently returns false on an in-flight collision, so intake can blacklist an absent sender before the running proof makes it eligible. Adjust SpectateService.sync later so the caller can await an applicable outcome. The engineer deferred that change; this accepted limitation does not block the current intake correction.
-
-Owner: [implementation report](source/src/stateManager/ingest/BlockQueueManager.ts.md). Decision recorded in the 2026-09-17 implementation review.
 
 <a id="oq-impl-rpc-cooldown-1-xmsnr7"></a>
 

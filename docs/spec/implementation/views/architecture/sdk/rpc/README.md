@@ -131,7 +131,7 @@ Constructor identity is not stable across module graphs, so it is not part of ei
 resolution or incoming dispatch. The structural check only classifies the service; normal RPC
 guards and payload validation still apply.
 
-[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L48)
+[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L138)
 is exported but **not** instantiated by `MainRpcService`; it only becomes reachable when an
 integrator's custom root wires it in (§2.5). Until wired, its name resolves to nothing and frames
 addressed to it disconnect the sender like any unknown service.
@@ -259,7 +259,7 @@ substitutes. Examples of the split done right:
 [`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
 rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
 past the skew comparison);
-[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L98)
+[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L100)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
 [`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)

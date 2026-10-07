@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-StateProof wrapper with `tryFrom` decode (the audit's decode-or-unjudgeable gate).
+Milestone-only StateProof wrapper with `tryFrom` decoding. Decode failure alone does not select an audit outcome; the caller and shared walk distinguish checked invalid data from skipped history.
 
 ## Key design decisions
 

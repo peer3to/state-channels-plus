@@ -188,7 +188,10 @@ class StateManager<
         this.agreementManager = new AgreementManager(
             this.storage,
             this.eventSyncService,
-            this.logger
+            this.logger,
+            () => this.channelId,
+            this.diamondStateMachine.localDiamondContract,
+            this.stateChannelManagerContract
         );
         this.disputeManager = new DisputeManager(
             this.channelId,

@@ -27,63 +27,19 @@ function _getLatestBlock(StateProof memory stateProof) pure returns (bool hasBlo
     return (_hasBlock, _block);
 }
 
+/// The last block of the last milestone; none for an empty proof.
 function _getLatestSignedBlock(StateProof memory stateProof) pure returns (bool hasBlock, SignedBlock memory) {
     SignedBlock memory signedBlock;
     MilestoneProof[] memory milestones = stateProof.milestones;
-    if (milestones.length == 0 && stateProof.signedBlocks.length == 0) {
+    if (milestones.length == 0) {
         return (false, signedBlock);
     }
-    if (stateProof.signedBlocks.length > 0) {
-        signedBlock = stateProof.signedBlocks[stateProof.signedBlocks.length - 1];
-    } else {
-        if (milestones[milestones.length - 1].blockConfirmations.length == 0) {
-            return (false, signedBlock); // an honest milestone should always have at least one block
-        }
-        BlockConfirmation[] memory blockConfirmations = milestones[milestones.length - 1].blockConfirmations;
-        signedBlock = blockConfirmations[blockConfirmations.length - 1].signedBlock;
+    BlockConfirmation[] memory blockConfirmations = milestones[milestones.length - 1].blockConfirmations;
+    if (blockConfirmations.length == 0) {
+        return (false, signedBlock); // an honest milestone should always have at least one block
     }
+    signedBlock = blockConfirmations[blockConfirmations.length - 1].signedBlock;
     return (true, signedBlock);
-}
-
-function _getMilestoneBlocks(StateProof memory stateProof) pure returns (Block[] memory) {
-    if (stateProof.milestones.length == 0) {
-        return new Block[](0);
-    }
-    Block[] memory milestoneBlocks = new Block[](stateProof.milestones.length);
-    for (uint256 i = 0; i < stateProof.milestones.length; i++) {
-        if (stateProof.milestones[i].blockConfirmations.length == 0) {
-            return new Block[](0); // an honest milestone should always have at least one block
-        }
-        milestoneBlocks[i] =
-            abi.decode(stateProof.milestones[i].blockConfirmations[0].signedBlock.encodedBlock, (Block));
-    }
-    return milestoneBlocks;
-}
-
-function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
-    pure
-    returns (BlockConfirmation[] memory)
-{
-    BlockConfirmation[] memory blockConfirmations = new BlockConfirmation[](0);
-    if (stateProof.milestones.length > 0) {
-        MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
-        if (lastMilestone.blockConfirmations.length == 0) {
-            return blockConfirmations;
-        }
-        // skip first block - the first block is finalized
-        blockConfirmations = new BlockConfirmation[](lastMilestone.blockConfirmations.length - 1);
-        for (uint256 i = 1; i < lastMilestone.blockConfirmations.length; i++) {
-            blockConfirmations[i - 1] = lastMilestone.blockConfirmations[i];
-        }
-        return blockConfirmations;
-    }
-    // no milestone -> signedBlocks
-    blockConfirmations = new BlockConfirmation[](stateProof.signedBlocks.length);
-    for (uint256 i = 0; i < stateProof.signedBlocks.length; i++) {
-        blockConfirmations[i] = BlockConfirmation({signedBlock: stateProof.signedBlocks[i], signatures: new bytes[](0)});
-    }
-
-    return blockConfirmations;
 }
 
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
@@ -196,23 +152,4 @@ function _isDisputeInboundAnchorBehindLatestState(Dispute memory dispute, StateS
     // walk from snapshotData.latestInboundMessageBlockHash never reaches
     return dispute.input.lastInboundMessageBlockHeight == snapshotHeight
         && dispute.input.latestInboundMessageBlockHash != snapshotInboundHash;
-}
-
-function _hasStateProofHeaderMismatch(Dispute memory dispute) pure returns (bool) {
-    bytes32 channelId = dispute.input.channelId;
-    bytes32 forkId = dispute.input.forkId;
-    StateProof memory sp = dispute.input.stateProof;
-
-    for (uint256 i = 0; i < sp.signedBlocks.length; i++) {
-        Block memory b = abi.decode(sp.signedBlocks[i].encodedBlock, (Block));
-        if (b.transaction.header.channelId != channelId || b.transaction.header.forkId != forkId) return true;
-    }
-    for (uint256 m = 0; m < sp.milestones.length; m++) {
-        BlockConfirmation[] memory bcs = sp.milestones[m].blockConfirmations;
-        for (uint256 j = 0; j < bcs.length; j++) {
-            Block memory mb = abi.decode(bcs[j].signedBlock.encodedBlock, (Block));
-            if (mb.transaction.header.channelId != channelId || mb.transaction.header.forkId != forkId) return true;
-        }
-    }
-    return false;
 }

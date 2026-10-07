@@ -92,6 +92,10 @@ describe("E2E: spectating strategy junk-block handling", function () {
                 timeoutMessage: "attacker never connected to victim"
             }
         );
+        // The pending victim is a chain participant, so it can be the
+        // attacker's initial-sync responder: let that sync finish before the
+        // victim cuts the attacker, or the cut aborts the attacker's connect.
+        await h.event.waitUntilPeerStatus(attacker.index, Status.SYNCED);
 
         const { encodedBlockConfirmation } =
             await h.byzantine.craftJunkBlockConfirmation(0, forkId);

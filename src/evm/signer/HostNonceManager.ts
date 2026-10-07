@@ -115,9 +115,11 @@ class HostNonceManager extends AbstractSigner {
             // Where a recovered response starts scanning for a replacement.
             // Sent before the broadcast: the scan only walks forward, so a
             // later read could start past a replacement that already mined.
-            // Not awaited: an ethers provider's broadcast joins this in-flight
-            // request for its own block number, so a send makes one request
-            // and waits no extra round trip. Only a failed broadcast reads it.
+            // Not awaited, so a send waits no extra round trip; only a failed
+            // broadcast reads it. On a provider with ethers' request cache the
+            // broadcast's own block-number read joins this request. The
+            // runtime's RPC node provider has that cache off, so there the
+            // two are independent reads.
             const replacementScanStartBlock = provider.getBlockNumber();
             // A successful broadcast never reads it, so its failure must not
             // surface as an unhandled rejection.
@@ -152,13 +154,15 @@ class HostNonceManager extends AbstractSigner {
         let pendingNonce: number;
         let scanStartBlock: number;
         try {
-            // The broadcast shares this read, so it fails whenever the
-            // broadcast's own read failed, even if the node accepted the
-            // transaction. Then read the start block again before
-            // getTransaction: a transaction still pending there had no
-            // replacement mined by that block, and one that mined or was
-            // replaced needs no scan. getBlock, not getBlockNumber: the
-            // provider's request cache would answer with the same failure.
+            // This read can fail even though the node accepted the
+            // transaction: on its own, or, on a provider with ethers' request
+            // cache, because it is the broadcast's own read that failed. Then
+            // read the start block again before getTransaction: a transaction
+            // still pending there had no replacement mined by that block, and
+            // one that mined or was replaced needs no scan. getBlock, not
+            // getBlockNumber: a provider with the request cache answers a
+            // repeated getBlockNumber with the cached failure, while getBlock
+            // is another request and reaches the node.
             scanStartBlock = await replacementScanStartBlock.catch(async () => {
                 const latestBlock = await provider.getBlock("latest");
                 assert(

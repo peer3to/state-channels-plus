@@ -1,5 +1,6 @@
 import { sleep } from "@/utils";
 import {
+    assertDiscoveryEndpointReplacement,
     stageLocalDiscoveryReady,
     observeDiscoveryLogger,
     observeLocalDialRetries,
@@ -12,6 +13,20 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LocalDiscoveryServer topic lifecycle", function () {
+    it("retries the replacement endpoint announced while the old endpoint handshake is pending", async function () {
+        await assertDiscoveryEndpointReplacement(
+            TestSession.getHarness(),
+            true
+        );
+    });
+
+    it("retries the replacement endpoint announced while the old authenticated transport is still connected", async function () {
+        await assertDiscoveryEndpointReplacement(
+            TestSession.getHarness(),
+            false
+        );
+    });
+
     it("closes an accepted socket whose ready frame arrives after manager disposal", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, {

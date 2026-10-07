@@ -1,7 +1,14 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
+import {
+    commitmentOf,
+    holdReductions,
+    killedDisputeLogs,
+    postSpamDispute
+} from "./DisputeWindowWorkflowStaging";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { BlockOrigin } from "@/storage/QueueStorage";
+import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -217,8 +224,15 @@ export async function assertBackgroundDisputeFailure(
     }
 }
 
+/**
+ * A join lands between construction and upload, and the disputer's own
+ * delivery of it is lost. `recoverable` loses only the delivery, so the retry
+ * loads the run and lands at the new head. `unrecoverable` disables the
+ * handler, so the load cannot recover the run and the dispute fails fatally.
+ */
 export async function assertInboundHeadMovedDuringUpload(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    staging: "recoverable" | "unrecoverable"
 ): Promise<void> {
     await h.lifecycle.start(3, 3);
     const disputer = h.getPeer(0);
@@ -229,10 +243,13 @@ export async function assertInboundHeadMovedDuringUpload(
     await h.dispute.suppressDisputeInitiation([1, 2]);
     // a stored fraud proof puts the upload in a multicall with applyFraudProofs,
     // so the refusal below reverts the whole batch, not just the upload
-    await h.byzantine.storeInvalidTransitionFraudProof(disputer.index);
-    // the disputer's own inbound event handler is held, so its local head
-    // provably cannot advance while the join lands and the upload is checked
-    const held = await h.rpcStub.holdInboundMessageEvents(disputer.index);
+    const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+        disputer.index
+    );
+    const lost =
+        staging === "recoverable"
+            ? await h.rpcStub.dropInboundMessageLogs(disputer.index)
+            : await h.rpcStub.holdInboundMessageEvents(disputer.index);
     const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
         hold: true,
         forward: true
@@ -240,13 +257,32 @@ export async function assertInboundHeadMovedDuringUpload(
     const attempt = h.execOnHost(
         disputer,
         async (sm, args) => {
-            await sm.disputeManager.dispute(args.forkId);
-            return sm.storage.disputes.didIDispute(args.forkId);
+            let error: string | null = null;
+            try {
+                await sm.disputeManager.dispute(args.forkId);
+            } catch (caught) {
+                error =
+                    caught instanceof Error ? caught.message : String(caught);
+            }
+            return {
+                error,
+                disputed: sm.storage.disputes.didIDispute(args.forkId)
+            };
         },
         { forkId }
     );
     const localHead = () =>
         h.control(disputer).query.getLatestInboundMessageHash().request();
+    const committed = async () => [
+        ...(await h.channelManager.queryFilter(
+            h.channelManager.filters.DisputeCommitted(h.channelId)
+        )),
+        ...(await h.channelManager.queryFilter(
+            h.channelManager.filters.DisputeCommittedWithAuditingData(
+                h.channelId
+            )
+        ))
+    ];
     try {
         // step 1 - the dispute is built and parked before its upload
         await recorder.waitUntilHeld();
@@ -256,12 +292,15 @@ export async function assertInboundHeadMovedDuringUpload(
         ).input;
 
         // step 2 - a join appends an inbound block above the parked anchor;
-        // the disputer's held handler cannot apply it before the upload lands
+        // the disputer's own delivery of it is lost
         await h.join.forceInboundJoinWait({
             observePeerIndices: [1, 2]
         });
         await waitFor(
-            async () => (await held.heldCount()) > 0,
+            async () =>
+                ("droppedCount" in lost
+                    ? await lost.droppedCount()
+                    : await lost.heldCount()) > 0,
             h.event.protocolEventTimeoutMs()
         );
         const chainHead = await h.channelManager.getChannelBalance(h.channelId);
@@ -270,11 +309,9 @@ export async function assertInboundHeadMovedDuringUpload(
         );
         expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
 
-        // step 3 - the parked upload lands on the moved chain head and is refused;
-        // local storage is assumed current by event sync, so a stale anchor is a
-        // lost race, not retried
+        // step 3 - the parked upload lands on the moved chain head and is refused
         await recorder.release();
-        const disputed = await attempt;
+        const result = await attempt;
         const submissions = await recorder.submissions();
         expect(submissions[0].revert).to.deep.equal({
             name: "RaceConditionDisputeInboundNotLatest",
@@ -283,30 +320,295 @@ export async function assertInboundHeadMovedDuringUpload(
                 stale.latestInboundMessageBlockHash
             ]
         });
-        expect(submissions).to.have.length(1);
-        expect(disputed).to.equal(false);
-        expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
-        const committed = [
-            ...(await h.channelManager.queryFilter(
-                h.channelManager.filters.DisputeCommitted(h.channelId)
-            )),
-            ...(await h.channelManager.queryFilter(
-                h.channelManager.filters.DisputeCommittedWithAuditingData(
+
+        if (staging === "unrecoverable") {
+            // the run cannot be applied -> a fatal error, no re-upload, and
+            // the marker rolled back
+            expect(result.error).to.equal(
+                "dispute - the inbound run up to the chain's head is unavailable"
+            );
+            expect(submissions).to.have.length(1);
+            expect(result.disputed).to.equal(false);
+            expect(await localHead()).to.equal(
+                stale.latestInboundMessageBlockHash
+            );
+            expect(await committed()).to.have.length(0);
+            // the refused multicall carried the fraud proof, so nobody is slashed
+            expect([
+                ...(await h.channelManager.getOnChainSlashedParticipants(
                     h.channelId
-                )
-            ))
-        ];
-        expect(committed).to.have.length(0);
-        // the refused upload was multicalled with the fraud proof against the
-        // offender, so the whole batch reverts and nobody is slashed either
+                ))
+            ]).to.deep.equal([]);
+            return;
+        }
+
+        // step 4 - the retry loaded the run and its upload lands, anchored at
+        // the head the chain named, with the fraud proof in the same batch
+        expect(result.error).to.equal(null);
+        expect(result.disputed).to.equal(true);
+        expect(submissions).to.have.length(2);
+        expect(submissions[1].revert).to.equal(null);
+        expect(submissions[1].waited).to.equal(true);
+        const retried = Codec.decode(
+            submissions[1].encodedDispute,
+            Type.Dispute
+        ).input;
+        expect(retried.latestInboundMessageBlockHash).to.equal(
+            chainHead.latestInboundMessageBlockHash
+        );
+        expect(Number(retried.lastInboundMessageBlockHeight)).to.equal(
+            Number(chainHead.latestInboundMessageBlockHeight)
+        );
+        expect(await localHead()).to.equal(
+            chainHead.latestInboundMessageBlockHash
+        );
+        expect(await committed()).to.have.length(1);
         expect([
             ...(await h.channelManager.getOnChainSlashedParticipants(
                 h.channelId
             ))
-        ]).to.deep.equal([]);
+        ]).to.deep.equal([offender.address]);
     } finally {
         await recorder.release();
         await recorder.restore();
-        await held.release({ replay: false });
+        if ("droppedCount" in lost) await lost.release();
+        else await lost.release({ replay: false });
+    }
+}
+
+const INBOUND_NOT_LATEST = "RaceConditionDisputeInboundNotLatest";
+
+type MathPeer = ReturnType<MathPeerTestHarness["getPeer"]>;
+
+/** `dispute(forkId)` on the host; its error and the marker after it. */
+function disputeCapturingError(
+    h: MathPeerTestHarness,
+    peer: MathPeer,
+    forkId: ForkId
+): Promise<{ error: string | null; disputed: boolean }> {
+    return h.execOnHost(
+        peer,
+        async (sm, args) => {
+            let error: string | null = null;
+            try {
+                await sm.disputeManager.dispute(args.forkId);
+            } catch (caught) {
+                error =
+                    caught instanceof Error ? caught.message : String(caught);
+            }
+            return {
+                error,
+                disputed: sm.storage.disputes.didIDispute(args.forkId)
+            };
+        },
+        { forkId }
+    );
+}
+
+function inboundAnchorOf(submission: { encodedDispute: string }): string {
+    return Codec.decode(submission.encodedDispute, Type.Dispute).input
+        .latestInboundMessageBlockHash as string;
+}
+
+function localInboundHead(h: MathPeerTestHarness, peer: MathPeer) {
+    return h.control(peer).query.getLatestInboundMessageHash().request();
+}
+
+/**
+ * A join moves the chain's inbound head while the disputer's own delivery of
+ * it is lost, so the disputer's local head (its dispute anchor) stays below
+ * the chain's head. The dropped log stays recoverable by query.
+ */
+async function moveInboundHeadPastDisputer(
+    h: MathPeerTestHarness,
+    disputer: MathPeer,
+    observePeerIndices: number[]
+) {
+    const lost = await h.rpcStub.dropInboundMessageLogs(disputer.index);
+    await h.join.forceInboundJoinWait({ observePeerIndices });
+    await lost.waitUntilDropped();
+    const { latestInboundMessageBlockHash: chainHead } =
+        await h.channelManager.getChannelBalance(h.channelId);
+    const anchor = await localInboundHead(h, disputer);
+    expect(anchor).to.be.a("string").and.not.equal(chainHead);
+    return { lost, chainHead, anchor: anchor! };
+}
+
+/**
+ * The chain refuses the upload with the inbound head it holds, the retry
+ * loads the run up to that head, and the chain refuses the retry again at the
+ * same head: no progress, so the dispute fails fatally, rolls the marker back
+ * and does not upload a third time.
+ */
+export async function assertInboundRetryRefusedAtSameHead(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 3);
+    const disputer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    for (const peer of h.peers)
+        await h.control(peer).stub.stubHoldReductionTasks().request();
+    await h.dispute.suppressDisputeInitiation([1, 2]);
+    const { lost, chainHead, anchor } = await moveInboundHeadPastDisputer(
+        h,
+        disputer,
+        [1, 2]
+    );
+    const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
+        failWith: {
+            customError: INBOUND_NOT_LATEST,
+            customErrorArgs: [chainHead, anchor],
+            at: "send"
+        }
+    });
+    try {
+        const result = await disputeCapturingError(h, disputer, forkId);
+        const submissions = await recorder.submissions();
+
+        expect(result.error).to.equal(
+            `${INBOUND_NOT_LATEST} (args: ${chainHead}, ${anchor})`
+        );
+        expect(result.disputed).to.equal(false);
+        // the first upload anchors at the local head, the retry at the
+        // chain's head it loaded; nothing after the second refusal
+        expect(submissions.map(inboundAnchorOf)).to.deep.equal([
+            anchor,
+            chainHead
+        ]);
+        expect(await localInboundHead(h, disputer)).to.equal(chainHead);
+    } finally {
+        await recorder.restore();
+        await lost.release();
+    }
+}
+
+/**
+ * The chain refuses the upload with an inbound head equal to the dispute's
+ * own anchor: the anchor hash is the chain's head, so its height is wrong and
+ * loading the run cannot fix it. The dispute fails fatally with no retry.
+ */
+export async function assertInboundRefusalAtOwnAnchor(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 0);
+    const disputer = h.getPeer(0);
+    const anchor = await localInboundHead(h, disputer);
+    expect(anchor).to.be.a("string");
+    const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
+        failWith: {
+            customError: INBOUND_NOT_LATEST,
+            customErrorArgs: [anchor!, anchor!],
+            at: "send"
+        }
+    });
+    try {
+        const result = await disputeCapturingError(
+            h,
+            disputer,
+            h.activeForkId!
+        );
+        const submissions = await recorder.submissions();
+
+        expect(result.error).to.equal(
+            `${INBOUND_NOT_LATEST} (args: ${anchor}, ${anchor})`
+        );
+        expect(result.disputed).to.equal(false);
+        expect(submissions.map(inboundAnchorOf)).to.deep.equal([anchor]);
+    } finally {
+        await recorder.restore();
+    }
+}
+
+/**
+ * Four peers. A consumed top-up join moves the inbound head from `older` to
+ * `head`; then reductions are held. The auditor (peer 0) kills spammer 1's
+ * invalid dispute with `dispute(forkId, { kill })`. The chain refuses joins
+ * while the fork is disputed, so its inbound head cannot move under an open
+ * window: the recorder refuses that multicall as a chain at `head` refuses an
+ * upload anchored at `older`. The kill is then sent alone, and the retry
+ * loads the run up to `head`, uploads without the kill and lands, counting
+ * the killed spammer's slash.
+ */
+export async function assertInboundRefusalOfKillCarryingDispute(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.scenario.preDisputeSetup({ peerCount: 4 });
+    const forkId = h.activeForkId!;
+    const auditor = h.getPeer(0);
+    const spammer = h.getPeer(1);
+    const older = await localInboundHead(h, auditor);
+    await h.join.forceInboundJoinWait({ participant: auditor.address });
+    await h.transition.advanceState({ count: 2, waitForFinalization: true });
+    await h.assert.sync.peersInSyncWait();
+    const { latestInboundMessageBlockHash: head } =
+        await h.channelManager.getChannelBalance(h.channelId);
+    expect(await localInboundHead(h, auditor)).to.equal(head);
+    expect(older).to.be.a("string").and.not.equal(head);
+
+    for (const index of [1, 2, 3]) await h.rpcStub.suppressDisputeKill(index);
+    await holdReductions(h);
+    const uploads = await h.rpcStub.recordDisputeSubmissions(auditor.index, {
+        forward: true,
+        failWith: {
+            customError: INBOUND_NOT_LATEST,
+            customErrorArgs: [head, older!],
+            times: 1,
+            at: "send"
+        }
+    });
+    const loneKills = await h.rpcStub.recordDisputeFraudProofApplies(
+        auditor.index
+    );
+    try {
+        const spam = await postSpamDispute(h, spammer.index);
+        await waitFor(
+            async () =>
+                (await uploads.submissions()).some(
+                    (submission) => submission.waited
+                ),
+            h.event.protocolEventTimeoutMs()
+        );
+        const submissions = await uploads.submissions();
+        expect(submissions).to.have.length(2);
+        const [refused, retried] = submissions;
+
+        // the refused multicall carried the kill in front of the upload
+        expect(refused.method).to.equal("multicall");
+        expect(refused.innerMethods[0]).to.equal("applyDisputeFraudProofs");
+        expect(refused.waited).to.equal(false);
+
+        // the kill went alone and landed
+        const kills = await loneKills.applies();
+        expect(kills).to.have.length(1);
+        expect(kills[0].participants).to.deep.equal([spammer.address]);
+        expect(kills[0].error).to.equal(null);
+        expect(kills[0].waited).to.equal(true);
+        const killed = await killedDisputeLogs(h);
+        expect(killed.map((log) => log.disputer)).to.deep.equal([
+            spammer.address
+        ]);
+
+        // the retry carries no kill, anchors at the chain's head, counts the
+        // killed spammer's slash and lands
+        expect([retried.method, ...retried.innerMethods]).to.not.include(
+            "applyDisputeFraudProofs"
+        );
+        expect(retried.revert).to.equal(null);
+        expect(retried.waited).to.equal(true);
+        const own = Codec.decode(retried.encodedDispute, Type.Dispute);
+        expect(own.input.latestInboundMessageBlockHash).to.equal(head);
+        expect(own.input.onChainSlashes).to.include(spammer.address);
+        const commitments = await h.channelManager.getWindowCommitments(
+            h.channelId,
+            forkId
+        );
+        expect(commitments).to.include(commitmentOf(own));
+        expect(commitments).to.not.include(commitmentOf(spam));
+        expect(
+            await h.control(auditor).query.didIDispute(forkId).request()
+        ).to.equal(true);
+    } finally {
+        await uploads.restore();
+        await loneKills.restore();
     }
 }

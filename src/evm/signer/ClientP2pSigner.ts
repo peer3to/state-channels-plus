@@ -8,6 +8,7 @@ import type {
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/network/services";
+import type { OwnJoinState } from "@/stateManager/membership/MembershipService";
 import type { Status } from "@/types";
 
 import type { Address, Bytes, ForkId, Hash } from "@/types/types";
@@ -275,6 +276,11 @@ class ClientP2pSigner implements Signer {
 
     getChannelStatus(): Promise<Status> {
         return this.client.p2pSigner.getChannelStatus().request();
+    }
+
+    /** The state of this runtime's own join; see {@link OwnJoinState}. */
+    getOwnJoinState(): Promise<OwnJoinState> {
+        return this.client.p2pSigner.getOwnJoinState().request();
     }
 
     private validateConnectOptions(options: ConnectToChannelOptions): void {

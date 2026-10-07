@@ -25,6 +25,8 @@ return values and recursively converts ethers Results to plain objects across mo
 
 ## Key design decisions
 
+The codec registers the three new counter payload schemas and overloads. Milestone-only state proofs and pointed-step payloads use disputes.ts tuple definitions; codec dispatch does not verify proof validity. See [Codec.ts](../../../../../../src/utils/Codec.ts#L300).
+
 1. **One codec for all protocol structs** — a second encoding path would fork the signature domain; every encoded\* wire field passes through here.
 2. **Type strings are the schema commitment:** adding/altering a struct is a protocol-visible change, not a refactor.
 3. **Decoded ethers values are identified by their public Result API.** Recursive conversion works

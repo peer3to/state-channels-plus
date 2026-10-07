@@ -38,30 +38,34 @@ export interface BlockBundle {
 }
 
 /**
- * Projection of an assembled state proof plus the on-chain verifier verdicts
- * (verifyMilestones / isMilestoneFinal / areSignedBlocksLinkedAndVerified).
+ * Projection of this peer's own state proof (AgreementManager.buildStateProof)
+ * plus the chain's verdicts on it (verifyMilestones from the chain's anchor,
+ * isMilestoneFinal).
  */
 export interface StateProofVerification {
-    /** The block height the proof was assembled at. */
+    /** The block height the proof was built at. */
     blockHeight: number;
     milestoneCount: number;
-    signedBlockCount: number;
     /** Height of the proof's latest block, or null for an empty proof. */
     latestProofHeight: number | null;
     /** Per milestone: the block height each of its confirmations covers. */
     milestoneConfirmationHeights: number[][];
-    /** getSnapshotFromMilestone(milestone).hash, one per milestone. */
+    /** The walk evidence's snapshot per milestone, as the builder supplies it. */
     milestoneSnapshotHashes: string[];
-    /** On-chain verdict for the proof's carrier (false for an empty proof). */
+    /** The chain's walk from its anchor accepts the proof. */
     verified: boolean;
-    /** On-chain isMilestoneFinal for the first milestone; null when no milestone. */
+    /** The chain walk's tail start in the last milestone (its length: no tail). */
+    chainReplayBlockIndex: number;
+    /** On-chain isMilestoneFinal for the first milestone from the construction anchor; null when no milestone. */
     isFinal: boolean | null;
     /** Snapshot hash isMilestoneFinal finalized; null when no milestone. */
     onChainFinalizedSnapshotHash: string | null;
     /** TS extractor: getLatestSnapshotFromStateProof. */
     latestSnapshotHash: string;
-    /** TS extractor: getLatestFinalizedSnapshot. */
+    /** The builder's final point: the anchor or the last threshold-proven snapshot. */
     finalizedSnapshotHash: string;
+    /** The construction anchor: the local diamond's same-fork anchor, else the genesis. */
+    startSnapshotHash: string;
     genesisSnapshotHash: string;
 }
 
@@ -441,6 +445,18 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         const window = windows[0];
         if (!window) return [];
         return window.evidence.disputeCommitments.map(String);
+    }
+
+    /** Reduced fork the local diamond records for `forkId`'s window (zero hash when unreduced). */
+    public async getLocalDisputeWindowReducedForkId(
+        forkId: ForkId
+    ): Promise<ForkId> {
+        const [window] =
+            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                this.service.sm.channelId,
+                [forkId]
+            );
+        return window.reducedResult.forkId as ForkId;
     }
 
     /** Encoded (`Type.StateSnapshot`) snapshot with `snapshotHash`, or null. */

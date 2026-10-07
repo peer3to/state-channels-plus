@@ -90,7 +90,22 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeInboundAnchorBehindLatestState) {
             return _handleDisputeInboundAnchorBehindLatestState;
         }
+        if (proofType == DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor) {
+            return _handleDisputeStateProofBelowOnChainAnchor;
+        }
+        if (proofType == DisputeFraudProofType.TimeoutSupersededByFinalState) {
+            return _handleTimeoutSupersededByFinalState;
+        }
+        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
+            return _handleDisputeConflictsWithFinalState;
+        }
         return _handleInvalidDisputeFraudProofType;
+    }
+
+    /// The disputer when the StateProofFacet `call` answers true, else no one.
+    function _delegatedVerdict(Dispute memory dispute, bytes memory call) internal returns (address) {
+        if (abi.decode(_delegatecall(stateProofFacetAddress, call), (bool))) return _valid(dispute.input.disputer);
+        return _invalid();
     }
 
     function _valid(address adr) internal pure returns (address) {
@@ -116,11 +131,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _invalid();
     }
 
-    function _handleDisputeStateProofHeaderMismatch(bytes memory, Dispute memory dispute)
-        internal
-        pure
-        returns (address)
-    {
+    function _handleDisputeStateProofHeaderMismatch(bytes memory, Dispute memory dispute) internal returns (address) {
         if (_hasStateProofHeaderMismatch(dispute)) return _valid(dispute.input.disputer);
         return _invalid();
     }
@@ -138,29 +149,24 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         DisputeInvalidBlockStructure memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBlockStructure));
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
+        if (!_isBlockChallengeEligible(dispute, proof.blockIndex)) return _invalid();
+        return _delegatedVerdict(
+            dispute,
             abi.encodeCall(
-                StateProofFacet.isInvalidBlockStructureInStateProof,
-                (dispute.input.stateProof, proof.blockIndexInUnfinalizedPartOfStateProof)
+                StateProofFacet.isInvalidBlockStructureInStateProof, (dispute.input.stateProof, proof.blockIndex)
             )
         );
-        if (abi.decode(result, (bool))) return _valid(dispute.input.disputer);
-        return _invalid();
     }
 
     function _handleDisputeBlockAuthorNotParticipant(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
-        view
         returns (address)
     {
         DisputeBlockAuthorNotParticipant memory proof =
             abi.decode(encodedFraudProof, (DisputeBlockAuthorNotParticipant));
-        BlockConfirmation[] memory blockConfirmations =
-            _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
-        if (proof.blockIndexInUnfinalizedPartOfStateProof >= blockConfirmations.length) return _invalid();
+        if (!_isBlockChallengeEligible(dispute, proof.blockIndex)) return _invalid();
 
-        SignedBlock memory signedBlock = blockConfirmations[proof.blockIndexInUnfinalizedPartOfStateProof].signedBlock;
+        SignedBlock memory signedBlock = _getLastMilestoneBlock(dispute, proof.blockIndex);
         (bool decoded, Block memory invalidBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(signedBlock.encodedBlock);
         if (!decoded || dispute.input.channelId != invalidBlock.transaction.header.channelId) return _invalid();
@@ -232,8 +238,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
 
         if (dispute.postedAuditingData) return _invalid();
 
-        bool isFinal = _isLastMilestoneFinalByEveryone(dispute);
-        if (!isFinal) return _valid(dispute.input.disputer);
+        if (!_isAuditingDataOmissionAllowed(dispute)) return _valid(dispute.input.disputer);
         return _invalid();
     }
 
@@ -266,6 +271,33 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _valid(dispute.input.disputer);
     }
 
+    function _handleDisputeStateProofBelowOnChainAnchor(bytes memory, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        return _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isStateProofBelowOnChainAnchor, (dispute)));
+    }
+
+    function _handleTimeoutSupersededByFinalState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        TimeoutSupersededByFinalState memory proof = abi.decode(encodedFraudProof, (TimeoutSupersededByFinalState));
+        return _delegatedVerdict(
+            dispute, abi.encodeCall(StateProofFacet.isTimeoutSupersededByFinalState, (dispute, proof))
+        );
+    }
+
+    function _handleDisputeConflictsWithFinalState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        returns (address)
+    {
+        DisputeConflictsWithFinalState memory proof = abi.decode(encodedFraudProof, (DisputeConflictsWithFinalState));
+        return _delegatedVerdict(
+            dispute, abi.encodeCall(StateProofFacet.isDisputeConflictingWithFinalState, (dispute, proof))
+        );
+    }
+
     function _handleDisputeInvalidOutputState(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         returns (address)
@@ -289,54 +321,14 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _invalid();
     }
 
+    /// The pointed step of the state-proof walk fails, or the latest state is not the proof's; see
+    /// `StateProofFacet.isStateProofStepInvalid`.
     function _handleDisputeInvalidStateProof(bytes memory encodedFraudProof, Dispute memory dispute)
         internal
         returns (address)
     {
         DisputeInvalidStateProof memory proof = abi.decode(encodedFraudProof, (DisputeInvalidStateProof));
-
-        // TODO extract genesis-fork linking, signed-block linking, and latest-state checks into fraud proofs
-        if (!dispute.postedAuditingData) {
-            // fraud prover supplies the genesis reference -> it must be linked to the fork
-            if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, proof.auditingData.genesisStateSnapshotData))
-            {
-                return _invalid();
-            }
-            if (!_isLastMilestoneFinalByEveryone(dispute)) return _invalid();
-
-            if (dispute.input.stateProof.signedBlocks.length != 0) {
-                bytes memory linkReturnData = _delegatecall(
-                    stateProofFacetAddress,
-                    abi.encodeCall(
-                        StateProofFacet.areSignedBlocksLinkedAndVerified, (dispute.input.stateProof.signedBlocks)
-                    )
-                );
-                if (!abi.decode(linkReturnData, (bool))) return _valid(dispute.input.disputer);
-            }
-
-            bytes memory latestStateData = abi.encodeCall(
-                StateProofFacet.isCorrectLatestState, (dispute, proof.auditingData.genesisStateSnapshotData)
-            );
-            (bool latestStateSuccess, bytes memory latestStateReturnData) =
-                stateProofFacetAddress.delegatecall(latestStateData);
-            if (!latestStateSuccess) return _invalid();
-
-            bool isCorrectLatestState_ = abi.decode(latestStateReturnData, (bool));
-            if (!isCorrectLatestState_) return _valid(dispute.input.disputer);
-            return _invalid();
-        }
-
-        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(proof.auditingData))) return _invalid();
-
-        bytes memory returnData = _delegatecall(
-            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, proof.auditingData))
-        );
-        bool isValidStateProof = abi.decode(returnData, (bool));
-
-        // false -> the state proof really is invalid -> slash disputer
-        // true  -> fraud proof lied, the state proof is fine -> slash prover
-        if (!isValidStateProof) return _valid(dispute.input.disputer);
-        return _invalid();
+        return _delegatedVerdict(dispute, abi.encodeCall(StateProofFacet.isStateProofStepInvalid, (dispute, proof)));
     }
 
     function _handleDisputeInvalidBalanceInvariant(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -344,22 +336,16 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (address)
     {
         DisputeInvalidBalanceInvariant memory proof = abi.decode(encodedFraudProof, (DisputeInvalidBalanceInvariant));
-        if (
-            !_isLatestFinalizedStateLinkedToLatestFinalizedBlock(
-                dispute, proof.latestStateSnapshot, proof.latestStateMachineState
-            )
-        ) {
+        // the balance invariant is judged on the dispute's latest state
+        if (!_isLatestStateLinkedToLatestBlock(dispute, proof.latestStateSnapshot, proof.latestStateMachineState)) {
             return _invalid();
         }
-
-        bytes32 channelId = dispute.input.channelId;
-        SnapshotData memory latestSnapshotData = proof.latestStateSnapshot.snapshotData;
 
         bytes memory result = _delegatecall(
             disputeVerificationFacetAddress,
             abi.encodeCall(
                 DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
-                (channelId, latestSnapshotData, proof.latestStateMachineState)
+                (dispute.input.channelId, proof.latestStateSnapshot.snapshotData, proof.latestStateMachineState)
             )
         );
         bool isValid = abi.decode(result, (bool));
@@ -726,16 +712,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
     ) internal returns (address) {
         DisputeInvalidBlockInStateProofApplyFraudProof memory proof =
             abi.decode(encodedFraudProof, (DisputeInvalidBlockInStateProofApplyFraudProof));
-        BlockConfirmation[] memory blockConfirmations =
-            _getUnfinalizedBlockConfirmationsFromStateProof(dispute.input.stateProof);
-        uint256 blockIndexInUnfinalizedPartOfStateProof = proof.blockIndexInUnfinalizedPartOfStateProof;
+        if (!_isBlockChallengeEligible(dispute, proof.blockIndex)) return _invalid();
 
-        if (blockIndexInUnfinalizedPartOfStateProof >= blockConfirmations.length) {
-            return _invalid();
-        }
-
-        bytes32 invalidStateProofBlockHash =
-            keccak256(abi.encode(blockConfirmations[blockIndexInUnfinalizedPartOfStateProof].signedBlock));
+        bytes32 invalidStateProofBlockHash = keccak256(abi.encode(_getLastMilestoneBlock(dispute, proof.blockIndex)));
         FraudProof memory fraudProof = proof.fraudProof;
 
         // check for the applicable fraud proofs that they actually contain the invalidStateProofBlock inside them
@@ -786,12 +765,47 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return abi.decode(result, (address));
     }
 
-    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
-        return _isLastMilestoneFinalByEveryone(dispute);
+    function _isBlockChallengeEligible(Dispute memory dispute, uint256 blockIndex) internal returns (bool) {
+        bytes memory result = _delegatecall(
+            stateProofFacetAddress, abi.encodeCall(StateProofFacet.isBlockChallengeEligible, (dispute, blockIndex))
+        );
+        return abi.decode(result, (bool));
     }
 
-    function hasStateProofHeaderMismatch(Dispute memory dispute) public pure returns (bool) {
+    function _getLastMilestoneBlock(Dispute memory dispute, uint256 blockIndex)
+        internal
+        pure
+        returns (SignedBlock memory)
+    {
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        return milestones[milestones.length - 1].blockConfirmations[blockIndex].signedBlock;
+    }
+
+    function isAuditingDataOmissionAllowed(Dispute memory dispute) public returns (bool) {
+        return _isAuditingDataOmissionAllowed(dispute);
+    }
+
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
         return _hasStateProofHeaderMismatch(dispute);
+    }
+
+    /// A block after the protected boundary of the last milestone names another channel or fork. History before the
+    /// boundary is not judged here; an undecodable block is not eligible and is judged by the state-proof walk.
+    function _hasStateProofHeaderMismatch(Dispute memory dispute) internal returns (bool) {
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length == 0) return false;
+        BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
+        for (uint256 i = 0; i < lastRun.length; i++) {
+            (bool decoded, Block memory mb) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[i].signedBlock.encodedBlock);
+            if (!decoded) continue;
+            if (
+                mb.transaction.header.channelId == dispute.input.channelId
+                    && mb.transaction.header.forkId == dispute.input.forkId
+            ) continue;
+            if (_isBlockChallengeEligible(dispute, i)) return true;
+        }
+        return false;
     }
 
     function isDisputeInboundHashValid(Dispute memory dispute) public view returns (bool) {
@@ -813,21 +827,44 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return UtilityFacet(utilityFacetAddress).subtractAddressArrays(participants, dispute.input.onChainSlashes);
     }
 
-    function _isLastMilestoneFinalByEveryone(Dispute memory dispute) internal returns (bool isFinal) {
-        if (dispute.input.stateProof.milestones.length == 0) {
-            return true;
-        }
-
-        address[] memory expectedParticipants = _getHistoricThresholdSet(dispute);
-
-        MilestoneProof memory lastMilestone =
-            dispute.input.stateProof.milestones[dispute.input.stateProof.milestones.length - 1];
+    /**
+     * Auditing data may be omitted when the proof is empty, when the last milestone contains the same-fork on-chain
+     * anchor (its block at the anchor height commits it), or when everyone in the historic threshold set signed the
+     * last milestone.
+     */
+    function _isAuditingDataOmissionAllowed(Dispute memory dispute) internal returns (bool) {
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length == 0) return true;
+        MilestoneProof memory lastMilestone = milestones[milestones.length - 1];
+        if (_doesMilestoneContainAnchor(dispute, lastMilestone)) return true;
 
         SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
-        thresholdSnapshotData.participants = expectedParticipants;
-
-        (isFinal,) = StateChannelManagerInterface(address(this)).isMilestoneFinal(
+        thresholdSnapshotData.participants = _getHistoricThresholdSet(dispute);
+        (bool isFinal,) = StateChannelManagerInterface(address(this)).isMilestoneFinal(
             dispute.input.forkId, thresholdSnapshotData, lastMilestone
         );
+        return isFinal;
+    }
+
+    function _doesMilestoneContainAnchor(Dispute memory dispute, MilestoneProof memory milestone)
+        internal
+        view
+        returns (bool)
+    {
+        (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
+            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        if (!canUseOnChainSnapshot || milestone.blockConfirmations.length == 0) return false;
+        (bool decoded, Block memory firstBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(milestone.blockConfirmations[0].signedBlock.encodedBlock);
+        if (!decoded || firstBlock.transaction.header.transactionCnt > anchor.blockHeight) return false;
+        uint256 offset = anchor.blockHeight - firstBlock.transaction.header.transactionCnt;
+        if (offset >= milestone.blockConfirmations.length) return false;
+        Block memory anchorBlock;
+        (decoded, anchorBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[offset].signedBlock.encodedBlock
+        );
+        return decoded && anchorBlock.transaction.header.forkId == dispute.input.forkId
+            && anchorBlock.transaction.header.transactionCnt == anchor.blockHeight
+            && anchorBlock.stateSnapshotHash == keccak256(abi.encode(anchor));
     }
 }

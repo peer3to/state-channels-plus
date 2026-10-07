@@ -138,10 +138,10 @@ export async function assertAuthoredLeaveFallback(
                 }
             }
         } else {
+            // the unrecognized upload failure is fatal: the leave rejects
+            // with it, and no dispute marker stays behind
             const result = await outcome;
-            expect(result.error).to.include(
-                "Terminal channel leave failed to start a dispute"
-            );
+            expect(result.error).to.include("Dispute send failed");
             expect(
                 await h.control(leaver).query.didIDispute(forkId).request()
             ).to.equal(false);
