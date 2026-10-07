@@ -10,6 +10,11 @@ export const NEGOTIATION_TIMEOUT_MS = 20_000;
 // Seconds the proposer adds to the current time for the open-channel deadline.
 // The receiver bounds the proposed deadline against this.
 export const OPEN_CHANNEL_DEADLINE_SECONDS = 60;
+// Least time a proposed deadline must leave for the receiver's submission.
+// A closer deadline is invalid, so the proposer cannot make it pay for an
+// `open` that reverts as expired.
+export const OPEN_CHANNEL_MIN_REMAINING_SECONDS =
+    OPEN_CHANNEL_DEADLINE_SECONDS / 2;
 export const NEGOTIATED_CHANNEL_DOMAIN = ethers.id(
     "peer3.state-channel.negotiated-channel.v1"
 );
@@ -81,7 +86,8 @@ export function getOpenChannelProposalMismatch(
         /** Application opening data both peers derive locally; empty by default. */
         data?: BytesLike;
     },
-    deadline: { nowSeconds: number; maxSeconds: number }
+    /** Inclusive bounds for the proposed deadline, in seconds. */
+    deadline: { minSeconds: number; maxSeconds: number }
 ): string | null {
     if (
         ethers.hexlify(decoded.channelId) !== ethers.hexlify(expected.channelId)
@@ -127,7 +133,7 @@ export function getOpenChannelProposalMismatch(
     const deadlineSeconds = Number(decoded.deadlineTimestamp);
     if (
         !Number.isFinite(deadlineSeconds) ||
-        deadlineSeconds <= deadline.nowSeconds ||
+        deadlineSeconds < deadline.minSeconds ||
         deadlineSeconds > deadline.maxSeconds
     ) {
         return "deadline out of range";

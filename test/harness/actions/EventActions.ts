@@ -201,6 +201,24 @@ export class EventActions<
         return gap;
     }
 
+    /**
+     * Wait until the chain's own clock is past `timestamp`. E2E nodes are
+     * interval-mined, so this only reads the latest block. Peer clocks only
+     * estimate chain time, so a deadline they report as passed may not be on
+     * chain yet.
+     */
+    async waitForChainTimeAfter(
+        timestamp: number,
+        timeoutMs = this.protocolEventTimeoutMs()
+    ): Promise<void> {
+        await waitFor(
+            async () =>
+                ((await this.harness.provider.getBlock("latest"))?.timestamp ??
+                    0) > timestamp,
+            timeoutMs
+        );
+    }
+
     hostExecTimeoutMs(): number {
         return this.protocolEventTimeoutMs({ withFirstBlockGrace: true }) * 2;
     }

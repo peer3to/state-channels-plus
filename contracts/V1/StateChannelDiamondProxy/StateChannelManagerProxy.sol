@@ -194,6 +194,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
+        // Opening terms are valid up to and including their deadline, the same boundary as joinChannel
+        require(
+            openChannelData.deadlineTimestamp >= block.timestamp,
+            RaceConditionOpenChannelExpired(openChannelData.deadlineTimestamp, block.timestamp)
+        );
 
         require(
             openChannelData.participants.length <= _getMaxChannelParticipants(),

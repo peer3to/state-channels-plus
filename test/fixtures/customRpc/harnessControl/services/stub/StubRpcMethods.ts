@@ -34,6 +34,10 @@ import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
 import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
+import {
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -45,9 +49,16 @@ import type {
     Hash,
     Timestamp
 } from "@/types/types";
-import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import {
+    Codec,
+    DetachedPromises,
+    sleep,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import type { ContractTransactionResponse } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -1090,7 +1101,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         // `submitOpening` is private on the service; the stub patches it by name.
         const target = service as unknown as {
-            submitOpening: (...parameters: unknown[]) => Promise<unknown>;
+            submitOpening: (
+                ...parameters: unknown[]
+            ) => Promise<ContractTransactionResponse>;
         };
         if (!this.service.stubOriginals.has("openingSubmission")) {
             this.service.stubOriginals.set(
@@ -1106,13 +1119,66 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             await new Promise<void>((resolve) => {
                 stubService.heldOpeningSubmissions.push(resolve);
             });
-            return original.apply(service, parameters);
+            // Record-only: the real submission and its outcome still reach
+            // the service unchanged.
+            try {
+                const tx = await original.apply(service, parameters);
+                DetachedPromises.collect(
+                    stubService.recordMinedOpeningRejection(tx.hash)
+                );
+                return tx;
+            } catch (error) {
+                stubService.openingSubmissionRejections.push(
+                    tryDecodeCustomError(error)?.name ?? "undecoded"
+                );
+                throw error;
+            }
         };
         return true;
     }
 
     public getHeldOpeningSubmissionCount(): number {
         return this.service.heldOpeningSubmissions.length;
+    }
+
+    public getShortOpeningDeadline(): Timestamp | null {
+        return this.service.shortOpeningDeadline;
+    }
+
+    public getOpeningSubmissionRejections(): string[] {
+        return [...this.service.openingSubmissionRejections];
+    }
+
+    /**
+     * Make this proposer's next opening terms expire `remainingSeconds` from
+     * now instead of the full opening window. The clock read that derives the
+     * deadline directly follows `buildOpeningData`, so the offset applies to
+     * that one read only; the peer's expiry observation runs on the real clock.
+     */
+    public stubShortOpeningDeadline(remainingSeconds: number): boolean {
+        const stubService = this.service;
+        this.service.shiftClockReadAfterOpeningData(
+            remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS,
+            (shiftedNow) => {
+                stubService.shortOpeningDeadline =
+                    shiftedNow + OPEN_CHANNEL_DEADLINE_SECONDS;
+            }
+        );
+        return true;
+    }
+
+    /**
+     * Make this receiver accept, for its next opening proposal only, a
+     * deadline that leaves `minimumSeconds` instead of the protocol minimum.
+     * The clock read that sets the deadline bounds directly follows
+     * `buildOpeningData`, so the offset applies to that one read only; the
+     * peer's expiry observation runs on the real clock.
+     */
+    public stubLowerOpeningMinimumWindow(minimumSeconds: number): boolean {
+        this.service.shiftClockReadAfterOpeningData(
+            minimumSeconds - OPEN_CHANNEL_MIN_REMAINING_SECONDS
+        );
+        return true;
     }
 
     /** Restore the real submission and let the parked ones proceed. */
