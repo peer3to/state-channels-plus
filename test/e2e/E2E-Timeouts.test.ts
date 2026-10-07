@@ -1,9 +1,6 @@
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import {
-    MISMATCH_TIMEOUT_ERROR,
-    assertEarlyTimeoutRetry
-} from "@test/fixtures/EarlyTimeoutRetryStaging";
+import { assertEarlyTimeoutRetry } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -426,11 +423,8 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             const { refusedTimeout, committedTimeout } =
                 await assertEarlyTimeoutRetry(h, "send", 1, 1, {
-                    customError: MISMATCH_TIMEOUT_ERROR,
-                    mismatchDirection: {
-                        expectedPosted: false,
-                        foundPosted: true
-                    }
+                    expectedPosted: false,
+                    foundPosted: true
                 });
             expect(committedTimeout).to.deep.equal(refusedTimeout);
             expect(committedTimeout.participant).to.equal(h.getPeer(1).address);

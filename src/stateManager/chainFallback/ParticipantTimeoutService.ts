@@ -9,6 +9,11 @@ import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeT
 import { ethers } from "ethers";
 
 export const TIMEOUT_RECHECK_DELAY_MS = 1000;
+// scheduleCheck reasons for a check re-armed after a refused timeout upload
+export const EARLY_TIMEOUT_RECHECK_REASON =
+    "timeoutParticipantAfterEarlySubmission";
+export const MISMATCH_TIMEOUT_RECHECK_REASON =
+    "timeoutParticipantAfterPreviousProducerMismatch";
 
 /**
  * Owns the participant-timeout check: schedules it, decides whether the

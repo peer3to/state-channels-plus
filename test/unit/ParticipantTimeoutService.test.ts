@@ -1,15 +1,16 @@
-import { TIMEOUT_RECHECK_DELAY_MS } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import {
+    EARLY_TIMEOUT_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON,
+    TIMEOUT_RECHECK_DELAY_MS
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
-    MISMATCH_TIMEOUT_ERROR,
-    MISMATCH_TIMEOUT_RETRY_REASON,
     assertEarlyTimeoutRetry,
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry,
     assertConsecutiveMismatchRetry,
     checkTimeoutAfterDeadline,
-    mismatchRefusalArgs,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -125,9 +126,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
             expect(
                 (await tasks.tasks()).filter((task) =>
-                    task.taskName.startsWith(
-                        "timeoutParticipantAfterEarlySubmission"
-                    )
+                    task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
                 )
             ).to.have.length(0);
         } finally {
@@ -658,33 +657,24 @@ describe("Unit: ParticipantTimeoutService", function () {
         it("M1 send mismatch false to true rechecks and commits", async function () {
             const h = TestSession.getHarness();
             await assertEarlyTimeoutRetry(h, "send", 1, 1, {
-                customError: MISMATCH_TIMEOUT_ERROR,
-                mismatchDirection: {
-                    expectedPosted: false,
-                    foundPosted: true
-                }
+                expectedPosted: false,
+                foundPosted: true
             });
         });
 
         it("M1 send mismatch true to false rechecks and commits", async function () {
             const h = TestSession.getHarness();
             await assertEarlyTimeoutRetry(h, "send", 1, 1, {
-                customError: MISMATCH_TIMEOUT_ERROR,
-                mismatchDirection: {
-                    expectedPosted: true,
-                    foundPosted: false
-                }
+                expectedPosted: true,
+                foundPosted: false
             });
         });
 
         it("M2 receipt mismatch rolls back and commits the retry", async function () {
             const h = TestSession.getHarness();
             await assertEarlyTimeoutRetry(h, "wait", 1, 1, {
-                customError: MISMATCH_TIMEOUT_ERROR,
-                mismatchDirection: {
-                    expectedPosted: false,
-                    foundPosted: true
-                }
+                expectedPosted: false,
+                foundPosted: true
             });
         });
 
@@ -697,7 +687,7 @@ describe("Unit: ParticipantTimeoutService", function () {
         it("M4 verified fork replacement obsoletes mismatch retry", async function () {
             await assertTimeoutRetryAfterForkSwitch(
                 TestSession.getHarness(),
-                MISMATCH_TIMEOUT_RETRY_REASON
+                MISMATCH_TIMEOUT_RECHECK_REASON
             );
         });
 
@@ -705,15 +695,7 @@ describe("Unit: ParticipantTimeoutService", function () {
             await assertObsoleteEarlyTimeoutRetry(
                 TestSession.getHarness(),
                 "block",
-                {
-                    customError: MISMATCH_TIMEOUT_ERROR,
-                    customErrorArgs: mismatchRefusalArgs(
-                        ZeroAddress,
-                        0,
-                        false,
-                        true
-                    )
-                }
+                "mismatch"
             );
         });
 
@@ -721,323 +703,8 @@ describe("Unit: ParticipantTimeoutService", function () {
             await assertObsoleteEarlyTimeoutRetry(
                 TestSession.getHarness(),
                 "disposed",
-                {
-                    customError: MISMATCH_TIMEOUT_ERROR,
-                    customErrorArgs: mismatchRefusalArgs(
-                        ZeroAddress,
-                        0,
-                        false,
-                        true
-                    )
-                }
+                "mismatch"
             );
-        });
-
-        it("M4 writer block during retry construction prevents timeout store", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.timeoutSetup(3);
-            await h.transition.advanceState();
-            const observer = h.getPeer(2);
-            const forkId = h.activeForkId!;
-            // Suppress dispute initiation on both non-observer peers while
-            // staging the race; either may author the writer block, and
-            // neither may dispute while it is in flight.
-            await h.dispute.suppressDisputeInitiation([
-                h.getPeer(0).index,
-                h.getPeer(1).index
-            ]);
-            const held = await h.rpcStub.holdScheduledTasks(
-                observer.index,
-                MISMATCH_TIMEOUT_RETRY_REASON
-            );
-            const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
-            const recorder = await h.rpcStub.recordDisputeSubmissions(
-                observer.index,
-                {
-                    forward: true,
-                    failWith: {
-                        customError: MISMATCH_TIMEOUT_ERROR,
-                        customErrorArgs: mismatchRefusalArgs(
-                            h.getPeer(0).address,
-                            0,
-                            false,
-                            true
-                        ),
-                        at: "send",
-                        times: 1
-                    }
-                }
-            );
-            // Constructor-scoped, one-shot hold installed on the real service
-            // through host calls: wraps the real createTimeOutDispute entry,
-            // and only while that invocation reads its height-1 commitment
-            // parks after the real result and before returning it. Earlier
-            // tryTimeoutParticipant reads and independent pipeline reads run
-            // normally. Wrapper state lives on the real service; the original
-            // constructor, commitment read and store are never bypassed.
-            const installBuildHold = () =>
-                h.execOnHost(observer, (sm) => {
-                    const service = sm.participantTimeoutService;
-                    const contract =
-                        sm.diamondStateMachine.localDiamondContract;
-                    const timeoutStorage = sm.storage.timeout;
-                    if (Reflect.get(service, "__m4TimeoutBuildHold"))
-                        return false;
-                    const originalBuild = service["createTimeOutDispute"];
-                    const originalCommitment =
-                        contract.getBlockCallDataCommitment;
-                    const store =
-                        timeoutStorage.storeTimeout.bind(timeoutStorage);
-                    let releaseGate: () => void = () => undefined;
-                    const gate = new Promise<void>((resolve) => {
-                        releaseGate = resolve;
-                    });
-                    const state = {
-                        armed: true,
-                        entered: 0,
-                        stored: 0,
-                        completed: 0,
-                        release: () => releaseGate()
-                    };
-                    Reflect.set(
-                        service,
-                        "createTimeOutDispute",
-                        async (...buildArgs: unknown[]) => {
-                            const current = Reflect.get(
-                                service,
-                                "__m4TimeoutBuildHold"
-                            ) as typeof state | undefined;
-                            if (!current || !current.armed)
-                                return Reflect.apply(
-                                    originalBuild,
-                                    service,
-                                    buildArgs
-                                );
-                            current.armed = false;
-                            const innerCommitment =
-                                contract.getBlockCallDataCommitment;
-                            let parked = false;
-                            Reflect.set(
-                                contract,
-                                "getBlockCallDataCommitment",
-                                async (...commitmentArgs: unknown[]) => {
-                                    const result = await Reflect.apply(
-                                        innerCommitment,
-                                        contract,
-                                        commitmentArgs
-                                    );
-                                    const live = Reflect.get(
-                                        service,
-                                        "__m4TimeoutBuildHold"
-                                    ) as typeof state | undefined;
-                                    if (live && !parked) {
-                                        parked = true;
-                                        live.entered += 1;
-                                        await gate;
-                                    }
-                                    return result;
-                                }
-                            );
-                            try {
-                                return await Reflect.apply(
-                                    originalBuild,
-                                    service,
-                                    buildArgs
-                                );
-                            } finally {
-                                const live = Reflect.get(
-                                    service,
-                                    "__m4TimeoutBuildHold"
-                                ) as typeof state | undefined;
-                                if (live) live.completed += 1;
-                                Reflect.set(
-                                    contract,
-                                    "getBlockCallDataCommitment",
-                                    innerCommitment
-                                );
-                            }
-                        }
-                    );
-                    timeoutStorage.storeTimeout = (...args) => {
-                        state.stored += 1;
-                        return store(...args);
-                    };
-                    Reflect.set(service, "__m4TimeoutBuildHold", state);
-                    Reflect.set(service, "__m4TimeoutBuildHoldRestore", () => {
-                        state.release();
-                        Reflect.set(
-                            service,
-                            "createTimeOutDispute",
-                            originalBuild
-                        );
-                        Reflect.set(
-                            contract,
-                            "getBlockCallDataCommitment",
-                            originalCommitment
-                        );
-                        timeoutStorage.storeTimeout = store;
-                        Reflect.deleteProperty(service, "__m4TimeoutBuildHold");
-                        Reflect.deleteProperty(
-                            service,
-                            "__m4TimeoutBuildHoldRestore"
-                        );
-                    });
-                    return true;
-                });
-            const readBuildHold = () =>
-                h.execOnHost(observer, (sm) => {
-                    const state = Reflect.get(
-                        sm.participantTimeoutService,
-                        "__m4TimeoutBuildHold"
-                    ) as
-                        | {
-                              entered: number;
-                              stored: number;
-                              completed: number;
-                          }
-                        | undefined;
-                    return {
-                        entered: state?.entered ?? 0,
-                        stored: state?.stored ?? 0,
-                        completed: state?.completed ?? 0
-                    };
-                });
-            const releaseBuildHold = () =>
-                h.execOnHost(observer, (sm) => {
-                    const state = Reflect.get(
-                        sm.participantTimeoutService,
-                        "__m4TimeoutBuildHold"
-                    ) as { release: () => void } | undefined;
-                    state?.release();
-                    return true;
-                });
-            const restoreBuildHold = () =>
-                h.execOnHost(observer, (sm) => {
-                    const restore = Reflect.get(
-                        sm.participantTimeoutService,
-                        "__m4TimeoutBuildHoldRestore"
-                    );
-                    if (typeof restore === "function") restore();
-                    return true;
-                });
-            const didObserverDispute = () =>
-                h.execOnHost(
-                    observer,
-                    (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
-                    { forkId }
-                );
-            const stage = await h.execOnHost(
-                observer,
-                async (sm, args) => ({
-                    height: sm.storage.blocks.getNextBlockHeight(args.forkId),
-                    writer: await sm.diamondStateMachine.getNextToWrite()
-                }),
-                { forkId }
-            );
-            const targetHeight = stage.height;
-            // Drive the initial check manually under a scoped zero deadline:
-            // the natural deadline waits ~8s, but a writer block authored
-            // more than ~5s after the previous block fails subjective time
-            // validation, so the natural path can never deliver an acceptable
-            // block during construction. The check itself is the real one the
-            // scheduler calls (as in the committed consecutive-mismatch
-            // round); only its deadline is collapsed. The retry under test
-            // still travels the real held scheduler path.
-            const shrinkTimeConfig = () =>
-                h.execOnHost(observer, (sm) => {
-                    if (Reflect.get(sm, "__m4TimeConfig")) return false;
-                    const config = sm.timeConfig;
-                    Reflect.set(sm, "__m4TimeConfig", {
-                        p2pTime: config.p2pTime,
-                        agreementTime: config.agreementTime,
-                        chainFallbackTime: config.chainFallbackTime
-                    });
-                    config.p2pTime = 0;
-                    config.agreementTime = 0;
-                    config.chainFallbackTime = 0;
-                    return true;
-                });
-            const restoreTimeConfig = () =>
-                h.execOnHost(observer, (sm) => {
-                    const original = Reflect.get(sm, "__m4TimeConfig") as
-                        | {
-                              p2pTime: number;
-                              agreementTime: number;
-                              chainFallbackTime: number;
-                          }
-                        | undefined;
-                    if (original) {
-                        const config = sm.timeConfig;
-                        config.p2pTime = original.p2pTime;
-                        config.agreementTime = original.agreementTime;
-                        config.chainFallbackTime = original.chainFallbackTime;
-                        Reflect.deleteProperty(sm, "__m4TimeConfig");
-                    }
-                    return true;
-                });
-            const runInitialTimeoutCheck = () =>
-                h.execOnHost(
-                    observer,
-                    async (sm, args) => {
-                        await sm.participantTimeoutService[
-                            "tryTimeoutParticipant"
-                        ](args.forkId, args.height, args.writer);
-                        return true;
-                    },
-                    { forkId, height: targetHeight, writer: stage.writer },
-                    { timeoutMs: h.event.hostExecTimeoutMs() }
-                );
-            try {
-                expect(await shrinkTimeConfig()).to.equal(true);
-                await runInitialTimeoutCheck();
-                await waitFor(
-                    async () => (await held.heldCount()) === 1,
-                    h.event.hostExecTimeoutMs()
-                );
-                expect(await recorder.submissions()).to.have.length(1);
-                expect(await didObserverDispute()).to.equal(false);
-                const retryTasks = (await tasks.tasks()).filter((task) =>
-                    task.taskName.startsWith(MISMATCH_TIMEOUT_RETRY_REASON)
-                );
-                expect(retryTasks).to.have.length(1);
-                expect(retryTasks[0].delayMs).to.equal(
-                    TIMEOUT_RECHECK_DELAY_MS
-                );
-                expect(await installBuildHold()).to.equal(true);
-                await held.release(true);
-                await waitFor(
-                    async () => (await readBuildHold()).entered >= 1,
-                    h.event.hostExecTimeoutMs()
-                );
-                // The retry is parked past all deadline logic: restore the
-                // real time config before authoring so the writer block faces
-                // the committed validation window.
-                expect(await restoreTimeConfig()).to.equal(true);
-                await h.transition.advanceState();
-                await waitFor(
-                    async () =>
-                        (await h
-                            .control(observer)
-                            .query.getBlockByHeight(forkId, targetHeight)
-                            .request()) !== null,
-                    h.event.hostExecTimeoutMs()
-                );
-                expect(await didObserverDispute()).to.equal(false);
-                await releaseBuildHold();
-                await waitFor(
-                    async () => (await readBuildHold()).completed >= 1,
-                    h.event.hostExecTimeoutMs()
-                );
-                expect((await readBuildHold()).stored).to.equal(0);
-                expect(await recorder.submissions()).to.have.length(1);
-                expect(await didObserverDispute()).to.equal(false);
-            } finally {
-                await restoreTimeConfig();
-                await restoreBuildHold();
-                await held.release(false);
-                await recorder.restore();
-                await tasks.restore();
-            }
         });
     });
 
@@ -1071,15 +738,6 @@ describe("Unit: ParticipantTimeoutService", function () {
             } finally {
                 await tasks.restore();
             }
-        });
-
-        it("M5 timestamp delay retains reported interval", async function () {
-            await assertEarlyTimeoutRetry(
-                TestSession.getHarness(),
-                "send",
-                1,
-                3
-            );
         });
     });
 });

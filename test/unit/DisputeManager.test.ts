@@ -1,4 +1,8 @@
 import {
+    EARLY_TIMEOUT_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
@@ -19,7 +23,10 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
-import { mismatchRefusalArgs } from "@test/fixtures/EarlyTimeoutRetryStaging";
+import {
+    MISMATCH_TIMEOUT_ERROR,
+    mismatchRefusalArgs
+} from "@test/fixtures/EarlyTimeoutRetryStaging";
 import {
     runKillSentAfterKillPeriod,
     runKillWithApplyRace,
@@ -144,14 +151,11 @@ describe("Unit: DisputeManager", function () {
         const tasks = await h.rpcStub.recordScheduledTasks(peer.index);
         const recorder = await h.rpcStub.recordDisputeSubmissions(peer.index, {
             failWith: {
-                customError:
-                    "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch",
-                customErrorArgs: mismatchRefusalArgs(
-                    ZeroAddress,
-                    0,
-                    false,
-                    true
-                ),
+                customError: MISMATCH_TIMEOUT_ERROR,
+                customErrorArgs: mismatchRefusalArgs(ZeroAddress, 0, {
+                    expectedPosted: false,
+                    foundPosted: true
+                }),
                 at: "send",
                 times: 1
             }
@@ -168,9 +172,7 @@ describe("Unit: DisputeManager", function () {
             expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
             expect(
                 (await tasks.tasks()).filter((task) =>
-                    task.taskName.startsWith(
-                        "timeoutParticipantAfterPreviousProducerMismatch"
-                    )
+                    task.taskName.startsWith(MISMATCH_TIMEOUT_RECHECK_REASON)
                 )
             ).to.have.length(0);
             expect(
@@ -1181,9 +1183,7 @@ describe("Unit: DisputeManager", function () {
             expect(r.disputed).to.equal(false);
             expect(
                 (await scheduled.tasks()).filter((task) =>
-                    task.taskName.startsWith(
-                        "timeoutParticipantAfterEarlySubmission"
-                    )
+                    task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
                 )
             ).to.deep.equal([]);
             await scheduled.restore();
@@ -1267,7 +1267,7 @@ describe("Unit: DisputeManager", function () {
                     (await tasks.tasks()).filter(
                         (task) =>
                             task.taskName.startsWith(
-                                "timeoutParticipantAfterEarlySubmission"
+                                EARLY_TIMEOUT_RECHECK_REASON
                             ) ||
                             task.taskName.startsWith(
                                 "timeoutParticipantAfterPostedBlockRejected"
@@ -1345,7 +1345,7 @@ describe("Unit: DisputeManager", function () {
                     (await tasks.tasks()).filter(
                         (task) =>
                             task.taskName.startsWith(
-                                "timeoutParticipantAfterEarlySubmission"
+                                EARLY_TIMEOUT_RECHECK_REASON
                             ) ||
                             task.taskName.startsWith(
                                 "timeoutParticipantAfterPostedBlockRejected"
@@ -1432,9 +1432,7 @@ describe("Unit: DisputeManager", function () {
                 // the early-refusal re-arm is what carries this fork forward
                 expect(
                     (await tasks.tasks()).filter((task) =>
-                        task.taskName.startsWith(
-                            "timeoutParticipantAfterEarlySubmission"
-                        )
+                        task.taskName.startsWith(EARLY_TIMEOUT_RECHECK_REASON)
                     )
                 ).to.not.have.length(0);
             } finally {

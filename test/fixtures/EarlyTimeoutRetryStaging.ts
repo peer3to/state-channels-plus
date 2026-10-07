@@ -2,57 +2,102 @@
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import Clock from "@/Clock";
+import {
+    EARLY_TIMEOUT_RECHECK_REASON,
+    MISMATCH_TIMEOUT_RECHECK_REASON
+} from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { timeoutWaitTime } from "@/types";
 import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type, sleep } from "@/utils";
-import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
+import type { CustomErrorArg } from "@test/factory";
+import type { DisputeSubmissionFailureSpec } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
 import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
-import { hexlify } from "ethers";
+import { ZeroAddress, hexlify } from "ethers";
 
-export const EARLY_TIMEOUT_RETRY_REASON =
-    "timeoutParticipantAfterEarlySubmission";
-export const MISMATCH_TIMEOUT_RETRY_REASON =
-    "timeoutParticipantAfterPreviousProducerMismatch";
 export const MISMATCH_TIMEOUT_ERROR =
     "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch";
 
-export type TimeoutRetryRefusal = {
-    customError?: RaceConditionErrorName;
-    customErrorArgs?: string[];
-    // Builds mismatch args from the real predecessor slot once staging knows
-    // it. Peer addresses only exist after channel setup, so mismatch callers
-    // pass the direction here instead of precomputing args up front.
-    mismatchDirection?: {
-        expectedPosted: boolean;
-        foundPosted: boolean;
-    };
+/** The refused (expected, found) posting state of the previous producer. */
+export type MismatchDirection = {
+    expectedPosted: boolean;
+    foundPosted: boolean;
 };
-
-function retryReasonFor(customError: string | undefined): string {
-    return customError === MISMATCH_TIMEOUT_ERROR
-        ? MISMATCH_TIMEOUT_RETRY_REASON
-        : EARLY_TIMEOUT_RETRY_REASON;
-}
 
 export function mismatchRefusalArgs(
     producer: string,
     height: number,
-    expectedPosted: boolean,
-    foundPosted: boolean
-): string[] {
-    // customErrorArgs is typed string[], but the string "false" is truthy and
-    // would ABI-encode as true, collapsing both directions into one. Real
-    // booleans keep the refused (expected, found) pair exact; the cast only
-    // satisfies the string[] boundary into the stub's revert encoder.
-    return [
-        producer,
-        String(height),
-        expectedPosted,
-        foundPosted
-    ] as unknown as string[];
+    { expectedPosted, foundPosted }: MismatchDirection
+): CustomErrorArg[] {
+    // Real booleans: the string "false" is truthy and would ABI-encode as true.
+    return [producer, String(height), expectedPosted, foundPosted];
+}
+
+/**
+ * Hold, task recorder and submission recorder for one peer's re-armed timeout
+ * check, with a single teardown. Hold before recording: a held re-arm only
+ * reaches the recorder when the hold wraps outside it. Releasing the hold
+ * restores the pre-record scheduler, so re-arms queued after the release are
+ * invisible here; callers prove those through the submission count instead.
+ */
+async function installRetryProbes(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    reason: string,
+    failWith: DisputeSubmissionFailureSpec
+) {
+    const held = await h.rpcStub.holdScheduledTasks(peerIndex, reason);
+    const tasks = await h.rpcStub.recordScheduledTasks(peerIndex);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(peerIndex, {
+        forward: true,
+        failWith
+    });
+    return {
+        held,
+        recorder,
+        retryTasks: async () =>
+            (await tasks.tasks()).filter((task) =>
+                task.taskName.startsWith(reason)
+            ),
+        // One refusal so far, and its re-arm is held after exactly `delayMs`.
+        expectOneHeldRearm: async (delayMs: number) => {
+            await waitFor(
+                async () => (await held.heldCount()) === 1,
+                h.event.hostExecTimeoutMs()
+            );
+            const parked = (await tasks.tasks()).filter((task) =>
+                task.taskName.startsWith(reason)
+            );
+            expect(parked).to.have.length(1);
+            expect(parked[0].delayMs).to.equal(delayMs);
+            expect(await recorder.submissions()).to.have.length(1);
+        },
+        restore: async () => {
+            await held.release(false);
+            await recorder.restore();
+            await tasks.restore();
+        }
+    };
+}
+
+function didDispute(h: MathPeerTestHarness, peerIndex: number, forkId: ForkId) {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
+        { forkId }
+    );
+}
+
+/** Every submission must carry the same timeout as the first, refused one. */
+function expectSameTimeout(encodedDisputes: string[]): TimeoutStruct[] {
+    const timeouts = encodedDisputes.map(
+        (encoded) => Codec.decode(encoded, Type.Dispute).input.timeout
+    );
+    for (const timeout of timeouts.slice(1))
+        expect(timeout).to.deep.equal(timeouts[0]);
+    return timeouts;
 }
 
 export async function assertEarlyTimeoutRetry(
@@ -60,126 +105,92 @@ export async function assertEarlyTimeoutRetry(
     at: "send" | "wait",
     failures: number,
     differenceSeconds = 1,
-    refusal?: TimeoutRetryRefusal
+    mismatch?: MismatchDirection
 ): Promise<{ refusedTimeout: TimeoutStruct; committedTimeout: TimeoutStruct }> {
-    const isMismatch = refusal?.customError === MISMATCH_TIMEOUT_ERROR;
     await h.lifecycle.timeoutSetup(3);
-    if (isMismatch) {
-        await h.transition.advanceState();
-    }
-    const observerIndex = isMismatch ? 2 : 1;
-    const peer = h.getPeer(observerIndex);
+    // A mismatch needs a stored predecessor block: advance once, so peer 0
+    // authored it and observer 2 times out writer 1. Delays are literal so a
+    // changed TIMEOUT_RECHECK_DELAY_MS turns these checks red.
+    if (mismatch) await h.transition.advanceState();
+    const scenario = mismatch
+        ? {
+              observerIndex: 2,
+              suppressedIndex: 0,
+              reason: MISMATCH_TIMEOUT_RECHECK_REASON,
+              delayMs: 1000,
+              failWith: {
+                  customError: MISMATCH_TIMEOUT_ERROR,
+                  customErrorArgs: mismatchRefusalArgs(
+                      h.getPeer(0).address,
+                      0,
+                      mismatch
+                  ),
+                  at,
+                  times: failures
+              } satisfies DisputeSubmissionFailureSpec
+          }
+        : {
+              observerIndex: 1,
+              suppressedIndex: 2,
+              reason: EARLY_TIMEOUT_RECHECK_REASON,
+              delayMs: Math.max(1, differenceSeconds) * 1000,
+              failWith: {
+                  customError: "RaceConditionDisputeTimeoutNotMinTimestamp",
+                  customErrorArgs: [String(differenceSeconds + 1), "1"],
+                  at,
+                  times: failures
+              } satisfies DisputeSubmissionFailureSpec
+          };
     const forkId = h.activeForkId!;
     await h.dispute.suppressDisputeInitiation([
-        h.getPeer(isMismatch ? 0 : 2).index
+        h.getPeer(scenario.suppressedIndex).index
     ]);
-    const retryReason = retryReasonFor(refusal?.customError);
-    const expectedDelayMs = isMismatch
-        ? 1000
-        : Math.max(1, differenceSeconds) * 1000;
-    const direction = refusal?.mismatchDirection ?? {
-        expectedPosted: false,
-        foundPosted: true
-    };
-    const refusalArgs =
-        refusal?.customErrorArgs ??
-        (isMismatch
-            ? mismatchRefusalArgs(
-                  h.getPeer(0).address,
-                  0,
-                  direction.expectedPosted,
-                  direction.foundPosted
-              )
-            : [String(differenceSeconds + 1), "1"]);
-    // Hold before recording: a held re-arm only reaches the recorder when the
-    // hold wraps outside it. Releasing the hold restores the pre-record
-    // scheduler, so re-arms queued after the release are invisible here;
-    // their attempts (counted below) carry that half of the proof instead.
-    const held = await h.rpcStub.holdScheduledTasks(observerIndex, retryReason);
-    const tasks = await h.rpcStub.recordScheduledTasks(observerIndex);
-    const recorder = await h.rpcStub.recordDisputeSubmissions(observerIndex, {
-        forward: true,
-        failWith: {
-            customError:
-                refusal?.customError ??
-                "RaceConditionDisputeTimeoutNotMinTimestamp",
-            customErrorArgs: refusalArgs,
-            at,
-            times: failures
-        }
-    });
+    const probes = await installRetryProbes(
+        h,
+        scenario.observerIndex,
+        scenario.reason,
+        scenario.failWith
+    );
     try {
-        await waitFor(
-            async () => (await held.heldCount()) === 1,
-            h.event.hostExecTimeoutMs()
+        await probes.expectOneHeldRearm(scenario.delayMs);
+        expect(await didDispute(h, scenario.observerIndex, forkId)).to.equal(
+            false
         );
-        expect(
-            await h.execOnHost(
-                peer,
-                (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
-                { forkId }
-            )
-        ).to.equal(false);
-        const retryTasks = (await tasks.tasks()).filter((task) =>
-            task.taskName.startsWith(retryReason)
-        );
-        expect(retryTasks).to.have.length(1);
-        expect(retryTasks[0].delayMs).to.equal(expectedDelayMs);
         if (failures > 1) {
+            // While the first re-arm is held nothing else may submit (no spin).
             await sleep(1000);
-            expect(await held.heldCount()).to.equal(1);
-            expect(await recorder.submissions()).to.have.length(1);
+            expect(await probes.held.heldCount()).to.equal(1);
+            expect(await probes.recorder.submissions()).to.have.length(1);
         }
-        await held.release(true);
+        await probes.held.release(true);
         await waitFor(
-            async () => (await recorder.submissions()).length === failures + 1,
+            async () =>
+                (await probes.recorder.submissions()).length === failures + 1,
             h.event.hostExecTimeoutMs()
         );
         await h.assert.dispute.committedWait({
-            peersIndices: [observerIndex],
+            peersIndices: [scenario.observerIndex],
             expectedCount: 1,
             mode: "atLeast"
         });
-        const submissions = await recorder.submissions();
+        const submissions = await probes.recorder.submissions();
         expect(submissions).to.have.length(failures + 1);
-        const original = Codec.decode(
-            submissions[0].encodedDispute,
-            Type.Dispute
+        const timeouts = expectSameTimeout(
+            submissions.map((submission) => submission.encodedDispute)
         );
-        for (const submission of submissions.slice(1)) {
-            const retried = Codec.decode(
-                submission.encodedDispute,
-                Type.Dispute
-            );
-            expect(retried.input.timeout).to.deep.equal(original.input.timeout);
-        }
-        expect(
-            await h.execOnHost(
-                peer,
-                (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
-                { forkId }
-            )
-        ).to.equal(true);
+        expect(await didDispute(h, scenario.observerIndex, forkId)).to.equal(
+            true
+        );
         // Exactly one re-arm is ever recorded: the held first one. Later
         // re-arms are scheduled after the hold's release, past the recorder
         // (see above), so their count is proven by the attempt count instead.
-        expect(
-            (await tasks.tasks()).filter((task) =>
-                task.taskName.startsWith(retryReason)
-            )
-        ).to.have.length(1);
-        const committed = Codec.decode(
-            submissions[submissions.length - 1].encodedDispute,
-            Type.Dispute
-        );
+        expect(await probes.retryTasks()).to.have.length(1);
         return {
-            refusedTimeout: original.input.timeout,
-            committedTimeout: committed.input.timeout
+            refusedTimeout: timeouts[0],
+            committedTimeout: timeouts[timeouts.length - 1]
         };
     } finally {
-        await held.release(false);
-        await recorder.restore();
-        await tasks.restore();
+        await probes.restore();
     }
 }
 
@@ -201,70 +212,37 @@ export async function assertConsecutiveMismatchRetry(
     const predecessor = h.getPeer(0);
     const forkId = h.activeForkId!;
     await h.dispute.suppressDisputeInitiation([predecessor.index]);
-    const refusalArgs = mismatchRefusalArgs(
-        predecessor.address,
-        0,
-        false,
-        true
-    );
-    const didDispute = () =>
-        h.execOnHost(
-            peer,
-            (sm, args) => sm.storage.disputes.didIDispute(args.forkId),
-            { forkId }
-        );
-    const held = await h.rpcStub.holdScheduledTasks(
-        observerIndex,
-        MISMATCH_TIMEOUT_RETRY_REASON
-    );
-    const tasks = await h.rpcStub.recordScheduledTasks(observerIndex);
-    const recorder = await h.rpcStub.recordDisputeSubmissions(observerIndex, {
-        forward: true,
-        failWith: {
-            customError: MISMATCH_TIMEOUT_ERROR,
-            customErrorArgs: refusalArgs,
-            at: "send",
-            times: 1
-        }
-    });
+    const failWith: DisputeSubmissionFailureSpec = {
+        customError: MISMATCH_TIMEOUT_ERROR,
+        customErrorArgs: mismatchRefusalArgs(predecessor.address, 0, {
+            expectedPosted: false,
+            foundPosted: true
+        }),
+        at: "send",
+        times: 1
+    };
     let firstEncoded: string;
-    try {
-        await waitFor(
-            async () => (await held.heldCount()) === 1,
-            h.event.hostExecTimeoutMs()
-        );
-        expect(await didDispute()).to.equal(false);
-        const parked = (await tasks.tasks()).filter((task) =>
-            task.taskName.startsWith(MISMATCH_TIMEOUT_RETRY_REASON)
-        );
-        expect(parked).to.have.length(1);
-        expect(parked[0].delayMs).to.equal(1000);
-        await sleep(1000);
-        expect(await held.heldCount()).to.equal(1);
-        const first = await recorder.submissions();
-        expect(first).to.have.length(1);
-        firstEncoded = first[0].encodedDispute;
-    } finally {
-        await held.release(false);
-        await recorder.restore();
-        await tasks.restore();
-    }
-    const heldAgain = await h.rpcStub.holdScheduledTasks(
+    const first = await installRetryProbes(
+        h,
         observerIndex,
-        MISMATCH_TIMEOUT_RETRY_REASON
+        MISMATCH_TIMEOUT_RECHECK_REASON,
+        failWith
     );
-    const tasksAgain = await h.rpcStub.recordScheduledTasks(observerIndex);
-    const recorderAgain = await h.rpcStub.recordDisputeSubmissions(
+    try {
+        await first.expectOneHeldRearm(1000);
+        expect(await didDispute(h, observerIndex, forkId)).to.equal(false);
+        await sleep(1000);
+        expect(await first.held.heldCount()).to.equal(1);
+        firstEncoded = (await first.recorder.submissions())[0].encodedDispute;
+    } finally {
+        await first.restore();
+    }
+
+    const second = await installRetryProbes(
+        h,
         observerIndex,
-        {
-            forward: true,
-            failWith: {
-                customError: MISMATCH_TIMEOUT_ERROR,
-                customErrorArgs: refusalArgs,
-                at: "send",
-                times: 1
-            }
-        }
+        MISMATCH_TIMEOUT_RECHECK_REASON,
+        failWith
     );
     try {
         await h.execOnHost(
@@ -280,20 +258,11 @@ export async function assertConsecutiveMismatchRetry(
             { forkId, height: 1, writer: writer.address },
             { timeoutMs: h.event.hostExecTimeoutMs() }
         );
+        await second.expectOneHeldRearm(1000);
+        expect(await didDispute(h, observerIndex, forkId)).to.equal(false);
+        await second.held.release(true);
         await waitFor(
-            async () => (await heldAgain.heldCount()) === 1,
-            h.event.hostExecTimeoutMs()
-        );
-        expect(await didDispute()).to.equal(false);
-        const parkedAgain = (await tasksAgain.tasks()).filter((task) =>
-            task.taskName.startsWith(MISMATCH_TIMEOUT_RETRY_REASON)
-        );
-        expect(parkedAgain).to.have.length(1);
-        expect(parkedAgain[0].delayMs).to.equal(1000);
-        expect(await recorderAgain.submissions()).to.have.length(1);
-        await heldAgain.release(true);
-        await waitFor(
-            async () => (await recorderAgain.submissions()).length === 2,
+            async () => (await second.recorder.submissions()).length === 2,
             h.event.hostExecTimeoutMs()
         );
         await h.assert.dispute.committedWait({
@@ -301,29 +270,22 @@ export async function assertConsecutiveMismatchRetry(
             expectedCount: 1,
             mode: "atLeast"
         });
-        const submissions = await recorderAgain.submissions();
+        const submissions = await second.recorder.submissions();
         expect(submissions).to.have.length(2);
-        const original = Codec.decode(firstEncoded, Type.Dispute);
-        for (const encoded of [
-            submissions[0].encodedDispute,
-            submissions[1].encodedDispute
-        ]) {
-            expect(
-                Codec.decode(encoded, Type.Dispute).input.timeout
-            ).to.deep.equal(original.input.timeout);
-        }
-        expect(await didDispute()).to.equal(true);
+        expectSameTimeout([
+            firstEncoded,
+            ...submissions.map((submission) => submission.encodedDispute)
+        ]);
+        expect(await didDispute(h, observerIndex, forkId)).to.equal(true);
     } finally {
-        await heldAgain.release(false);
-        await recorderAgain.restore();
-        await tasksAgain.restore();
+        await second.restore();
     }
 }
 
 export async function assertObsoleteEarlyTimeoutRetry(
     h: MathPeerTestHarness,
     change: "block" | "disposed",
-    refusal?: TimeoutRetryRefusal
+    refusal: "early" | "mismatch" = "early"
 ): Promise<void> {
     await h.lifecycle.start(3, 0, {
         configOverrides:
@@ -335,7 +297,10 @@ export async function assertObsoleteEarlyTimeoutRetry(
             ? runtimeEndpointFor(peer.p2pInstance)
             : undefined;
     const forkId = h.activeForkId!;
-    const retryReason = retryReasonFor(refusal?.customError);
+    const retryReason =
+        refusal === "mismatch"
+            ? MISMATCH_TIMEOUT_RECHECK_REASON
+            : EARLY_TIMEOUT_RECHECK_REASON;
     const held = await h.rpcStub.holdScheduledTasks(1, retryReason);
     const state = await h.execOnHost(peer, (sm) => ({
         timestamp: sm.storage.getPreviousBlockOrSnapshot({
@@ -346,17 +311,24 @@ export async function assertObsoleteEarlyTimeoutRetry(
     }));
     const minimum = state.timestamp + timeoutWaitTime(state.timeConfig, 0);
     const recorder = await h.rpcStub.recordDisputeSubmissions(1, {
-        failWith: {
-            customError:
-                refusal?.customError ??
-                "RaceConditionDisputeTimeoutNotMinTimestamp",
-            customErrorArgs: refusal?.customErrorArgs ?? [
-                String(minimum),
-                String(minimum - 1)
-            ],
-            at: "send",
-            times: 1
-        }
+        failWith:
+            refusal === "mismatch"
+                ? {
+                      customError: MISMATCH_TIMEOUT_ERROR,
+                      // Height 0 has no predecessor block on this channel.
+                      customErrorArgs: mismatchRefusalArgs(ZeroAddress, 0, {
+                          expectedPosted: false,
+                          foundPosted: true
+                      }),
+                      at: "send",
+                      times: 1
+                  }
+                : {
+                      customError: "RaceConditionDisputeTimeoutNotMinTimestamp",
+                      customErrorArgs: [String(minimum), String(minimum - 1)],
+                      at: "send",
+                      times: 1
+                  }
     });
     try {
         // Enter the real timeout constructor before the local deadline. The
@@ -402,7 +374,7 @@ export async function assertObsoleteEarlyTimeoutRetry(
 
 export async function assertTimeoutRetryAfterForkSwitch(
     h: MathPeerTestHarness,
-    retryReason = EARLY_TIMEOUT_RETRY_REASON
+    retryReason = EARLY_TIMEOUT_RECHECK_REASON
 ): Promise<void> {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
     const target = h.getPeer(0);

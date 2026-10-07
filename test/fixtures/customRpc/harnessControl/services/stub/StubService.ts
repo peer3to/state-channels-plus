@@ -296,7 +296,7 @@ async function withRevertData(
 export type DisputeSubmissionFailureSpec = {
     /** Solidity custom error to revert with (its selector is the revert data). */
     customError?: RaceConditionErrorName;
-    customErrorArgs?: string[];
+    customErrorArgs?: factory.CustomErrorArg[];
     /** Fail only this many submissions; later submissions follow `forward`. */
     times?: number;
     /** Failure message when the failure is not a decodable custom error. */

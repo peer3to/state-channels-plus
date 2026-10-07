@@ -555,9 +555,13 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
  *
  * Throws when `errorName` is not a known contract error.
  */
+// One ABI value for a custom-error parameter: numbers, addresses and bytes as
+// strings, `bool` parameters as real booleans (the string "false" encodes true).
+export type CustomErrorArg = string | boolean;
+
 export function encodedCustomErrorRevert(
     errorName: string,
-    args?: string[]
+    args?: CustomErrorArg[]
 ): Bytes {
     const errorInterface = getErrorInterface();
     const errorFragment = errorInterface.getError(errorName);
