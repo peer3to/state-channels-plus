@@ -431,12 +431,13 @@ contract LocalDiamond is StateChannelManagerProxy {
         return _isDisputeInboundAnchorBehindLatestState(dispute, latestStateSnapshot);
     }
 
-    function getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
+    /// The state-proof walk from a locally trusted final snapshot instead of the mirrored anchor (local only).
+    function verifyMilestonesFromTrustedStart(ProofWalkInput memory input, StateSnapshot memory trustedSnapshot)
         public
-        pure
-        returns (BlockConfirmation[] memory)
+        view
+        returns (ProofWalkResult memory)
     {
-        return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+        return _walkStateProof(input, trustedSnapshot);
     }
 
     // ========== Override for debugging - Browser compatible console logs ==========

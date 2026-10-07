@@ -173,6 +173,9 @@ async function main(options = {}) {
     const manager = new WorkerLeaseManager({
         queueLength: config.queueLength,
         onGrant(connection) {
+            // These flags belong to one lease, not the reusable connection.
+            connection.stopRequested = false;
+            connection.preparationPromise = null;
             connection.peer
                 .send("LEASE_GRANTED", {
                     capabilities: capabilities(
@@ -411,6 +414,9 @@ async function main(options = {}) {
                 30000,
                 setupCancellation.signal
             );
+            // Cleanup can abort this wait while the offer write is pending;
+            // the rejection is still observed by `await needed` below.
+            needed.catch(() => {});
             let need;
             try {
                 await environment.send("WORKSPACE_OFFER", { manifest });
@@ -946,12 +952,14 @@ async function main(options = {}) {
                     "PREPARED",
                     config.preparationInactivityTimeoutMs
                 );
+                connection.preparationPromise = prepared;
+                prepared.catch(() => {});
                 await connection.environment.send("SOURCE_COMPLETE", {
                     byteCount: message.header.byteCount,
                     sha256: message.header.sha256
                 });
                 await prepared;
-                if (connection.closing) return;
+                if (connection.closing || connection.stopRequested) return;
                 connection.sourceTransfer = null;
                 connection.prepared = true;
                 manager.markRunning(connection);
@@ -994,6 +1002,7 @@ async function main(options = {}) {
                         slotCount: profile.slots,
                         concurrencyCap: profile.workers,
                         schedulerTickMs: profile.schedulerTickMs,
+                        cpuLimit: profile.cpu,
                         targetLoad: profile.targetLoad,
                         memBoundGb: profile.memoryBytes / 1024 ** 3,
                         maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
@@ -1045,6 +1054,20 @@ async function main(options = {}) {
                 // run finished on other workers first); its clean exit must
                 // not be reported as a startup failure.
                 connection.stopRequested = true;
+                if (
+                    message.kind === "RUN_COMPLETE" &&
+                    connection.preparationPromise
+                ) {
+                    await reportStatus(
+                        connection,
+                        "Finishing workspace preparation before cleanup"
+                    );
+                    // A normal run ending must not repeatedly cancel a cold build.
+                    // Explicit cancellation and disconnect still stop promptly.
+                    await connection.preparationPromise.catch(() => {});
+                    if (manager.active !== connection || connection.closing)
+                        return;
+                }
                 await reportStatus(connection, "Cleaning completed lease");
                 if (connection.workerStarted) {
                     sendToWorker(connection, {

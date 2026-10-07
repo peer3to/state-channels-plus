@@ -60,6 +60,13 @@ function budgetHoldReason(reason) {
 function holdReason(options) {
     const { running, concurrencyCap, resourceGate, memBoundGb, targetLoad } =
         options;
+    if (
+        resourceGate.lastHoldReason === "memory" &&
+        resourceGate.lastMemoryHold
+    ) {
+        const { occupiedGb, thresholdGb } = resourceGate.lastMemoryHold;
+        return `memory (admission ${occupiedGb.toFixed(1)}≥${thresholdGb.toFixed(1)}GB)`;
+    }
     if (running >= concurrencyCap)
         return `cap (running ${running}/${concurrencyCap})`;
     if (resourceGate.cpuMeasured === false)
@@ -74,7 +81,45 @@ function holdReason(options) {
     return `cpu ${(resourceGate.cpuUtil * 100).toFixed(0)}%>=${(targetLoad * 100).toFixed(0)}%`;
 }
 
+// Shared owner of the distributed worker's account and resource admission.
+async function allowsWorkerAssignment(
+    { scheduler, taskResources, resources, config, logging },
+    running,
+    assignment,
+    activeAssignments
+) {
+    const schedule = scheduler.options.schedule;
+    const accountsAvailable = taskResources.canAcquire(assignment?.task);
+    const allowed =
+        accountsAvailable &&
+        (await resources.allows(
+            running,
+            config.concurrencyCap,
+            admissionCost(schedule, assignment, activeAssignments)
+        ));
+    if (!allowed) {
+        const reason = !accountsAvailable
+            ? "waiting for a funded account partition"
+            : holdReason({
+                  schedule,
+                  running,
+                  concurrencyCap: config.concurrencyCap,
+                  resourceGate: resources,
+                  memBoundGb: config.memBoundGb,
+                  targetLoad: config.targetLoad
+              });
+        logging.hold({
+            seq: assignment?.seq ?? scheduler.bufferedAssignment?.seq ?? 1,
+            total: config.taskCount,
+            reason,
+            buffered: scheduler.bufferedCount
+        });
+    }
+    return allowed;
+}
+
 module.exports = {
+    allowsWorkerAssignment,
     admissionCost,
     budgetHoldReason,
     buildSlotEnv,

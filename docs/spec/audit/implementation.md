@@ -3,6 +3,49 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## PR #520 third-review and CI corrections (2026-10-07)
+
+The [localDiamond report](../implementation/source/src/utils/localDiamond.ts.md) now anchors its
+conformance claims to the current declarations and expressions. The
+[stale-membership test report](../verification/tests/test/e2e/E2E-StaleMembershipDispute.test.ts.md)
+records direct malicious-dispute submission instead of a double-sign trigger that also opened an
+unrelated honest dispute. The
+[balance-invariant test report](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
+records the previously approved 15-second evidence window for both sequential audit orders.
+Their existing membership-fraud, exact-counter, slash and reduction oracles are retained.
+The CI artifacts demonstrate expired evidence/kill windows, not an invalid membership-proof verdict.
+No SDK or contract behavior changes are made for these failures; the sync-reduction gas finding remains deferred.
+
+## PR #520 second-review corrections (2026-10-07)
+
+The local-first revert behavior is unchanged: local errors propagate without a chain fallback.
+The [local-mirror test plan](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1)
+now names separate fatal-revert permutations for the four audit predicates and dispute construction.
+Their existing declarations are mapped in the
+[audit-read report](../verification/tests/test/unit/DisputeValidationServiceLocalFirst.test.ts.md)
+and [construction report](../verification/tests/test/unit/DisputeManagerLocalFirst.test.ts.md).
+The [local binding report](../implementation/source/src/utils/localDiamond.ts.md) also removes
+obsolete revert-fallback claims and gives the helper's two revert tests explicit obligations.
+This repairs traceability, not the deferred sync-reduction gas finding; that finding remains open.
+Runtime validation is recorded in the private round-two assessment; this paragraph makes no
+claim that the full gate passed on the modified tree.
+
+## PR #520 author decisions (2026-10-07)
+
+Luka confirms the deliberate fixture timing increases, including `balanceInvariant`’s 15-second evidence
+window, as exceptions permitted by the test guidance. Keep PR #520 targeting `crew/cost-scheduler`;
+its base-relative integration scope is intentional. Neither decision certifies runtime tests or closes
+unrelated protocol findings. The P2P timing changes were also explicitly requested earlier.
+
+Luka deferred SO1 and its complete local/on-chain reduction gas investigation outside this PR; see
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985).
+Successful on-chain replay must be established in the follow-up. Local exhaustion alone does not prove
+on-chain impossibility, and this PR does not change reduction failure handling.
+
+## Local discovery endpoint replacement
+
+The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
+
 ## Runtime cleanup and context forwarding
 
 [LocalDiscoveryServer](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) checks the accepting manager before constructing an inbound transport, including while shared discovery remains active. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) suppresses context echo to the inbound connection, so rapid channel changes do not replay older values between adjacent roots. These repairs preserve the existing lifecycle and identity requirements.
@@ -499,60 +542,21 @@ limits applies to a fixed high limit, not to a proportional margin.
 **Residual.** Production nodes keep their own estimators; the durable fix for their nine executions is
 a shallower fraud-proof call path in the contracts, recorded for a separate review.
 
-## Local-first dispute audit — 2026-09-26, reduction chain-only since 2026-09-27
+## Local-first dispute audit and milestone proof tiers
 
-**Change.** Dispute audit and dispute construction read the local diamond first and ask the chain
-only for the answer that would make the node act ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys);
-[`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) defers to it).
-[localDiamond.ts](../implementation/source/src/utils/localDiamond.ts.md) owns `preferLocal`;
-[evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md) owns the revert marker it falls back on.
-Per decision: the audit accepts a clearing local answer and confirms a fraud-proof answer on-chain
-([DisputeValidationService.ts](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md));
-construction posts auditing data on a local "not final" and confirms a local "final"
-([DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md)). Reduction and reduced-result
-validation were local-first for one round and are chain-only again (engineer decision 2026-09-27,
-review item LO4): the local diamond has no sync guarantee, so a local first pass did not lower chain
-reads on average (a lagging mirror cost more reads than chain-only). [ReductionExecutor.ts](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
-is back to one pass with the chain-computed candidate, and
-[EventHandler.ts](../implementation/source/src/eventHandlers/EventHandler.ts.md) validates a committed reduced result with
-`ReductionManager.computeReduction`.
+AgreementManager owns verification from local finalized state, local diamond and canonical chain.
+Only missing or completed false results move to the next tier. Local reverts, executor failures,
+required-state failures and RPC failures propagate; they do not become invalid-proof verdicts.
+Independent availability, below-anchor or final-conflict counters can stop audit before these tiers.
+Replay restarts from each tier's verified state. Block-specific challenge eligibility depends on
+the canonical anchor, so the old pure/global header-check account no longer applies.
 
-**Assessment.** Every answer that stakes the node — a stored fraud proof, omitted auditing data — is
-still decided by the chain, and the pure header check runs locally only because it reads no
-replicated state. The accepted residual is a lagging mirror that clears a fraudulent dispute: this
-node then misses one challenge, and the other honest auditors still audit. State-proof verification
-first turned any error from the read into an invalid verdict, recorded as
-[`FIND-MIRROR-1-YECYEQ`](open-findings.md#find-mirror-1-yecyeq); it is resolved: only a chain revert
-(`CALL_EXCEPTION`) rejects the proof, and every other failure is rethrown as an audit error.
-
-**Evidence.** The `preferLocal` policy
-([`UNIT-TEST-PREFER-LOCAL-1-XC95T6`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6) P1–P10) has unit
-tests, including a real executor revert. A harness `mirror` control makes the mirror and the chain
-really disagree (held mirror updates, a lagging store, a chain read served before a named event) and
-fails one read by revert or by transport, record-only. With it,
-[`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-4-e7pe6x)
-is mapped one scenario per permutation, now including the header check in both directions with no
-chain read (P9, P29), chain-confirmation transport failures for the three boolean audit predicates
-(P30–P32), and a non-revert local failure of state-proof verification (P33); the DisputeManager
-finality permutations and most of [`REQ-MIRROR-4-H9C4YS.T1`](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1)
-are mapped; an E2E audits an honest dispute with a lagging mirror under ordinary protocol timing and
-shows no proof, kill or slash. The local "incorrect"/chain "correct" case of the latest-state check
-and the local "invalid"/chain "valid" case of state-proof verification (E7PE6X P3, P5) are staged
-with real state (review 6 TO7, TO8): a dispute constructed at genesis goes stale after a same-fork
-snapshot post, the auditor's mirror sees the post, and the chain view is served from the block
-before it, so the chain answers "correct"/"valid"; the chain answer wins and no
-`DisputeInvalidStateProof` is stored. The earlier argument that lag can only move these predicates
-toward "true" missed the case where the chain view is behind the mirror (a lagging RPC), which moves them the other way. Four
-skipped `DisputeValidationService` cases carry dispositions in the test file: three are unreachable,
-and the equality boundary of the too-early check needs owned chain time, which the shared session
-node does not allow; it stays outstanding. With reduction chain-only, the local-candidate permutations of
-[`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37)
-and the local reduced-result permutations of
-[`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w)
-are deleted, and so are the three local-candidate E2E cases and the reduced-result local-first unit
-suite. A reduced-result challenge E2E remains unreachable through honest staging: the on-chain
-`reduce` is hash-bound to the committed disputes, so a peer cannot commit a wrong reduced result
-without a contract-level tamper hook.
+Construction starts from the mirrored chain anchor. Omission follows the empty-genesis or last
+milestone anchor/everyone rule. Reduction and committed-result validation retain their chain-owned
+computation. A different trusted start may skip older history; this is not proof that all auditors
+must check identical bytes. Concrete source owners and exact permutation evidence are linked from
+[state proofs](../implementation/views/protocol/state-proofs.md). The full source/test gate passed
+before documentation edits; individual Covers assignments still require semantic inspection.
 
 ## Signature-parity authentication, upfront replay funding, and local EVM call gas — 2026-09-27
 
@@ -711,3 +715,31 @@ against a peer that was only mid-handshake. It does not, and no code change was 
 shutdown `StateManager.stop()` sets `isDisposed` before `localRpc.dispose()` runs, and
 `HandshakeAdmissionPolicy.onExpired` returns early when the state manager is disposed. The settled
 handshake wait therefore never leads to an expiry warning or a retry disconnect.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.
+
+## Milestone proof review repairs
+
+The proof owner now separates an exact final height from later virtual-voting support, including stored evidence above a frozen view. Verification returns its actual trusted start atomically with the verdict. Audit rechecks conflicting final history after asynchronous verification and refused persistence. The invalid-step handler no longer walks an unrelated final milestone to decide omission permission. Membership deadline work retains a join generation and fork across reads and scheduling, and missing old history uses an explicit validation-strategy deviation. These repairs preserve the existing finality, checked-region persistence and lifecycle rules.
+
+The exact-height participant-change follow-up adds no production behavior. Its owner-level coverage checks join and exit union evidence beyond the requested final height, removal of the sole later required vote, and both single-hop and two-hop construction from audit evidence above a frozen view. The original whole-plan review inventory remains separate from this scoped correction.

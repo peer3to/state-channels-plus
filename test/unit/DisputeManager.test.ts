@@ -4,17 +4,26 @@ import {
 } from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
+import { REPLAY_GAS_READ_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
 import {
     assertDisputeRefreshPolicy,
     assertBackgroundDisputeFailure,
-    assertInboundHeadMovedDuringUpload
+    assertInboundHeadMovedDuringUpload,
+    assertInboundRefusalAtOwnAnchor,
+    assertInboundRefusalOfKillCarryingDispute,
+    assertInboundRetryRefusedAtSameHead
 } from "@test/fixtures/DisputeRefreshStaging";
 import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
 import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
+import {
+    runKillSentAfterKillPeriod,
+    runKillWithApplyRace,
+    runKillWithUnrecognizedApplyFailure
+} from "@test/fixtures/KillDisputeApplyStaging";
 import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
 import {
     disputeAndKillSharingHeldRead,
@@ -128,7 +137,7 @@ describe("Unit: DisputeManager", function () {
         );
     });
     describe("constructDispute", function () {
-        it("healthy fork → well-formed dispute, verifyStateProof accepts it", async function () {
+        it("healthy fork → well-formed dispute, the chain accepts its proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
             const peer = h.getPeer(0);
@@ -139,12 +148,23 @@ describe("Unit: DisputeManager", function () {
                 async (sm, args) => {
                     const { dispute, auditingData, fraudProofsToApply } =
                         await sm.disputeManager.constructDispute(args.forkId);
-                    // real oracle: the on-chain state-proof verifier accepts it
+                    // real oracle: the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
                     const verified =
-                        await sm.stateChannelManagerContract.verifyStateProof.staticCall(
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
                             dispute,
-                            auditingData
-                        );
+                            auditingData.genesisStateSnapshotData
+                        ));
                     return {
                         verified,
                         forkId: String(dispute.input.forkId),
@@ -188,11 +208,23 @@ describe("Unit: DisputeManager", function () {
                 async (sm, args) => {
                     const { dispute, auditingData, fraudProofsToApply } =
                         await sm.disputeManager.constructDispute(args.forkId);
+                    // the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
                     const verified =
-                        await sm.stateChannelManagerContract.verifyStateProof.staticCall(
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
                             dispute,
-                            auditingData
-                        );
+                            auditingData.genesisStateSnapshotData
+                        ));
                     const genesis =
                         sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
                             args.forkId
@@ -207,8 +239,6 @@ describe("Unit: DisputeManager", function () {
                             ) - 1,
                         milestoneCount:
                             dispute.input.stateProof.milestones.length,
-                        signedBlockCount:
-                            dispute.input.stateProof.signedBlocks.length,
                         fraudProofCount: fraudProofsToApply.length,
                         latestStateSnapshotHash:
                             dispute.input.latestStateSnapshotHash,
@@ -241,7 +271,6 @@ describe("Unit: DisputeManager", function () {
             expect(r.latestBlockHeight).to.equal(-1);
             expect(r.verified).to.equal(true);
             expect(r.milestoneCount).to.equal(0);
-            expect(r.signedBlockCount).to.equal(0);
             expect(r.fraudProofCount).to.equal(0);
             // the head is genesis -> the dispute pins the genesis snapshot
             expect(r.latestStateSnapshotHash).to.equal(r.genesisHash);
@@ -338,6 +367,9 @@ describe("Unit: DisputeManager", function () {
             // held after the channel-open inbound block landed -> the lagging
             // peer keeps that block as its store head and learns nothing after it
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            // its held store cannot reach the chain's inbound head, so its own
+            // upload would fail fatally; the scenario needs only its audit
+            await h.dispute.suppressDisputeInitiation([lagging]);
             // no block consumes the join -> only the reduce moves the inbound
             // head, into a genesis snapshot the lagging peer never ingested.
             // a pending joiner also keeps the head not-final-by-everyone, so
@@ -383,24 +415,30 @@ describe("Unit: DisputeManager", function () {
                 .constructDispute(newForkId)
                 .request();
             const dispute = Codec.decode(encodedDispute, Type.Dispute);
-            const encodedStateProof = Codec.encode(
-                dispute.input.stateProof,
-                Type.StateProof
-            ) as string;
             const statedInboundHash = dispute.input
                 .latestInboundMessageBlockHash as Hash;
             expect(statedInboundHash).to.equal(
                 genesis.snapshotData.latestInboundMessageBlockHash
             );
+            const lastConfirmation = dispute.input.stateProof.milestones
+                .at(-1)
+                ?.blockConfirmations.at(-1);
+            const proofHeight = lastConfirmation
+                ? Number(
+                      Codec.decode(
+                          lastConfirmation.signedBlock.encodedBlock,
+                          Type.Block
+                      ).transaction.header.transactionCnt
+                  )
+                : -1;
 
             // a synced auditor recomputes from the hash the dispute states
             const audited = await h
                 .control(h.getPeer(0))
-                .dispute.getAuditingData(newForkId, encodedStateProof, {
+                .dispute.buildOwnAuditingData(newForkId, proofHeight, {
                     disputeLatestInboundMessageBlockHash: statedInboundHash
                 })
                 .request();
-            expect(audited.isPartial).to.equal(false);
             expect(hash(audited.encodedAuditingData)).to.equal(
                 dispute.input.disputeAuditingDataHash
             );
@@ -408,21 +446,12 @@ describe("Unit: DisputeManager", function () {
             // An unbounded read also refuses to start below the pinned
             // snapshot head, so it produces the same complete bytes.
             const unbounded = await disputer.dispute
-                .getAuditingData(newForkId, encodedStateProof)
+                .buildOwnAuditingData(newForkId, proofHeight)
                 .request();
             expect(hash(unbounded.encodedAuditingData)).to.equal(
                 dispute.input.disputeAuditingDataHash
             );
         });
-
-        // the snapshot causes of `createDispute - isPartial auditingData` stay
-        // unreachable from constructDispute: a missing milestone snapshot
-        // already throws inside getStateProof ("Milestone built but
-        // corresponding snapshot not found") and the head snapshot is required
-        // by the "missing state snapshot" guard above it. the one reachable
-        // cause is an inbound run the peer's own head sits above and recovery
-        // cannot close - covered by the mid-gap case under `getAuditingData`.
-        it.skip("own proof missing a referenced snapshot → isPartial auditingData (unreachable)", function () {});
 
         it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
             const h = TestSession.getHarness();
@@ -436,13 +465,25 @@ describe("Unit: DisputeManager", function () {
                 async (sm, args) => {
                     const { dispute, auditingData } =
                         await sm.disputeManager.constructDispute(args.forkId);
-                    // the partial guard did not fire -> the proof is whole for
-                    // this peer, and the on-chain verifier accepts it
+                    // the proof is whole for this peer, and the on-chain
+                    // verifier accepts it
+                    // the chain's live views accept the proof: the full walk from
+                    // its start and the latest state the proof commits to
+                    const chain = sm.stateChannelManagerContract;
+                    const walk = await chain.verifyMilestones.staticCall({
+                        channelId: dispute.input.channelId,
+                        forkId: dispute.input.forkId,
+                        stateProof: dispute.input.stateProof,
+                        genesisStateSnapshotData:
+                            auditingData.genesisStateSnapshotData,
+                        milestoneSnapshots: auditingData.milestoneSnapshots
+                    });
                     const verified =
-                        await sm.stateChannelManagerContract.verifyStateProof.staticCall(
+                        walk.valid &&
+                        (await chain.isCorrectLatestState.staticCall(
                             dispute,
-                            auditingData
-                        );
+                            auditingData.genesisStateSnapshotData
+                        ));
                     return {
                         verified,
                         ownHeight:
@@ -569,80 +610,20 @@ describe("Unit: DisputeManager", function () {
         });
     });
 
-    describe("getAuditingData", function () {
-        // no test: genesisStateSnapshot missing -> throw is defensive.
-        // getAuditingData only runs for a fork the peer already has (own fork
-        // via constructDispute, or an audited dispute whose fork was
-        // spectate-synced first); an unknown forkId is a pre-sync condition.
-        it.skip("unknown forkId → genesisStateSnapshot not found (defensive)", function () {});
-
-        it("own fully-synced fork proof → not partial, one milestoneSnapshot per proof milestone", async function () {
+    describe("auditing data", function () {
+        it("own fully-synced fork proof → one milestoneSnapshot per proof milestone", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3); // fully-signed -> milestone proof
-            const forkId = h.activeForkId!;
 
-            const r = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const height =
-                        Number(
-                            sm.storage.blocks.getNextBlockHeight(args.forkId)
-                        ) - 1;
-                    const stateProof = await sm.agreementManager.getStateProof(
-                        args.forkId,
-                        height
-                    );
-                    const { isPartial, auditingData } =
-                        await sm.disputeManager.getAuditingData(
-                            args.forkId,
-                            stateProof
-                        );
-                    return {
-                        isPartial,
-                        milestoneSnapshotCount:
-                            auditingData.milestoneSnapshots.length,
-                        proofMilestoneCount: stateProof.milestones.length
-                    };
-                },
-                { forkId }
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(0);
+
+            const proofMilestoneCount =
+                dispute.input.stateProof.milestones.length;
+            expect(proofMilestoneCount).to.be.greaterThan(0);
+            expect(auditingData.milestoneSnapshots.length).to.equal(
+                proofMilestoneCount
             );
-
-            expect(r.isPartial).to.equal(false);
-            expect(r.proofMilestoneCount).to.be.greaterThan(0);
-            expect(r.milestoneSnapshotCount).to.equal(r.proofMilestoneCount);
-        });
-
-        it("a peer fed a proof for blocks it never stored → isPartial true", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0);
-            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            const forkId = h.activeForkId!;
-
-            // peer 0's real proof references block 1's snapshot; ship it to the
-            // behind peer, which never stored that snapshot -> partial
-            const { encodedDispute } = await h
-                .control(h.getPeer(0))
-                .dispute.constructDispute(forkId)
-                .request();
-            const dispute = Codec.decode(encodedDispute, Type.Dispute);
-            const encodedStateProof = Codec.encode(
-                dispute.input.stateProof,
-                Type.StateProof
-            ) as string;
-
-            const behind = await h
-                .control(h.getPeer(2))
-                .dispute.getAuditingData(forkId, encodedStateProof)
-                .request();
-            const synced = await h
-                .control(h.getPeer(0))
-                .dispute.getAuditingData(forkId, encodedStateProof)
-                .request();
-
-            expect(behind.isPartial).to.equal(true);
-            // control: the peer that authored the proof reconstructs it whole
-            expect(synced.isPartial).to.equal(false);
         });
 
         // the inbound run the dispute names is rebuilt from the auditor's own
@@ -679,39 +660,41 @@ describe("Unit: DisputeManager", function () {
                         .query.getInboundMessageBlock(statedInboundHash)
                         .request()
                 ).to.equal(null);
+                const lastConfirmation = dispute.input.stateProof.milestones
+                    .at(-1)
+                    ?.blockConfirmations.at(-1);
                 return {
                     forkId,
                     dispute,
                     statedInboundHash,
-                    encodedStateProof: Codec.encode(
-                        dispute.input.stateProof,
-                        Type.StateProof
-                    ) as string
+                    proofHeight: lastConfirmation
+                        ? Number(
+                              Codec.decode(
+                                  lastConfirmation.signedBlock.encodedBlock,
+                                  Type.Block
+                              ).transaction.header.transactionCnt
+                          )
+                        : -1
                 };
             };
 
-            it("recoverable gap → not partial, and the hash still agrees with the disputer's", async function () {
+            it("recoverable gap → complete, and the hash still agrees with the disputer's", async function () {
                 const h = TestSession.getHarness();
                 await h.setup(3);
                 await h.lifecycle.openChannel();
                 const lagging = 2;
                 const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
-                const {
-                    forkId,
-                    dispute,
-                    statedInboundHash,
-                    encodedStateProof
-                } = await stageStatedInboundHead(h, lagging, 0);
+                const { forkId, dispute, statedInboundHash, proofHeight } =
+                    await stageStatedInboundHead(h, lagging, 0);
                 await dropped.waitUntilDropped();
 
                 const audited = await h
                     .control(h.getPeer(lagging))
-                    .dispute.getAuditingData(forkId, encodedStateProof, {
+                    .dispute.buildOwnAuditingData(forkId, proofHeight, {
                         disputeLatestInboundMessageBlockHash: statedInboundHash
                     })
                     .request();
 
-                expect(audited.isPartial).to.equal(false);
                 // recovery restores the agreement, not just liveness
                 expect(hash(audited.encodedAuditingData)).to.equal(
                     dispute.input.disputeAuditingDataHash
@@ -719,34 +702,38 @@ describe("Unit: DisputeManager", function () {
                 await dropped.release();
             });
 
-            it("unrecoverable gap → isPartial true, empty inbound run, no throw", async function () {
+            it("unrecoverable gap → the auditing-data build throws", async function () {
                 const h = TestSession.getHarness();
                 await h.setup(3);
                 await h.lifecycle.openChannel();
                 const lagging = 2;
                 // the handler is held, so the recovery's re-dispatch is lost too
                 const held = await h.rpcStub.holdInboundMessageEvents(lagging);
-                const { forkId, statedInboundHash, encodedStateProof } =
+                const { forkId, statedInboundHash, proofHeight } =
                     await stageStatedInboundHead(h, lagging, 0);
 
-                const audited = await h
+                const failure = await h
                     .control(h.getPeer(lagging))
-                    .dispute.getAuditingData(forkId, encodedStateProof, {
+                    .dispute.buildOwnAuditingData(forkId, proofHeight, {
                         disputeLatestInboundMessageBlockHash: statedInboundHash
                     })
-                    .request();
+                    .request()
+                    .then(
+                        () => null,
+                        (error: unknown) =>
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    );
 
-                expect(audited.isPartial).to.equal(true);
-                // it returned instead of throwing "Block hash ... not found"
-                const auditingData = Codec.decode(
-                    audited.encodedAuditingData,
-                    Type.DisputeAuditingData
+                // missing own data is fatal: no partial auditing data
+                expect(failure).to.contain(
+                    "the inbound run is unavailable after event recovery"
                 );
-                expect(auditingData.inboundMessageBlocks).to.deep.equal([]);
                 await held.release({ replay: false });
             });
 
-            it("own head above an unrecoverable mid-gap → PartialAuditingDataError, not a storage throw", async function () {
+            it("own head above an unrecoverable mid-gap → constructDispute throws the missing inbound run, not a storage throw", async function () {
                 const h = TestSession.getHarness();
                 await h.setup(3);
                 await h.lifecycle.openChannel();
@@ -774,19 +761,15 @@ describe("Unit: DisputeManager", function () {
                     h.getPeer(lagging),
                     async (sm, args) => {
                         let threw = "";
-                        let errorName = "";
                         try {
                             await sm.disputeManager.constructDispute(
                                 args.forkId
                             );
                         } catch (e) {
                             threw = e instanceof Error ? e.message : String(e);
-                            errorName =
-                                e instanceof Error ? e.constructor.name : "";
                         }
                         return {
                             threw,
-                            errorName,
                             storedHead:
                                 sm.storage.inboundMessages.getLatestBlockHash() ??
                                 null
@@ -801,55 +784,45 @@ describe("Unit: DisputeManager", function () {
 
                 // premise - the head moved even though a log below it is missing
                 expect(r.storedHead).to.not.equal(null);
-                // the named contract canConstructMoreEvidence catches, and not
-                // the storage walk's throw
-                expect(r.errorName).to.equal("PartialAuditingDataError");
+                // the auditing-data build names the missing run, and not the
+                // storage walk's throw
+                expect(r.threw).to.contain(
+                    "the inbound run is unavailable after event recovery"
+                );
                 expect(r.threw).to.not.contain("not found in storage");
                 await dropped.release();
             });
         });
 
-        it("an empty state proof → latest state snapshot falls back to genesis, not partial", async function () {
+        it("an empty state proof → latest state snapshot falls back to genesis", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 0); // no blocks -> empty proof at height 0
+            await h.lifecycle.start(3, 0); // no blocks -> empty genesis proof
             const forkId = h.activeForkId!;
+            const ctl = h.control(h.getPeer(0));
 
-            const r = await h.execOnHost(
-                h.getPeer(0),
-                async (sm, args) => {
-                    const stateProof = await sm.agreementManager.getStateProof(
-                        args.forkId,
-                        0
-                    );
-                    const { isPartial, auditingData } =
-                        await sm.disputeManager.getAuditingData(
-                            args.forkId,
-                            stateProof
-                        );
-                    const genesis = sm.storage.stateSnapshots
-                        .getGenesisSnapshotByForkId(args.forkId)!
-                        .toStruct();
-                    return {
-                        isPartial,
-                        milestoneCount: stateProof.milestones.length,
-                        signedBlockCount: stateProof.signedBlocks.length,
-                        latestStateHash: String(
-                            auditingData.latestStateSnapshot.snapshotData
-                                .stateMachineStateHash
-                        ),
-                        genesisStateHash: String(
-                            genesis.snapshotData.stateMachineStateHash
-                        )
-                    };
-                },
-                { forkId }
+            const built = await ctl.dispute
+                .buildOwnAuditingData(forkId, -1)
+                .request();
+            const stateProof = Codec.decode(
+                built.encodedStateProof,
+                Type.StateProof
+            );
+            const auditingData = Codec.decode(
+                built.encodedAuditingData,
+                Type.DisputeAuditingData
+            );
+            const genesis = Codec.decode(
+                (await ctl.dispute.getGenesisSnapshotStruct(forkId).request())!
+                    .encodedSnapshot,
+                Type.StateSnapshot
             );
 
-            expect(r.milestoneCount).to.equal(0);
-            expect(r.signedBlockCount).to.equal(0);
-            // no block in the proof -> latest resolves to genesis, all present
-            expect(r.isPartial).to.equal(false);
-            expect(r.latestStateHash).to.equal(r.genesisStateHash);
+            expect(stateProof.milestones.length).to.equal(0);
+            // no block in the proof -> latest resolves to genesis
+            expect(
+                auditingData.latestStateSnapshot.snapshotData
+                    .stateMachineStateHash
+            ).to.equal(genesis.snapshotData.stateMachineStateHash);
         });
     });
 
@@ -1092,8 +1065,32 @@ describe("Unit: DisputeManager", function () {
             expect(r.disputed).to.equal(false);
         });
 
-        it("an inbound block landing after construction refuses the upload and rolls the dispute back without a re-upload", async function () {
-            await assertInboundHeadMovedDuringUpload(TestSession.getHarness());
+        it("an inbound block landing after construction refuses the upload → the retry loads the inbound run and lands at the chain's head", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                "recoverable"
+            );
+        });
+
+        it("an inbound block landing after construction refuses the upload and the run cannot be loaded → the dispute fails fatally and rolls back", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                "unrecoverable"
+            );
+        });
+
+        it("a retry refused again at the same chain inbound head → fatal, marker rolled back, no third upload", async function () {
+            await assertInboundRetryRefusedAtSameHead(TestSession.getHarness());
+        });
+
+        it("an inbound refusal naming the dispute's own anchor as the chain head → fatal, no retry", async function () {
+            await assertInboundRefusalAtOwnAnchor(TestSession.getHarness());
+        });
+
+        it("an inbound refusal of a kill-carrying dispute → the kill lands alone and the retry lands without it", async function () {
+            await assertInboundRefusalOfKillCarryingDispute(
+                TestSession.getHarness()
+            );
         });
 
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
@@ -1719,7 +1716,7 @@ describe("Unit: DisputeManager", function () {
             expect(signed).to.equal(false);
         });
 
-        it("an unrecognized send failure → swallowed, fork left undisputed", async function () {
+        it("an unrecognized send failure → dispute() rejects with it, fork left undisputed", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -1749,12 +1746,12 @@ describe("Unit: DisputeManager", function () {
                 }
             );
 
-            // no handler matches -> logged, swallowed, marker cleared
-            expect(r.rejected).to.equal("");
+            // no handler matches -> logged, marker cleared, rethrown as fatal
+            expect(r.rejected).to.equal("upload rejected by the node");
             expect(r.disputed).to.equal(false);
         });
 
-        it("an unrecognized wait() failure → swallowed, the stored marker is cleared", async function () {
+        it("an unrecognized wait() failure → dispute() rejects with it, the stored marker is cleared", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -1785,8 +1782,9 @@ describe("Unit: DisputeManager", function () {
             );
 
             // the marker was already stored true here, so the catch's
-            // storeDisputedFork(false) is what has to undo it
-            expect(r.rejected).to.equal("");
+            // storeDisputedFork(false) is what has to undo it before the
+            // failure is rethrown as fatal
+            expect(r.rejected).to.equal("receipt reverted");
             expect(r.disputed).to.equal(false);
         });
     });
@@ -1907,7 +1905,7 @@ describe("Unit: DisputeManager", function () {
     });
 
     describe("killDispute", function () {
-        it("no stored fraud proof → the throw stays inside, nothing is submitted", async function () {
+        it("no stored fraud proof → killDispute rejects, nothing is submitted", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -1942,10 +1940,12 @@ describe("Unit: DisputeManager", function () {
                 }
             );
 
-            // the "No dispute fraud proof found" throw is inside killDispute's
-            // catch-all -> the method resolves and never reaches a submission
+            // a missing stored proof is no recognized race -> fatal, and the
+            // method rejects before it reaches a submission
             expect(r.storedProofs).to.equal(0);
-            expect(r.threw).to.equal("");
+            expect(r.threw).to.equal(
+                "No dispute fraud proof found for dispute"
+            );
             expect(await probe.applies()).to.deep.equal([]);
         });
 
@@ -1996,124 +1996,94 @@ describe("Unit: DisputeManager", function () {
             expect(await probe.applies()).to.deep.equal([]);
         });
 
-        // the races killDispute recognises. each is injected at the contract
-        // boundary as the real 4-byte custom-error revert data, so the SDK's own
-        // decoder + handler table decide the outcome.
-        async function expectRaceConditionConsumedOnApply(
-            customError:
-                | "RaceConditionDisputeKillPeriodExpired"
-                | "RaceConditionOnChainSlashes"
-                | "RaceConditionGenesisTimestampNotAvailable"
-                | "RaceConditionUnexpectedBlockCalldataPosted"
-        ) {
+        it("a kill sent after the real kill period ends → the chain reverts it with RaceConditionDisputeKillPeriodExpired and killDispute rejects with it", async function () {
             const h = TestSession.getHarness();
-            const { killer } = await h.scenario.stageUnkilledSpamDispute();
-            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
-                killer.index,
-                { failWith: { customError, at: "send" } }
-            );
+            const { threw, spammer, periodAtRelease, applies, slashed } =
+                await runKillSentAfterKillPeriod(h);
 
-            const r = await h.execOnHost(
-                killer,
-                async (sm) => {
-                    const proofs =
-                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
-                    let threw = "";
-                    try {
-                        await sm.disputeManager.killDispute(proofs[0].dispute);
-                    } catch (e) {
-                        threw = e instanceof Error ? e.message : String(e);
-                    }
-                    return { threw };
-                },
-                {},
-                {
-                    timeoutMs: h.event.hostExecTimeoutMs()
-                }
-            );
-
-            expect(r.threw).to.equal("");
-            const [apply] = await probe.applies();
-            expect(apply.customError).to.equal(customError);
-            expect(
-                (await h.quiesceHosts()).map((e) => e.message)
-            ).to.deep.equal([]);
-        }
-
-        it("RaceConditionDisputeKillPeriodExpired on the apply → consumed, no rejection, no detached error", async function () {
-            await expectRaceConditionConsumedOnApply(
+            expect(periodAtRelease.isExpired).to.equal(true);
+            expect(threw).to.contain("RaceConditionDisputeKillPeriodExpired");
+            expect(applies).to.have.length(1);
+            expect(applies[0].customError).to.equal(
                 "RaceConditionDisputeKillPeriodExpired"
             );
+            expect(applies[0].waited).to.equal(false);
+            expect(slashed).to.not.include(spammer.address);
+            await TestSession.settleDetached();
         });
 
+        // the races killDispute consumes, each injected at the contract
+        // boundary as the real 4-byte custom-error revert data, so the SDK's
+        // own decoder + handler table decide the outcome
         it("RaceConditionOnChainSlashes on the apply → consumed, no rejection, no detached error", async function () {
-            await expectRaceConditionConsumedOnApply(
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
                 "RaceConditionOnChainSlashes"
             );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionOnChainSlashes"
+            );
+            expect(hostErrors).to.deep.equal([]);
         });
 
         it("RaceConditionGenesisTimestampNotAvailable on the apply → consumed, no rejection, no detached error", async function () {
-            await expectRaceConditionConsumedOnApply(
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
                 "RaceConditionGenesisTimestampNotAvailable"
             );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionGenesisTimestampNotAvailable"
+            );
+            expect(hostErrors).to.deep.equal([]);
         });
 
         it("RaceConditionUnexpectedBlockCalldataPosted on the apply → consumed, no rejection, no detached error", async function () {
-            await expectRaceConditionConsumedOnApply(
+            const h = TestSession.getHarness();
+            const { threw, applies, hostErrors } = await runKillWithApplyRace(
+                h,
                 "RaceConditionUnexpectedBlockCalldataPosted"
             );
+            expect(threw).to.equal("");
+            expect(applies[0].customError).to.equal(
+                "RaceConditionUnexpectedBlockCalldataPosted"
+            );
+            expect(hostErrors).to.deep.equal([]);
         });
 
-        async function expectUnrecognizedApplyFailureSwallowed(
-            at: "send" | "wait"
-        ) {
+        // no handler matches -> logged and rethrown as fatal, nothing resent;
+        // the apply never landed, so the spammer is still unslashed
+        it("an unrecognized apply failure at send → killDispute rejects with it, nothing retried", async function () {
             const h = TestSession.getHarness();
-            const { killer, spammer } =
-                await h.scenario.stageUnkilledSpamDispute();
-            const probe = await h.rpcStub.recordDisputeFraudProofApplies(
-                killer.index,
-                { failWith: { message: "apply rejected by the node", at } }
-            );
-
-            const r = await h.execOnHost(
-                killer,
-                async (sm) => {
-                    const proofs =
-                        sm.storage.disputeFraudProofs.getDisputeFraudProofs();
-                    let threw = "";
-                    try {
-                        await sm.disputeManager.killDispute(proofs[0].dispute);
-                    } catch (e) {
-                        threw = e instanceof Error ? e.message : String(e);
-                    }
-                    return { threw };
-                },
-                {},
-                {
-                    timeoutMs: h.event.hostExecTimeoutMs()
-                }
-            );
-
-            // logged and swallowed; no handler matches, nothing resent
-            expect(r.threw).to.equal("");
-            const applies = await probe.applies();
-            expect(applies.length).to.equal(1);
+            const { threw, spammer, applies, hostErrors, slashed } =
+                await runKillWithUnrecognizedApplyFailure(
+                    h,
+                    "send",
+                    "apply rejected by the node"
+                );
+            expect(threw).to.equal("apply rejected by the node");
+            expect(applies).to.have.length(1);
             expect(applies[0].customError).to.equal(null);
-            expect(
-                (await h.quiesceHosts()).map((e) => e.message)
-            ).to.deep.equal([]);
-            // the apply never landed -> the spammer is still unslashed
-            expect(await h.query.onChainSlashedParticipants()).to.not.include(
-                spammer.address
-            );
-        }
-
-        it("an unrecognized apply failure at send → swallowed, nothing retried", async function () {
-            await expectUnrecognizedApplyFailureSwallowed("send");
+            expect(hostErrors).to.deep.equal([]);
+            expect(slashed).to.not.include(spammer.address);
         });
 
-        it("an unrecognized apply failure at wait → swallowed, nothing retried", async function () {
-            await expectUnrecognizedApplyFailureSwallowed("wait");
+        it("an unrecognized apply failure at wait → killDispute rejects with it, nothing retried", async function () {
+            const h = TestSession.getHarness();
+            const { threw, spammer, applies, hostErrors, slashed } =
+                await runKillWithUnrecognizedApplyFailure(
+                    h,
+                    "wait",
+                    "apply rejected by the node"
+                );
+            expect(threw).to.equal("apply rejected by the node");
+            expect(applies).to.have.length(1);
+            expect(applies[0].customError).to.equal(null);
+            expect(hostErrors).to.deep.equal([]);
+            expect(slashed).to.not.include(spammer.address);
         });
 
         it("live kill window → the stored proof is submitted and its transaction awaited", async function () {
@@ -2345,7 +2315,7 @@ describe("Unit: DisputeManager", function () {
             expect(applies[0].waited).to.equal(true);
         });
 
-        it("a rejected replay requirement read sends no dispute and the next dispute reads again", async function () {
+        it("a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -2357,7 +2327,9 @@ describe("Unit: DisputeManager", function () {
                 peer.index
             );
 
-            await disputeOnHost(h, peer.index);
+            await expect(disputeOnHost(h, peer.index)).to.be.rejectedWith(
+                REPLAY_GAS_READ_STUB_FAILURE
+            );
             expect(await recorded.submissions()).to.deep.equal([]);
             expect(await reads.reads()).to.deep.equal([
                 { outcome: "rejected", replayGas: null }
@@ -2377,7 +2349,7 @@ describe("Unit: DisputeManager", function () {
             expect(submissions[0].gasLimit).to.not.equal(null);
         });
 
-        it("a rejected replay requirement read sends no kill and the next kill reads again", async function () {
+        it("a rejected replay requirement read rejects the kill without sending it and the next kill reads again", async function () {
             const h = TestSession.getHarness();
             const { killer, spammer } =
                 await h.scenario.stageUnkilledSpamDispute();
@@ -2388,7 +2360,9 @@ describe("Unit: DisputeManager", function () {
                 killer.index
             );
 
-            await killStoredDisputeOnHost(h, killer.index);
+            await expect(
+                killStoredDisputeOnHost(h, killer.index)
+            ).to.be.rejectedWith(REPLAY_GAS_READ_STUB_FAILURE);
             expect(await applies.applies()).to.deep.equal([]);
             expect(await reads.reads()).to.deep.equal([
                 { outcome: "rejected", replayGas: null }

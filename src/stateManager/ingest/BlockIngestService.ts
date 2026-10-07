@@ -2,7 +2,11 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block } from "@/models";
-import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    BlockOrigin,
+    type BlockPredecessor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address, Bytes } from "@/types/types";
 import { difference, Logger } from "@/utils";
@@ -31,12 +35,14 @@ export default class BlockIngestService {
     /**
      * Struct adapter for callers that replay confirmations outside the queue
      * (dispute stateProof replay, spectate sync): wraps into a sourceless
-     * entry — those pipelines don't punish by transport.
+     * entry — those pipelines don't punish by transport. Dispute replay
+     * passes the `predecessor` the block is judged from.
      */
     public async onBlockConfirmationStruct(
         blockConfirmation: BlockConfirmationStruct,
         options?: {
             validationStrategy?: AValidationStrategy;
+            predecessor?: BlockPredecessor;
         }
     ): Promise<boolean> {
         // Same decoding as network intake: bytes that do not decode are
@@ -57,12 +63,11 @@ export default class BlockIngestService {
                 }
             );
         }
-        return this.onBlockConfirmation(
-            this.stateManager.storage.queues.createEntry(block, {
-                origin: BlockOrigin.PROOF
-            }),
-            options
-        );
+        const entry = this.stateManager.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+        entry.predecessor = options?.predecessor;
+        return this.onBlockConfirmation(entry, options);
     }
 
     // Passes the block confirmation through a verification pipeline.
@@ -116,7 +121,8 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
-            if (sm.storage.blocks.getBlock(block.hash)) {
+            // a replayed block is re-judged from its predecessor even when stored
+            if (!entry.predecessor && sm.storage.blocks.getBlock(block.hash)) {
                 sm.blockQueueManager.scheduleStoredBlockConfirmationMerge(
                     entry,
                     strategy
@@ -152,6 +158,11 @@ export default class BlockIngestService {
                 );
             }
 
+            // replay positions the state machine at the block's predecessor;
+            // live pipelines already hold it (blocks execute in order)
+            if (entry.predecessor)
+                await sm.diamondStateMachine.setState(entry.predecessor.state);
+
             validationResult =
                 await sm.validationService.validateBlockConfirmation(
                     entry,
@@ -185,6 +196,7 @@ export default class BlockIngestService {
 
             const coordinates = block.coordinates;
             const previousStateSnapshot =
+                entry.predecessor?.snapshot ??
                 sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
                     coordinates
                 );

@@ -254,7 +254,6 @@ describe("Unit: SpectateService", function () {
 
             await h.tamper.postTamperedDispute(1, (dispute) => {
                 dispute.input.stateProof.milestones = [];
-                dispute.input.stateProof.signedBlocks = [];
             });
             const killPeriod = await h.query.killPeriod(
                 forkId,
@@ -387,7 +386,7 @@ describe("Unit: SpectateService", function () {
             ).to.equal(Status.SYNCED);
         });
 
-        it("an unfinalized block whose bytes do not decode → the pipeline rejects it, the sync does not throw", async function () {
+        it("a last-milestone block whose bytes do not decode → milestones invalid, the sync does not throw", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -399,7 +398,7 @@ describe("Unit: SpectateService", function () {
                 .query.getLatestBlockHeight(forkId)
                 .request();
             expect(latestHeight).to.not.equal(null);
-            const payload = await h
+            const served = await h
                 .control(responder)
                 .spectate.generateSyncPayload(
                     h.channelId,
@@ -407,11 +406,21 @@ describe("Unit: SpectateService", function () {
                     latestHeight!
                 )
                 .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
-            expect(payload).to.not.equal(null);
+            expect(served).to.not.equal(null);
+            // the walk checks the latest block of every tier's start, so its
+            // junk bytes make the proof invalid
+            const payload = Codec.decode(
+                served!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+            const lastRun =
+                payload.stateProof.milestones.at(-1)!.blockConfirmations;
+            lastRun.at(-1)!.signedBlock.encodedBlock = ethers.id(
+                "bytes that do not decode as a block"
+            );
 
             const stub = h.control(requester).stub;
             await stub.recordSyncRejections().request();
-            await stub.stubUndecodableUnfinalizedBlock(false).request();
             try {
                 const accepted = await h
                     .control(requester)
@@ -419,15 +428,14 @@ describe("Unit: SpectateService", function () {
                         responder.address,
                         forkId,
                         latestHeight!,
-                        payload!.encodedSyncPayload
+                        Codec.encode(payload, Type.SyncPayload) as string
                     )
                     .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
                 expect(accepted).to.equal(false);
                 expect(
                     await stub.restoreRecordedSyncRejections().request()
-                ).to.deep.equal(["block confirmation rejected"]);
+                ).to.deep.equal(["milestones invalid"]);
             } finally {
-                await stub.restoreUndecodableUnfinalizedBlock().request();
                 await stub.restoreRecordedSyncRejections().request();
             }
         });
@@ -495,7 +503,7 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("historic verification persistence", function () {
-        it("a milestone prepended below the on-chain anchor carrying a block and a snapshot above it → sync accepted, neither is stored", async function () {
+        it("a milestone prepended wholly below the on-chain anchor carrying a snapshot above it → sync accepted, neither its block nor the snapshot is stored", async function () {
             const h = TestSession.getHarness();
             const { forkId, onChainSnapshot, payload } =
                 await stageAnchoredSyncPayload(h);
@@ -504,28 +512,23 @@ describe("Unit: SpectateService", function () {
             const first = milestones[0].blockConfirmations[0];
             const firstHeight = Block.fromBlockConfirmation(first).height;
             // the honest proof starts above the anchor; the prepended milestone
-            // starts below it, so verifyMilestones skips it without any check
+            // ends below it, so the walk skips it without any check
             expect(firstHeight).to.be.greaterThan(anchor);
-            const copyAt = (height: number, timestampShift: bigint) => {
-                const block = Codec.decode(
-                    first.signedBlock.encodedBlock,
-                    Type.Block
-                );
-                block.transaction.header.transactionCnt = BigInt(height);
-                block.transaction.header.timestamp =
-                    BigInt(block.transaction.header.timestamp) + timestampShift;
-                return {
-                    signedBlock: {
-                        encodedBlock: Codec.encode(block, Type.Block) as string,
-                        signature: first.signedBlock.signature
-                    },
-                    signatures: first.signatures
-                };
+            const below = Codec.decode(
+                first.signedBlock.encodedBlock,
+                Type.Block
+            );
+            below.transaction.header.transactionCnt = BigInt(anchor - 1);
+            below.transaction.header.timestamp =
+                BigInt(below.transaction.header.timestamp) + 2n;
+            const planted = {
+                signedBlock: {
+                    encodedBlock: Codec.encode(below, Type.Block) as string,
+                    signature: first.signedBlock.signature
+                },
+                signatures: first.signatures
             };
-            const planted = copyAt(firstHeight, 1n);
-            milestones.unshift({
-                blockConfirmations: [copyAt(anchor - 1, 2n), planted]
-            });
+            milestones.unshift({ blockConfirmations: [planted] });
             const plantedSnapshot = {
                 ...payload.milestoneSnapshots[0],
                 timestamp: BigInt(payload.milestoneSnapshots[0].timestamp) + 1n
@@ -591,46 +594,32 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("historic verification rejections", function () {
-        it("proof ending at the on-chain height with another snapshot → rejected, the proof regresses the on-chain snapshot", async function () {
+        it("milestone snapshot at the requester's own finalized point altered → accepted from that point, the altered snapshot is not stored", async function () {
+            const h = TestSession.getHarness();
+            let alteredHash = "";
             const { accepted, rejections } = await applyAnchoredSyncPayload(
-                TestSession.getHarness(),
-                (payload, onChainSnapshot) => {
-                    payload.milestoneSnapshots.at(-1)!.blockHeight = BigInt(
-                        onChainSnapshot.blockHeight
-                    );
-                }
-            );
-            expect(accepted).to.equal(false);
-            expect(rejections).to.deep.equal([
-                "proof regresses the on-chain snapshot"
-            ]);
-        });
-
-        it("proof ending below the on-chain height on the same fork → rejected, the proof regresses the on-chain snapshot", async function () {
-            const { accepted, rejections } = await applyAnchoredSyncPayload(
-                TestSession.getHarness(),
-                (payload, onChainSnapshot) => {
-                    payload.milestoneSnapshots.at(-1)!.blockHeight = BigInt(
-                        onChainSnapshot.blockHeight - 1
-                    );
-                }
-            );
-            expect(accepted).to.equal(false);
-            expect(rejections).to.deep.equal([
-                "proof regresses the on-chain snapshot"
-            ]);
-        });
-
-        it("milestone snapshot above the on-chain anchor altered → rejected, milestones invalid", async function () {
-            const { accepted, rejections } = await applyAnchoredSyncPayload(
-                TestSession.getHarness(),
+                h,
                 (payload) => {
                     const last = payload.milestoneSnapshots.at(-1)!;
                     last.timestamp = BigInt(last.timestamp) + 1n;
+                    alteredHash = String(StateSnapshot.from(last).hash);
                 }
             );
-            expect(accepted).to.equal(false);
-            expect(rejections).to.deep.equal(["milestones invalid"]);
+            // the requester already holds the last milestone's final point:
+            // its walk starts there and never reads the supplied snapshot
+            expect(accepted).to.equal(true);
+            expect(rejections).to.deep.equal([]);
+            expect(
+                await h.execOnHost(
+                    h.getPeer(2),
+                    (sm, a) =>
+                        !!sm.storage.stateSnapshots.getStateSnapshotByHash(
+                            a.alteredHash
+                        ),
+                    { alteredHash }
+                ),
+                "altered snapshot stored"
+            ).to.equal(false);
         });
 
         it("every milestone below the on-chain anchor with a forged newer snapshot → rejected, milestones invalid", async function () {
@@ -664,7 +653,6 @@ describe("Unit: SpectateService", function () {
                     );
                     top.previousBlockHash = ethers.keccak256(encodedBelow);
                     top.stateSnapshotHash = StateSnapshot.from(forged).hash;
-                    payload.stateProof.signedBlocks = [];
                     payload.stateProof.milestones = [
                         {
                             blockConfirmations: [

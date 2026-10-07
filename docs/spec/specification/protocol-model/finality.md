@@ -119,21 +119,18 @@ Finality arrives by exactly one of three routes:
 
 **<a id="req-fin-7-rtzwqz"></a>`REQ-FIN-7-RTZWQZ`.** The threshold is **unanimous** over the _relevant participant set_:
 
-- Off-chain: `the corresponding agreement-tracking operation`
-  requires signatures from the union of the block's previous and resulting participant sets, so a
-  membership-changing block needs both the old set and the joiner/leaver where applicable
+- Off-chain milestone construction requires signatures from the union of the block's previous participant set,
+  resulting participant set, and every joiner whose inbound JOIN the transition consumes. A joiner
+  that joins and exits atomically still belongs to this threshold even if absent from both snapshots
   ([state-proofs.md §5](../disputes/state-proofs.md)).
-- On-chain (milestones): `_isMilestoneFinalWithExpectedParticipants` requires
-  `thresholdCount == expectedParticipants.length`, where the expected set is the union of the
+- On-chain (milestones): every distinct member of the expected set must contribute a direct or
+  virtual signature. This set is the union of the
   previous snapshot's participants, the resulting snapshot's participants, and joiners derived
   from the inbound-message interval committed between the two snapshots' inbound hashes — not the
-  chain's live pending set
-  (`the corresponding state-proof verification operation`).
+  chain's live pending set. Later slashes never subtract signers from this historical hop threshold.
 - On-chain (disputes): a threshold-final dispute confirmation requires signatures from
-  `getOnChainThresholdSet` = (snapshot participants ∪ pending participants) − on-chain-slashed
-  (`common adjudication logic`),
-  and finalizes the dispute window immediately
-  (`DisputeManagerFacet._isDisputeThresholdFinal`).
+  (snapshot participants ∪ pending participants) − on-chain-slashed,
+  and finalizes the dispute window immediately.
 - On-chain historic threshold (dispute last-milestone probe, no posted data): the dispute commits the
   set at one point in time. It is the chain's snapshot participants, plus the joiners enclosed by the dispute's
   committed inbound hash, minus the dispute's own `onChainSlashes`. The disputer picks that list from what it
@@ -154,11 +151,11 @@ Sub-unanimous thresholds are not supported anywhere in the protocol definition.
 
 **One agreement threshold; the chain verifies views of it.** The formulas above are not
 independent threshold designs. The protocol has exactly one agreement threshold: the
-peer-to-peer union of a block's previous and resulting participant sets. Every honest transition
-is authorized by that union — the existing set admits a joiner and the joiner consents to enter;
+union of a block's previous participants, resulting participants and consumed JOIN participants.
+Every honest transition is authorized by that union — the existing set admits a joiner and the joiner consents to enter;
 the remaining set agrees to a removal and the leaving participant consents to leave. In an honest
-execution, verifying that one threshold across every transition is sufficient; pending joiners
-become part of the resulting set when their inbound messages are consumed.
+execution, verifying that one threshold across every transition is sufficient. Consumed joiners
+must contribute even if an atomic exit removes them before the resulting snapshot.
 
 The chain is a third-party verifier over a different memory space: it holds a stale snapshot plus
 the inbound messages, slashes, and other facts it has recorded — never the live peer-to-peer
@@ -170,9 +167,9 @@ thresholds:
 - **Pending joiners in the milestone set are evidence, not a second threshold.** If the chain has
   recorded an inbound join that its snapshot does not yet include, a proof advancing the snapshot
   must show that the joiner was part of the agreement. The verifier therefore derives joiners
-  from the inbound interval committed between the proof's two snapshots; in an honest transition
-  those joiners already appear in the resulting set, and the milestone set reduces to the plain
-  previous∪resulting union. The explicit derivation exists so the chain can reject a proof that
+  from the inbound interval committed between the proof's two snapshots. A joiner that remains
+  is already in the resulting set; an atomic JOIN plus EXIT can leave it absent from both endpoint
+  sets. Explicit inclusion is required in both cases, so the chain can reject a proof that
   consumes a recorded join while omitting the joiner. The same goal drives the same-fork
   inbound-consumption rule ([cross-layer-messages.md §2](../settlement/cross-layer-messages.md)):
   a snapshot update must consume the chain's complete inbound head, so a proof cannot advance the
@@ -248,8 +245,7 @@ suffix forward (§7).
 
 Transport source admission and signature validity use different sets. Admission accepts a sender in the
 cached on-chain current/pending set or the latest verified current-fork participant union, except known
-slashes ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../peer-communication/block-gossip.md#req-gossip-4-j5z4df)). The finality threshold still uses the particular block's previous/resulting
-union ([`REQ-FIN-7-RTZWQZ`](finality.md#req-fin-7-rtzwqz)). Historical proof replay does not substitute present-day transport eligibility
+slashes ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../peer-communication/block-gossip.md#req-gossip-4-j5z4df)). Historical milestone finality uses the required previous/resulting/consumed-JOIN set ([`REQ-FIN-7-RTZWQZ`](finality.md#req-fin-7-rtzwqz)). Historical proof replay does not substitute present-day transport eligibility
 for that historical union. Local off-chain inclusion and finality do not establish on-chain dispute standing;
 that standing changes only when the chain's authoritative snapshot or inbound membership includes the peer.
 

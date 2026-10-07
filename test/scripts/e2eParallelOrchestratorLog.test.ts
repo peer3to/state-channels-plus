@@ -412,6 +412,8 @@ describe("distributed orchestrator logs", function () {
                 capabilities: { slots: 1, workers: 4, memoryGb: 12 },
                 executionProfile: { workers: 2 },
                 stats: {
+                    meanConcurrency: 1.25,
+                    peakConcurrency: 2,
                     peakCpu: 0.9,
                     avgCpu: 0.6,
                     peakOccupiedGb: 8,
@@ -422,8 +424,9 @@ describe("distributed orchestrator logs", function () {
             17
         );
         expect(line).to.include("server-2");
-        expect(line).to.include("1 slots, 2 workers (max 4), 12GB");
+        expect(line).to.include("1 slots, ceiling 2 workers (default 4), 12GB");
         expect(line).to.include("17 tests");
+        expect(line).to.include("concurrent tests avg 1.3 / peak 2");
         expect(line).to.include("cpu avg 60% / peak 90%");
         expect(line).to.include("mem peak 8.0GB / bound 10.0GB");
         expect(line).not.to.include("budget holds");
@@ -447,6 +450,7 @@ describe("distributed orchestrator logs", function () {
             { cpu: 3, memory: 1 }
         );
         expect(line).to.include("budget holds cpu 3 / memory 1");
+        expect(line).to.include("concurrent tests unavailable");
     });
 
     it("keeps canonical, failure, and attempt filenames within filesystem limits", function () {

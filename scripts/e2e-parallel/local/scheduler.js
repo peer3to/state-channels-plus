@@ -259,7 +259,7 @@ async function runScheduler({
         sumDurationMs: coordinator.sumDurationMs
     });
     logging.writeRunMetrics(logDir, metrics);
-    costCache.commit();
+    costCache.commit({ pruneDeleted: true });
     return {
         failed: coordinator.failed,
         completed: coordinator.completed,

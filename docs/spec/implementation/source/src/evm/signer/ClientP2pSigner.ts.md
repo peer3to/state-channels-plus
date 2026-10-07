@@ -28,6 +28,8 @@ The client-side signer facade in isolated deployments: forwards signing/collecti
 
 ## Key design decisions
 
+getOwnJoinState forwards the typed query through internal RPC. Membership tracking, chain reads and deadline interpretation remain host-owned. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L282).
+
 Channel IDs use the shared validation-only bytes32 check. Existing normalization, option decoding and public errors remain at their original boundaries. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L1).
 
 1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).

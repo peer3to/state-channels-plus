@@ -1437,6 +1437,16 @@ describe("E2E: lobby matching", function () {
             ).to.equal(false);
             // The lower peer lost its committed partner mid-negotiation: one
             // strike, and its own signed attempt keeps observing too.
+            // Its socket-close notification is independent of the higher peer's.
+            await waitFor(
+                () =>
+                    h
+                        .control(lower)
+                        .query.isTransportClosed(higher.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
             expect(
                 await h
                     .control(lower)

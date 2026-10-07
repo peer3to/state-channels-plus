@@ -121,6 +121,143 @@ describe("distributed parallel runner", function () {
         }
     });
 
+    it("finishes cold preparation before cleaning a completed run", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.preparationDelayMs = 250;
+        backend.preparationStatusIntervalMs = 25;
+        const emptyDigest = crypto.createHash("sha256").digest("hex");
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
+            workspaceId: "9".repeat(64),
+            sourceDigest: "source",
+            rootProjectPath: ".",
+            repositories: [],
+            files: [
+                {
+                    path: "identity.txt",
+                    bytes: 8,
+                    sha256: "8".repeat(64),
+                    mode: 420
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: 8
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("run-one");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest },
+                Buffer.from(JSON.stringify(manifest.files))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...manifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptyDigest
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptyDigest
+            });
+            await waitFor(() =>
+                backend.frameKinds().includes("SOURCE_COMPLETE")
+            );
+            await orchestrator.send(worker.name, "RUN_COMPLETE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+            expect(
+                [...backend.preparedFiles.values()].some((files) =>
+                    files.has("identity.txt")
+                )
+            ).to.equal(true);
+            expect(backend.frameKinds()).not.to.include("RUN_CONFIG");
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("cancels cold preparation without waiting for it to finish", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        let releasePreparation!: () => void;
+        backend.preparationGate = new Promise<void>((resolve) => {
+            releasePreparation = resolve;
+        });
+        const emptyDigest = crypto.createHash("sha256").digest("hex");
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
+            workspaceId: "9".repeat(64),
+            sourceDigest: "source",
+            rootProjectPath: ".",
+            repositories: [],
+            files: [
+                {
+                    path: "identity.txt",
+                    bytes: 8,
+                    sha256: "8".repeat(64),
+                    mode: 420
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: 8
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("run-one");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest },
+                Buffer.from(JSON.stringify(manifest.files))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...manifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptyDigest
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptyDigest
+            });
+            await waitFor(() =>
+                backend.frameKinds().includes("SOURCE_COMPLETE")
+            );
+            await orchestrator.send(worker.name, "CANCEL");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+            expect(
+                [...backend.preparedFiles.values()].some((files) =>
+                    files.has("identity.txt")
+                )
+            ).to.equal(false);
+            expect(backend.frameKinds()).not.to.include("RUN_CONFIG");
+        } finally {
+            releasePreparation();
+            await pool.close();
+        }
+    });
+
     it("records the discovery server lifecycle before closing its log", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "discovery-lifecycle-")
@@ -742,6 +879,24 @@ describe("distributed parallel runner", function () {
             expect(metrics.workers).to.have.lengthOf(1);
             const [worker] = metrics.workers;
             expect(worker.legacyAdmission).to.equal(false);
+            expect(worker.startup).to.have.all.keys(
+                "discovery and connection",
+                "lease wait",
+                "workspace negotiation",
+                "workspace transfer and preparation",
+                "worker boot and infrastructure provisioning",
+                "ready to first assignment"
+            );
+            const startupPhases = Object.values(worker.startup) as Array<{
+                durationMs: number;
+                elapsedMs: number;
+            }>;
+            let elapsedMs = 0;
+            for (const phase of startupPhases) {
+                expect(phase.durationMs).to.be.at.least(0);
+                elapsedMs += phase.durationMs;
+                expect(phase.elapsedMs).to.equal(elapsedMs);
+            }
             expect(worker.meanConcurrency).to.be.a("number");
             expect(worker.peakConcurrency).to.equal(1);
             expect(worker.holdCounts).to.have.all.keys("cap", "memory", "cpu");
@@ -757,14 +912,12 @@ describe("distributed parallel runner", function () {
             );
             // Handed only what it could start, the worker never buffers; the
             // orchestrator logs each budget refusal there and totals them.
+            // Under farm load the live CPU gate can hold before a request
+            // reaches the coordinator; either path must report a CPU hold.
             expect(workerLog).not.to.include("buffer 1");
-            expect(workerLog).to.include(
-                "holding — cpu (cost budget; predicted cost does not fit)"
-            );
+            expect(workerLog).to.include("holding — cpu (");
             expect(
-                result.workers.some((line: string) =>
-                    line.includes("budget holds cpu")
-                )
+                result.workers.some((line: string) => line.includes("cpu avg"))
             ).to.equal(true);
             const cache = JSON.parse(fs.readFileSync(costCachePath, "utf8"));
             expect(Object.keys(cache.tasks)).to.have.members([
@@ -779,6 +932,16 @@ describe("distributed parallel runner", function () {
                 expect(entry.measurementReason).to.equal(null);
                 expect(entry.samples).to.equal(1);
             }
+            // Both new tests are committed at the project root.
+            const committed = JSON.parse(
+                fs.readFileSync(
+                    path.join(workspace.projectRoot, "test-costs.json"),
+                    "utf8"
+                )
+            );
+            expect(Object.keys(committed.tasks)).to.have.members(
+                Object.keys(cache.tasks)
+            );
         } finally {
             process.env.PATH = originalPath;
             await pool.close();

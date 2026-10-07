@@ -12,6 +12,7 @@ Fixtures, harness code, utilities, runners, and configuration get no reports.
 
 - [Report template](#report-template)
 - [Assignment rules](#assignment-rules)
+- [Deleted test support](#deleted-test-support)
 - [Static analysis](#static-analysis)
 
 ## Report template
@@ -46,6 +47,15 @@ Each report ([canonical example](./tests/test/unit/ValidationService.test.ts.md)
 - IDs are always links to their definition anchors.
 - A genuinely out-of-scope test file may use `// @spec-test-coverage-ignore: <reason>` in its
   first ten lines. HTML page fixtures can use the same marker inside an HTML comment.
+
+## Deleted test support
+
+The impact check reads [deleted-test-support.json](../deleted-test-support.json) for removed
+helpers that had no inline exclusion before deletion. Each exact repository path needs a
+nonempty reason explaining why its removal loses no executable coverage. This register applies
+only to paths deleted by the selected diff; it cannot exclude live files or deleted test files.
+Existing support files use the inline marker described above. Do not register a removed test
+as support or use this register instead of migrating its coverage.
 
 ## Static analysis
 

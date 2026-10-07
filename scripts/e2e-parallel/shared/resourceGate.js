@@ -6,12 +6,18 @@ const { performance } = require("perf_hooks");
 const { promisify } = require("util");
 const {
     PER_TEST_MEM_GB,
+    MEM_LIMIT_FRACTION,
     PROC_CLOCK_TICKS_PER_SECOND,
     COST_CPU_BUDGET,
     COST_CPU_VALVE,
     MIN_CPU_SAMPLE_MS
 } = require("./constants");
-const { cpuDelta, osTimes, readCpuSnapshot } = require("./cpuAccounting");
+const {
+    cpuDelta,
+    osTimes,
+    readCpuSnapshot,
+    readMemorySnapshot
+} = require("./cpuAccounting");
 const { costBudgetShortfall } = require("./scheduling");
 
 const execFileAsync = promisify(execFile);
@@ -287,12 +293,14 @@ class ResourceGate {
         infraPids,
         targetLoad,
         memBoundGb,
+        cpuLimit,
         sampleOptions
     }) {
         this.testPids = testPids;
         this.infraPids = infraPids;
         this.targetLoad = targetLoad;
         this.memBoundGb = memBoundGb;
+        this.cpuLimit = cpuLimit;
         this.sampleOptions = sampleOptions;
         this.lastCpuSnapshot = readCpuSnapshot(sampleOptions);
         this.cpuSource = this.lastCpuSnapshot.source;
@@ -322,9 +330,14 @@ class ResourceGate {
         this.memSampleSum = 0;
         this.memSampleCount = 0;
         this.occupiedGb = 0;
+        this.idleOccupiedGb = 0;
+        this.testGb = 0;
+        this.infraGb = 0;
+        this.memoryLimitGb = memBoundGb;
         this.peakOccupiedGb = 0;
         this.holdCounts = { cap: 0, memory: 0, cpu: 0 };
         this.lastHoldReason = null;
+        this.lastMemoryHold = null;
     }
 
     async sample() {
@@ -354,6 +367,18 @@ class ResourceGate {
         } else {
             this.occupiedGb = systemOccupiedGb();
         }
+        this.testGb = testGb;
+        this.infraGb = Math.max(0, this.occupiedGb - testGb);
+        const memory = readMemorySnapshot(this.sampleOptions);
+        this.memoryLimitGb = Math.min(
+            this.memBoundGb,
+            memory?.limitGb ?? this.memBoundGb
+        );
+        this.idleOccupiedGb = Math.max(
+            this.occupiedGb,
+            memory?.idleUsedGb ?? 0
+        );
+        if (memory) this.occupiedGb = Math.max(this.occupiedGb, memory.usedGb);
         this.peakOccupiedGb = Math.max(this.peakOccupiedGb, this.occupiedGb);
         if (samples && testPids.length) {
             this.memSampleSum += testGb / testPids.length;
@@ -413,23 +438,42 @@ class ResourceGate {
     ) {
         await this.sample();
         this.lastHoldReason = null;
+        this.lastMemoryHold = null;
+        const occupiedGb =
+            running === 0 ? this.idleOccupiedGb : this.occupiedGb;
+        const thresholdGb = this.memoryLimitGb * MEM_LIMIT_FRACTION;
+        if (occupiedGb >= thresholdGb) {
+            this.lastMemoryHold = { occupiedGb, thresholdGb };
+            return this.hold("memory");
+        }
         if (running === 0) return true;
         if (running >= concurrencyCap) return this.hold("cap");
         // Until the first CPU reading a busy worker cannot see the load.
         if (!this.cpuMeasured) return this.hold("cpu");
         // Costs arrive validated: fromWireTask on a worker, CostCache locally.
         if (schedule === "cost") {
-            const shortfall = costBudgetShortfall(
-                nextCost,
-                this.costBudget(runningCost)
-            );
+            const budget = this.costBudget(runningCost);
+            const shortfall = costBudgetShortfall(nextCost, budget);
+            if (shortfall === "memory")
+                this.lastMemoryHold = {
+                    occupiedGb: thresholdGb - budget.rssGb + nextCost.rssGb,
+                    thresholdGb
+                };
             if (shortfall) return this.hold(shortfall);
             if (this.cpuUtil >= this.costCpuValve) return this.hold("cpu");
             return true;
         }
         if (this.cpuUtil >= this.targetLoad) return this.hold("cpu");
-        if (this.occupiedGb + this.avgPerTestGb >= this.memBoundGb)
+        if (
+            this.occupiedGb + this.avgPerTestGb >=
+            this.memoryLimitGb * MEM_LIMIT_FRACTION
+        ) {
+            this.lastMemoryHold = {
+                occupiedGb: this.occupiedGb + this.avgPerTestGb,
+                thresholdGb
+            };
             return this.hold("memory");
+        }
         return true;
     }
 
@@ -441,9 +485,16 @@ class ResourceGate {
     /** What a cost worker can still start beside `runningCost`. */
     costBudget(runningCost) {
         return {
-            cores: this.cpuCores * COST_CPU_BUDGET - runningCost.cores,
+            cores:
+                (this.cpuLimit ?? this.cpuCores) * COST_CPU_BUDGET -
+                runningCost.cores,
             rssGb:
-                this.memBoundGb - Math.max(this.occupiedGb, runningCost.rssGb)
+                // Reserve infrastructure and untracked container memory separately.
+                // Add any predicted test growth to the current footprint, leaving
+                // 20% of the hard limit for sampling gaps and allocation bursts.
+                this.memoryLimitGb * MEM_LIMIT_FRACTION -
+                Math.max(this.occupiedGb, this.infraGb + this.testGb) -
+                Math.max(0, runningCost.rssGb - this.testGb)
         };
     }
 

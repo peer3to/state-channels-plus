@@ -8,7 +8,7 @@ import path from "path";
 const {
     CostCache,
     defaultCost,
-    refreshSnapshot
+    refreshCosts
 } = require("../../scripts/e2e-parallel/shared/costCache.js");
 const {
     TaskCoordinator
@@ -27,28 +27,74 @@ const sample = {
 };
 const metadata = { disposition: "complete", starveCount: 0 };
 const SCRIPTS = path.resolve(__dirname, "../../scripts");
-const snapshotEntry = (durationMs: number, avgCores: number | null) => ({
+const costEntry = (durationMs: number, avgCores: number | null) => ({
     durationMs,
     avgCores,
     peakRssGb: avgCores === null ? null : 1,
     measurementReason:
-        avgCores === null ? "legacy-measurements-unavailable" : null,
+        avgCores === null ? "legacy-measurements-unavailable" : null
+});
+const cacheEntry = (durationMs: number, avgCores: number | null) => ({
+    ...costEntry(durationMs, avgCores),
     samples: 3,
     lastSeenAt: "2026-10-01T00:00:00.000Z"
 });
-function writeSnapshot(root: string, tasks: Record<string, unknown>) {
-    const snapshotPath = path.join(
-        root,
-        "scripts/e2e-parallel/test-costs.snapshot.json"
-    );
-    fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
-    fs.writeFileSync(snapshotPath, JSON.stringify({ version: 2, tasks }));
-    return snapshotPath;
+function writeCosts(root: string, tasks: Record<string, unknown>) {
+    const costsPath = path.join(root, "test-costs.json");
+    fs.writeFileSync(costsPath, JSON.stringify({ version: 1, tasks }));
+    return costsPath;
 }
+function writeCache(root: string, tasks: Record<string, unknown>) {
+    const cachePath = path.join(root, ".cache/test-costs.json");
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify({ version: 3, tasks }));
+    return cachePath;
+}
+const readTasks = (file: string) =>
+    JSON.parse(fs.readFileSync(file, "utf8")).tasks;
 
 describe("task cost cache", function () {
-    it("merges measurements by EWMA and resolves overrides and finished siblings", function () {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-ewma-"));
+    it("adds new costs but keeps existing baselines despite ordinary measurement drift", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "stable-costs-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.commit();
+            const costsPath = path.join(root, "test-costs.json");
+            const baseline = fs.readFileSync(costsPath, "utf8");
+            cache.record(
+                example,
+                { ...sample, durationMs: 10000, avgCores: 5, peakRssGb: 8 },
+                metadata
+            );
+            cache.commit();
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(baseline);
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))[
+                    cache.key(example)
+                ]
+            ).to.include({ durationMs: 10000, avgCores: 5, peakRssGb: 8 });
+            cache.record(
+                example,
+                { ...sample, durationMs: 1, avgCores: 0, peakRssGb: 0.01 },
+                metadata
+            );
+            cache.commit();
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(baseline);
+            const other = { ...example, label: "new", fullTitle: "new" };
+            cache.record(other, sample, metadata);
+            cache.commit();
+            expect(readTasks(costsPath)).to.have.keys(
+                cache.key(example),
+                cache.key(other)
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("resolves overrides, then this run, the committed cost and finished siblings", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-resolve-"));
         try {
             let cache = new CostCache({ projectRoot: root });
             cache.record(example, sample, metadata);
@@ -63,23 +109,16 @@ describe("task cost cache", function () {
             cache = new CostCache({ projectRoot: root });
             cache.record(
                 example,
-                { ...sample, durationMs: 200, avgCores: 0.6, peakRssGb: 1 },
+                { ...sample, durationMs: 120, avgCores: 0.35, peakRssGb: 0.55 },
                 metadata
             );
-            cache.commit();
             expect(cache.resolve(example)).to.include({
-                durationMs: 130,
-                cores: 0.39,
-                rssGb: 0.65
-            });
-            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
-                recursive: true
+                durationMs: 120,
+                cores: 0.35,
+                rssGb: 0.55
             });
             fs.writeFileSync(
-                path.join(
-                    root,
-                    "scripts/e2e-parallel/test-costs.overrides.json"
-                ),
+                path.join(root, "test-costs.overrides.json"),
                 JSON.stringify({
                     [cache.key(example)]: { durationMs: 777, cores: 0.2 }
                 })
@@ -88,7 +127,7 @@ describe("task cost cache", function () {
             expect(cache.resolve(example)).to.include({
                 durationMs: 777,
                 cores: 0.2,
-                rssGb: 0.65
+                rssGb: 0.5
             });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -115,9 +154,17 @@ describe("task cost cache", function () {
             expect(
                 fs.readFileSync(path.join(directory, "test-costs.json"))
             ).to.deep.equal(original);
+            // The committed cost waits for the cache it follows.
+            expect(
+                readTasks(path.join(root, "test-costs.json"))[
+                    cache.key(example)
+                ].durationMs
+            ).to.equal(100);
             fs.chmodSync(directory, 0o700);
             cache.commit();
-            expect(cache.resolve(example).durationMs).to.equal(130);
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example).durationMs
+            ).to.equal(100);
         } finally {
             if (fs.existsSync(directory)) fs.chmodSync(directory, 0o700);
             fs.rmSync(root, { recursive: true, force: true });
@@ -174,7 +221,97 @@ describe("task cost cache", function () {
         }
     });
 
-    it("merges one finalizing sample per task run including late failure", function () {
+    it("keeps previous resource estimates after an early failed attempt and persists them", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-failed-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, { ...sample, avgCores: 0.922 }, metadata);
+            cache.commit();
+            const next = new CostCache({ projectRoot: root });
+            next.record(
+                example,
+                {
+                    ...sample,
+                    code: 1,
+                    durationMs: 1,
+                    peakRssGb: 0.1,
+                    avgCores: 0.357
+                },
+                metadata
+            );
+            expect(next.resolve(example)).to.include({
+                cores: 0.922,
+                rssGb: 0.5,
+                durationMs: 100
+            });
+            next.commit();
+            expect(
+                new CostCache({ projectRoot: root }).resolve(example)
+            ).to.include({ cores: 0.922, rssGb: 0.5, durationMs: 100 });
+            next.record(example, { ...sample, avgCores: 0.357 }, metadata);
+            expect(next.resolve(example).cores).to.equal(0.357);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("allows a failed attempt to increase CPU cost and preserves it through a late failure", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-failed-increase-")
+        );
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            cache.record(example, sample, metadata);
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.8 },
+                metadata
+            );
+            expect(cache.resolve(example).cores).to.equal(0.8);
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.1 },
+                { ...metadata, disposition: "late-failure" }
+            );
+            expect(cache.resolve(example).cores).to.equal(0.8);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("does not lower the default CPU estimate when the first attempt fails", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-first-failure-")
+        );
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const before = cache.resolve(example).cores;
+            cache.record(
+                example,
+                { ...sample, code: 1, avgCores: 0.1 },
+                metadata
+            );
+            expect(cache.resolve(example).cores).to.equal(before);
+            cache.commit();
+            expect(fs.existsSync(path.join(root, "test-costs.json"))).to.equal(
+                false
+            );
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))
+            ).to.have.property(cache.key(example));
+            cache.record(example, sample, metadata);
+            cache.commit();
+            expect(
+                readTasks(path.join(root, "test-costs.json"))[
+                    cache.key(example)
+                ]
+            ).to.include({ durationMs: 100, avgCores: 0.3, peakRssGb: 0.5 });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("records one finalizing sample per task run including late failure", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-finalizing-"));
         try {
             const cache = new CostCache({ projectRoot: root });
@@ -221,8 +358,8 @@ describe("task cost cache", function () {
                 )
             );
             expect(stored.tasks[cache.key(example)]).to.include({
-                samples: 2,
-                durationMs: 170
+                samples: 1,
+                durationMs: 100
             });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -254,6 +391,15 @@ describe("task cost cache", function () {
             expect(
                 new CostCache({ projectRoot: root }).resolve(example)
             ).to.include({ rssGb: 3.2, cores: 1, known: true });
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))[
+                    cache.key(example)
+                ]
+            ).to.include({
+                peakRssGb: null,
+                avgCores: null,
+                samples: 1
+            });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -309,7 +455,7 @@ describe("task cost cache", function () {
         }
     });
 
-    it("keeps another run's commit made after this run started", function () {
+    it("replaces the cache with the latest run while preserving both committed baselines", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-two-runs-"));
         const other = { ...example, label: "other", fullTitle: "other" };
         try {
@@ -325,13 +471,17 @@ describe("task cost cache", function () {
                     "utf8"
                 )
             ).tasks;
-            expect(tasks).to.have.keys(first.key(example), first.key(other));
+            expect(tasks).to.have.keys(first.key(other));
+            expect(readTasks(path.join(root, "test-costs.json"))).to.have.keys(
+                first.key(example),
+                first.key(other)
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("refuses to replace a cache it could not read", function () {
+    it("preserves a directory at the cache path when atomic replacement fails", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-unreadable-"));
         const warnings: string[] = [];
         const originalWarn = console.warn;
@@ -348,9 +498,12 @@ describe("task cost cache", function () {
             expect(fs.statSync(cachePath).isDirectory()).to.equal(true);
             expect(
                 warnings.some((line) =>
-                    line.includes("Not committing cost cache")
+                    line.includes("Unable to commit cost cache")
                 )
             ).to.equal(true);
+            expect(fs.existsSync(path.join(root, "test-costs.json"))).to.equal(
+                false
+            );
         } finally {
             console.warn = originalWarn;
             fs.rmSync(root, { recursive: true, force: true });
@@ -401,14 +554,20 @@ describe("task cost cache", function () {
                 cores: 0.3,
                 rssGb: 0.5
             });
-            cache.commit();
-            // A run whose final attempt starved keeps the inflated sample.
-            cache = new CostCache({ projectRoot: root });
             const other = { ...example, label: "other", fullTitle: "other" };
-            cache.record(other, measured, {
-                ...starved,
-                disposition: "complete"
-            });
+            cache.record(other, measured, metadata);
+            cache.commit();
+            // A run whose final attempt starved keeps the inflated sample,
+            // which temporarily replaces the committed baseline.
+            cache = new CostCache({ projectRoot: root });
+            cache.record(
+                other,
+                { ...measured, code: 1 },
+                {
+                    ...starved,
+                    disposition: "complete"
+                }
+            );
             cache.commit();
             const tasks = JSON.parse(
                 fs.readFileSync(
@@ -416,16 +575,58 @@ describe("task cost cache", function () {
                     "utf8"
                 )
             ).tasks;
-            expect(tasks[cache.key(example)]).to.include({
-                avgCores: 0.3,
-                peakRssGb: 0.5,
-                samples: 1
-            });
+            expect(tasks).not.to.have.property(cache.key(example));
             expect(tasks[cache.key(other)]).to.include({
                 avgCores: 0.75,
                 peakRssGb: 1.5,
                 samples: 1
             });
+            const committed = readTasks(path.join(root, "test-costs.json"));
+            expect(committed[cache.key(example)]).to.include({
+                avgCores: 0.3,
+                peakRssGb: 0.5
+            });
+            expect(committed[cache.key(other)]).to.include({
+                avgCores: 0.75,
+                peakRssGb: 1.5
+            });
+            expect(
+                new CostCache({ projectRoot: root }).resolve(other)
+            ).to.include({ cores: 0.75, rssGb: 1.5 });
+            expect(committed[cache.key(other)].starved).to.equal(true);
+            // A failure must not clear the persisted starvation marker.
+            cache = new CostCache({ projectRoot: root });
+            cache.record(other, { ...measured, code: 1 }, metadata);
+            cache.commit();
+            expect(readTasks(path.join(root, "test-costs.json"))).to.deep.equal(
+                committed
+            );
+            // Neither may a successful attempt without resource measurements.
+            cache = new CostCache({ projectRoot: root });
+            cache.record(
+                other,
+                { ...measured, avgCores: null, peakRssGb: null },
+                metadata
+            );
+            cache.commit();
+            expect(readTasks(path.join(root, "test-costs.json"))).to.deep.equal(
+                committed
+            );
+            cache = new CostCache({ projectRoot: root });
+            cache.record(other, measured, metadata);
+            cache.commit();
+            expect(
+                new CostCache({ projectRoot: root }).resolve(other)
+            ).to.include({ cores: 0.5, rssGb: 1 });
+            const recovered = readTasks(path.join(root, "test-costs.json"));
+            expect(recovered[cache.key(other)]).not.to.have.property("starved");
+            // Once recovered, subsequent ordinary measurements leave it alone.
+            cache = new CostCache({ projectRoot: root });
+            cache.record(other, sample, metadata);
+            cache.commit();
+            expect(readTasks(path.join(root, "test-costs.json"))).to.deep.equal(
+                recovered
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -445,6 +646,8 @@ describe("task cost cache", function () {
             cache.commit();
             expect(fs.existsSync(path.join(root, ".cache/test-costs.json"))).to
                 .be.false;
+            expect(fs.existsSync(path.join(root, "test-costs.json"))).to.be
+                .false;
             expect(cache.resolve(example)).to.deep.equal(defaultCost());
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -457,13 +660,7 @@ describe("task cost cache", function () {
         const legacy = { ...example, label: "legacy", fullTitle: "legacy" };
         try {
             const key = new CostCache({ projectRoot: root }).key(example);
-            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
-                recursive: true
-            });
-            const overridesPath = path.join(
-                root,
-                "scripts/e2e-parallel/test-costs.overrides.json"
-            );
+            const overridesPath = path.join(root, "test-costs.overrides.json");
             fs.writeFileSync(
                 overridesPath,
                 JSON.stringify({ [key]: { rssGb: 4, cores: 3 } })
@@ -511,13 +708,7 @@ describe("task cost cache", function () {
     it("fails at startup on a broken overrides file", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-overrides-"));
         try {
-            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
-                recursive: true
-            });
-            const overridesPath = path.join(
-                root,
-                "scripts/e2e-parallel/test-costs.overrides.json"
-            );
+            const overridesPath = path.join(root, "test-costs.overrides.json");
             const key = new CostCache({ projectRoot: root }).key(example);
             for (const [content, message] of [
                 ["", "Unexpected end of JSON input"],
@@ -553,64 +744,66 @@ describe("task cost cache", function () {
         }
     });
 
-    it("ignores malformed cache dimensions", function () {
+    it("ignores a malformed committed costs file and never replaces it", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-invalid-"));
+        const warnings: string[] = [];
         const warn = console.warn;
-        console.warn = () => {};
+        console.warn = (...values: unknown[]) =>
+            warnings.push(values.join(" "));
         try {
             const cache = new CostCache({ projectRoot: root });
-            cache.record(example, sample, metadata);
-            cache.commit();
-            const cachePath = path.join(root, ".cache/test-costs.json");
-            const original = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-            for (const value of [-1, "1"]) {
-                original.tasks[cache.key(example)].peakRssGb = value;
-                fs.writeFileSync(cachePath, JSON.stringify(original));
+            const key = cache.key(example);
+            const costsPath = path.join(root, "test-costs.json");
+            for (const entry of [
+                { ...costEntry(1000, 0.5), peakRssGb: -1 },
+                { ...costEntry(1000, 0.5), peakRssGb: "1" },
+                { ...costEntry(1000, 0.5), measurementReason: "unknown" }
+            ]) {
+                writeCosts(root, { [key]: entry });
                 expect(
                     new CostCache({ projectRoot: root }).resolve(example)
                         .durationMs
                 ).to.equal(30000);
             }
             fs.writeFileSync(
-                cachePath,
-                JSON.stringify({ ...original, version: 1 })
+                costsPath,
+                JSON.stringify({ version: 2, tasks: {} })
             );
             expect(
                 new CostCache({ projectRoot: root }).resolve(example).durationMs
             ).to.equal(30000);
-            fs.writeFileSync(cachePath, "");
+            // A conflict-marked file stays for a person to fix.
+            const broken = "<<<<<<< ours\n{}\n";
+            fs.writeFileSync(costsPath, broken);
+            const run = new CostCache({ projectRoot: root });
+            expect(run.resolve(example).durationMs).to.equal(30000);
+            run.record(example, sample, metadata);
+            run.commit();
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(broken);
             expect(
-                new CostCache({ projectRoot: root }).resolve(example).durationMs
-            ).to.equal(30000);
+                warnings.some((line) =>
+                    line.includes("Not updating test costs")
+                )
+            ).to.equal(true);
+            // The run's measurement stays pending and still resolves.
+            expect(run.resolve(example).durationMs).to.equal(100);
+            fs.rmSync(costsPath);
+            run.commit();
+            expect(readTasks(costsPath)[key].durationMs).to.equal(100);
         } finally {
             console.warn = warn;
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("reads the committed snapshot for unmeasured tests and seeds the cache from it", function () {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-snapshot-"));
+    it("schedules by the committed costs, never by the cache", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-committed-"));
         try {
             const key = new CostCache({ projectRoot: root }).key(example);
-            const snapshotPath = path.join(
-                root,
-                "scripts/e2e-parallel/test-costs.snapshot.json"
-            );
-            fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
-            const snapshot = JSON.stringify({
-                version: 2,
-                tasks: {
-                    [key]: {
-                        durationMs: 1000,
-                        avgCores: 0.5,
-                        peakRssGb: 1,
-                        measurementReason: null,
-                        samples: 3,
-                        lastSeenAt: "2026-10-01T00:00:00.000Z"
-                    }
-                }
+            writeCosts(root, { [key]: costEntry(1000, 0.5) });
+            const cachePath = writeCache(root, {
+                [key]: cacheEntry(500, 0.25)
             });
-            fs.writeFileSync(snapshotPath, snapshot);
             const cache = new CostCache({ projectRoot: root });
             expect(cache.resolve(example)).to.deep.equal({
                 durationMs: 1000,
@@ -620,50 +813,18 @@ describe("task cost cache", function () {
             });
             cache.record(example, { ...sample, durationMs: 2000 }, metadata);
             cache.commit();
-            expect(
-                JSON.parse(
-                    fs.readFileSync(
-                        path.join(root, ".cache/test-costs.json"),
-                        "utf8"
-                    )
-                ).tasks[key]
-            ).to.include({ durationMs: 1300, samples: 4 });
-            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(snapshot);
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it("prefers this checkout's cache over the snapshot when resolving and seeding", function () {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-precedence-"));
-        try {
-            const key = new CostCache({ projectRoot: root }).key(example);
-            writeSnapshot(root, { [key]: snapshotEntry(1000, 0.5) });
-            fs.mkdirSync(path.join(root, ".cache"));
-            fs.writeFileSync(
-                path.join(root, ".cache/test-costs.json"),
-                JSON.stringify({
-                    version: 2,
-                    tasks: {
-                        [key]: { ...snapshotEntry(500, 0.25), samples: 7 }
-                    }
-                })
-            );
-            const cache = new CostCache({ projectRoot: root });
-            expect(cache.resolve(example)).to.include({
-                durationMs: 500,
-                cores: 0.25
+            expect(readTasks(cachePath)[key]).to.include({
+                durationMs: 2000,
+                samples: 1
             });
-            cache.record(example, { ...sample, durationMs: 1500 }, metadata);
-            cache.commit();
             expect(
-                JSON.parse(
-                    fs.readFileSync(
-                        path.join(root, ".cache/test-costs.json"),
-                        "utf8"
-                    )
-                ).tasks[key]
-            ).to.include({ durationMs: 800, samples: 8 });
+                readTasks(path.join(root, "test-costs.json"))[key]
+            ).to.deep.equal({
+                durationMs: 1000,
+                avgCores: 0.5,
+                peakRssGb: 1,
+                measurementReason: null
+            });
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -680,19 +841,10 @@ describe("task cost cache", function () {
         const sibling = { ...example, label: "sibling", fullTitle: "sibling" };
         try {
             const key = new CostCache({ projectRoot: root }).key(example);
-            writeSnapshot(root, { [key]: snapshotEntry(1000, 0.5) });
-            // This checkout measured it only on an older worker.
-            fs.mkdirSync(path.join(root, ".cache"));
-            fs.writeFileSync(
-                path.join(root, ".cache/test-costs.json"),
-                JSON.stringify({
-                    version: 2,
-                    tasks: { [key]: snapshotEntry(900, null) }
-                })
-            );
+            writeCosts(root, { [key]: costEntry(1000, 0.5) });
             let cache = new CostCache({ projectRoot: root });
             cache.record(example, unmeasured, metadata);
-            // The duration is this run's; cores and memory are the snapshot's.
+            // The duration is this run's; cores and memory are committed ones.
             expect(cache.resolve(example)).to.deep.equal({
                 durationMs: 100,
                 cores: 0.5,
@@ -700,14 +852,22 @@ describe("task cost cache", function () {
                 known: true
             });
             cache.commit();
+            // An ordinary partial measurement never rewrites the committed baseline.
             expect(
-                JSON.parse(
-                    fs.readFileSync(
-                        path.join(root, ".cache/test-costs.json"),
-                        "utf8"
-                    )
-                ).tasks[key]
-            ).to.include({ avgCores: 0.5, peakRssGb: 1 });
+                readTasks(path.join(root, "test-costs.json"))[key]
+            ).to.deep.equal({
+                durationMs: 1000,
+                avgCores: 0.5,
+                peakRssGb: 1,
+                measurementReason: null
+            });
+            expect(
+                readTasks(path.join(root, ".cache/test-costs.json"))[key]
+            ).to.include({
+                avgCores: null,
+                peakRssGb: null,
+                measurementReason: "process-sampling-unavailable"
+            });
             // With no measured cores anywhere, a sibling's come before the default.
             cache = new CostCache({ projectRoot: root });
             cache.record(sibling, { ...sample, avgCores: 0.75 }, metadata);
@@ -728,7 +888,7 @@ describe("task cost cache", function () {
         }
     });
 
-    it("rewrites a cache from an earlier format as format 2", function () {
+    it("rewrites a cache from an earlier format as format 3", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-v1-"));
         const warn = console.warn;
         console.warn = () => {};
@@ -737,13 +897,13 @@ describe("task cost cache", function () {
             fs.mkdirSync(path.dirname(cachePath));
             fs.writeFileSync(
                 cachePath,
-                JSON.stringify({ version: 1, tasks: { old: { samples: 0 } } })
+                JSON.stringify({ version: 2, tasks: { old: cacheEntry(5, 1) } })
             );
             const cache = new CostCache({ projectRoot: root });
             cache.record(example, sample, metadata);
             cache.commit();
             const written = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-            expect(written.version).to.equal(2);
+            expect(written.version).to.equal(3);
             expect(written.tasks).to.have.keys(cache.key(example));
         } finally {
             console.warn = warn;
@@ -751,119 +911,213 @@ describe("task cost cache", function () {
         }
     });
 
-    it("never writes the cache in read-only mode", function () {
+    it("never writes the cache or the committed costs in read-only mode", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-read-only-"));
         try {
+            const key = new CostCache({ projectRoot: root }).key(example);
+            const costsPath = writeCosts(root, { [key]: costEntry(1000, 0.5) });
+            const committed = fs.readFileSync(costsPath, "utf8");
             const cache = new CostCache({ projectRoot: root, readOnly: true });
+            expect(cache.resolve(example).durationMs).to.equal(1000);
             cache.record(example, sample, metadata);
             expect(cache.resolve(example).durationMs).to.equal(100);
             cache.commit();
             expect(fs.existsSync(path.join(root, ".cache"))).to.equal(false);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(committed);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("refreshes the snapshot from the cache, rounded and sorted by key", function () {
+    it("prunes deleted source tests from both cost files without dropping filtered or inactive tests", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-prune-"));
+        try {
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test/cases.ts"),
+                `
+                describe("suite", () => {
+                    it("kept | title", () => {});
+                    it.skip("skipped", () => {});
+                    it("pending");
+                });
+                xdescribe("inactive", () => { it("kept", () => {}); });
+            `
+            );
+            fs.writeFileSync(
+                path.join(root, "test/dynamic.ts"),
+                "it(title, () => {});"
+            );
+            fs.writeFileSync(
+                path.join(root, "test/broken.ts"),
+                'it("unfinished", () => {'
+            );
+            fs.writeFileSync(path.join(root, "test/run-browser.mjs"), "");
+            fs.writeFileSync(
+                path.join(root, "test/Example.t.sol"),
+                "contract Kept { function testExample() public {} }"
+            );
+            const kept = [
+                "hardhat|test/cases.ts|suite kept | title",
+                "hardhat|test/cases.ts|suite skipped",
+                "hardhat|test/cases.ts|suite pending",
+                "hardhat|test/cases.ts|inactive kept",
+                "hardhat|test/dynamic.ts|dynamic title",
+                "hardhat|test/broken.ts|unfinished",
+                "browser|test/run-browser.mjs|run-browser",
+                "forge|test/Example.t.sol|Kept"
+            ];
+            const removed = [
+                "hardhat|test/cases.ts|suite deleted",
+                "hardhat|test/deleted.ts|gone",
+                "browser|test/deleted.mjs|deleted",
+                "forge|test/Example.t.sol|Deleted"
+            ];
+            writeCosts(
+                root,
+                Object.fromEntries(
+                    [...kept, ...removed].map((key) => [
+                        key,
+                        costEntry(1000, 1)
+                    ])
+                )
+            );
+            writeCache(
+                root,
+                Object.fromEntries(
+                    [...kept, ...removed].map((key) => [
+                        key,
+                        cacheEntry(1000, 1)
+                    ])
+                )
+            );
+            // No pending measurements: cleanup is independent of what this run selected.
+            new CostCache({ projectRoot: root }).commit({ pruneDeleted: true });
+            expect(
+                Object.keys(
+                    readTasks(path.join(root, "test-costs.json"))
+                ).sort()
+            ).to.deep.equal([...kept].sort());
+            expect(
+                Object.keys(
+                    readTasks(path.join(root, ".cache/test-costs.json"))
+                ).sort()
+            ).to.deep.equal([]);
+            refreshCosts({ projectRoot: root });
+            expect(
+                Object.keys(
+                    readTasks(path.join(root, "test-costs.json"))
+                ).sort()
+            ).to.deep.equal([...kept].sort());
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("does not prune deleted costs on interrupted or read-only runs", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cost-prune-disabled-")
+        );
+        try {
+            const key = "hardhat|test/deleted.ts|gone";
+            const costsPath = writeCosts(root, { [key]: costEntry(1000, 1) });
+            const cachePath = writeCache(root, { [key]: cacheEntry(1000, 1) });
+            const costsBefore = fs.readFileSync(costsPath, "utf8");
+            const cacheBefore = fs.readFileSync(cachePath, "utf8");
+            new CostCache({ projectRoot: root }).commit({
+                pruneDeleted: true,
+                interrupted: true
+            });
+            new CostCache({ projectRoot: root, readOnly: true }).commit({
+                pruneDeleted: true
+            });
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(costsBefore);
+            expect(fs.readFileSync(cachePath, "utf8")).to.equal(cacheBefore);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("copies every cached cost into the committed costs, rounded and sorted by key", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-refresh-"));
         const entry = (durationMs: number, avgCores: number | null) => ({
-            durationMs,
-            avgCores,
-            peakRssGb: avgCores === null ? null : 1.23456,
-            measurementReason:
-                avgCores === null ? "legacy-measurements-unavailable" : null,
-            samples: 1,
-            lastSeenAt: "2026-10-01T00:00:00.000Z"
+            ...cacheEntry(durationMs, avgCores),
+            peakRssGb: avgCores === null ? null : 1.23456
         });
         try {
-            fs.mkdirSync(path.join(root, ".cache"));
-            fs.writeFileSync(
-                path.join(root, ".cache/test-costs.json"),
-                JSON.stringify({
-                    version: 2,
-                    tasks: { b: entry(200.6, 0.33333), a: entry(100.4, null) }
-                })
-            );
-            const snapshotPath = path.join(
-                root,
-                "scripts/e2e-parallel/test-costs.snapshot.json"
-            );
-            fs.mkdirSync(path.dirname(snapshotPath), { recursive: true });
-            fs.writeFileSync(
-                snapshotPath,
-                JSON.stringify({
-                    version: 2,
-                    tasks: { c: entry(5, 1), a: entry(9, 9) }
-                })
-            );
-            expect(refreshSnapshot({ projectRoot: root })).to.equal(3);
-            const written = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
-            expect(Object.keys(written.tasks)).to.deep.equal(["a", "b", "c"]);
-            expect(written.tasks.a).to.include({
-                durationMs: 100,
-                avgCores: null,
-                peakRssGb: null
+            writeCache(root, {
+                b: entry(200.6, 0.33333),
+                a: entry(100.4, null),
+                // Existing entries are explicitly replaced too.
+                d: entry(105, 1)
             });
-            expect(written.tasks.b).to.include({
+            const costsPath = writeCosts(root, {
+                c: costEntry(5, 1),
+                a: costEntry(9, 9),
+                d: costEntry(100, 1)
+            });
+            expect(refreshCosts({ projectRoot: root })).to.equal(4);
+            const written = readTasks(costsPath);
+            expect(Object.keys(written)).to.deep.equal(["a", "b", "c", "d"]);
+            // A value the cache lacks keeps the committed one.
+            expect(written.a).to.deep.equal({
+                durationMs: 100,
+                avgCores: 9,
+                peakRssGb: 1,
+                measurementReason: null
+            });
+            expect(written.b).to.deep.equal({
                 durationMs: 201,
                 avgCores: 0.333,
-                peakRssGb: 1.235
+                peakRssGb: 1.235,
+                measurementReason: null
             });
-            expect(written.tasks.c).to.include({ durationMs: 5 });
-            // The refreshed snapshot is itself a readable cost source.
+            expect(written.c).to.include({ durationMs: 5 });
+            expect(written.d).to.include({ durationMs: 105 });
+            // The refreshed file is itself what a run schedules by.
             expect(
                 new CostCache({ projectRoot: root, cachePath: "missing.json" })
-                    .snapshot
-            ).to.have.keys("a", "b", "c");
+                    .costs
+            ).to.have.keys("a", "b", "c", "d");
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("stops a snapshot refresh on an unreadable snapshot or cache", function () {
+    it("stops a costs refresh on an unreadable costs file or cache", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cost-refresh-bad-")
         );
         try {
-            const snapshotPath = writeSnapshot(root, {
-                kept: snapshotEntry(1000, 0.5)
-            });
-            const cachePath = path.join(root, ".cache/test-costs.json");
-            fs.mkdirSync(path.dirname(cachePath));
-            fs.writeFileSync(
-                cachePath,
-                JSON.stringify({
-                    version: 2,
-                    tasks: { b: snapshotEntry(5, 1) }
-                })
-            );
-            const good = fs.readFileSync(snapshotPath, "utf8");
+            const costsPath = writeCosts(root, { kept: costEntry(1000, 0.5) });
+            const cachePath = writeCache(root, { b: cacheEntry(5, 1) });
+            const good = fs.readFileSync(costsPath, "utf8");
             const broken = `${good.slice(0, -1)},}`;
-            fs.writeFileSync(snapshotPath, broken);
-            expect(() => refreshSnapshot({ projectRoot: root })).to.throw(
-                `Cannot refresh from ${snapshotPath}`
+            fs.writeFileSync(costsPath, broken);
+            expect(() => refreshCosts({ projectRoot: root })).to.throw(
+                `Cannot refresh from ${costsPath}`
             );
-            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(broken);
-            fs.writeFileSync(snapshotPath, good);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(broken);
+            fs.writeFileSync(costsPath, good);
             fs.writeFileSync(
                 cachePath,
-                JSON.stringify({ version: 1, tasks: {} })
+                JSON.stringify({ version: 2, tasks: {} })
             );
-            expect(() => refreshSnapshot({ projectRoot: root })).to.throw(
+            expect(() => refreshCosts({ projectRoot: root })).to.throw(
                 "Invalid cost cache schema"
             );
-            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(good);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(good);
             // A mistyped cache path is not an empty cache.
             expect(() =>
-                refreshSnapshot({ projectRoot: root, cachePath: "typo.json" })
+                refreshCosts({ projectRoot: root, cachePath: "typo.json" })
             ).to.throw("no such file");
-            expect(fs.readFileSync(snapshotPath, "utf8")).to.equal(good);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(good);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
-    it("refreshes the snapshot from the command line and rejects a bad argument", function () {
+    it("refreshes the committed costs from the command line and rejects a bad argument", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cost-refresh-cli-")
         );
@@ -872,8 +1126,8 @@ describe("task cost cache", function () {
             fs.writeFileSync(
                 path.join(root, "costs.json"),
                 JSON.stringify({
-                    version: 2,
-                    tasks: { a: snapshotEntry(5, 1) }
+                    version: 3,
+                    tasks: { a: cacheEntry(5, 1) }
                 })
             );
             const ok = spawnSync(
@@ -882,7 +1136,12 @@ describe("task cost cache", function () {
                 { cwd: root, encoding: "utf8" }
             );
             expect(ok.status).to.equal(0);
-            expect(ok.stdout).to.include("Wrote 1 task costs");
+            expect(ok.stdout).to.include(
+                "Wrote 1 task costs to test-costs.json"
+            );
+            expect(readTasks(path.join(root, "test-costs.json"))).to.have.keys(
+                "a"
+            );
             const missing = spawnSync(
                 process.execPath,
                 [script, "--cost-cache"],
@@ -901,16 +1160,7 @@ describe("task cost cache", function () {
     it("fails a runner invocation on broken overrides before building anything", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-early-"));
         try {
-            fs.mkdirSync(path.join(root, "scripts/e2e-parallel"), {
-                recursive: true
-            });
-            fs.writeFileSync(
-                path.join(
-                    root,
-                    "scripts/e2e-parallel/test-costs.overrides.json"
-                ),
-                "{"
-            );
+            fs.writeFileSync(path.join(root, "test-costs.overrides.json"), "{");
             const run = spawnSync(
                 process.execPath,
                 [path.join(SCRIPTS, "test-e2e-parallel.js")],
@@ -933,7 +1183,9 @@ describe("task cost cache", function () {
             cache.record(example, sample, metadata);
             cache.commit();
             const cachePath = path.join(root, ".cache/test-costs.json");
+            const costsPath = path.join(root, "test-costs.json");
             const original = fs.readFileSync(cachePath);
+            const committed = fs.readFileSync(costsPath);
             cache.record(
                 example,
                 { ...sample, durationMs: 999, cancelled: true },
@@ -951,9 +1203,11 @@ describe("task cost cache", function () {
             );
             cache.commit();
             expect(fs.readFileSync(cachePath)).to.deep.equal(original);
+            expect(fs.readFileSync(costsPath)).to.deep.equal(committed);
             cache.record(example, { ...sample, durationMs: 999 }, metadata);
             cache.commit({ interrupted: true });
             expect(fs.readFileSync(cachePath)).to.deep.equal(original);
+            expect(fs.readFileSync(costsPath)).to.deep.equal(committed);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

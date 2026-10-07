@@ -63,7 +63,11 @@ async function stageHeldLeaverExitPost(h: MathPeerTestHarness) {
     // parks in its construction, past the barrier. Install the send wrapper
     // last so releasing it preserves the reduction submission recorder.
     const send = await h.rpcStub.holdSnapshotPostSend(leaver.index);
-    const rebuild = await h.rpcStub.holdAuditingDataRebuild(leaver.index);
+    // parked before construction reads the force-exit flag
+    const rebuild = await h.rpcStub.holdAuditingDataRebuild(
+        leaver.index,
+        "auditingData"
+    );
     return { forkId, leaver, others, leaverReduction, send, rebuild };
 }
 

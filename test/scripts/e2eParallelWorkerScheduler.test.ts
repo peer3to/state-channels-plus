@@ -52,6 +52,7 @@ const {
     nextSampleDelayMs
 } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const {
+    allowsWorkerAssignment,
     buildSlotEnv,
     holdReason
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
@@ -77,9 +78,70 @@ function steadyClock() {
 }
 
 describe("distributed worker scheduler", function () {
-    it("accepts default FIFO and rejects invalid scheduling flags", function () {
+    it("holds chain assignments for accounts while admitting other tiers and retries after release", async function () {
+        const taskResources = new TaskResourcePool({
+            baseEnv: {},
+            slots: [],
+            accountPartitions: new AccountPartitionPool(1)
+        });
+        const lease = taskResources.acquire({ runner: "hardhat" });
+        let samples = 0;
+        const holds: string[] = [];
+        const options = {
+            taskResources,
+            scheduler: { options: { schedule: "fifo" }, bufferedCount: 1 },
+            resources: {
+                async allows() {
+                    samples++;
+                    return true;
+                }
+            },
+            config: { concurrencyCap: 40, taskCount: 3 },
+            logging: {
+                hold({ reason }: { reason: string }) {
+                    holds.push(reason);
+                }
+            }
+        };
+        const chain = { seq: 1, task: { runner: "hardhat" } };
+        try {
+            expect(
+                await allowsWorkerAssignment(options, 1, chain, [])
+            ).to.equal(false);
+            expect(samples).to.equal(0);
+            expect(holds).to.deep.equal([
+                "waiting for a funded account partition"
+            ]);
+            expect(
+                await allowsWorkerAssignment(
+                    options,
+                    1,
+                    { task: { runner: "forge" } },
+                    []
+                )
+            ).to.equal(true);
+            expect(
+                await allowsWorkerAssignment(
+                    options,
+                    1,
+                    { task: { runner: "browser" } },
+                    []
+                )
+            ).to.equal(true);
+            expect(samples).to.equal(2);
+            lease.release();
+            expect(
+                await allowsWorkerAssignment(options, 0, chain, [])
+            ).to.equal(true);
+            expect(samples).to.equal(3);
+        } finally {
+            lease.release();
+        }
+    });
+
+    it("accepts default cost scheduling and rejects invalid scheduling flags", function () {
         expect(parseCliArgs(["node", "runner"])).to.include({
-            schedule: "fifo",
+            schedule: "cost",
             costCachePath: ".cache/test-costs.json",
             costCacheReadOnly: false
         });
@@ -351,7 +413,7 @@ describe("distributed worker scheduler", function () {
         });
         try {
             await scheduler.requestWhenAvailable();
-            await scheduler.requestWhenAvailable();
+            await waitFor(() => probes.length === 3, 10000, 10);
             expect(requests).to.equal(1);
             expect(probes).to.deep.equal([
                 { count: 0, assignment: null },
@@ -364,7 +426,7 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests the next cost task at once after starting a known-cost one", async function () {
+    it("paces both known and unknown cost starts by the scheduler interval", async function () {
         const run = async (known: boolean) => {
             const queue = ["first", "second"].map((id) => ({
                 id,
@@ -393,7 +455,7 @@ describe("distributed worker scheduler", function () {
                 release();
             }
         };
-        expect(await run(true)).to.equal(2);
+        expect(await run(true)).to.equal(1);
         expect(await run(false)).to.equal(1);
     });
 
@@ -421,8 +483,7 @@ describe("distributed worker scheduler", function () {
             await new Promise((resolve) => setImmediate(resolve));
             expect(requests).to.equal(1);
             expect(scheduler.bufferedAssignment).to.equal(null);
-            await scheduler.requestWhenAvailable();
-            expect(requests).to.equal(2);
+            await waitFor(() => requests === 2, 10000, 10);
             expect(scheduler.running).to.equal(2);
         } finally {
             scheduler.stop();
@@ -528,7 +589,7 @@ describe("distributed worker scheduler", function () {
             expect(resources.costCpuValve).to.equal(0.5);
             expect(
                 resources.costBudget({ cores: 1.5, rssGb: 2 })
-            ).to.deep.equal({ cores: 2.5, rssGb: 8 });
+            ).to.deep.equal({ cores: 2.5, rssGb: 6 });
             expect(
                 holdReason({
                     schedule: "cost",
@@ -542,6 +603,38 @@ describe("distributed worker scheduler", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("uses the configured CPU budget without changing detected capacity", function () {
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            cpuLimit: 6,
+            sampleOptions: { platform: "darwin", cpuCount: () => 8 }
+        });
+        expect(resources.stats().cpuCores).to.equal(8);
+        expect(resources.costBudget({ cores: 5.5, rssGb: 0 }).cores).to.equal(
+            0.5
+        );
+        expect(resources.costBudget({ cores: 6, rssGb: 0 }).cores).to.equal(0);
+        expect(resources.costBudget({ cores: 7, rssGb: 0 }).cores).to.equal(-1);
+    });
+
+    it("allows a configured CPU budget above the available cores", function () {
+        const resources = new ResourceGate({
+            testPids: () => [],
+            infraPids: () => [],
+            targetLoad: 0.8,
+            memBoundGb: 10,
+            cpuLimit: 6,
+            sampleOptions: { platform: "darwin", cpuCount: () => 4 }
+        });
+        expect(resources.costBudget({ cores: 1.5, rssGb: 0 }).cores).to.equal(
+            4.5
+        );
+        expect(resources.stats().cpuCores).to.equal(4);
     });
 
     it("meters overlapping process-table scans once and counts a failed one", async function () {
@@ -650,7 +743,9 @@ describe("distributed worker scheduler", function () {
             runTask: async (assignment: { id: string }) => {
                 startedAt.set(assignment.id, Date.now());
                 if (assignment.id !== "known") return forever;
-                await new Promise((resolve) => setTimeout(resolve, 50));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, retryMs + 50)
+                );
             }
         });
         try {
@@ -664,7 +759,7 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests at once again once an unknown-cost start's tick has passed", async function () {
+    it("paces a known-cost start after an unknown-cost start", async function () {
         const retryMs = 1000;
         const startedAt = new Map<string, number>();
         const cost = (known: boolean) => ({
@@ -689,14 +784,13 @@ describe("distributed worker scheduler", function () {
         try {
             await scheduler.requestWhenAvailable();
             await waitFor(() => startedAt.has("next"), 10000, 10);
-            // "known" waited out the tick; "next" follows it at once rather
-            // than a tick later.
+            // Both starts wait out a full interval.
             expect(
                 startedAt.get("known")! - startedAt.get("unknown")!
             ).to.be.at.least(retryMs - 15);
             expect(
                 startedAt.get("next")! - startedAt.get("known")!
-            ).to.be.below(retryMs / 2);
+            ).to.be.at.least(retryMs - 15);
         } finally {
             scheduler.stop();
         }
@@ -724,7 +818,9 @@ describe("distributed worker scheduler", function () {
                 startedAt.set(assignment.id, Date.now());
                 if (assignment.id !== "known") return forever;
                 // Finishes while "unknown" is still settling.
-                await new Promise((resolve) => setTimeout(resolve, 50));
+                await new Promise((resolve) =>
+                    setTimeout(resolve, retryMs + 50)
+                );
             }
         });
         try {
@@ -780,11 +876,11 @@ describe("distributed worker scheduler", function () {
         }
     });
 
-    it("requests at once when a cost task finishes, and only under cost", async function () {
+    it("keeps the start interval when a task finishes immediately", async function () {
         const run = async (schedule: string) => {
             const queue = ["first", "second"].map((id) => ({
                 id,
-                // Unknown costs: only the finish can trigger the next request.
+                // Even a completed task must leave the start interval intact.
                 task: { cost: { cores: 0.1, rssGb: 0.1, known: false } }
             }));
             const starts: string[] = [];
@@ -806,7 +902,7 @@ describe("distributed worker scheduler", function () {
                 scheduler.stop();
             }
         };
-        expect(await run("cost")).to.deep.equal(["first", "second"]);
+        expect(await run("cost")).to.deep.equal(["first"]);
         expect(await run("fifo")).to.deep.equal(["first"]);
     });
 
@@ -984,6 +1080,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -1057,6 +1154,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -1117,6 +1215,141 @@ describe("distributed worker scheduler", function () {
         ).to.deep.equal([500, null]);
     });
 
+    it("reserves infrastructure and container overhead before admitting more work at seven cores", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "memory-admission-")
+        );
+        let containerGb = 3;
+        let inactiveFileGb = 0;
+        let activeFileGb = 0;
+        let boundedContainer = true;
+        let idleTicks = 1000;
+        try {
+            for (const [pid, rssGb] of [
+                [100, 2],
+                [200, 1]
+            ]) {
+                fs.mkdirSync(path.join(root, String(pid)));
+                const fields = Array(22).fill("0");
+                fields[0] = "S";
+                fields[1] = "1";
+                fields[19] = String(pid);
+                fs.writeFileSync(
+                    path.join(root, `${pid}/stat`),
+                    `${pid} (owned) ${fields.join(" ")}\n`
+                );
+                fs.writeFileSync(
+                    path.join(root, `${pid}/status`),
+                    `VmRSS:\t${rssGb * 1024 ** 2} kB\n`
+                );
+            }
+            const resources = new ResourceGate({
+                testPids: () => [100],
+                infraPids: () => [200],
+                targetLoad: 0.95,
+                cpuLimit: 7,
+                memBoundGb: 12.5,
+                sampleOptions: {
+                    platform: "linux",
+                    procRoot: root,
+                    now: steadyClock(),
+                    readFile: (file: string) => {
+                        if (file === "/proc/self/cgroup") return "0::/worker\n";
+                        if (!boundedContainer && file.includes("/memory."))
+                            throw new Error("ENOENT");
+                        if (file.endsWith("/memory.stat"))
+                            return `inactive_file ${inactiveFileGb * 1024 ** 3}\nactive_file ${activeFileGb * 1024 ** 3}\n`;
+                        if (file.endsWith("/memory.current"))
+                            return String(containerGb * 1024 ** 3);
+                        if (file.endsWith("/memory.max"))
+                            return String(10 * 1024 ** 3);
+                        if (file === "/proc/stat")
+                            return `cpu 0 0 0 ${(idleTicks += 100)} 0 0 0 0 0 0\n`;
+                        throw new Error("ENOENT");
+                    }
+                }
+            });
+            await resources.sample();
+            // 8 GiB usable: 3 currently used + (6 predicted - 2 resident).
+            expect(resources.costBudget({ cores: 3, rssGb: 6 })).to.deep.equal({
+                cores: 4,
+                rssGb: 1
+            });
+            const admission = {
+                schedule: "cost",
+                runningCost: { cores: 3, rssGb: 6 },
+                nextCost: { cores: 1, rssGb: 1 }
+            };
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("memory");
+            admission.nextCost.rssGb = 0.5;
+            expect(await resources.allows(3, 40, admission)).to.equal(true);
+            containerGb = 8;
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.lastHoldReason).to.equal("memory");
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            containerGb = 9.5;
+            inactiveFileGb = 6.5;
+            expect(await resources.allows(0, 40, admission)).to.equal(true);
+            expect(resources.costBudget({ cores: 0, rssGb: 0 }).rssGb).to.equal(
+                5
+            );
+            inactiveFileGb = 0;
+            activeFileGb = 6.5;
+            // An idle worker progresses through hot file-cache pressure.
+            expect(await resources.allows(0, 40, admission)).to.equal(true);
+            // Busy admission and its cost budget retain the conservative estimate.
+            expect(await resources.allows(3, 40, admission)).to.equal(false);
+            expect(resources.costBudget({ cores: 0, rssGb: 0 }).rssGb).to.equal(
+                -1.5
+            );
+            activeFileGb = 1;
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            expect(resources.lastMemoryHold).to.deep.equal({
+                occupiedGb: 8.5,
+                thresholdGb: 8
+            });
+            expect(
+                holdReason({
+                    schedule: "cost",
+                    running: 0,
+                    concurrencyCap: 40,
+                    resourceGate: resources,
+                    memBoundGb: 12.5,
+                    targetLoad: 0.95
+                })
+            ).to.equal("memory (admission 8.5≥8.0GB)");
+            expect(await resources.allows(0, 40)).to.equal(false);
+            expect(
+                holdReason({
+                    schedule: "fifo",
+                    running: 0,
+                    concurrencyCap: 40,
+                    resourceGate: resources,
+                    memBoundGb: 12.5,
+                    targetLoad: 0.95
+                })
+            ).to.equal("memory (admission 8.5≥8.0GB)");
+            activeFileGb = 6.5;
+            expect(await resources.allows(0, 40)).to.equal(true);
+            expect(resources.lastMemoryHold).to.equal(null);
+            activeFileGb = 0;
+            expect(await resources.allows(0, 40, admission)).to.equal(false);
+            boundedContainer = false;
+            await resources.sample();
+            // Without cgroup counters, shared infrastructure still adds to predictions.
+            expect(resources.costBudget({ cores: 3, rssGb: 6 }).rssGb).to.equal(
+                3
+            );
+            // Resident memory larger than predictions must not be subtracted twice.
+            expect(resources.costBudget({ cores: 3, rssGb: 1 }).rssGb).to.equal(
+                7
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("holds predicted memory even when CPU budget fits", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-admission-"));
         let pids: number[] = [];
@@ -1162,7 +1395,7 @@ describe("distributed worker scheduler", function () {
                 await resources.allows(1, 4, {
                     schedule: "cost",
                     runningCost: { cores: 0.1, rssGb: 0.5 },
-                    nextCost: { cores: 0.1, rssGb: 0.4 }
+                    nextCost: { cores: 0.1, rssGb: 0.3 }
                 })
             ).to.equal(true);
             expect(
@@ -1295,6 +1528,7 @@ describe("distributed worker scheduler", function () {
         );
         const task = {
             label: "sample",
+            fullTitle: "cache fixture runs",
             logName: "sample",
             runner: "hardhat",
             args: ["test", "--no-compile", fixture]
@@ -1334,6 +1568,22 @@ describe("distributed worker scheduler", function () {
             expect(records[0].durationMs).to.be.greaterThan(0);
             expect(records[0].avgCores).to.be.at.least(0);
             expect(records[0].peakRssGb).to.be.greaterThan(0);
+            // The new test is committed at the project root as measured.
+            const committed = Object.values(
+                JSON.parse(
+                    fs.readFileSync(path.join(root, "test-costs.json"), "utf8")
+                ).tasks
+            ) as Array<Record<string, unknown>>;
+            expect(committed).to.have.length(1);
+            expect(committed[0]).to.have.keys(
+                "durationMs",
+                "avgCores",
+                "peakRssGb",
+                "measurementReason"
+            );
+            expect(committed[0].durationMs).to.equal(
+                Math.round(records[0].durationMs)
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -1407,20 +1657,19 @@ describe("distributed worker scheduler", function () {
         });
     });
 
-    it("reads but never writes the cost cache in read-only runs", async function () {
+    it("schedules by the committed costs but writes nothing in read-only runs", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "read-only-runs-"));
-        const costCachePath = path.join(root, "test-costs.json");
+        const costsPath = path.join(root, "test-costs.json");
+        const costCachePath = path.join(root, ".cache/test-costs.json");
         const entry = (durationMs: number) => ({
             durationMs,
             avgCores: 0.1,
             peakRssGb: 0.1,
-            measurementReason: null,
-            samples: 1,
-            lastSeenAt: "2026-10-01T00:00:00.000Z"
+            measurementReason: null
         });
-        // Cached durations put "long" first; unread, discovery order would.
+        // Committed durations put "long" first; unread, discovery order would.
         const seeded = JSON.stringify({
-            version: 2,
+            version: 1,
             tasks: {
                 "forge||light": entry(100),
                 "forge||long": entry(1000),
@@ -1428,7 +1677,7 @@ describe("distributed worker scheduler", function () {
                 "hardhat||long": entry(1000)
             }
         });
-        fs.writeFileSync(costCachePath, seeded);
+        fs.writeFileSync(costsPath, seeded);
         const tasks = (runner: string) =>
             ["light", "long"].map((label) => ({
                 label,
@@ -1465,6 +1714,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 resourceGate,
                 schedule: "cost",
+                projectRoot: root,
                 costCachePath,
                 costCacheReadOnly: true,
                 runTaskImpl: async (
@@ -1485,7 +1735,8 @@ describe("distributed worker scheduler", function () {
             });
             expect(local.completed).to.equal(2);
             expect(starts).to.deep.equal(["long", "light"]);
-            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(seeded);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
             const distributed = await runAgainstProtocolWorkers(
                 [
                     {
@@ -1502,6 +1753,7 @@ describe("distributed worker scheduler", function () {
                     tasks: tasks("hardhat"),
                     run: {
                         schedule: "cost",
+                        projectRoot: root,
                         costCachePath,
                         costCacheReadOnly: true
                     }
@@ -1512,7 +1764,8 @@ describe("distributed worker scheduler", function () {
                 "long",
                 "light"
             ]);
-            expect(fs.readFileSync(costCachePath, "utf8")).to.equal(seeded);
+            expect(fs.readFileSync(costsPath, "utf8")).to.equal(seeded);
+            expect(fs.existsSync(costCachePath)).to.equal(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -1522,7 +1775,7 @@ describe("distributed worker scheduler", function () {
         const cacheDir = fs.mkdtempSync(
             path.join(os.tmpdir(), "distributed-cost-cache-")
         );
-        const costCachePath = path.join(cacheDir, "test-costs.json");
+        const costCachePath = path.join(cacheDir, ".cache/test-costs.json");
         const peer = (durationMs: number, afterRunComplete?: () => void) => ({
             name: "cache-peer",
             distributedProtocol: 15,
@@ -1541,7 +1794,7 @@ describe("distributed worker scheduler", function () {
         try {
             const first = await runAgainstProtocolWorkers([peer(100)], {
                 tasks: [MEASURED_TASK],
-                run: { costCachePath }
+                run: { projectRoot: cacheDir, costCachePath }
             });
             expect(first.failure).to.equal(null);
             const original = fs.readFileSync(costCachePath);
@@ -1553,16 +1806,32 @@ describe("distributed worker scheduler", function () {
                 avgCores: 0.25,
                 peakRssGb: 0.5
             });
+            // A new test is committed as measured, without run bookkeeping.
+            const costsPath = path.join(cacheDir, "test-costs.json");
+            const committed = fs.readFileSync(costsPath);
+            expect(
+                JSON.parse(committed.toString()).tasks["hardhat||measured"]
+            ).to.deep.equal({
+                durationMs: 100,
+                avgCores: 0.25,
+                peakRssGb: 0.5,
+                measurementReason: null
+            });
             const controller = new AbortController();
             await runAgainstProtocolWorkers(
                 [peer(200, () => controller.abort())],
                 {
                     tasks: [MEASURED_TASK],
-                    run: { costCachePath, signal: controller.signal }
+                    run: {
+                        projectRoot: cacheDir,
+                        costCachePath,
+                        signal: controller.signal
+                    }
                 }
             );
             expect(controller.signal.aborted).to.equal(true);
             expect(fs.readFileSync(costCachePath)).to.deep.equal(original);
+            expect(fs.readFileSync(costsPath)).to.deep.equal(committed);
         } finally {
             fs.rmSync(cacheDir, { recursive: true, force: true });
         }
@@ -2151,6 +2420,7 @@ describe("distributed worker scheduler", function () {
                 tickMs: 1,
                 accountPartitions: new AccountPartitionPool(1),
                 resourceGate,
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 runTaskImpl: async (
                     _cmd: string,
@@ -2218,6 +2488,7 @@ describe("distributed worker scheduler", function () {
                 logDir,
                 infraPids: () => [],
                 tickMs: 1,
+                projectRoot: logDir,
                 costCachePath: path.join(logDir, "test-costs.json"),
                 resourceGate: {
                     cpuUtil: 0,
@@ -2288,7 +2559,12 @@ describe("distributed worker scheduler", function () {
         expect(forge.env).to.deep.equal({ BASE_ONLY: "yes" });
         forge.release();
 
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
         const failed = pool.acquire({ runner: "hardhat" });
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(false);
+        expect(pool.canAcquire(null)).to.equal(false);
+        expect(pool.canAcquire({ runner: "forge" })).to.equal(true);
+        expect(pool.canAcquire({ runner: "browser" })).to.equal(true);
         expect(failed.slot.id).to.equal(1);
         expect(failed.accountPartition).to.equal(0);
         expect(failed.env).to.include({
@@ -2298,6 +2574,7 @@ describe("distributed worker scheduler", function () {
             E2E_SLOT_INDEX: "0"
         });
         failed.release();
+        expect(pool.canAcquire({ runner: "hardhat" })).to.equal(true);
 
         const cancelled = pool.acquire({ runner: "hardhat" });
         expect(cancelled.slot.id).to.equal(2);

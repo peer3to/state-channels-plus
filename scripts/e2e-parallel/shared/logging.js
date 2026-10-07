@@ -768,32 +768,38 @@ function buildRunMetrics({
         version: 1,
         makespanMs,
         sumDurationMs,
-        workers: workers.map(({ id, label, stats, legacyAdmission }) => {
-            const missing =
-                CONCURRENCY_STAT_FIELDS.some(
-                    (field) => stats?.[field] === undefined
-                ) || !stats?.holdCounts;
-            return {
-                id,
-                label,
-                legacyAdmission,
-                ...Object.fromEntries(
-                    CONCURRENCY_STAT_FIELDS.map((field) => [
-                        field,
-                        stats?.[field] ?? null
-                    ])
-                ),
-                holdCounts: Object.fromEntries(
-                    HOLD_REASONS.map((reason) => [
-                        reason,
-                        stats?.holdCounts?.[reason] ?? null
-                    ])
-                ),
-                ...(missing
-                    ? { measurementReason: "legacy-worker-stats-unavailable" }
-                    : {})
-            };
-        }),
+        workers: workers.map(
+            ({ id, label, stats, legacyAdmission, startup }) => {
+                const missing =
+                    CONCURRENCY_STAT_FIELDS.some(
+                        (field) => stats?.[field] === undefined
+                    ) || !stats?.holdCounts;
+                return {
+                    id,
+                    label,
+                    legacyAdmission,
+                    ...(startup ? { startup } : {}),
+                    ...Object.fromEntries(
+                        CONCURRENCY_STAT_FIELDS.map((field) => [
+                            field,
+                            stats?.[field] ?? null
+                        ])
+                    ),
+                    holdCounts: Object.fromEntries(
+                        HOLD_REASONS.map((reason) => [
+                            reason,
+                            stats?.holdCounts?.[reason] ?? null
+                        ])
+                    ),
+                    ...(missing
+                        ? {
+                              measurementReason:
+                                  "legacy-worker-stats-unavailable"
+                          }
+                        : {})
+                };
+            }
+        ),
         starvations: tasks.flatMap((task) =>
             (task.starvations || []).map((event) => ({
                 ...event,

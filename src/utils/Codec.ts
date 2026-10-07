@@ -32,7 +32,10 @@ import {
     DisputeStateProofHeaderMismatchProofEthersType,
     DisputeInboundHashNotInChainProofEthersType,
     DisputeInboundAnchorBehindLatestStateProofEthersType,
+    DisputeStateProofBelowOnChainAnchorProofEthersType,
     InvalidDisputeReasonProofEthersType,
+    TimeoutSupersededByFinalStateProofEthersType,
+    DisputeConflictsWithFinalStateProofEthersType,
     TimeoutThresholdProofEthersType,
     TimeoutCalldataPostedProofEthersType,
     TimeoutNotLinkedToLatestStateProofEthersType,
@@ -84,7 +87,10 @@ import {
     DisputeInboundHashNotInChainStruct,
     DisputeInvalidBlockStructureStruct,
     DisputeBlockAuthorNotParticipantStruct,
-    DisputeInboundAnchorBehindLatestStateStruct
+    DisputeInboundAnchorBehindLatestStateStruct,
+    DisputeStateProofBelowOnChainAnchorStruct,
+    TimeoutSupersededByFinalStateStruct,
+    DisputeConflictsWithFinalStateStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeStruct,
@@ -126,7 +132,10 @@ export type DisputeFraudStruct =
     | DisputeInboundHashNotInChainStruct
     | DisputeInvalidBlockStructureStruct
     | DisputeBlockAuthorNotParticipantStruct
-    | DisputeInboundAnchorBehindLatestStateStruct;
+    | DisputeInboundAnchorBehindLatestStateStruct
+    | DisputeStateProofBelowOnChainAnchorStruct
+    | TimeoutSupersededByFinalStateStruct
+    | DisputeConflictsWithFinalStateStruct;
 
 type StructType =
     | FraudStruct
@@ -287,6 +296,18 @@ export class Codec {
         [
             DisputeFraudProofType.DisputeInboundAnchorBehindLatestState,
             DisputeInboundAnchorBehindLatestStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor,
+            DisputeStateProofBelowOnChainAnchorProofEthersType
+        ],
+        [
+            DisputeFraudProofType.TimeoutSupersededByFinalState,
+            TimeoutSupersededByFinalStateProofEthersType
+        ],
+        [
+            DisputeFraudProofType.DisputeConflictsWithFinalState,
+            DisputeConflictsWithFinalStateProofEthersType
         ]
     ]);
 
@@ -519,6 +540,18 @@ export class Codec {
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeInboundAnchorBehindLatestState
     ): DisputeInboundAnchorBehindLatestStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor
+    ): DisputeStateProofBelowOnChainAnchorStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutSupersededByFinalState
+    ): TimeoutSupersededByFinalStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeConflictsWithFinalState
+    ): DisputeConflictsWithFinalStateStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,

@@ -1,5 +1,6 @@
 import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
+import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
 import P2pEventHooks from "@/P2pEventHooks";
@@ -25,16 +26,12 @@ import { errorMessage } from "@/utils/errorMessage";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import {
-    MessageBlockStruct,
-    SnapshotDataStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { SnapshotDataStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeConfirmationStruct,
     DisputeStruct,
     DisputeAuditingDataStruct,
     DisputeInputStruct,
-    StateProofStruct,
     TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
@@ -48,10 +45,6 @@ export type ConstructDisputeResult = {
     fraudProofsToApply: FraudProofStruct[];
     observedOnChainSlashes: Address[];
 };
-
-// our own auditing data could not be rebuilt whole - our missing history, not
-// anyone's fraud. named so callers can tell it from a real construction failure
-export class PartialAuditingDataError extends Error {}
 
 class DisputeManager {
     signer: ethers.Signer;
@@ -101,7 +94,19 @@ class DisputeManager {
         return this.self;
     }
 
-    public async dispute(forkId: ForkId): Promise<void> {
+    /**
+     * Uploads this peer's dispute of `forkId`. With `kill`, the dispute fraud
+     * proof against that invalid dispute runs first in the same multicall,
+     * and our dispute already counts its submitter's slash: the kill must
+     * land for our dispute to be admitted. A refusal because the chain's
+     * inbound head is newer than our anchor loads the missing inbound run and
+     * disputes again; `refusedInboundHead` is that head, so a retry refused at
+     * the same head made no progress and is fatal.
+     */
+    public async dispute(
+        forkId: ForkId,
+        options?: { kill?: DisputeStruct; refusedInboundHead?: Hash }
+    ): Promise<void> {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
@@ -110,6 +115,9 @@ class DisputeManager {
         let postedTimeout: TimeoutStruct | undefined;
         let uploadFailed = false;
         let observedOnChainSlashes: Address[] = [];
+        let killLanded = false;
+        let latestStateTimestamp = 0;
+        let inboundRetry: { chainHead: Hash; anchor: Hash } | undefined;
         try {
             await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
@@ -132,7 +140,12 @@ class DisputeManager {
             );
             if (!admitted) return;
 
-            const constructed = await this.constructDispute(forkId);
+            const killProof = options?.kill
+                ? this.getStoredDisputeFraudProof(options.kill)
+                : undefined;
+            const constructed = await this.constructDispute(forkId, {
+                expectedSlashes: killProof ? [killProof.participant] : []
+            });
             const {
                 dispute,
                 disputeConfirmation,
@@ -141,6 +154,9 @@ class DisputeManager {
             } = constructed;
             observedOnChainSlashes = constructed.observedOnChainSlashes;
             submittedTimeout = dispute.input.timeout;
+            latestStateTimestamp = Number(
+                auditingData.latestStateSnapshot.timestamp
+            );
 
             const shouldPostAuditingData = dispute.postedAuditingData;
 
@@ -156,34 +172,39 @@ class DisputeManager {
             // this protects against). A fraud-proof replay must also be
             // funded upfront (see replayGasLimit).
 
-            // check if multicall is needed
-            if (fraudProofsToApply.length > 0) {
-                // 1) apply fraud proofs
-                const fraudProofCalldata = (
-                    await this.stateChannelManagerContract.applyFraudProofs.populateTransaction(
-                        fraudProofsToApply,
-                        { channelId: this.channelId }
-                    )
-                ).data;
-                // 2) upload dispute
-                let uploadDisputeCalldata: string;
-                if (shouldPostAuditingData) {
-                    // with calldata
-                    uploadDisputeCalldata = (
-                        await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
-                            disputeConfirmation,
-                            auditingData
+            const uploadDisputeCalldata = shouldPostAuditingData
+                ? (
+                      await this.stateChannelManagerContract.uploadDisputeWithCalldata.populateTransaction(
+                          disputeConfirmation,
+                          auditingData
+                      )
+                  ).data
+                : (
+                      await this.stateChannelManagerContract.uploadDispute.populateTransaction(
+                          disputeConfirmation
+                      )
+                  ).data;
+            const calls: string[] = [];
+            if (killProof)
+                calls.push(
+                    (
+                        await this.stateChannelManagerContract.applyDisputeFraudProofs.populateTransaction(
+                            [killProof]
                         )
-                    ).data!;
-                } else {
-                    // without calldata
-                    uploadDisputeCalldata = (
-                        await this.stateChannelManagerContract.uploadDispute.populateTransaction(
-                            disputeConfirmation
+                    ).data
+                );
+            if (fraudProofsToApply.length > 0)
+                calls.push(
+                    (
+                        await this.stateChannelManagerContract.applyFraudProofs.populateTransaction(
+                            fraudProofsToApply,
+                            { channelId: this.channelId }
                         )
-                    ).data!;
-                }
-                const calls = [fraudProofCalldata, uploadDisputeCalldata];
+                    ).data
+                );
+            if (calls.length > 0) {
+                // the kill and fraud proofs land before the upload that counts their slashes
+                calls.push(uploadDisputeCalldata);
                 txResponse = await this.stateChannelManagerContract.multicall(
                     calls,
                     {
@@ -194,21 +215,18 @@ class DisputeManager {
                         )
                     }
                 );
+            } else if (shouldPostAuditingData) {
+                // TODO - revisit postedAuditingData under early finalization
+                txResponse =
+                    await this.stateChannelManagerContract.uploadDisputeWithCalldata(
+                        disputeConfirmation,
+                        auditingData
+                    );
             } else {
-                // no multicall - upload dispute separately
-                if (shouldPostAuditingData) {
-                    // TODO - revisit postedAuditingData under early finalization
-                    txResponse =
-                        await this.stateChannelManagerContract.uploadDisputeWithCalldata(
-                            disputeConfirmation,
-                            auditingData
-                        );
-                } else {
-                    txResponse =
-                        await this.stateChannelManagerContract.uploadDispute(
-                            disputeConfirmation
-                        );
-                }
+                txResponse =
+                    await this.stateChannelManagerContract.uploadDispute(
+                        disputeConfirmation
+                    );
             }
 
             this.p2pEventHooks.onInitiatingDispute?.(
@@ -216,6 +234,7 @@ class DisputeManager {
                 dispute
             );
             await txResponse.wait();
+            killLanded = !!killProof;
         } catch (error) {
             uploadFailed = true;
             const success = await tryHandleEvmError(error, {
@@ -256,6 +275,27 @@ class DisputeManager {
                             { forkId, channelId: this.channelId }
                         );
                     },
+                    // the chain inbound head moved past our anchor (a join landed
+                    // after construction, or our inbound store lags): the marker
+                    // rolls back below and we retry from the chain's head
+                    RaceConditionDisputeInboundNotLatest: (customError) => {
+                        const [chainHead, anchor] =
+                            customError.errorDescription.args;
+                        if (
+                            chainHead === anchor ||
+                            chainHead === options?.refusedInboundHead
+                        )
+                            rethrow = customError;
+                        else inboundRetry = { chainHead, anchor };
+                    },
+                    // a late kill in the multicall is fatal, as in killDispute
+                    RaceConditionDisputeKillPeriodExpired: (customError) => {
+                        this.logger.error(
+                            "dispute: kill period expired before the kill and dispute landed",
+                            { forkId, channelId: this.channelId }
+                        );
+                        rethrow = customError;
+                    },
                     RaceConditionDisputeEvidencePeriodExpired: (
                         customError
                     ) => {
@@ -270,7 +310,7 @@ class DisputeManager {
                     }
                 }
             });
-            if (!success)
+            if (!success) {
                 this.logger.error("Error uploading dispute", {
                     forkId,
                     channelId: this.channelId,
@@ -278,10 +318,17 @@ class DisputeManager {
                     error: errorMessage(error),
                     customErrorHandles: success
                 });
+                // an unhandled failure, a contract verdict included, is fatal
+                rethrow ??= error;
+            }
 
             this.storage.disputes.storeDisputedFork(forkId, false);
         } finally {
             this.mutex.unlock();
+            // no upload carried the kill (we already disputed, the fork moved,
+            // or the upload failed): the invalid dispute is still killed alone
+            if (options?.kill && !killLanded)
+                await this.killDispute(options.kill);
         }
         // The failed upload has released both the signing marker and dispute
         // mutex. Recheck the timeout through its owner instead of resending it.
@@ -332,6 +379,25 @@ class DisputeManager {
             );
             if (changed) await this.dispute(forkId);
         }
+        if (
+            inboundRetry &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        ) {
+            const run = await this.eventSyncService.loadSynchronizedInboundRun(
+                inboundRetry.chainHead,
+                inboundRetry.anchor,
+                latestStateTimestamp,
+                this.channelId
+            );
+            if (!run)
+                throw new Error(
+                    "dispute - the inbound run up to the chain's head is unavailable"
+                );
+            await this.dispute(forkId, {
+                refusedInboundHead: inboundRetry.chainHead
+            });
+        }
     }
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
@@ -381,9 +447,8 @@ class DisputeManager {
      * dispute adds nothing once more disputes land. That holds only while the
      * compared dispute stays in the window, so a kill drops the cached answer
      * (forgetEvidenceComparison). Concurrent audits share the in-flight comparison; a
-     * failed or incomplete one (own auditing data only partly rebuilt) is not
-     * kept, and a positive answer stays positive so a failed upload is retried
-     * by the next audit.
+     * failed one is not kept, and a positive answer stays positive so a failed
+     * upload is retried by the next audit.
      */
     public shouldAddOwnEvidence(
         forkId: ForkId,
@@ -397,11 +462,7 @@ class DisputeManager {
                 if (this.evidenceChecks.get(forkId) === check)
                     this.evidenceChecks.delete(forkId);
             };
-            check = this.canConstructMoreEvidence(dispute).then(
-                (hasMoreEvidence) => {
-                    if (hasMoreEvidence === undefined) forget();
-                    return hasMoreEvidence ?? false;
-                },
+            check = this.canConstructMoreEvidence(dispute).catch(
                 (error: unknown) => {
                     forget();
                     throw error;
@@ -412,33 +473,13 @@ class DisputeManager {
         return check;
     }
 
-    /**
-     * Whether our own dispute adds evidence to `dispute`, or undefined when
-     * our auditing data could only be partly rebuilt (no answer yet).
-     */
+    /** Whether our own dispute adds evidence to `dispute`. */
     private async canConstructMoreEvidence(
         dispute: DisputeStruct
-    ): Promise<boolean | undefined> {
-        // Create our own dispute
-        let ourDispute: DisputeStruct;
-        try {
-            ourDispute = (await this.constructDispute(this.stateManager.forkId))
-                .dispute;
-        } catch (error) {
-            if (!(error instanceof PartialAuditingDataError)) throw error;
-            // we cannot rebuild our own auditing data -> we have no more
-            // evidence to give now. the caller falls through to scheduling the
-            // reduction instead of dying on the throw, and the next audit
-            // retries once the data may have been recovered
-            this.logger.warn(
-                "No more evidence: own auditing data could not be rebuilt locally",
-                {
-                    forkId: this.stateManager.forkId,
-                    dispute: LoggerUtils.getDisputeMetadata(dispute)
-                }
-            );
-            return undefined;
-        }
+    ): Promise<boolean> {
+        const ourDispute = (
+            await this.constructDispute(this.stateManager.forkId)
+        ).dispute;
 
         this.logger.verbose("Constructed our own dispute for comparison", {
             ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
@@ -486,13 +527,7 @@ class DisputeManager {
         let txResponse;
         try {
             // a mutex is not needed since we observe and validate a dispute only once and create only 1 disputeFraudProof for it
-            const disputeFraudProof =
-                this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
-                    dispute
-                );
-            if (!disputeFraudProof) {
-                throw new Error("No dispute fraud proof found for dispute");
-            }
+            const disputeFraudProof = this.getStoredDisputeFraudProof(dispute);
             const { windowExists, isExpired } =
                 await this.stateChannelManagerContract.isKillPeriodExpired(
                     dispute.input.channelId,
@@ -529,11 +564,13 @@ class DisputeManager {
                 forkId: dispute.input.forkId,
                 signer: this.signer,
                 handlers: {
-                    RaceConditionDisputeKillPeriodExpired: () => {
-                        this.logger.info(
-                            `killDispute no-op: kill period expired for dispute ${formattedHash}`,
+                    // a late challenge is fatal: no recovery after the kill period
+                    RaceConditionDisputeKillPeriodExpired: (customError) => {
+                        this.logger.error(
+                            `killDispute: kill period expired before the challenge of dispute ${formattedHash} landed`,
                             { disputeMeta }
                         );
+                        throw customError;
                     },
                     RaceConditionOnChainSlashes: () => {
                         this.logger.info(
@@ -562,24 +599,42 @@ class DisputeManager {
                     custom,
                     error: errorMessage(error)
                 });
+                // an unhandled failure, a contract verdict included, is fatal
+                throw error;
             }
         }
     }
 
+    private getStoredDisputeFraudProof(dispute: DisputeStruct) {
+        const disputeFraudProof =
+            this.storage.disputeFraudProofs.getDisputeFraudProofForDispute(
+                dispute
+            );
+        if (!disputeFraudProof)
+            throw new Error("No dispute fraud proof found for dispute");
+        return disputeFraudProof;
+    }
+
+    /**
+     * This peer's dispute of `forkId` from its active view: the proof
+     * through its latest block (persistence-only replay never moves it).
+     * `expectedSlashes` are slashes a kill in the same multicall lands first.
+     */
     public async constructDispute(
-        forkId: ForkId
+        forkId: ForkId,
+        options?: { expectedSlashes?: Address[] }
     ): Promise<ConstructDisputeResult> {
         const latestBlockHeight =
             this.storage.blocks.getNextBlockHeight(forkId) - 1;
 
         // StateProof, LatestStateSnapshot
         const [
-            stateProof,
+            builtStateProof,
             latestStateSnapshot,
             _onChainSlashes,
             _participants
         ] = await Promise.all([
-            this.agreementManager.getStateProof(forkId, latestBlockHeight),
+            this.agreementManager.buildStateProof(forkId, latestBlockHeight),
             this.storage.getStateSnapshot({
                 forkId,
                 height: latestBlockHeight
@@ -639,6 +694,10 @@ class DisputeManager {
 
         // to make sure we're trying to slash only participants - even though onChainSlashes should always be a subset of participants
         onChainSlashes = intersection(onChainSlashes, participants);
+        // the kill in the same multicall lands this slash first, also for a
+        // departed submitter outside our participant union
+        for (const slashed of options?.expectedSlashes ?? [])
+            onChainSlashes.add(slashed);
         const participantsNotSlashedOnChain = difference(
             participants,
             onChainSlashes
@@ -669,15 +728,13 @@ class DisputeManager {
         );
 
         // the bound every auditor recomputes with
-        const { isPartial, auditingData } = await this.getAuditingData(
+        const auditingData = await this.buildAuditingData(
             forkId,
-            stateProof,
-            { disputeLatestInboundMessageBlockHash: inboundHead.hash }
+            builtStateProof,
+            latestStateSnapshot,
+            inboundHead.hash
         );
-        if (isPartial)
-            throw new PartialAuditingDataError(
-                "createDispute - isPartial auditingData"
-            );
+        const stateProof = builtStateProof.stateProof;
 
         const disputeAuditingDataHash = hash(
             Codec.encode(auditingData, Type.DisputeAuditingData)
@@ -742,21 +799,21 @@ class DisputeManager {
         };
 
         // Posting the auditing data is never wrong, only costlier, so a local
-        // "not final" posts it without asking the chain. A local "final" leaves
-        // it out, which is slashable if the lagging mirror was wrong, so the
-        // chain confirms that answer.
-        const isLastMilestoneFinalByEveryone = await preferLocal(
+        // "must post" posts it without asking the chain. A local "may omit"
+        // leaves it out, which is slashable if the lagging mirror was wrong, so
+        // the chain confirms that answer.
+        const isOmissionAllowed = await preferLocal(
             () =>
-                this.diamondStateMachine.localDiamondContract.isLastMilestoneFinalByEveryone.staticCall(
+                this.diamondStateMachine.localDiamondContract.isAuditingDataOmissionAllowed.staticCall(
                     draftDispute
                 ),
             () =>
-                this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
                     draftDispute
                 ),
-            (isFinal) => !isFinal
+            (isAllowed) => !isAllowed
         );
-        const postedAuditingData = !isLastMilestoneFinalByEveryone;
+        const postedAuditingData = !isOmissionAllowed;
 
         const dispute: DisputeStruct = {
             ...draftDispute,
@@ -793,88 +850,39 @@ class DisputeManager {
         };
     }
 
-    public async getAuditingData(
+    /**
+     * The auditing data of our own proof: the walk evidence, the latest
+     * state, the state of the proof's final point, and the inbound and
+     * outbound runs. Missing local data throws: this peer holds what it signed.
+     */
+    private async buildAuditingData(
         forkId: ForkId,
-        stateProof: StateProofStruct,
-        options?: {
-            disputeLatestInboundMessageBlockHash?: Hash;
-        }
-    ): Promise<{
-        isPartial: boolean;
-        auditingData: DisputeAuditingDataStruct;
-    }> {
-        let isPartial = false;
-        // genesisStateSnapshot
-        const genesisStateSnapshot =
-            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-        if (!genesisStateSnapshot)
-            throw new Error(
-                "getDisputeAuditingData - genesisStateSnapshot not found"
-            );
-
-        // milestoneSnapshots
-        const milestoneSnapshots: StateSnapshot[] = [];
-        for (const milestone of stateProof.milestones) {
-            const snapshot =
-                this.agreementManager.getSnapshotFromMilestone(milestone);
-            if (!snapshot) {
-                isPartial = true;
-                milestoneSnapshots.push(genesisStateSnapshot); // this is just to push something to satisfy the solidity length requirement in `verifyMilestone`
-            } else milestoneSnapshots.push(snapshot);
-        }
-
-        // latestStateSnapshot
-        const latestBlock =
-            this.agreementManager.getLatestBlockFromStateProof(stateProof);
-        let latestStateSnapshot: StateSnapshot;
-        if (!latestBlock) {
-            latestStateSnapshot = genesisStateSnapshot;
-        } else {
-            const snapshot = this.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
-            if (!snapshot) {
-                isPartial = true;
-                latestStateSnapshot = genesisStateSnapshot; // just to use the field, verifyStateProof check will fail up to this point
-            } else latestStateSnapshot = snapshot;
-        }
-        const latestFinalizedStateSnapshot =
-            this.agreementManager.getLatestFinalizedSnapshot(
-                stateProof,
-                forkId
-            );
-        // latestFinalizedStateStateMachineState
-        let latestFinalizedStateStateMachineState =
+        built: BuiltStateProof,
+        latestStateSnapshot: StateSnapshot,
+        disputeLatestInboundMessageBlockHash: Hash
+    ): Promise<DisputeAuditingDataStruct> {
+        const latestFinalizedStateStateMachineState =
             this.storage.stateMachineStates.getStateMachineState(
-                latestFinalizedStateSnapshot.stateMachineStateHash
+                built.finalizedSnapshot.stateMachineStateHash
             );
-        if (!latestFinalizedStateStateMachineState) {
-            isPartial = true;
-            latestFinalizedStateStateMachineState = ""; // not needed for verifyStateProof and if the dispute is honest, we'll catchup and have it later
-        }
-
-        // the run the dispute names, recovering a log that never reached us. an
-        // auditor cannot rebuild what it never received -> partial, not a throw
-        const upperBlockHash =
-            options?.disputeLatestInboundMessageBlockHash ??
-            this.storage.inboundMessages.getLatestBlockHash();
-        let inboundMessageBlocks: MessageBlockStruct[] = [];
-        // an already-partial rebuild substituted the genesis snapshot above, so
-        // the bounds below are wrong and every consumer discards the result ->
-        // don't spend the widest possible getLogs on it
-        if (upperBlockHash && !isPartial) {
-            const run = await this.eventSyncService.loadSynchronizedInboundRun(
-                upperBlockHash,
+        if (!latestFinalizedStateStateMachineState)
+            throw new Error(
+                `buildAuditingData - missing the state of the finalized snapshot ${built.finalizedSnapshot.hash}`
+            );
+        const inboundMessageBlocks =
+            await this.eventSyncService.loadSynchronizedInboundRun(
+                disputeLatestInboundMessageBlockHash,
                 latestStateSnapshot.snapshotData
                     .latestInboundMessageBlockHash as Hash,
                 latestStateSnapshot.timestamp,
                 this.channelId
             );
-            if (run) inboundMessageBlocks = run;
-            else isPartial = true;
-        }
-
-        // outbound message blocks
+        if (!inboundMessageBlocks)
+            throw new Error(
+                "buildAuditingData - the inbound run is unavailable after event recovery"
+            );
+        const genesisStateSnapshot =
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId)!;
         const outboundMessageBlocks =
             this.storage.outboundMessages.getMessageBlocksInRange({
                 upperBlockHash:
@@ -885,26 +893,18 @@ class DisputeManager {
                         .latestOutboundMessageBlockHash
             });
 
-        const auditingData = {
-            isPartial,
-            auditingData: {
-                genesisStateSnapshotData: genesisStateSnapshot.snapshotData,
-                latestStateSnapshot: latestStateSnapshot.toStruct(),
-                latestFinalizedStateStateMachineState,
-                milestoneSnapshots: milestoneSnapshots.map((snapshot) =>
-                    snapshot.toStruct()
-                ),
-                inboundMessageBlocks,
-                outboundMessageBlocks: outboundMessageBlocks
-            }
+        const auditingData: DisputeAuditingDataStruct = {
+            genesisStateSnapshotData: built.evidence.genesisStateSnapshotData,
+            latestStateSnapshot: latestStateSnapshot.toStruct(),
+            latestFinalizedStateStateMachineState,
+            milestoneSnapshots: built.evidence.milestoneSnapshots,
+            inboundMessageBlocks,
+            outboundMessageBlocks
         };
         this.logger.verbose("Constructed auditing data for dispute", {
             forkId,
             channelId: this.channelId,
-            auditingData: LoggerUtils.getAuditingMetadata(
-                auditingData.auditingData
-            ),
-            isPartial
+            auditingData: LoggerUtils.getAuditingMetadata(auditingData)
         });
         return auditingData;
     }

@@ -49,7 +49,8 @@ function resolveExecutionProfile(defaults, ceilings, requested = {}) {
         validateProfileValue(field, ceiling);
         const value = requested[field] ?? fallback;
         validateProfileValue(field, value);
-        if (value > ceiling) {
+        // CPU and concurrency are per-run scheduling knobs, not host allocations.
+        if (field !== "workers" && field !== "cpu" && value > ceiling) {
             throw new ResourceAllocationError(field, value, ceiling);
         }
         resolved[field] = value;

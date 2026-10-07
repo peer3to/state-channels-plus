@@ -7,5 +7,5 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 ## Contents
 
-- [DisputeFraudProofService.ts](./DisputeFraudProofService.ts.md)
+- [DisputeFraudProofService.ts](../dispute/DisputeFraudProofService.ts.md)
 - [FraudProofService.ts](./FraudProofService.ts.md)

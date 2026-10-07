@@ -19,25 +19,27 @@
 
 ## Responsibility and observable boundary
 
-The force-join marker stores the base-layer block height at which the node started its join and whether the
+The force-join marker stores the channel block height at which the node started its join and whether the
 corresponding force-join dispute has already started. The pair supports deferred eligibility checks without
 duplicate dispute submission.
 
 ## Key design decisions
 
+Stored submission height is the active channel block height, not a base-layer block number. The record holds submission height, authorization deadline in chain seconds, counting start after observation grace, first counted height and disputeStarted. clear resets all five. MembershipService owns timers and chain reads. See [ForceJoinStorage.ts](../../../../../../src/storage/ForceJoinStorage.ts#L53).
+
 1. **Set/read/clear with explicit absence.** `undefined` means no pending submission
    ([#L3](../../../../../../src/storage/ForceJoinStorage.ts#L3)); `clear()` returns to it.
 2. **Started is separate from eligible.** Deferred checks retain the height with `disputeStarted === false`.
-   The membership owner flips the flag immediately before its one dispute call; `clear()` resets both fields.
+   The membership owner flips the flag immediately before its one dispute call; `clear()` resets all tracked fields.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                              |
-| ------------ | ----------------------------------------------------- |
-| Inputs       | Submission height and dispute-start transition.       |
-| Outputs      | Height or explicit absence, plus dispute-start state. |
-| Owned state  | `joinSubmissionBlockHeight` and `disputeStarted`.     |
-| Side effects | None.                                                 |
+| Aspect       | Contents                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| Inputs       | Submission height and dispute-start transition.                                                                           |
+| Outputs      | Height or explicit absence, plus dispute-start state.                                                                     |
+| Owned state  | `joinSubmissionBlockHeight`, `joinAuthorizationDeadline`, `countingStartsAt`, `countingFromHeight`, and `disputeStarted`. |
+| Side effects | None.                                                                                                                     |
 
 ## Linked requirements
 
@@ -81,9 +83,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                                              | Obligation       | Public entry and setup                                              | Oracle and forbidden effects                                                                | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-force-join-storage-1-e2pcwn"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN` | Marker lifecycle | Set height, defer eligibility, start dispute, clear, and read again | Exact height survives deferral; started state prevents duplicates; clear resets both fields | <a id="unit-test-force-join-storage-1-e2pcwn.p1"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P1` — read before set; <a id="unit-test-force-join-storage-1-e2pcwn.p2"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P2` — set/read/clear cycle; <a id="unit-test-force-join-storage-1-e2pcwn.p3"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P3` — repeated clear idempotent; <a id="unit-test-force-join-storage-1-e2pcwn.p4"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P4` — deferred eligibility retains the height, started state blocks a duplicate, and clear resets both |
+| Unit test ID                                                                              | Obligation       | Public entry and setup                                              | Oracle and forbidden effects                                                                | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-force-join-storage-1-e2pcwn"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN` | Marker lifecycle | Set height, defer eligibility, start dispute, clear, and read again | Exact height survives deferral; started state prevents duplicates; clear resets both fields | <a id="unit-test-force-join-storage-1-e2pcwn.p1"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P1` — read before set; <a id="unit-test-force-join-storage-1-e2pcwn.p2"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P2` — set/read/clear cycle; <a id="unit-test-force-join-storage-1-e2pcwn.p3"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P3` — repeated clear idempotent;<br><a id="unit-test-force-join-storage-1-e2pcwn.p5"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P5` — An expired real evidence window preserves the pending submission height and leaves disputeStarted false.<br><a id="unit-test-force-join-storage-1-e2pcwn.p6"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P6` — A delayed JOIN preserves tracking before inclusion; the later block bound sets disputeStarted and a repeated check does not submit again.<br><a id="unit-test-force-join-storage-1-e2pcwn.p7"></a>`UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P7` — Normal block seating clears the submission height; an in-flight deadline cannot restore the started flag. |
 
 ## Related source reports
 

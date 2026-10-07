@@ -48,7 +48,6 @@ const PROC_CLOCK_TICKS_PER_SECOND = 100;
 
 // Cost scheduling (`--schedule cost`). Every value below is a placeholder —
 // calibrate from run-metrics.json.
-const COST_EWMA_ALPHA = 0.3;
 const COST_CPU_BUDGET = 1.0;
 const COST_CPU_VALVE = 0.95;
 // Cost of a task with no measurement and no finished sibling.
@@ -73,12 +72,10 @@ const CONCURRENCY_STAT_FIELDS = [
 ];
 const HOLD_REASONS = Object.freeze(["cap", "memory", "cpu"]);
 const DEFAULT_COST_CACHE_PATH = ".cache/test-costs.json";
-const DEFAULT_COST_OVERRIDES_PATH =
-    "scripts/e2e-parallel/test-costs.overrides.json";
-// Committed costs, refreshed only by `yarn test:costs:snapshot`; a run reads
-// them for any test its own cache has not measured.
-const DEFAULT_COST_SNAPSHOT_PATH =
-    "scripts/e2e-parallel/test-costs.snapshot.json";
+// Committed scheduling costs and optional hand corrections, at the project root
+// so a project that runs this runner keeps its own.
+const DEFAULT_COSTS_PATH = "test-costs.json";
+const DEFAULT_COST_OVERRIDES_PATH = "test-costs.overrides.json";
 
 // Admit another test only while avg OS load per core is below this.
 const TARGET_LOAD_PER_CORE = 0.8;
@@ -87,7 +84,7 @@ const TARGET_LOAD_PER_CORE = 0.8;
 // infra) rather than os.freemem() (which under-reports on macOS), keep a running
 // average per test process, and admit another test only if the projected total
 // (current owned + one more average process) stays under MEM_LIMIT_FRACTION of
-// system RAM. PER_TEST_MEM_GB seeds the average before any sample exists.
+// the effective memory limit. PER_TEST_MEM_GB seeds the average before any sample exists.
 const MEM_LIMIT_FRACTION = 0.8;
 const PER_TEST_MEM_GB = 2;
 
@@ -105,7 +102,6 @@ module.exports = {
     TASK_COST_FIRST_SAMPLE_MS,
     TASK_COST_SAMPLE_MS,
     PROC_CLOCK_TICKS_PER_SECOND,
-    COST_EWMA_ALPHA,
     COST_CPU_BUDGET,
     COST_CPU_VALVE,
     DEFAULT_TASK_COST,
@@ -114,8 +110,8 @@ module.exports = {
     CONCURRENCY_STAT_FIELDS,
     HOLD_REASONS,
     DEFAULT_COST_CACHE_PATH,
+    DEFAULT_COSTS_PATH,
     DEFAULT_COST_OVERRIDES_PATH,
-    DEFAULT_COST_SNAPSHOT_PATH,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
     PER_TEST_MEM_GB

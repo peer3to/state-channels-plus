@@ -3,6 +3,7 @@ import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
+import type DisputeManager from "@/disputeManager/DisputeManager";
 import type P2PManager from "@/P2PManager";
 import type PeerProfile from "@/PeerProfile";
 import type { BannablePeerInfo } from "@/PeerProfile";
@@ -18,7 +19,7 @@ import type SpectateService from "@/rpc/network/services/spectate/SpectateServic
 import { deserializeRpcFrame } from "@/rpc/Rpc";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, BlockHeight, ForkId } from "@/types/types";
+import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -69,6 +70,9 @@ type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
+    | "proofWalkHold"
+    | "auditingDataBuild"
+    | "disputeKillMulticall"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
@@ -247,8 +251,47 @@ export type RecordedDisputeSubmission = {
     /** Set once `dispute()` awaited the returned transaction. */
     waited: boolean;
     /** Custom error a forwarded send or its `wait()` reverted with, or null. */
-    revert: { name: string; args: string[] } | null;
+    revert: RecordedRevert | null;
 };
+
+/** A decoded custom-error revert: its name and its arguments as strings. */
+export type RecordedRevert = { name: string; args: string[] };
+
+function recordedRevert(error: unknown): RecordedRevert | null {
+    const decoded = tryDecodeCustomError(error);
+    return (
+        decoded && {
+            name: decoded.name,
+            args: decoded.errorDescription.args.map(String)
+        }
+    );
+}
+
+/**
+ * The error that carries the revert data of a failed `wait()`. A mined revert
+ * carries none: replay the same call on the state it was mined on.
+ */
+async function withRevertData(
+    tx: ContractTransactionResponse,
+    error: unknown
+): Promise<unknown> {
+    if (tryDecodeCustomError(error)) return error;
+    const blockNumber = (error as { receipt?: { blockNumber?: number } })
+        .receipt?.blockNumber;
+    if (!blockNumber) return error;
+    try {
+        await tx.provider.call({
+            from: tx.from,
+            to: tx.to,
+            data: tx.data,
+            value: tx.value,
+            blockTag: blockNumber - 1
+        });
+    } catch (replayError) {
+        return replayError;
+    }
+    return error;
+}
 
 export type DisputeSubmissionFailureSpec = {
     /** Solidity custom error to revert with (its selector is the revert data). */
@@ -290,7 +333,10 @@ export type RecordedFraudProofApply = {
     gasLimit: string | null;
     /** Failure message from the send or from `wait()`, or null when it landed. */
     error: string | null;
-    /** Custom-error name decoded from that failure, when there was one. */
+    /**
+     * Custom-error name decoded from that failure, when there was one; for a
+     * mined revert, from the replay of the same call.
+     */
     customError: string | null;
     /** Set once `killDispute` awaited the returned transaction. */
     waited: boolean;
@@ -315,6 +361,9 @@ export type RecordedReplayGasRead = {
     /** The manager's answer, decimal, once resolved. */
     replayGas: string | null;
 };
+
+/** Message of the internal error `failBlockReplayAt` throws. */
+export const BLOCK_REPLAY_FAULT_MESSAGE = "stubbed block replay failure";
 
 /** Message of the read failure the replay-gas read probe injects. */
 export const REPLAY_GAS_READ_STUB_FAILURE =
@@ -443,6 +492,11 @@ export class StubService extends ANetworkRpcService<
     private timeoutStoreCalls = 0;
     private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
+    // the one-shot block replay fault: its restore, and whether it fired
+    private restoreBlockReplay?: () => void;
+    private blockReplayFaultFired = false;
+    // the force-join dispute triggers suppressed so far, in order
+    private readonly suppressedForceJoinTriggers: string[] = [];
     initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
     abortCalled = false;
@@ -563,6 +617,11 @@ export class StubService extends ANetworkRpcService<
     /** State for the dispute-audit hold at the on-chain-slashes query. */
     heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
     heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
+    /** Audit proof walks parked by the proof-walk hold, by their proof's latest block hash. */
+    readonly heldProofWalks: {
+        latestBlockHash: string;
+        release: () => void;
+    }[] = [];
     /** State for the hold on this peer's snapshot post at its send. */
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
     /** The first parked send's custom revert name once released, or null when it was mined. */
@@ -1319,6 +1378,32 @@ export class StubService extends ANetworkRpcService<
         this.restoreSyncReduction?.();
         this.restoreSyncReduction = undefined;
         this.syncReductionHold?.release();
+    }
+
+    /**
+     * Stop this peer running the participant-timeout check, so a staged
+     * scenario is not cut short by a real timeout dispute.
+     */
+    public suppressTimeoutCheck(): void {
+        const timeouts = this.sm.participantTimeoutService;
+        if (!this.stubOriginals.has("timeoutCheck")) {
+            this.stubOriginals.set(
+                "timeoutCheck",
+                timeouts["tryTimeoutParticipant"]
+            );
+        }
+        timeouts["tryTimeoutParticipant"] = async () => undefined;
+    }
+
+    /** Undo {@link suppressTimeoutCheck}; false when it was not installed. */
+    public restoreSuppressTimeoutCheck(): boolean {
+        const original = this.stubOriginals.get("timeoutCheck");
+        if (original === undefined) return false;
+        const timeouts = this.sm.participantTimeoutService;
+        timeouts["tryTimeoutParticipant"] =
+            original as (typeof timeouts)["tryTimeoutParticipant"];
+        this.stubOriginals.delete("timeoutCheck");
+        return true;
     }
 
     public recordSyncRejections(): void {
@@ -2243,24 +2328,226 @@ export class StubService extends ANetworkRpcService<
         }) as typeof localDiamond.getOnChainSlashedParticipants;
     }
 
-    /** Release parked callers and reinstall the real query. */
     /**
-     * Park every auditing-data rebuild (`DisputeManager.getAuditingData`)
-     * until released. A final dispute committed without its auditing data
-     * makes the commit handler rebuild it before installing the result, so
-     * the hold keeps that install waiting while an ordinary attempt runs.
+     * Test-harness pruning of history below an anchor: deletes this peer's
+     * stored blocks of `forkId` below `anchorHeight` through the real
+     * `BlockStorage.deleteBlock`, keeping the anchor block and everything
+     * above it. Snapshots and state-machine states stay: their storage has no
+     * delete API. Returns the pruned heights.
      */
-    public installAuditingDataRebuildHold(): void {
-        const disputeManager = this.sm.disputeManager;
+    public pruneStoredBlocksBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): BlockHeight[] {
+        const blocks = this.sm.storage.blocks;
+        if (!blocks.getBlock(forkId, anchorHeight))
+            throw new Error(
+                `pruneStoredBlocksBelowAnchor: no stored anchor block at height ${anchorHeight} of ${forkId}`
+            );
+        const pruned: BlockHeight[] = [];
+        for (let height = 0; height < anchorHeight; height++)
+            if (blocks.deleteBlock(forkId, height)) pruned.push(height);
+        return pruned;
+    }
+
+    /**
+     * Fault injection: the next execution of the block at `forkId:height`
+     * (`SnapshotAssemblyService.assembleFromTransaction`, the state
+     * transition step of every replay) throws a genuine internal error
+     * instead of a verdict. One-shot: the real method is back once it fired.
+     */
+    public failBlockReplayAt(forkId: ForkId, height: BlockHeight): void {
+        this.restoreBlockReplayFault();
+        const assembly = this.sm.snapshotAssemblyService;
+        const original = assembly.assembleFromTransaction;
+        this.blockReplayFaultFired = false;
+        this.restoreBlockReplay = () => {
+            assembly.assembleFromTransaction = original;
+        };
+        assembly.assembleFromTransaction = (async (...args) => {
+            const [coordinates] = args;
+            if (
+                coordinates.forkId === forkId &&
+                coordinates.height === height
+            ) {
+                this.restoreBlockReplayFault();
+                this.blockReplayFaultFired = true;
+                throw new Error(BLOCK_REPLAY_FAULT_MESSAGE);
+            }
+            return Reflect.apply(original, assembly, args);
+        }) as typeof assembly.assembleFromTransaction;
+    }
+
+    /**
+     * Keep this peer's force-join route closed: every force-join dispute it
+     * would start (block bound or deadline) is recorded by its trigger and
+     * reported as started, so the deadline does not re-arm. Its other
+     * dispute routes are untouched.
+     */
+    public suppressForceJoinDispute(): void {
+        // private: MembershipService's single entry to the force-join dispute
+        Reflect.set(
+            this.sm.membershipService,
+            "startForceJoinDispute",
+            async (trigger: string) => {
+                this.suppressedForceJoinTriggers.push(trigger);
+                return true;
+            }
+        );
+    }
+
+    public getSuppressedForceJoinTriggers(): string[] {
+        return [...this.suppressedForceJoinTriggers];
+    }
+
+    public didBlockReplayFaultFire(): boolean {
+        return this.blockReplayFaultFired;
+    }
+
+    public restoreBlockReplayFault(): boolean {
+        if (!this.restoreBlockReplay) return false;
+        this.restoreBlockReplay();
+        this.restoreBlockReplay = undefined;
+        return true;
+    }
+
+    /**
+     * Test-harness removal of one signer's confirmation signature from this
+     * peer's stored block of `forkId` at `height` (the author's signature
+     * cannot be removed). The block is stored again without it; the view does
+     * not move.
+     */
+    public stripStoredBlockSignature(
+        forkId: ForkId,
+        height: BlockHeight,
+        signer: Address
+    ): void {
+        const blocks = this.sm.storage.blocks;
+        const block = blocks.getBlock(forkId, height);
+        if (!block)
+            throw new Error(
+                `stripStoredBlockSignature: no stored block at height ${height} of ${forkId}`
+            );
+        if (block.author === signer)
+            throw new Error(
+                "stripStoredBlockSignature: the author's signature cannot be removed"
+            );
+        const signatures = [...block.confirmationSignatures];
+        const kept = signatures.filter(
+            (signature) => block.signatureToAddress(signature) !== signer
+        );
+        if (kept.length === signatures.length)
+            throw new Error(
+                `stripStoredBlockSignature: ${signer} did not sign height ${height}`
+            );
+        const stripped = block.authorSignedCopy().expandSignatures(kept);
+        blocks.deleteBlock(forkId, height);
+        blocks.storeBlock(stripped, {
+            hash: stripped.hash,
+            coordinates: stripped.coordinates,
+            justPersist: true
+        });
+    }
+
+    /**
+     * Test-harness pruning of one stored state snapshot by hash. Snapshot
+     * storage has no delete API, so this removes the entry from its map. A
+     * genesis snapshot is refused.
+     */
+    public deleteStoredSnapshot(snapshotHash: Hash): void {
+        const snapshots = this.sm.storage.stateSnapshots;
+        const snapshot = snapshots.getStateSnapshotByHash(snapshotHash);
+        if (!snapshot)
+            throw new Error(
+                `deleteStoredSnapshot: no stored snapshot ${snapshotHash}`
+            );
+        if (snapshot.isGenesis)
+            throw new Error("deleteStoredSnapshot: a genesis snapshot is kept");
+        snapshots["snapshotsByHash"].delete(snapshotHash);
+    }
+
+    /** Remove one required application state; session teardown discards the peer. */
+    public deleteStoredState(stateHash: Hash): boolean {
+        return this.sm.storage.stateMachineStates["statesByHash"].delete(
+            stateHash
+        );
+    }
+
+    /**
+     * Test-harness pruning of the snapshots and application states below an
+     * anchor: for every stored block of `forkId` below `anchorHeight`, its
+     * resulting snapshot and that snapshot's state-machine state are removed
+     * (their storages have no delete API). The anchor block's snapshot and
+     * state and the fork genesis are kept. Run it before pruning the blocks.
+     * Returns the pruned snapshot hashes.
+     */
+    public pruneStoredSnapshotsBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): Hash[] {
+        const blocks = this.sm.storage.blocks;
+        const snapshots = this.sm.storage.stateSnapshots;
+        const states = this.sm.storage.stateMachineStates;
+        const anchorBlock = blocks.getBlock(forkId, anchorHeight);
+        if (!anchorBlock)
+            throw new Error(
+                `pruneStoredSnapshotsBelowAnchor: no stored anchor block at height ${anchorHeight} of ${forkId}`
+            );
+        const anchor = snapshots.getStateSnapshotByHash(
+            anchorBlock.stateSnapshotHash
+        );
+        const genesis = snapshots.getGenesisSnapshotByForkId(forkId);
+        const keptStates = new Set(
+            [anchor, genesis].map((kept) =>
+                String(kept?.snapshotData.stateMachineStateHash)
+            )
+        );
+        const pruned: Hash[] = [];
+        for (let height = 0; height < anchorHeight; height++) {
+            const block = blocks.getBlock(forkId, height);
+            const snapshot =
+                block &&
+                snapshots.getStateSnapshotByHash(block.stateSnapshotHash);
+            if (
+                !snapshot ||
+                snapshot.isGenesis ||
+                snapshot.hash === anchor?.hash
+            )
+                continue;
+            const stateHash = String(
+                snapshot.snapshotData.stateMachineStateHash
+            ) as Hash;
+            if (!keptStates.has(String(stateHash)))
+                states["statesByHash"].delete(stateHash);
+            snapshots["snapshotsByHash"].delete(snapshot.hash);
+            pruned.push(snapshot.hash);
+        }
+        return pruned;
+    }
+
+    /**
+     * Park every dispute output computation (the local diamond's
+     * `computeDisputeOutputSnapshotData`) until released. Its two callers are
+     * `DisputeManager.constructDispute`, after the dispute marker and before
+     * the dispute is signed or stored, and the commit handler of a final
+     * dispute, before it installs the reduced result. `at: "auditingData"`
+     * parks `DisputeManager.buildAuditingData` instead: inside
+     * `constructDispute`, before it reads the force-exit flag.
+     */
+    public installAuditingDataRebuildHold(
+        at: "output" | "auditingData" = "output"
+    ): void {
+        if (at === "auditingData") return this.installAuditingDataBuildHold();
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
         if (!this.stubOriginals.has("auditingDataRebuild")) {
             this.stubOriginals.set(
                 "auditingDataRebuild",
-                disputeManager.getAuditingData.bind(disputeManager)
+                localDiamond.computeDisputeOutputSnapshotData
             );
         }
         const original = this.stubOriginals.get(
             "auditingDataRebuild"
-        ) as typeof disputeManager.getAuditingData;
+        ) as typeof localDiamond.computeDisputeOutputSnapshotData;
         let releaseGate!: () => void;
         const gate = new Promise<void>((resolve) => {
             releaseGate = resolve;
@@ -2275,16 +2562,22 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldAuditingDataRebuild = held;
-        disputeManager.getAuditingData = (async (
-            ...args: Parameters<typeof original>
-        ) => {
-            held.entered += 1;
-            this.heldAuditingDataRebuildWaiters
-                .splice(0)
-                .forEach((resolve) => resolve());
-            await gate;
-            return original(...args);
-        }) as typeof disputeManager.getAuditingData;
+        // the callers use only staticCall; the hold patches that member
+        localDiamond.computeDisputeOutputSnapshotData = Object.assign(
+            original.bind(localDiamond),
+            {
+                staticCall: async (
+                    ...args: Parameters<typeof original.staticCall>
+                ) => {
+                    held.entered += 1;
+                    this.heldAuditingDataRebuildWaiters
+                        .splice(0)
+                        .forEach((resolve) => resolve());
+                    await gate;
+                    return original.staticCall(...args);
+                }
+            }
+        ) as unknown as typeof original;
     }
 
     /**
@@ -2479,13 +2772,111 @@ export class StubService extends ANetworkRpcService<
         );
     }
 
+    private installAuditingDataBuildHold(): void {
+        const disputeManager = this.sm.disputeManager;
+        if (!this.stubOriginals.has("auditingDataBuild")) {
+            this.stubOriginals.set(
+                "auditingDataBuild",
+                disputeManager["buildAuditingData"].bind(disputeManager)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "auditingDataBuild"
+        ) as DisputeManager["buildAuditingData"];
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldAuditingDataRebuild = held;
+        disputeManager["buildAuditingData"] = (async (...args) => {
+            held.entered += 1;
+            this.heldAuditingDataRebuildWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+            await gate;
+            return original(...args);
+        }) as DisputeManager["buildAuditingData"];
+    }
+
+    /**
+     * Park every proof walk of this peer's audits (after their pre-walk
+     * checks, before the walk, its replay and the persistence of what it
+     * verified) until the test releases it by the proof's latest block hash.
+     */
+    public installProofWalkHold(): void {
+        const agreementManager = this.sm.agreementManager;
+        if (!this.stubOriginals.has("proofWalkHold"))
+            this.stubOriginals.set(
+                "proofWalkHold",
+                agreementManager.walkStateProofTiers.bind(agreementManager)
+            );
+        const original = this.stubOriginals.get(
+            "proofWalkHold"
+        ) as typeof agreementManager.walkStateProofTiers;
+        const held = this.heldProofWalks;
+        agreementManager.walkStateProofTiers = async function* (
+            forkId,
+            stateProof,
+            evidence
+        ) {
+            const latest =
+                agreementManager.getLatestBlockFromStateProof(stateProof);
+            await new Promise<void>((release) =>
+                held.push({
+                    latestBlockHash: String(latest?.hash ?? ""),
+                    release
+                })
+            );
+            yield* original(forkId, stateProof, evidence);
+        };
+    }
+
+    /** Release the parked walk whose proof ends at `latestBlockHash`. */
+    public releaseHeldProofWalk(latestBlockHash: string): boolean {
+        const index = this.heldProofWalks.findIndex(
+            (walk) => walk.latestBlockHash === latestBlockHash
+        );
+        if (index === -1) return false;
+        const [walk] = this.heldProofWalks.splice(index, 1);
+        walk!.release();
+        return true;
+    }
+
+    /** Release every parked walk and restore the real walk. */
+    public restoreProofWalkHold(): boolean {
+        this.heldProofWalks.splice(0).forEach((walk) => walk.release());
+        const original = this.stubOriginals.get("proofWalkHold");
+        if (original === undefined) return false;
+        this.sm.agreementManager.walkStateProofTiers =
+            original as typeof this.sm.agreementManager.walkStateProofTiers;
+        this.stubOriginals.delete("proofWalkHold");
+        return true;
+    }
+
     public releaseAuditingDataRebuildHold(): boolean {
         this.heldAuditingDataRebuild?.release();
         this.heldAuditingDataRebuild = undefined;
+        const build = this.stubOriginals.get("auditingDataBuild");
+        if (build !== undefined) {
+            this.sm.disputeManager["buildAuditingData"] =
+                build as DisputeManager["buildAuditingData"];
+            this.stubOriginals.delete("auditingDataBuild");
+            return true;
+        }
         const original = this.stubOriginals.get("auditingDataRebuild");
         if (original === undefined) return false;
-        this.sm.disputeManager.getAuditingData =
-            original as typeof this.sm.disputeManager.getAuditingData;
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.computeDisputeOutputSnapshotData =
+            original as typeof localDiamond.computeDisputeOutputSnapshotData;
         this.stubOriginals.delete("auditingDataRebuild");
         return true;
     }
@@ -2750,18 +3141,11 @@ export class StubService extends ANetworkRpcService<
             if (activeFailure?.at === "send")
                 throw this.submissionFailure(activeFailure);
             if (forward && !activeFailure) {
-                const recordRevert = (error: unknown) => {
-                    const decoded = tryDecodeCustomError(error);
-                    entry.revert = decoded && {
-                        name: decoded.name,
-                        args: decoded.errorDescription.args.map(String)
-                    };
-                };
                 let tx: ContractTransactionResponse;
                 try {
                     tx = (await send()) as ContractTransactionResponse;
                 } catch (error) {
-                    recordRevert(error);
+                    entry.revert = recordedRevert(error);
                     throw error;
                 }
                 const originalWait = tx.wait.bind(tx);
@@ -2771,21 +3155,9 @@ export class StubService extends ANetworkRpcService<
                         entry.waited = true;
                         return receipt;
                     } catch (error) {
-                        recordRevert(error);
-                        // a mined revert carries no revert data: replay the
-                        // same call on the state it was mined on
-                        const blockNumber = (
-                            error as { receipt?: { blockNumber?: number } }
-                        ).receipt?.blockNumber;
-                        if (entry.revert === null && blockNumber)
-                            await tx.provider
-                                .call({
-                                    from: tx.from,
-                                    to: tx.to,
-                                    data: tx.data,
-                                    blockTag: blockNumber - 1
-                                })
-                                .catch(recordRevert);
+                        entry.revert = recordedRevert(
+                            await withRevertData(tx, error)
+                        );
                         throw error;
                     }
                 }) as typeof tx.wait;
@@ -3067,17 +3439,35 @@ export class StubService extends ANetworkRpcService<
                     throw error;
                 }
                 const originalWait = tx.wait.bind(tx);
-                tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                const sent = tx;
+                sent.wait = (async (
+                    ...args: Parameters<typeof originalWait>
+                ) => {
                     try {
                         const receipt = await originalWait(...args);
                         entry.waited = true;
                         return receipt;
                     } catch (error) {
                         fail(error);
+                        // a mined revert carries no revert data: name it by
+                        // replaying the same call, as tryHandleEvmError does
+                        if (entry.customError === null)
+                            await sent.provider
+                                .call({
+                                    from: sent.from,
+                                    to: sent.to,
+                                    data: sent.data,
+                                    value: sent.value
+                                })
+                                .catch((replayError: unknown) => {
+                                    entry.customError =
+                                        tryDecodeCustomError(replayError)
+                                            ?.name ?? null;
+                                });
                         throw error;
                     }
-                }) as typeof tx.wait;
-                return tx;
+                }) as typeof sent.wait;
+                return sent;
             }
         );
     }

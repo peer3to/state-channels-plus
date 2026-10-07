@@ -541,6 +541,54 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("survives an orchestrator disconnect while the workspace offer write is pending", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.respondToWorkspaceOffer = false;
+        backend.workspaceOfferWriteDelayMs = 3000;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 9));
+        // Mocha swallows unhandled rejections; a bare worker process exits on them.
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on("unhandledRejection", onUnhandled);
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("offering-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            const second = await pool.startOrchestrator("next-run");
+            await second.waitFor(worker.name, "BUSY");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstWorkspaceOfferReceived;
+            await pool.closeOrchestrator(first);
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+
+            backend.respondToWorkspaceOffer = true;
+            backend.workspaceOfferWriteDelayMs = 0;
+            await second.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await second.waitFor(worker.name, "WORKSPACE_NEED");
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
+            expect(unhandled).to.deep.equal([]);
+        } finally {
+            process.off("unhandledRejection", onUnhandled);
+            await pool.close();
+        }
+    });
+
     it("reuses an environment after its orchestrator disconnects during start", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();
@@ -730,7 +778,7 @@ describe("distributed worker pool lifecycle", function () {
                 sha256: emptySourceSha256
             });
             await orchestrator.waitFor(worker.name, "PREPARED");
-            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.send(worker.name, "RUN_COMPLETE");
             await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
 
             const restart = orchestrator.checkpoint();

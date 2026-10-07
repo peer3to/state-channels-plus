@@ -104,7 +104,7 @@ type before parsing, including when a shared `--test-pattern` is supplied.
 
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
-yarn test:parallel --no-forge       # Mocha and browser tiers
+yarn test:parallel --no-forge       # Mocha tier
 yarn test:parallel --browser-only   # only the browser gates
 yarn test:parallel --no-browser     # Mocha and forge tiers
 yarn test:parallel --forge-threads 2
@@ -145,6 +145,22 @@ arguments invoke the `forge-test` Hardhat task in `tasks/forgeTest.ts`, which
 shells out to `forge test --match-contract <contract> --threads <count>`,
 streams its output through, and passes its exit code on. It does not depend on
 the compile task, so no task recompiles.
+
+Before discovery, projects defining `generate-enums` and `generate-artifacts`
+run `yarn hardhat compile` and those two generators before building the TypeScript
+test tree. Hardhat updates TypeChain for changed contracts; a missing TypeChain
+index triggers `yarn hardhat typechain`. Unchanged generated output keeps its
+modification time so an unchanged run reuses `dist`. Hardhat's existing cache decides which
+contracts need recompiling. `--skip-build` and `--dry-run` skip this preflight.
+The standalone `yarn compile` command still performs its full clean rebuild.
+
+Worker preparation also lets Hardhat reuse its compile cache. Successful dependency
+installation is checkpointed separately from compilation, so an interrupted build
+can reuse it. When a run finishes normally while a worker is still preparing, cleanup
+waits for preparation to finish and retain its caches. This can extend a cold run;
+explicit cancellation and disconnected leases still stop without waiting for the build.
+Hardhat supplies TypeScript-test artifacts and TypeChain bindings; Forge builds the
+Solidity test contracts into its separate cache.
 
 The indirection is what makes the tier work on a distributed worker: a worker
 executes tasks with its own copy of the runner, taken from the checkout that
@@ -223,22 +239,37 @@ fails with `All distributed workers were quarantined before running a task`.
 
 Both runners measure every test while it runs: peak memory of its process tree,
 average CPU cores and duration. At the end of a run the orchestrator (or the
-local runner) stores them per test in `.cache/test-costs.json`, and writes
-`logs/run-N/run-metrics.json` with how busy each worker was, why it held tests
-back and when each test was first assigned.
+local runner) stores each test's latest measurement in the ignored
+`.cache/test-costs.json`, updates the committed `test-costs.json` at the project
+root (see below), and writes `logs/run-N/run-metrics.json` with how busy each
+worker was, why it held tests back and when each test was first assigned.
+Distributed `[startup]` logs show per-worker phase durations and elapsed time
+from orchestrator startup: connection, lease wait, workspace negotiation,
+transfer/preparation, worker boot/infrastructure provisioning, and first assignment.
+Workspace negotiation reports changed/deleted file counts and transfer size.
+Phase timings are also saved under each worker's `startup` in `run-metrics.json`;
+local compilation and bundling before orchestrator startup are outside that clock.
 
-By default (`--schedule fifo`) the measurements are only recorded. On Linux,
+Cost scheduling is the default. With `--schedule fifo`, measurements are only
+recorded. On Linux,
 fifo's memory admission now reads running tests' memory from `/proc`, where it
 used to fall back to whole-host memory and a fixed 2 GB per test, so containers
 may admit more tests than before.
 
 With `--schedule cost` the runner uses them: browser-only and longest tests
 start first, and a busy worker is handed only a test whose predicted CPU and
-memory still fit beside everything it runs. After starting a test whose cores
-and memory are measured or overridden, and after any test finishes, a worker
-requests its next test at once instead of waiting for the scheduler tick; after
-starting an unknown-cost test it waits a full tick, even if another test
-finishes meanwhile, so that test's usage shows first.
+memory still fit beside everything it runs. Every test start waits the configured
+scheduler interval before another test can start, including known-cost tests and
+tests that finish within the interval.
+After the interval has elapsed, a completion can trigger immediate admission.
+Failed attempts cannot lower the CPU estimate used for subsequent scheduling;
+a successful measurement can lower it again.
+`--cpu-limit 6` sets a distributed worker’s predicted CPU budget to six cores,
+including values above its detected available cores. It does not impose a container CPU quota.
+For example, twelve tests predicted to use 0.5 cores each fit this CPU budget,
+provided the worker’s `--workers` cap permits twelve and memory/live load allow it.
+The server’s CPU limit is a default; an orchestrator can request a higher value.
+An idle worker still accepts one oversized test so it can make progress.
 The `--workers` cap still applies, and so does `--target-load`: machine CPU at
 or above `min(--target-load, 0.95)` holds new tests. Hold counts in
 `run-metrics.json` include tests a worker was refused because they did not fit
@@ -249,25 +280,55 @@ infrastructure log and totals them in its summary line.
 yarn test:parallel --schedule cost --workers 30
 yarn test:parallel:distributed --schedule cost
 yarn test:parallel --cost-cache /tmp/costs.json  # another cache file
-yarn test:parallel:distributed --cost-cache-read-only  # CI: read, never write
+yarn test:parallel:distributed --schedule cost --cost-cache-read-only  # CI
 ```
 
+Memory admission leaves 20% of the effective RAM limit as headroom. It adds
+predicted growth of running tests to current process-tree usage, including shared
+infrastructure. On bounded cgroup v2 workers it also checks container-wide usage
+and uses the smaller of the configured and container limits. Busy admission
+subtracts only inactive file cache. With no tests running, the memory hold also
+excludes active file cache so reclaimable pages cannot prevent idle progress;
+process-tree RSS, anonymous/shared memory and kernel memory remain counted.
+Raising `--cpu-limit`
+does not raise this RAM budget. Predictions remain estimates, not a guarantee
+against an individual test exceeding its recorded peak.
+
 Each of a test's duration, cores and memory comes from, first match wins: an
-override, this run's measurement, this checkout's cache, the committed snapshot
-`scripts/e2e-parallel/test-costs.snapshot.json`, the average of finished tests
-from the same file, then one default (30 s, 1 core, 2 GB). A measurement without
-cores or memory (from an older worker) leaves those to the later sources. Every attempt whose result the run keeps is measured (a speculative copy that finishes after its test settled only when it fails the test; a redundant copy never); an attempt that starved is stored
-with 50% more cores and memory, so the next run admits it as more expensive,
-and a clean retry in the same run replaces that sample.
+override, this run's measurement, the committed `test-costs.json`, the average
+of finished tests from the same file, then one default (30 s, 1 core, 2 GB).
+The committed costs and overrides are orchestrator-only metadata and are excluded
+from worker source bundles, so updating them does not trigger worker preparation.
+`.cache/test-costs.json` is only a record of the latest run; scheduling never
+reads it. A measurement without cores or memory (from an older worker) leaves
+those to the later sources. Every attempt whose result the run keeps is measured
+(a speculative copy that finishes after its test settled only when it fails the
+test; a redundant copy never); an attempt that starved is recorded with 50% more
+cores and memory, so its retry is admitted as more expensive, and the run keeps
+its last attempt's measurement.
 
-`yarn test:costs:snapshot` merges this checkout's cache into the snapshot,
-rounded and sorted so the diff shows only what changed; it stops without
-writing if the cache is missing or either file cannot be read. Commit a refreshed
-snapshot in its own PR now and then; CI reads it with `--cost-cache-read-only`
-and stays stateless.
+`test-costs.json` and `test-costs.overrides.json` live at the project root, so
+another project using this runner keeps its own. A run that writes the cache
+adds a test's entry to `test-costs.json` only when it is new. Existing entries
+stay unchanged on ordinary runs, regardless of CPU or memory drift. A final
+starvation sample still updates the entry with the existing 50% CPU and memory
+inflation and a `starved: true` marker. The next successful, non-starved run
+with complete measurements replaces that temporary baseline and clears the marker.
+`.cache/test-costs.json` is atomically replaced with only the latest completed
+run's measurements; tests absent from that run and older measurements are not merged in.
+The committed `test-costs.json` still preserves existing baselines as described above.
+At the end of a completed run, deleted tests are removed from both files by
+checking their source definitions, independently of grep, tier, and optional-group
+filters. Inactive tests and definitions that cannot be safely inspected are retained.
+Interrupted and read-only runs do not prune costs.
+Disable both writes
+with `--cost-cache-read-only`: it schedules by the committed costs and writes
+neither file. `yarn test:costs:snapshot` copies every test's latest measurement
+from the cache into `test-costs.json` even for existing entries; it stops
+without writing if the cache is missing or either file cannot be read.
 
-To correct a test's cost by hand, add it to
-`scripts/e2e-parallel/test-costs.overrides.json`, keyed by
+To correct a test's cost by hand, add it to the optional
+`test-costs.overrides.json`, keyed by
 `runner|file|full title`, e.g.
 `{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
 are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
@@ -324,11 +385,11 @@ Linux blocks the worker host, link-local ranges, RFC1918 ranges, and each
 filesystem/process/resource boundary but reports a reduced network guarantee;
 do not use it as a shared hardened worker.
 
-Each server's startup CPU, memory, disk, process, slot, worker, load, and
-interval values are both its defaults and its current hard ceilings. An
-orchestrator may request smaller per-run values with the corresponding
-distributed command flags. The worker rejects an oversized request before
-creating a container; it never silently clamps it. A retained container updates
+Each server's startup values provide per-run defaults. The orchestrator may
+request higher or lower CPU budgets and worker counts. Memory, disk, process,
+slot, load and interval settings retain their server ceilings: an oversized
+request for one of those settings is rejected before creating a container;
+it is never silently clamped. A retained container updates
 its CPU, memory, and process limits before reuse. Its volume quota is fixed:
 smaller disk requests are valid upper bounds, while a request above the volume's
 original quota is rejected.
@@ -349,7 +410,16 @@ yarn test:parallel:distributed \
 
 `-w N` / `--workers N` requests at most `N` concurrent test processes from
 each leased worker. The final summary prints that active limit in the existing
-capacity block and labels the worker's advertised maximum.
+capacity block and labels the worker's advertised default.
+Both `-w` and `--cpu-limit` may exceed worker defaults. CPU budgets may also
+exceed detected cores. Memory and live-load admission still apply; chain tests
+wait when all 40 funded account partitions are occupied. Workers need this
+runner update once; subsequent experiments need only orchestrator flags.
+
+```shell
+yarn test:parallel:distributed --schedule cost -w 16 --cpu-limit 12 --cost-cache-read-only
+yarn test:parallel:distributed --schedule fifo -w 16 --cost-cache-read-only
+```
 
 The source archive contains tracked and non-ignored files from the test
 repository and every recursive `link:` or `file:` dependency. Their relative
@@ -616,3 +686,18 @@ MIT
 ## Automated PR review
 
 See the [persistent PR review service guide](docs/pr-review-bot.md) for setup, account and host prerequisites, CI ownership, recovery and acceptance.
+
+### Optional test groups
+
+Normal parallel runs omit `e2eParallel*.test.*` runner self-tests and browser
+checks (both browser gates and Mocha files marked `@distributed-requires: browser`).
+Enable them explicitly, including when using `--grep`:
+
+```shell
+yarn test:parallel:distributed --test-parallel-script
+yarn test:parallel:distributed --test-browser
+yarn test:parallel:distributed --test-parallel-script --test-browser
+```
+
+CI passes both flags for the full test gate. `--browser-only` still selects only
+browser gates. `--e2e-only` retains its existing tier restrictions.
