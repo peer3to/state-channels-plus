@@ -8,13 +8,14 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                                                         | Question                                                     | Source                          | Affected documents                                                                                                                  | Status                |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| [`OQ-5-4Q38M5`](open-questions.md#oq-5-4q38m5)                             | Fraud-proof completeness security review                     | Specification analysis          | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md) | Open                  |
-| [`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd)     | Lobby accepted-lease exclusion versus the no-punishment rule | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [lobby-matching.md](../specification/peer-communication/lobby-matching.md)      | Resolved (2026-09-02) |
-| [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x) | Watchdog threshold under gate load                           | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [configuration.md](../implementation/views/operations/configuration.md)         | Open                  |
-| [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                            | Resolved (2026-09-05) |
-| [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                          | Resolved (2026-09-05) |
+| ID                                                                         | Question                                                     | Source                          | Affected documents                                                                                                                                                                                             | Status                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| [`OQ-5-4Q38M5`](open-questions.md#oq-5-4q38m5)                             | Fraud-proof completeness security review                     | Specification analysis          | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                            | Open                  |
+| [`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd)     | Lobby accepted-lease exclusion versus the no-punishment rule | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [lobby-matching.md](../specification/peer-communication/lobby-matching.md)                                                                                 | Resolved (2026-09-02) |
+| [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x) | Watchdog threshold under gate load                           | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [configuration.md](../implementation/views/operations/configuration.md)                                                                                    | Open                  |
+| [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                                                                                                       | Resolved (2026-09-05) |
+| [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                                                                                                     | Resolved (2026-09-05) |
+| [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -95,3 +96,23 @@ errors retain their existing handling. See [`REQ-DISPUTE-PIPE-10-BT8YAR` (Rechec
 Open. Internal RPC uses structured cloning. Application-defined custom RPC and precompile inputs must obey that boundary; functions and live provider objects cannot be transferred. The remaining question is whether the SDK should validate all application-defined payload shapes before posting, or continue reporting the platform clone failure. Built-in signer requests are projected before posting. This is a boundary limit, not approval to broaden the wire contract.
 
 Owner: [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../specification/runtime/execution.md#req-runtime-1-rsm6mz). Evidence and scope: [implementation audit](implementation.md).
+
+<a id="oq-audit-sync-1-83ntjy"></a>
+
+## OQ-AUDIT-SYNC-1-83NTJY — Inbound blocks in the sync payload
+
+Open; low priority. Asked by Luka (2026-10-07). Each dispute window in a sync payload carries the
+responder's `inboundMessageBlocksAppliedInReduce`. All relevant inbound blocks are already on chain:
+the `InboundMessagesProcessed` events and the event-sync log recovery deliver them. Why does sync
+receive them from the responder at all? Reading them from the chain would make this input trustless
+and remove the edge cases that [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)
+fixed and [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf) still tracks.
+
+Alternatives: keep the field, where the local `reduceAndFinalize` takes it as input and only a
+window that this sync reduces stores it (the current rule); or take a window's inbound blocks from
+chain data and drop the field from the sync payload. Blocking effect: none; the current rule keeps
+unchecked inbound blocks out of trusted storage. Requested decision: whether sync should keep
+receiving inbound blocks from the responder.
+
+Owner: [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28).
+Evidence and scope: [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md).
