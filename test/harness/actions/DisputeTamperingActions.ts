@@ -232,6 +232,24 @@ export class DisputeTamperingActions<
             final?: boolean;
         } = {}
     ): Promise<PostedDispute & { finalResolution?: FinalDisputeResolution }> {
+        const submit = await this.prepareTamperedDispute(
+            authorPeerIndex,
+            tamper,
+            options
+        );
+        return submit();
+    }
+
+    /** Prepare and sign before opening a window shared by several uploads. */
+    async prepareTamperedDispute(
+        authorPeerIndex: number,
+        tamper: DisputeTamper,
+        options: {
+            forkId?: ForkId;
+            markMalicious?: boolean;
+            final?: boolean;
+        } = {}
+    ) {
         const markMalicious = options?.markMalicious ?? true;
         const forkId = options?.forkId;
 
@@ -294,57 +312,62 @@ export class DisputeTamperingActions<
         // of it would dispute the same window again; the contract takes one
         // dispute per participant per window. Its kills still go out.
         await this.harness.dispute.suppressDisputeInitiation([authorPeerIndex]);
-        const channelManager = peer.p2pInstance.stateChannelManagerContract;
-        let receipt;
-        try {
-            const txResp = dispute.postedAuditingData
-                ? await channelManager.uploadDisputeWithCalldata(
-                      disputeConfirmation,
-                      auditingData
-                  )
-                : await channelManager.uploadDispute(disputeConfirmation);
-            receipt = await txResp.wait();
-        } catch (error) {
-            if (!options.final) throw error;
-            throw new Error(
-                `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
-            );
-        }
-        if (!receipt) throw new Error("Dispute upload receipt unavailable");
-
-        this.harness.context.tamperedDisputes.push(dispute);
-
-        if (!options.final) return { dispute, disputeConfirmation };
-
-        const committedEvent = receipt.logs
-            .map((log) => {
-                try {
-                    return channelManager.interface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .find(
-                (event) =>
-                    (event?.name === "DisputeCommitted" ||
-                        event?.name === "DisputeCommittedWithAuditingData") &&
-                    event.args.isFinal === true
-            );
-        if (!committedEvent) {
-            throw new Error(
-                `Threshold signatures did not finalize dispute for peer ${authorPeerIndex} on fork ${targetForkId}`
-            );
-        }
-
-        return {
-            dispute,
-            disputeConfirmation,
-            finalResolution: {
-                forkId: dispute.outputSnapshotDataHash as ForkId,
-                genesisTimestamp: Number(
-                    committedEvent.args.disputeCreationTimestamp
-                )
+        return async (): Promise<
+            PostedDispute & { finalResolution?: FinalDisputeResolution }
+        > => {
+            const channelManager = peer.p2pInstance.stateChannelManagerContract;
+            let receipt;
+            try {
+                const txResp = dispute.postedAuditingData
+                    ? await channelManager.uploadDisputeWithCalldata(
+                          disputeConfirmation,
+                          auditingData
+                      )
+                    : await channelManager.uploadDispute(disputeConfirmation);
+                receipt = await txResp.wait();
+            } catch (error) {
+                if (!options.final) throw error;
+                throw new Error(
+                    `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
+                );
             }
+            if (!receipt) throw new Error("Dispute upload receipt unavailable");
+
+            this.harness.context.tamperedDisputes.push(dispute);
+
+            if (!options.final) return { dispute, disputeConfirmation };
+
+            const committedEvent = receipt.logs
+                .map((log) => {
+                    try {
+                        return channelManager.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .find(
+                    (event) =>
+                        (event?.name === "DisputeCommitted" ||
+                            event?.name ===
+                                "DisputeCommittedWithAuditingData") &&
+                        event.args.isFinal === true
+                );
+            if (!committedEvent) {
+                throw new Error(
+                    `Threshold signatures did not finalize dispute for peer ${authorPeerIndex} on fork ${targetForkId}`
+                );
+            }
+
+            return {
+                dispute,
+                disputeConfirmation,
+                finalResolution: {
+                    forkId: dispute.outputSnapshotDataHash as ForkId,
+                    genesisTimestamp: Number(
+                        committedEvent.args.disputeCreationTimestamp
+                    )
+                }
+            };
         };
     }
 

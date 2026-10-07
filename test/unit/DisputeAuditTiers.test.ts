@@ -34,24 +34,9 @@ import {
     stageMirrorMissingTopUp
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import type {
-    DisputeStruct,
-    StateSnapshotStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-/** `snapshot` committing the application state `stateMachineStateHash` instead of its own. */
-function withStateHash(
-    snapshot: StateSnapshot,
-    stateMachineStateHash: StateSnapshot["stateMachineStateHash"]
-): StateSnapshotStruct {
-    const struct = snapshot.toStruct();
-    return {
-        ...struct,
-        snapshotData: { ...struct.snapshotData, stateMachineStateHash }
-    };
-}
 
 // The auditor verifies a dispute's proof and replays its tail from the latest
 // locally finalized state, then the local diamond's anchor, then the chain's
@@ -825,7 +810,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(other.stateMachineStateHash).to.not.equal(
                 latest.stateMachineStateHash
             );
-            auditingData.latestStateSnapshot = withStateHash(
+            auditingData.latestStateSnapshot = h.byzantine.withStateHash(
                 latest,
                 other.stateMachineStateHash
             );
@@ -862,7 +847,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             );
             dispute.input.stateProof.milestones = [];
             dispute.input.latestStateSnapshotHash = StateSnapshot.from(
-                withStateHash(genesisSnapshot, other.stateMachineStateHash)
+                h.byzantine.withStateHash(
+                    genesisSnapshot,
+                    other.stateMachineStateHash
+                )
             ).hash;
 
             const run = await h.dispute.auditDispute(1, dispute);

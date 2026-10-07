@@ -10,6 +10,7 @@ import {
 } from "@/types/sol-enums";
 import type { Address, ForkId } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type {
     BlockConfirmationStruct,
@@ -71,8 +72,10 @@ async function suppressWriterTimeouts(
     h: MathPeerTestHarness,
     peerCount: number
 ) {
-    for (let index = 0; index < peerCount; index++)
-        await h.rpcStub.suppressTimeoutCheck(index);
+    await suppressTimeoutChecks(
+        h,
+        Array.from({ length: peerCount }, (_, index) => index)
+    );
 }
 
 function markStaged(h: MathPeerTestHarness): ForkId {
@@ -82,9 +85,10 @@ function markStaged(h: MathPeerTestHarness): ForkId {
 }
 
 /**
- * Four peers; blocks 0..2 final on every peer, their snapshot posted (the chain
- * anchor at block 2), then peer 2 goes offline and blocks 3 and 4 stay
- * unfinalized. Peer 3's own proof is the anchor-holding run [2, 3, 4].
+ * Four peers; blocks 0..2 final on every peer. Publish their snapshot while
+ * peer 2 goes offline and blocks 3 and 4 stay unfinalized. Before returning,
+ * the chain and every mirror anchor at block 2. Peer 3's own proof is the
+ * anchor-holding run [2, 3, 4].
  */
 export async function stageAnchorBeforeUnfinalizedTail(
     h: MathPeerTestHarness
@@ -96,14 +100,26 @@ export async function stageAnchorBeforeUnfinalizedTail(
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 3 });
-    const anchor = await h.transition.postSnapshotWait();
+    // The tail cannot finalize with peer 2 offline, so publication still pins
+    // block 2. Neither estimation nor mining may idle the next author.
+    const [posted] = await Promise.all([
+        h.transition.postSameForkSnapshotOnlyWait(),
+        (async () => {
+            await h.network.blacklistAndDisconnectPeer(
+                ANCHORED_TAIL.offlineIndex
+            );
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [...ANCHORED_TAIL.onlineIndices]
+            });
+        })()
+    ]);
+    const anchor = posted?.snapshot;
     expect(anchor?.blockHeight, "the anchor must be block 2").to.equal(
         ANCHORED_TAIL.anchorHeight
     );
-    await h.network.blacklistAndDisconnectPeer(ANCHORED_TAIL.offlineIndex);
-    await h.transition.advanceState({
-        count: 2,
-        waitForPeers: [...ANCHORED_TAIL.onlineIndices]
+    await h.assert.snapshot.localSnapshotsChangedWait({
+        expectedSnapshot: anchor
     });
     return markStaged(h);
 }
@@ -180,7 +196,10 @@ export async function stageStaleGenesisClaim(
     const mirror =
         options.laggingIndex === undefined
             ? undefined
-            : await holdMirrorSnapshotUpdates(h, options.laggingIndex);
+            : await h.mirror.holdUpdates(
+                  options.laggingIndex,
+                  "onStateSnapshotUpdated"
+              );
     await h.transition.advanceState({ count: 1 });
     const anchor = mirror
         ? await postSnapshotPastLaggingMirror(h)
@@ -201,50 +220,6 @@ export async function stageStaleGenesisClaim(
             "the lagging mirror must have missed the snapshot post"
         ).to.be.greaterThan(0);
     return { forkId: markStaged(h), stale, genesisHash };
-}
-
-/**
- * The peer's local diamond stops applying StateSnapshotUpdated logs for the
- * rest of the test (its event handler, storage and ingest keep running), so
- * its mirror anchor lags the chain. `heldCount` counts the skipped logs.
- */
-export async function holdMirrorSnapshotUpdates(
-    h: MathPeerTestHarness,
-    peerIndex: number
-) {
-    const peer = h.getPeer(peerIndex);
-    await h.execOnHost(peer, (sm) => {
-        const held = { count: 0 };
-        Object.defineProperty(
-            sm.diamondStateMachine.localDiamondContract,
-            "onStateSnapshotUpdated",
-            {
-                value: Object.assign(
-                    async () => {
-                        held.count++;
-                    },
-                    { held }
-                ),
-                configurable: true,
-                writable: true
-            }
-        );
-        return true;
-    });
-    return {
-        heldCount: () =>
-            h.execOnHost(
-                peer,
-                (sm) =>
-                    (
-                        Reflect.get(
-                            sm.diamondStateMachine.localDiamondContract
-                                .onStateSnapshotUpdated,
-                            "held"
-                        ) as { count: number }
-                    ).count
-            )
-    };
 }
 
 /**
@@ -284,9 +259,9 @@ export async function stageLaggingAuditorBelowChainAnchor(
     });
     await suppressWriterTimeouts(h, 4);
     await h.transition.advanceState({ count: 2 });
-    const mirror = await holdMirrorSnapshotUpdates(
-        h,
-        LAGGING_AUDITOR.laggingIndex
+    const mirror = await h.mirror.holdUpdates(
+        LAGGING_AUDITOR.laggingIndex,
+        "onStateSnapshotUpdated"
     );
     await h.rpcStub.dropNetworkConfirmations(LAGGING_AUDITOR.laggingIndex);
     await h.transition.advanceState({
@@ -843,7 +818,7 @@ export function signersOf(dispute: DisputeStruct, index: number): Address[] {
 }
 
 /** The last milestone's block at `index` links to the block before it again (after that one was re-issued). */
-export async function relinkBlock(
+export async function relinkChallengeBlock(
     h: MathPeerTestHarness,
     dispute: DisputeStruct,
     index: number

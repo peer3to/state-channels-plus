@@ -27,6 +27,8 @@ skipped on a known product race. Per-field dispute-input and state-proof audits 
 dispute-input, kill, and recovery permutations demonstrated here are assigned below; per-predicate
 audit permutations stay with the `test/e2e/disputeValidation/*` suites.
 
+State-only contribution checks use the shared real-audit action, including its existing protocol-derived host RPC budget, instead of the quick-read RPC default. The valid verdict, absence of a fraud proof and successful reduction are unchanged.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                      | Covers                                                                                                                                                                                                                                                      |

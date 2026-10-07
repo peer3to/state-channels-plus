@@ -974,7 +974,7 @@ describe("parallel forge tier selection", function () {
         expect(resolveDiscoverySelection(parsed)).to.deep.equal({
             includeMocha: true,
             includeForge: true,
-            includeBrowser: true
+            includeBrowser: false
         });
     });
 
@@ -994,7 +994,7 @@ describe("parallel forge tier selection", function () {
         ).to.deep.equal({
             includeMocha: true,
             includeForge: false,
-            includeBrowser: true
+            includeBrowser: false
         });
     });
 
@@ -1147,6 +1147,7 @@ describe("parallel forge tier selection", function () {
             "--distributed",
             "--dry-run",
             "--no-forge",
+            "--test-parallel-script",
             "--test-pattern",
             "scripts/e2eParallelForgeTasks.test.ts"
         ]);

@@ -26,9 +26,15 @@ const {
 } = require("./connectionLifecycle");
 const { sendBundle } = require("./artifactTransfer");
 const { manifestForDistributedProtocol } = require("./runtimeBundle");
+const {
+    CONCURRENCY_STAT_FIELDS,
+    HOLD_REASONS
+} = require("../shared/constants");
+const { CostCache } = require("../shared/costCache");
+const { budgetHoldReason } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
-const { toWireTask } = require("./taskWire");
+const { fromWireCostBudget, toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
 const logging = require("../shared/logging");
 
@@ -271,6 +277,26 @@ function validateWorkerStats(stats) {
     ) {
         throw new Error("Worker returned invalid resource statistics");
     }
+    if (
+        CONCURRENCY_STAT_FIELDS.some(
+            (field) =>
+                Object.hasOwn(stats, field) &&
+                (!Number.isFinite(stats[field]) || stats[field] < 0)
+        ) ||
+        ["peakConcurrency", "processScanCount"].some(
+            (field) =>
+                Object.hasOwn(stats, field) && !Number.isInteger(stats[field])
+        ) ||
+        (Object.hasOwn(stats, "holdCounts") &&
+            (!stats.holdCounts ||
+                HOLD_REASONS.some(
+                    (field) =>
+                        !Number.isInteger(stats.holdCounts[field]) ||
+                        stats.holdCounts[field] < 0
+                )))
+    ) {
+        throw new Error("Worker returned invalid admission statistics");
+    }
     return stats;
 }
 
@@ -490,7 +516,7 @@ function formatWorkerDispositions(workerStates) {
         .join("; ");
 }
 
-function formatWorkerSummary(worker, completed) {
+function formatWorkerSummary(worker, completed, budgetHolds) {
     const profile = worker.executionProfile || {};
     const slots = profile.slots ?? worker.capabilities.slots;
     const workers = profile.workers ?? worker.capabilities.workers;
@@ -499,20 +525,36 @@ function formatWorkerSummary(worker, completed) {
             ? worker.capabilities.memoryGb
             : profile.memoryBytes / 1024 ** 3;
     const capacity =
-        `${slots} slots, ${workers} workers ` +
-        `(max ${worker.capabilities.workers}), ${memoryGb}GB`;
+        `${slots} slots, ceiling ${workers} workers ` +
+        `(default ${worker.capabilities.workers}), ${memoryGb}GB`;
     if (!worker.stats) {
         return `${workerName(worker)} (${capacity}) · ${completed} tests · resource stats unavailable`;
     }
     const stats = worker.stats;
     return (
         `${workerName(worker)} (${capacity}) · ${completed} tests · ` +
+        (Number.isFinite(stats.meanConcurrency) &&
+        Number.isFinite(stats.peakConcurrency)
+            ? `concurrent tests avg ${stats.meanConcurrency.toFixed(1)} / peak ${stats.peakConcurrency} · `
+            : "concurrent tests unavailable · ") +
         `cpu avg ${(stats.avgCpu * 100).toFixed(0)}% / peak ${(stats.peakCpu * 100).toFixed(0)}%${logging.formatCpuPressure(stats.avgCpuPressure, stats.peakCpuPressure)}${logging.formatCpuDetail(stats)} · ` +
-        `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB`
+        `mem peak ${stats.peakOccupiedGb.toFixed(1)}GB / bound ${stats.memBoundGb.toFixed(1)}GB, avg/process ${stats.avgPerTestGb.toFixed(2)}GB` +
+        // Refusals the coordinator made for this worker's cost budget.
+        (budgetHolds
+            ? ` · budget holds cpu ${budgetHolds.cpu} / memory ${budgetHolds.memory}`
+            : "")
     );
 }
 
 async function runDistributed(options) {
+    options = { schedule: "fifo", ...options };
+    const startedAt = Date.now();
+    const costCache = new CostCache({
+        projectRoot: options.projectRoot,
+        cachePath: options.costCachePath,
+        overridesPath: options.costOverridesPath,
+        readOnly: options.costCacheReadOnly
+    });
     const keys = derivePoolKeys(options.poolSecret);
     console.log(
         `Discovering workers on topic ${keys.workerTopic.toString("hex").slice(0, 12)}`
@@ -583,7 +625,24 @@ async function runDistributed(options) {
     }
 
     const coordinator = new TaskCoordinator(options.tasks, {
+        schedule: options.schedule,
+        costCache,
         speculative: true,
+        // A busy worker refused for its budget logs nothing itself: record
+        // the hold in its infrastructure log as it happens.
+        onBudgetHold({ workerId, seq, reason }) {
+            fs.appendFileSync(
+                logStore.infrastructurePath(
+                    workerId,
+                    workerLabelById.get(workerId)
+                ),
+                `${logging.holdLine({
+                    seq,
+                    total: options.tasks.length,
+                    reason: budgetHoldReason(reason)
+                })}\n`
+            );
+        },
         onWorkAvailable(workerId) {
             const worker = workers.get(workerId);
             worker?.peer
@@ -796,6 +855,7 @@ async function runDistributed(options) {
             }
             clearRediscoveryTimeout();
             workerLabelById.set(workerId, worker.label);
+            logStartupPhase(worker, "discovery and connection");
             console.log(
                 `Connected to worker ${workerName(worker)} (protocol ${worker.distributedProtocol}: ${[...runners].join(", ")}); requesting lease`
             );
@@ -848,8 +908,21 @@ async function runDistributed(options) {
         }
     });
 
+    // Durations are measured on the orchestrator so worker clock skew cannot affect them.
+    function logStartupPhase(worker, phase, detail = "") {
+        const now = Date.now();
+        const durationMs = now - (worker.startupUpdatedAt ?? startedAt);
+        worker.startupUpdatedAt = now;
+        worker.startup ||= {};
+        worker.startup[phase] = { durationMs, elapsedMs: now - startedAt };
+        console.log(
+            `[startup] ${workerName(worker)} ${phase}: ${(durationMs / 1000).toFixed(2)}s; elapsed ${((now - startedAt) / 1000).toFixed(2)}s${detail ? ` · ${detail}` : ""}`
+        );
+    }
+
     async function handleMessage(worker, message) {
         if (message.kind === "LEASE_GRANTED") {
+            logStartupPhase(worker, "lease wait");
             worker.leased = true;
             leasedWorkers.set(worker.id, worker);
             if (finishing) {
@@ -871,6 +944,11 @@ async function runDistributed(options) {
                     const archiveMb = (need.archiveBytes / 1024 / 1024).toFixed(
                         2
                     );
+                    logStartupPhase(
+                        worker,
+                        "workspace negotiation",
+                        `${need.changed.length} changed / ${need.deleted.length} deleted files; ${archiveMb} MB transfer`
+                    );
                     console.log(
                         need.changed.length || need.deleted.length
                             ? `Syncing ${need.changed.length} changed and ${need.deleted.length} deleted file(s) to ${workerName(worker)} (${archiveMb} MB)`
@@ -878,6 +956,7 @@ async function runDistributed(options) {
                     );
                 }
             );
+            logStartupPhase(worker, "workspace transfer and preparation");
             console.log(
                 `${workerName(worker)} prepared the workspace; starting test worker`
             );
@@ -924,9 +1003,15 @@ async function runDistributed(options) {
                 { kind: "faulted", reason: error.message }
             );
         } else if (message.kind === "WORKER_READY") {
+            logStartupPhase(
+                worker,
+                "worker boot and infrastructure provisioning"
+            );
             workerStatus(worker, "Ready");
         } else if (message.kind === "TASK_REQUEST") {
-            const assignment = coordinator.requestTask(worker.id);
+            const assignment = coordinator.requestTask(worker.id, {
+                costBudget: fromWireCostBudget(message.header.costBudget)
+            });
             if (!assignment) {
                 await worker.peer.send("NO_TASK_AVAILABLE", {
                     requestId: message.header.requestId
@@ -935,12 +1020,20 @@ async function runDistributed(options) {
                 return;
             }
             if (!worker.admitted) {
+                logStartupPhase(
+                    worker,
+                    "ready to first assignment",
+                    `task ${assignment.task?.label || assignment.label || "assigned"}`
+                );
                 worker.admitted = true;
                 resetSetupFailures(workerStates, worker.id);
             }
             const wireAssignment = {
                 ...assignment,
-                task: toWireTask(assignment.task, options.projectRoot)
+                task: toWireTask(assignment.task, options.projectRoot, {
+                    schedule: options.schedule,
+                    distributedProtocol: worker.distributedProtocol
+                })
             };
             const attemptPath = logging.getAttemptLogPath(
                 options.logDir,
@@ -1266,7 +1359,11 @@ async function runDistributed(options) {
         await completed;
         usedWorkers = [...leasedWorkers.values()];
         workerLabels = usedWorkers.map((worker) =>
-            formatWorkerSummary(worker, completedByWorker.get(worker.id) || 0)
+            formatWorkerSummary(
+                worker,
+                completedByWorker.get(worker.id) || 0,
+                coordinator.budgetHolds.get(worker.id)
+            )
         );
     } finally {
         clearTimeout(discoveryTimeout);
@@ -1278,6 +1375,26 @@ async function runDistributed(options) {
     }
     const state = coordinator.finish();
     const resourceStats = aggregateWorkerStats(usedWorkers);
+    const metrics = logging.buildRunMetrics({
+        tasks: options.tasks,
+        workers: usedWorkers.map((worker) => ({
+            id: worker.id,
+            label: worker.label,
+            startup: worker.startup,
+            stats: coordinator.withBudgetHolds(worker.id, worker.stats),
+            legacyAdmission:
+                options.schedule !== "cost" || worker.distributedProtocol < 15
+        })),
+        makespanMs: Date.now() - startedAt,
+        startedAt,
+        sumDurationMs: state.sumDurationMs,
+        workerLabel: (id) => workerLabelById.get(id) || id
+    });
+    logging.writeRunMetrics(options.logDir, metrics);
+    costCache.commit({
+        interrupted: options.signal?.aborted || !state.done,
+        pruneDeleted: true
+    });
     return {
         failed: state.failed,
         completed: state.completed,

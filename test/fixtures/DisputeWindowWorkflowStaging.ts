@@ -5,6 +5,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { ZeroAddress } from "ethers";
@@ -188,20 +189,6 @@ export async function computeLocalReduction(
     );
 }
 
-/** `disputerIndex` uploads its own dispute of `forkId` through the real `dispute()`. */
-export async function disputeOnHost(
-    h: MathPeerTestHarness,
-    disputerIndex: number,
-    forkId: ForkId
-): Promise<void> {
-    await h.execOnHost(
-        h.getPeer(disputerIndex),
-        (sm, args) => sm.disputeManager.dispute(args.forkId),
-        { forkId },
-        { timeoutMs: h.event.hostExecTimeoutMs() }
-    );
-}
-
 /**
  * E49: four peers. Spammer 1 opens the window with a spam dispute. Peer 0 is
  * the only peer in the kill race: it audits the spam, and its kill rides in
@@ -369,88 +356,69 @@ export async function uploadLateLowerStateDispute(
  * writer that failed to produce the next block after the disputer's frozen
  * view. Its timeout is planted on the disputer's host, dated at the window
  * creation (so the upload's own window guard admits it), and the dispute is
- * built by the real `constructDispute`, re-signed and uploaded directly
- * `marginSeconds` before the evidence period ends. The disputer is marked
+ * built by the real `constructDispute` before the window opens. The returned
+ * upload re-signs it and sends directly `marginSeconds` before evidence ends. The disputer is marked
  * malicious.
  */
-export async function uploadLateFalseTimeoutDispute(
+export async function prepareLateFalseTimeoutDispute(
     h: MathPeerTestHarness,
     disputerIndex: number,
     accused: string,
-    forkId: ForkId,
-    marginSeconds: number
+    forkId: ForkId
 ) {
     const disputer = h.getPeer(disputerIndex);
     h.contextApi.markMaliciousPeer({ maliciousPeerIndex: disputerIndex });
     await h.tamper.plantFreshTimeoutForParticipant(disputerIndex, accused);
     const { dispute, disputeConfirmation, auditingData } =
         await h.dispute.fetchConstructedDispute(disputerIndex, forkId);
-    const [created, evidenceTime] = await Promise.all([
-        h.channelManager.getDisputeWindowCreationTimestamp(h.channelId, forkId),
-        h.execOnHost(disputer, (sm) => sm.timeConfig.evidenceTime)
-    ]);
-    // the timeout is the dispute's only reason
-    dispute.input.timeout.minTimeStamp = created;
-    dispute.input.onChainSlashes = [];
-    dispute.input.selfRemoval = false;
-    await h.tamper.resignDispute(disputer.signer, dispute, disputeConfirmation);
-    const evidenceEnd = Number(created) + evidenceTime;
-    // time is the input: the lower-state dispute arrives shortly before the
-    // evidence period closes
-    await h.event.waitUntilTimestamp(evidenceEnd - marginSeconds);
-    const contract = disputer.p2pInstance.stateChannelManagerContract;
-    const transaction = dispute.postedAuditingData
-        ? await contract.uploadDisputeWithCalldata(
-              disputeConfirmation,
-              auditingData
-          )
-        : await contract.uploadDispute(disputeConfirmation);
-    await transaction.wait();
-    return { dispute, evidenceEnd };
-}
-
-/**
- * Remove one stored snapshot from a peer (the storage has no delete API).
- * Stages a broken data-availability guarantee: the peer lacks a snapshot it
- * must hold.
- */
-export async function removeStoredSnapshot(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    snapshotHash: Hash
-): Promise<boolean> {
-    return h.execOnHost(
-        h.getPeer(peerIndex),
-        (sm, args) => {
-            const snapshots = sm.storage.stateSnapshots as unknown as {
-                snapshotsByHash: Map<Hash, unknown>;
-            };
-            return snapshots.snapshotsByHash.delete(args.snapshotHash);
-        },
-        { snapshotHash }
-    );
-}
-
-/**
- * Remove one stored state-machine state from a peer (the storage has no
- * delete API). Stages a broken data-availability guarantee: the peer lacks
- * the full state of a finalized snapshot it holds.
- */
-export async function removeStoredState(
-    h: MathPeerTestHarness,
-    peerIndex: number,
-    stateHash: Hash
-): Promise<boolean> {
-    return h.execOnHost(
-        h.getPeer(peerIndex),
-        (sm, args) => {
-            const states = sm.storage.stateMachineStates as unknown as {
-                statesByHash: Map<Hash, unknown>;
-            };
-            return states.statesByHash.delete(args.stateHash);
-        },
-        { stateHash }
-    );
+    // Construct the frozen lower-state claim before the opener starts the window.
+    return async (marginSeconds: number) => {
+        const [created, evidenceTime] = await Promise.all([
+            h.channelManager.getDisputeWindowCreationTimestamp(
+                h.channelId,
+                forkId
+            ),
+            h.execOnHost(disputer, (sm) => sm.timeConfig.evidenceTime)
+        ]);
+        // the timeout is the dispute's only reason
+        dispute.input.timeout.minTimeStamp = created;
+        dispute.input.onChainSlashes = [];
+        dispute.input.selfRemoval = false;
+        await h.tamper.resignDispute(
+            disputer.signer,
+            dispute,
+            disputeConfirmation
+        );
+        const evidenceEnd = Number(created) + evidenceTime;
+        const contract = disputer.p2pInstance.stateChannelManagerContract;
+        // Complete the real estimation before waiting near the admission deadline.
+        const gasLimit = dispute.postedAuditingData
+            ? await contract.uploadDisputeWithCalldata.estimateGas(
+                  disputeConfirmation,
+                  auditingData
+              )
+            : await contract.uploadDispute.estimateGas(disputeConfirmation);
+        const request = dispute.postedAuditingData
+            ? await contract.uploadDisputeWithCalldata.populateTransaction(
+                  disputeConfirmation,
+                  auditingData,
+                  { gasLimit }
+              )
+            : await contract.uploadDispute.populateTransaction(
+                  disputeConfirmation,
+                  { gasLimit }
+              );
+        // Fee and chain metadata reads also belong before the deadline wait.
+        // The real host signer still owns nonce assignment and broadcasting.
+        const signer = disputer.p2pInstance.chainSigner;
+        const populated = await signer.populateTransaction(request);
+        // time is the input: the lower-state dispute arrives shortly before the
+        // evidence period closes
+        await h.event.waitUntilTimestamp(evidenceEnd - marginSeconds);
+        const transaction = await signer.sendTransaction(populated);
+        await transaction.wait();
+        return { dispute, evidenceEnd };
+    };
 }
 
 /** The state-machine state hash a peer's stored snapshot at `height` commits to. */

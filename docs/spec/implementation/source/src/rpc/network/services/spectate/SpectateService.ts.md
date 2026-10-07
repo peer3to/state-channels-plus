@@ -5,6 +5,8 @@
 
 > **Known limitation:** Retained, unexecuted proof support can contaminate installed history. [Deferred finding](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds) records the audit/sync impact and missing regressions; this behavior is not certified by the current coverage.
 
+> **Deferred reduction-gas finding:** Local reduction out-of-gas is currently caught as invalid served evidence and can blacklist an honest responder. Complete local/on-chain gas sufficiency remains unverified. Luka deferred this work outside PR #520 on 2026-10-07; see [`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985). This limits the general internal-failure propagation claim below.
+
 ## Contents
 
 - [Responsibility and observable boundary](#responsibility-and-observable-boundary)

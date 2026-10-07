@@ -5,6 +5,7 @@ import { Block, StateSnapshot } from "@/models";
 import { Status, type SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { latestSyncFromResponderBehindDerivedFork } from "@test/fixtures/BotConnectionFixesStaging";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import type { StateProofVerification } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
@@ -774,10 +775,22 @@ export async function stageSyncedThroughParticipation(h: MathPeerTestHarness) {
     await h.assert.sync.peersInSyncWait({ peerIndices: participants });
     const progressed = await reconstructedProof(h, member.index, forkId);
 
-    const anchor = await h.transition.postSnapshotWait({
-        peerIndex: 0,
-        forkId: String(forkId)
-    });
+    // Publishing the anchor must not stop normal authoring while its chain
+    // event reaches every local mirror.
+    let published = false;
+    const publishing = h.transition
+        .postSnapshotWait({ peerIndex: 0, forkId: String(forkId) })
+        .finally(() => {
+            published = true;
+        });
+    const [anchor] = await Promise.all([
+        publishing,
+        h.transition.keepAuthoringUntil({
+            until: () => published,
+            waitForPeers: participants,
+            maximumBlocks: 20
+        })
+    ]);
     if (!anchor) throw new Error("No snapshot posted");
     await h.transition.advanceState({
         count: 1,
@@ -811,52 +824,14 @@ export async function stageSyncedThroughParticipation(h: MathPeerTestHarness) {
 export async function syncLatestFromUninstalledSuccessor(
     h: MathPeerTestHarness
 ) {
-    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
-    const responder = h.getPeer(0);
-    const requester = h.getPeer(2);
-    const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
-        outcome: "hold",
-        at: "setState"
-    });
-    try {
-        await h.control(responder).stub.startTryReduce(sourceForkId).request();
-        await waitFor(
-            async () => (await hold.entered()) === 1,
-            h.event.protocolEventTimeoutMs()
-        );
-        const responderFork = await h
-            .control(responder)
-            .query.getForkId()
-            .request();
-        await h
-            .control(requester)
-            .spectate.startSync(responder.address)
-            .request();
-        await waitFor(
-            async () =>
-                (await h.control(requester).query.getForkId().request()) !==
-                sourceForkId,
-            h.event.protocolEventTimeoutMs()
-        );
-        return {
-            sourceForkId,
-            responderFork,
-            requesterFork: await h
-                .control(requester)
-                .query.getForkId()
-                .request(),
-            requesterBlacklistedResponder: await h
-                .control(requester)
-                .query.isBlacklisted(responder.address)
-                .request(),
-            responderBlacklistedRequester: await h
-                .control(responder)
-                .query.isBlacklisted(requester.address)
-                .request()
-        };
-    } finally {
-        await hold.release();
-    }
+    const result = await latestSyncFromResponderBehindDerivedFork(h);
+    return {
+        sourceForkId: result.sourceForkId,
+        responderFork: result.responderOwnFork,
+        requesterFork: result.observerForkId,
+        requesterBlacklistedResponder: result.observerBlacklistedResponder,
+        responderBlacklistedRequester: result.responderBlacklistedObserver
+    };
 }
 
 /**
@@ -992,15 +967,41 @@ export async function spawnSpectatorAfterFirstHandshake(
  */
 export async function restartPeerRuntime(
     h: MathPeerTestHarness,
-    index: number
+    index: number,
+    authoringPeerIndices: number[]
 ): Promise<Peer> {
     const previous = h.getPeer(index);
-    await previous.p2pInstance.dispose();
-    previous.logger.dispose();
-    await h.createPeer(index, previous.signer);
-    const restarted = h.getPeer(index);
-    await h.join.connectSpectator(restarted);
-    return restarted;
+    const wasAfk = h.context.afkPeerIndices.includes(index);
+    h.contextApi.markAfkPeer({ afkPeerIndex: index });
+    let ready = false;
+    const restarting = (async () => {
+        await previous.p2pInstance.dispose();
+        previous.logger.dispose();
+        await h.createPeer(index, previous.signer);
+        const restarted = h.getPeer(index);
+        await h.join.connectSpectator(restarted);
+        return restarted;
+    })().finally(() => {
+        ready = true;
+    });
+    try {
+        // Runtime recreation must not consume the participants' writer window.
+        // The unavailable old runtime is excluded from harness state queries.
+        const [restarted] = await Promise.all([
+            restarting,
+            h.transition.keepAuthoringUntil({
+                until: () => ready,
+                waitForPeers: authoringPeerIndices,
+                maximumBlocks: 20
+            })
+        ]);
+        return restarted;
+    } finally {
+        if (!wasAfk)
+            h.context.afkPeerIndices = h.context.afkPeerIndices.filter(
+                (peerIndex) => peerIndex !== index
+            );
+    }
 }
 
 /**

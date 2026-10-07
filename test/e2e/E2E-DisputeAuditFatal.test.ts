@@ -1,17 +1,15 @@
 import { Codec, Type } from "@/utils";
 import {
     commitmentOf,
-    disputeOnHost,
     holdReductions,
     lastMilestoneFirstBlock,
     latestProofBlock,
     postSpamDispute,
-    removeStoredSnapshot,
-    removeStoredState,
     stageAuditorBehindLastFinalBlock,
     stageOffWireBlock,
     storedStateHashAt
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -99,9 +97,9 @@ describe("E2E: fatal dispute audits", function () {
             forkId,
             height - 1
         );
-        expect(await removeStoredState(h, auditor.index, baseState)).to.equal(
-            true
-        );
+        expect(
+            await h.control(auditor).stub.deleteStoredState(baseState).request()
+        ).to.equal(true);
 
         await h.control(leader).dispute.setForceExit(true).request();
         await disputeOnHost(h, leader.index, forkId);
@@ -159,11 +157,10 @@ describe("E2E: fatal dispute audits", function () {
         );
         // the auditor signed the block but no longer holds its snapshot
         expect(
-            await removeStoredSnapshot(
-                h,
-                auditor.index,
-                authored.stateSnapshotHash
-            )
+            await h
+                .control(auditor)
+                .stub.deleteStoredSnapshot(authored.stateSnapshotHash)
+                .request()
         ).to.equal(true);
 
         await h.control(writer).dispute.setForceExit(true).request();

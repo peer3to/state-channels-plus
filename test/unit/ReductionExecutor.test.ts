@@ -246,7 +246,7 @@ describe("Unit: ReductionExecutor", function () {
 
         it("a re-dispatched dispute log that fails again → failed attempt, not a fatal", async function () {
             const h = TestSession.getHarness();
-            const { forkId, race, restoreEvents } =
+            const { forkId } =
                 await h.scenario.disputeWithSuppressedCommitEvents({
                     observerIndex,
                     maliciousPeerIndex
@@ -275,12 +275,9 @@ describe("Unit: ReductionExecutor", function () {
             ).to.be.greaterThan(0);
             await failing.restore();
 
-            await race.release({
-                replayEvents: false,
-                runHeldTasks: false,
-                keepTasksHeld: true
-            });
-            await restoreEvents(false);
+            // Keep event and timer holds until harness disposal. Restoring only
+            // event handlers lets a late chain event await a deferred reduction
+            // whose retry timer is still held, hanging the detached-promise drain.
         });
 
         it("unreadable dispute window → the reduction is not challenged", async function () {
@@ -320,6 +317,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index
@@ -363,6 +367,13 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const { sourceForkId } =
                 await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
             const reducer = h.getPeer(0);
             const adoption = await h.rpcStub.failFirstAdoptionPost(
                 reducer.index,

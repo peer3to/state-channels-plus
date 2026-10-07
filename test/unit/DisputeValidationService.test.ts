@@ -1216,6 +1216,13 @@ describe("Unit: DisputeValidationService", function () {
                 3
             );
 
+            // Capture the writer from block 2 before opening the window:
+            // concurrent dispute audits temporarily install replay state in the VM.
+            const nextWriter = await h
+                .control(h.getPeer(1))
+                .query.getNextToWrite()
+                .request();
+
             // open the window inside (tAuth + wait, tCal + wait)
             await h.event.waitUntilTimestamp(tAuth + wait + 1);
             await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
@@ -1233,10 +1240,6 @@ describe("Unit: DisputeValidationService", function () {
 
             // disputer 0's proof heads at block 2; timeout blames height 3,
             // the writer after block 2 as the auditor holding it computes
-            const nextWriter = await h
-                .control(h.getPeer(1))
-                .query.getNextToWrite()
-                .request();
             await h.tamper.plantFreshTimeoutForParticipant(0, nextWriter);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(Number(dispute.input.timeout.blockHeight)).to.equal(3);
@@ -1427,7 +1430,7 @@ describe("Unit: DisputeValidationService", function () {
             await h
                 .control(block1Author)
                 .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request();
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
 
             const run = await h.dispute.auditDispute(1, dispute);
             expect(run).to.include({ outcome: "returned", isValid: true });

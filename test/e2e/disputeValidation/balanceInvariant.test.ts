@@ -34,7 +34,8 @@ describe("E2E: dispute validation / balanceInvariant", function () {
 
     it("peer 2 uploads a dispute whose committed snapshot breaks the balance invariant; a pending auditor without a final block at the forged head → DisputeInvalidBalanceInvariant, then the colluders' real-head disputes → DisputeConflictsWithFinalState (forged audited first)", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup();
+        // Use the approved balance-invariant evidence window for both audit orders.
+        await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
         const forkId = h.activeForkId!;
         // the colluders' head is one the pending auditor never finalized
         const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
@@ -73,7 +74,8 @@ describe("E2E: dispute validation / balanceInvariant", function () {
 
     it("the colluders' real-head dispute audited first by the pending auditor, then peer 2's forged-head dispute → the auditor accepts the real head and kills the forged dispute with DisputeConflictsWithFinalState (real audited first)", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup();
+        // The real audit precedes the forged upload and its follow-up disputes.
+        await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
         const forkId = h.activeForkId!;
         const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
             h,
@@ -138,9 +140,22 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await walks.release(realHead.hash);
         await walks.restore();
 
-        await h.event.waitForPeers("onDisputeKilled", [auditorIndex], 1, {
-            mode: "atLeast"
-        });
+        // The concurrent real-head audits can kill a different dispute first.
+        await h.eventCountsBarrier.waitFor(
+            () =>
+                auditor.eventSpies.onDisputeKilled
+                    ?.getCalls()
+                    .some(
+                        ({ args }) =>
+                            args[1] === forkId &&
+                            args[2] === h.getPeer(2).address
+                    ) ?? false,
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage:
+                    "The auditor did not observe the forged submitter's dispute kill"
+            }
+        );
         const forgedKill = await readDisputeKill(h, h.getPeer(2).address);
         expect(forgedKill.killer).to.equal(auditor.address);
         expect(forgedKill.appliedProofTypes).to.deep.equal([

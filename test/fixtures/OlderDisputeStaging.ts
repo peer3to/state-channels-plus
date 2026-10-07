@@ -489,6 +489,7 @@ export async function assertNewerStateAnswersOlderDispute(
         ).to.equal(true);
     }
 
+    let submittedHeight: number | undefined;
     const balanceReads = await h.mirror.observe(
         auditorIndex,
         "verifyBalanceInvariantCheckSnapshot"
@@ -553,6 +554,22 @@ export async function assertNewerStateAnswersOlderDispute(
                 ownDispute
             )
         ).to.equal(false);
+        // A final block may arrive after the initial auditor-height read.
+        // Reduction must select the exact state the auditor actually submits.
+        if (submission.encodedAuditingData === null)
+            throw new Error("The auditor omitted its auditing data");
+        const submittedSnapshot = StateSnapshot.from(
+            Codec.decode(
+                submission.encodedAuditingData,
+                Type.DisputeAuditingData
+            ).latestStateSnapshot
+        );
+        expect(submittedSnapshot.hash).to.equal(
+            ownDispute.input.latestStateSnapshotHash
+        );
+        submittedHeight = submittedSnapshot.blockHeight;
+        expect(submittedHeight).to.be.at.least(auditorHeight);
+        expect(submittedHeight).to.be.greaterThan(olderHeight);
         expect(ownDispute.postedAuditingData).to.equal(true);
         expect(submission.encodedAuditingData).to.not.equal(null);
     } finally {
@@ -581,7 +598,8 @@ export async function assertNewerStateAnswersOlderDispute(
             addressesEqual(address, disputer.address)
         )
     ).to.equal(true);
-    expect(reduction.latestBlockHeight).to.equal(auditorHeight);
+    expect(submittedHeight).to.not.equal(undefined);
+    expect(reduction.latestBlockHeight).to.equal(submittedHeight);
     expect(reduction.latestBlockHeight).to.be.greaterThan(olderHeight);
     expect(reduction.slashedParticipants).to.deep.equal([]);
     expect(reduction.reducedForkId).to.equal(

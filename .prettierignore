@@ -17,3 +17,64 @@ artifacts
 typechain-types
 #Generated spec reports stay compact — prettier column padding turns one-cell edits into whole-table diffs
 docs/spec/generated
+
+# Machine-written test scheduling costs
+/test-costs.json
+/test-costs.overrides.json
+/.cache/test-costs.json
+
+# Keep Git-ignored files and folders out of editor formatting too.
+node_modules
+.vscode
+.env
+coverage
+coverage.json
+typechain
+contracts.json
+dist
+
+#Hardhat files
+cache
+# ...but keep source/test/report dirs literally named "cache"
+!/src/cache/
+!/test/cache/
+!/docs/spec/verification/tests/test/cache/
+!/docs/spec/implementation/source/src/cache/
+artifacts
+typechain-types
+
+# Ignore all .tgz files
+*.tgz
+./wake
+
+.nyc_output
+
+peer3.config.json
+
+
+# foundry stuff
+# lib/* (not bare "lib") so the forge-std submodule can be re-included:
+# git never descends into an ignored directory, so !/lib/forge-std only works
+# when lib itself stays unignored. The distributed test bundle drops every
+# tracked-but-ignored path, and forge test needs forge-std on the workers.
+/lib/*
+!/lib/forge-std
+out
+cache_forge
+
+temp
+logs
+crash-logs
+
+# generated files
+src/types/sol-enums.ts
+src/utils/GeneratedArtifacts.ts
+docs/spec/generated/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+/profiles
+
+/extensions
+/.cache/test-costs.json

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Exercises sync replay from the verified predecessor, including a compact proof with unavailable older coordinate history.
+Exercises sync replay from the verified predecessor, including a compact proof with unavailable older coordinate history. The spectator is created and synced at genesis before the two initial blocks, so runtime startup cannot consume an active authoring window. The subsequent cutoff and final-block count preserve the equal-base and one-below-base premises.
 
 ## Tests and covered test IDs
 

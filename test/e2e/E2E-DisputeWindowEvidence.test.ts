@@ -4,16 +4,16 @@ import {
     commitmentOf,
     committedDisputeLogs,
     computeLocalReduction,
-    disputeOnHost,
     killedDisputeLogs,
     latestProofBlock,
     releaseReductions,
     stageHigherStateOverOpener,
     stageOffWireBlock,
-    uploadLateFalseTimeoutDispute,
+    prepareLateFalseTimeoutDispute,
     uploadLateLowerStateDispute,
     waitPastKillPeriod
 } from "@test/fixtures/DisputeWindowWorkflowStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -24,8 +24,8 @@ import { ZeroAddress } from "ethers";
  * uploaded `LATE_MARGIN_SECONDS` before the evidence period of
  * `EVIDENCE_TIME` seconds closes, after the higher state was admitted.
  */
-const EVIDENCE_TIME = 10;
-const LATE_MARGIN_SECONDS = 3;
+const EVIDENCE_TIME = 15;
+const LATE_MARGIN_SECONDS = 7;
 
 /**
  * Plan 35 (milestone-only state proof): what a peer submits when the dispute
@@ -34,7 +34,7 @@ const LATE_MARGIN_SECONDS = 3;
  * loss of the only higher-state commitment.
  */
 describe("E2E: evidence in the dispute window", function () {
-    it("E47: a peer whose frozen view is above the opening dispute submits its higher state at once; a lower-state dispute admitted near evidence closure needs no new upload, its own false timeout is still countered, and reduction keeps the higher state", async function () {
+    it("E47: a peer whose frozen view is above the opening dispute submits its higher state at once; a lower-state dispute admitted after the higher evidence needs no new upload, its own false timeout is still countered, and reduction keeps the higher state", async function () {
         const h = TestSession.getHarness();
         const {
             forkId,
@@ -54,6 +54,13 @@ describe("E2E: evidence in the dispute window", function () {
         const leaderUploads = await h.rpcStub.recordDisputeSubmissions(
             leader.index,
             { forward: true }
+        );
+
+        const uploadLower = await prepareLateFalseTimeoutDispute(
+            h,
+            late.index,
+            opener.address,
+            forkId
         );
 
         // the opener disputes the offender's block from height - 1
@@ -78,13 +85,7 @@ describe("E2E: evidence in the dispute window", function () {
 
         // the late peer's lower-state dispute claims a false timeout: it names
         // the opener, not the leader, as the writer of the next block
-        const lower = await uploadLateFalseTimeoutDispute(
-            h,
-            late.index,
-            opener.address,
-            forkId,
-            LATE_MARGIN_SECONDS
-        );
+        const lower = await uploadLower(LATE_MARGIN_SECONDS);
         expect(latestProofBlock(lower.dispute).height).to.equal(height - 1);
         expect(lower.dispute.input.timeout.participant).to.equal(
             opener.address

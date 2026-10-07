@@ -1,4 +1,5 @@
 import { chainSnapshot } from "@test/fixtures/MilestoneSyncStaging";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import {
     blockSnapshotHashAt,
     buildProofView,
@@ -6,8 +7,7 @@ import {
     postSnapshotFrom,
     prepareSameForkView,
     stageFinalThenUnfinalizedTail,
-    stageJoinHopWithLaterFinalPoint,
-    suppressTimeouts
+    stageJoinHopWithLaterFinalPoint
 } from "@test/fixtures/ProofOwnerStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -54,7 +54,7 @@ describe("SnapshotUpdateService target selection", function () {
     it("U66: no block has sufficient finality → no update calldata, no transaction, the chain snapshot stays", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        await suppressTimeouts(h, [0, 1, 2]);
+        await suppressTimeoutChecks(h, [0, 1, 2]);
         await h.network.blacklistAndDisconnectPeer(2);
         await h.transition.advanceState({
             count: 2,
@@ -107,7 +107,7 @@ describe("SnapshotUpdateService target selection", function () {
     it("U67: an unfinalized block zero → no update calldata, no transaction, the chain keeps the genesis", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
-        await suppressTimeouts(h, [0, 1, 2]);
+        await suppressTimeoutChecks(h, [0, 1, 2]);
         await h.network.blacklistAndDisconnectPeer(2);
         await h.transition.advanceState({
             count: 1,

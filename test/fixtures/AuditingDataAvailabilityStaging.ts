@@ -43,7 +43,7 @@ export async function stageAnchoredUnfinalizedTail(
     // confirmation round) sit in one writer window before the tail block.
     await h.lifecycle.start(3, 0, {
         timeConfig: {
-            p2pTime: 4,
+            p2pTime: 10,
             agreementTime: 4,
             chainFallbackTime: 4,
             evidenceTime: 8
@@ -58,6 +58,13 @@ export async function stageAnchoredUnfinalizedTail(
     const forkId = h.activeForkId!;
     const participantIndices = [0, 1, 2];
 
+    // Install independent controls before the anchor starts the tail's window.
+    await Promise.all(
+        participantIndices.map((index) =>
+            h.byzantine.stubPendingInboundInclusion(index)
+        )
+    );
+
     // the anchor block: every participant signs it, and the synced joiner sees it final
     await h.transition.advanceState({ count: 1 });
     const anchorHeight = await h
@@ -71,8 +78,6 @@ export async function stageAnchoredUnfinalizedTail(
             `Expected the chain anchor at height ${anchorHeight}, got ${anchor?.blockHeight}`
         );
 
-    for (const index of participantIndices)
-        await h.byzantine.stubPendingInboundInclusion(index);
     const forceJoin = await h.join.prepareForceInboundJoinWait({
         participant: joiner.address
     });
@@ -91,12 +96,12 @@ export async function stageAnchoredUnfinalizedTail(
         (index) => index !== offender.index && index !== blindParticipantIndex
     )!;
     // the blind peers only audit: their own (older) disputes are not part of the case
-    await h.dispute.suppressDisputeInitiation([
-        blindParticipantIndex,
-        joiner.index
+    await Promise.all([
+        h.dispute.suppressDisputeInitiation([blindParticipantIndex]),
+        h.dispute.suppressDisputeInitiation([joiner.index]),
+        h.rpcStub.dropNetworkConfirmations(blindParticipantIndex),
+        h.rpcStub.dropNetworkConfirmations(joiner.index)
     ]);
-    await h.rpcStub.dropNetworkConfirmations(blindParticipantIndex);
-    await h.rpcStub.dropNetworkConfirmations(joiner.index);
 
     // the tail: the blind participant never signs it
     await h.transition.advanceState({

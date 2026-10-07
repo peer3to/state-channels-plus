@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: typed raw-RPC harness actions exercised by mapped lobby E2E declarations
 import { Block } from "@/models";
+import StateSnapshot from "@/models/StateSnapshot";
 import type Rpc from "@/rpc/Rpc";
 import type { Address } from "@/types/types";
 import { ForkId, Bytes, BlockHeight, Hash } from "@/types/types";
@@ -19,6 +20,7 @@ import {
 import type { TestPeer } from "@test/harness/core/types";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ethers, Signer } from "ethers";
 
@@ -29,6 +31,18 @@ export class ByzantineActions<
         protected harness: PeerTestHarness<TCustomRpc>,
         protected logger: Logger
     ) {}
+
+    /** `snapshot` committing the application state `stateMachineStateHash` instead of its own. */
+    withStateHash(
+        snapshot: StateSnapshot,
+        stateMachineStateHash: StateSnapshot["stateMachineStateHash"]
+    ): StateSnapshotStruct {
+        const struct = snapshot.toStruct();
+        return {
+            ...struct,
+            snapshotData: { ...struct.snapshotData, stateMachineStateHash }
+        };
+    }
 
     async sendRawLobbyRpc(
         peerIndex: number,

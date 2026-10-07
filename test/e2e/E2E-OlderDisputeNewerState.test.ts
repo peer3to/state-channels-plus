@@ -1,7 +1,6 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
-import { disputeOnHost } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
     addFreshSpectator,
     assertNewerStateAnswersOlderDispute,
@@ -13,6 +12,7 @@ import {
     waitForChainInboundHead
 } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -170,6 +170,8 @@ describe("E2E: older dispute after sync to a newer finalized state", function ()
                 isolateFromIndices: [alice.index]
             });
             await suppressTimeoutChecks(h, [auditor]);
+            // Park the exit before the join can make its preflight refuse.
+            await confirmExitParked();
             await joinAsPendingParticipant(h, auditor, remaining);
             await waitForChainInboundHead(h, [
                 ...remaining,
@@ -179,7 +181,6 @@ describe("E2E: older dispute after sync to a newer finalized state", function ()
             // the participants hold every state: only the fresh auditor may
             // answer with a newer one
             await h.dispute.suppressDisputeInitiation(remaining);
-            await confirmExitParked();
 
             await assertNewerStateAnswersOlderDispute(h, {
                 forkId,

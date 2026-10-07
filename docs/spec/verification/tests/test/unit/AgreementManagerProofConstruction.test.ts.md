@@ -6,6 +6,8 @@
 
 Builds milestone proofs through AgreementManager using real blocks, membership changes and confirmation sets. Cases check final targets, overlapping support, pruning, consumed joiners and reconstruction after compact sync.
 
+Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                                      |

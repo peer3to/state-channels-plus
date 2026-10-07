@@ -8,6 +8,7 @@ import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mir
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
+    proofHeights,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
 import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
@@ -61,15 +62,6 @@ export type FreshApplyOptions = ApplyOptions & {
     /** Runs once the fresh requester is held, before the first payload is applied. */
     beforeApply?: (requester: Peer) => Promise<void>;
 };
-
-/** The heights of each milestone's blocks. */
-export function proofHeights(payload: SyncPayload): number[][] {
-    return payload.stateProof.milestones.map((milestone) =>
-        milestone.blockConfirmations.map(
-            (confirmation) => Block.fromBlockConfirmation(confirmation).height
-        )
-    );
-}
 
 /**
  * The blocks `payload` serves, as they would be stored from it alone: per
@@ -536,7 +528,7 @@ export async function applyOnFreshRequester(
  * Every running peer serves `payload` and a fresh spectator runs its real
  * initial sync to SYNCED; the peers serve honestly again after it.
  */
-export async function syncSpectatorOnServedPayload(
+export async function syncSpectatorFromAllRunningPeers(
     h: MathPeerTestHarness,
     payload: SyncPayload
 ): Promise<Peer> {
@@ -565,9 +557,13 @@ export async function syncSpectatorOnServedPayload(
  */
 export async function stageAnchoredHistory(
     h: MathPeerTestHarness,
-    options: { blocksAfter: number; cutPeer?: boolean }
+    options: { blocksAfter: number; cutPeer?: boolean; p2pTime?: number }
 ) {
-    await h.lifecycle.start(3, 3);
+    await h.lifecycle.start(3, 3, {
+        ...(options.p2pTime === undefined
+            ? {}
+            : { timeConfig: { p2pTime: options.p2pTime } })
+    });
     if (options.cutPeer) {
         for (const index of [0, 1, 2])
             await h.rpcStub.suppressTimeoutCheck(index);
@@ -744,7 +740,11 @@ function authorsOf(
  * served; the served state is a+4's.
  */
 export async function stageSeparatedEvidencePayload(h: MathPeerTestHarness) {
-    const staged = await stageAnchoredHistory(h, { blocksAfter: 4 });
+    // Spectator setup happens between final blocks; allow it time before the next author.
+    const staged = await stageAnchoredHistory(h, {
+        blocksAfter: 4,
+        p2pTime: 10
+    });
     const { forkId, anchor, latestHeight, payload } = staged;
     expect(proofHeights(payload)).to.deep.equal([[latestHeight]]);
     const first = await servedBlock(h, forkId, anchor.blockHeight + 1);
@@ -1089,7 +1089,7 @@ export async function syncAboveHeldQueuedBlock(h: MathPeerTestHarness) {
  * unposted and the change stays above the genesis anchor. `release` lets the
  * held sends go; call it before the test ends.
  */
-export async function stageUnpostedLeave(h: MathPeerTestHarness) {
+export async function stageHeldUnpostedLeave(h: MathPeerTestHarness) {
     await h.lifecycle.start(4, 2);
     const forkId = String(h.activeForkId!);
     for (const index of [0, 1, 2, 3])

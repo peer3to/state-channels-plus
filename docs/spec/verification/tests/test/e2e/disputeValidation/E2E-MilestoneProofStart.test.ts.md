@@ -6,6 +6,10 @@
 
 Audits the same milestone evidence from different trusted starts. Checks skipped-prefix acceptance, malformed retained evidence, selected applied counter families and latest-state balance validation.
 
+Blind pending-auditor staging persistently disconnects the auditor before the participants finalize the withheld head. This excludes both gossip and sync delivery; the chain join and real audit still run, and tests retain the assertion that the auditor never finalized that head. The returned restoration handle explicitly reconnects it.
+
+Chain-anchor staging pins the exact snapshot calldata before above-anchor authoring, then overlaps its transaction and mirror delivery with those blocks. It awaits both paths before any audit. This replaces the earlier publication-before-authoring order, which exhausted the next writer’s timestamp window in run 447. Anchor heights, mirror convergence and proof-start assertions remain unchanged.
+
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Covers                                                                                                                                                                                                                                                                                                          |

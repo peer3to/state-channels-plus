@@ -285,7 +285,7 @@ on failure.
 The accepted residual is the unverified normal-Hyperswarm deduplication assumption. No new peer-supplied
 clock, target, matching policy, or post-match cancellation authority is introduced.
 
-LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
+LocalDiscovery retains replacement endpoints within the owning topic even during a previous dial; retries consult the latest advertisement. This does not make registry metadata identity proof or bypass blacklist, topic leave, cleanup, or handshake admission. LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
 metadata cannot promote a connection. One canonical active dial and capped backoff prevent a tight retry loop,
 and the existing blacklist prevents a rejected peer from being recreated. Pre-submission pending status closes
 the disposal window around potentially funded join work. Force-join escalation requires authoritative on-chain

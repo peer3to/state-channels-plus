@@ -3,6 +3,49 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## PR #520 third-review and CI corrections (2026-10-07)
+
+The [localDiamond report](../implementation/source/src/utils/localDiamond.ts.md) now anchors its
+conformance claims to the current declarations and expressions. The
+[stale-membership test report](../verification/tests/test/e2e/E2E-StaleMembershipDispute.test.ts.md)
+records direct malicious-dispute submission instead of a double-sign trigger that also opened an
+unrelated honest dispute. The
+[balance-invariant test report](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
+records the previously approved 15-second evidence window for both sequential audit orders.
+Their existing membership-fraud, exact-counter, slash and reduction oracles are retained.
+The CI artifacts demonstrate expired evidence/kill windows, not an invalid membership-proof verdict.
+No SDK or contract behavior changes are made for these failures; the sync-reduction gas finding remains deferred.
+
+## PR #520 second-review corrections (2026-10-07)
+
+The local-first revert behavior is unchanged: local errors propagate without a chain fallback.
+The [local-mirror test plan](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1)
+now names separate fatal-revert permutations for the four audit predicates and dispute construction.
+Their existing declarations are mapped in the
+[audit-read report](../verification/tests/test/unit/DisputeValidationServiceLocalFirst.test.ts.md)
+and [construction report](../verification/tests/test/unit/DisputeManagerLocalFirst.test.ts.md).
+The [local binding report](../implementation/source/src/utils/localDiamond.ts.md) also removes
+obsolete revert-fallback claims and gives the helper's two revert tests explicit obligations.
+This repairs traceability, not the deferred sync-reduction gas finding; that finding remains open.
+Runtime validation is recorded in the private round-two assessment; this paragraph makes no
+claim that the full gate passed on the modified tree.
+
+## PR #520 author decisions (2026-10-07)
+
+Luka confirms the deliberate fixture timing increases, including `balanceInvariant`’s 15-second evidence
+window, as exceptions permitted by the test guidance. Keep PR #520 targeting `crew/cost-scheduler`;
+its base-relative integration scope is intentional. Neither decision certifies runtime tests or closes
+unrelated protocol findings. The P2P timing changes were also explicitly requested earlier.
+
+Luka deferred SO1 and its complete local/on-chain reduction gas investigation outside this PR; see
+[`FIND-SYNC-REDUCTION-GAS-1-AJE985`](open-findings.md#find-sync-reduction-gas-1-aje985).
+Successful on-chain replay must be established in the follow-up. Local exhaustion alone does not prove
+on-chain impossibility, and this PR does not change reduction failure handling.
+
+## Local discovery endpoint replacement
+
+The local adapter now retains the latest endpoint announcement per peer within its topic session and resolves it at retry. Previously an announcement arriving during a stale endpoint dial could be discarded by cross-topic deduplication, leaving retries permanently targeting the closed port. The existing authenticated transport and pending-dial admission gates remain; new endpoint metadata does not bypass authentication. See the [source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) and [component evidence](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md). Historical cost run 435 and FIFO (`-w 6`) run 436 were reported to pass all 3,405 tasks, including Forge and both browser gates, with no starvation or infrastructure retries. Their exact source SHA has not been established; they are not evidence that the current PR head passes. Subsequent runner and dispute-test changes require fresh validation.
+
 ## Runtime cleanup and context forwarding
 
 [LocalDiscoveryServer](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md) checks the accepting manager before constructing an inbound transport, including while shared discovery remains active. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) suppresses context echo to the inbound connection, so rapid channel changes do not replay older values between adjacent roots. These repairs preserve the existing lifecycle and identity requirements.

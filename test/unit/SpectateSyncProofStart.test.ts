@@ -5,6 +5,7 @@ import {
     stageAnchoredSyncPayload
 } from "@test/fixtures/HistoricSyncStaging";
 import { servedPayload } from "@test/fixtures/MilestoneSyncStaging";
+import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
 import {
     localFinalizedView,
     stageFinalBlocks,
@@ -18,7 +19,6 @@ import {
     applyOnFreshRequester,
     applyPayloads,
     craftProofBlock,
-    proofHeights,
     servedBlock,
     servingConflictAt,
     stageAnchoredHistory,
