@@ -5,6 +5,7 @@ import {
     stopRuntimeTransportModesFixture
 } from "../RuntimeTransportModesFixture";
 import { RootWorkerControl } from "./RootWorkerControl";
+import { RuntimeRpcControl } from "../runtimeRpc/RuntimeRpcControl";
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import {
     createContractExecutor,
@@ -40,6 +41,23 @@ export function sdkExecutorOwner(
     const owner = owners.get(executor);
     if (!owner) throw new Error("Executor is not owned by this fixture");
     return owner;
+}
+
+/**
+ * Corrupt the params of the next `method` request this SDK-owned executor
+ * posts on its actual runtime connection, so the runtime refuses it as
+ * malformed. The caller disposes the returned control.
+ */
+export function corruptNextSdkExecutorRequest(
+    executor: AContractExecutor,
+    method: string
+): RuntimeRpcControl {
+    const connection = [
+        ...sdkExecutorOwner(executor).connections.values()
+    ].find((entry) => entry.remoteRelation === "child")!;
+    const control = RuntimeRpcControl.attachTo(connection);
+    control.corruptNextParams(method);
+    return control;
 }
 
 const errors = new Map<AContractExecutor, Error[]>();

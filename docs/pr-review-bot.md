@@ -339,3 +339,11 @@ changing HTML shell; the discussion collections must still be read separately.
 `yarn review-bot:test` exercises real local Git, filesystem, process, DHT and worker dispatch owners plus recorded GitHub boundaries. It does not prove a live model review or GitHub permissions. The temporary acceptance observer is no longer a CI gate; inspect live publication and receipt outcomes separately.
 
 For an explicit native lifecycle probe on the worker, use `REVIEW_NATIVE_ACCEPTANCE=1 REVIEW_WORK_ROOT=/absolute/worker-root REVIEW_NATIVE_WORKTREE=/absolute/source-fixture REVIEW_NATIVE_REPORT_DIR=/absolute/report-fixture yarn review-bot:test:e2e --grep 'pinned native adapter acceptance'`. Use fixture paths and run while the normal worker is stopped. This consumes a real model turn; missing inputs fail rather than count as success. Full review, Human interaction, resume, publication and lifecycle coverage still need observed live evidence.
+
+## Codex Security review for PRs
+
+This is a separate product from the worker review above. The [review workflow](../.github/workflows/review.yml) runs on opened, synchronized and reopened same-repository PRs, but that is not proof that Codex Security Review is enabled.
+
+For connected repositories with Codex Security Review access, choose the repository in **Codex settings**, turn on **Review security vulnerabilities → Auto security review**, set **Review → All PRs**, and choose **Trigger → On every push** (or **On PR open** for opening-only review). A previous full scan is optional. This is a focused PR security review, not a repeat of a full repository scan. See [official Security Review setup](https://learn.chatgpt.com/docs/security/security-review).
+
+For a versioned CI check with JSON/SARIF artifacts and an optional severity gate, follow [official Codex Security CI guidance](https://learn.chatgpt.com/docs/security/cli/ci). It uses the standalone CLI, a scan-step-scoped API key, base/head history and a trusted executable installed outside the checkout. The documented credentialed example runs for same-repository trusted PRs; do not extend that credential boundary to arbitrary forks. Access is still required. Start advisory and decide the severity gate after observing results.

@@ -33,8 +33,6 @@ Submitted-pending membership and committed reuse
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P9` — pending fault then successful receipt produces on-chain pending membership and an inbound join message
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P10` — local pending is observable before contract invocation
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P11` — uncertain submission preserves pending status and force-join marker
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P12` — force join defers while membership is absent and while the window is expired, then submits exactly once after later eligibility
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P13` — force join does not submit one block early and submits exactly once at `joinSubmissionHeight + current participant count + 1`
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P14` — a join rejected for a threshold shortfall (`ErrorJoinChannelConfirmationNotThresholdSigned`) restores `SYNCED`, clears the force-join marker and aborts the state manager rather than leaving the join retryable
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P15` — a slash observed during a held refresh cannot be undone by its older result
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P16` — a committed off-chain addition during refresh is eligible when the chain result misses it
@@ -46,7 +44,22 @@ Submitted-pending membership and committed reuse
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P25` — reset removes both cached sets until a verified chain refresh
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P26` — a delivered join event makes a pending-only sender a cache hit
 - [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P30` — publishing a real snapshot preserves unconsumed pending JOINs and performs no membership read
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P31` — concurrent cache misses share one refresh and decide from chain membership
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P32` — unavailable inbound recovery leaves cached membership unchanged and does not blacklist the source
-- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P33` — the storage-clear event clears chain, off-chain and slashed eligibility
-- [ ] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P34` — an unopened channel refresh has no eligible source and retains no old-channel positives
+- [ ] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P31` — concurrent cache misses share one refresh and decide from chain membership
+- [ ] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P32` — unavailable inbound recovery leaves cached membership unchanged and does not blacklist the source
+- [ ] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P33` — the storage-clear event clears chain, off-chain and slashed eligibility
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P34` — an unopened channel refresh has no eligible source and retains no old-channel positives
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P35` — Observation of the own JOIN immediately arms the full participant-count-plus-one timeout delay before height grace expires
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P36` — Join submission alone followed by four blocks arms neither deadline nor height counting
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P37` — The observed-join deadline triggers one dispute without any new block being produced
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P38` — Delayed JOIN observation starts grace and the full timeout bound from observation rather than submission
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P39` — A read after the chain authorization deadline reports expired without mutating pending status
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P40` — Blocks inside observation grace do not count; the first later block starts counting and bound minus one sends no dispute
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P41` — At the force-join height bound one dispute starts, while bound minus one does not
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P43` — With participant timeout checks suppressed and no block after the JOIN, the joiner time bound opens a dispute and seats it by reduction, followed by on-chain membership adoption
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P44` — A mined JOIN whose observation is held starts neither height grace nor force-join deadline; releasing observation arms exactly one full participant-count-plus-one writer-window deadline and starts height grace no earlier than observation plus agreementTime
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P45` — Four blocks inside JOIN observation grace start neither counting nor dispute; four blocks after grace trigger the omitted-join dispute, whose real reduction seats the joiner
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P46` — seating a join during its deadline membership read prevents a stale dispute request
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P47` — the block bound wins while the deadline awaits membership and only one dispute is requested
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P48` — reduction seats the pending join on a successor fork while its old deadline read is held
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P49` — a force-join deadline reads a real expired evidence window and retains the pending join without submitting
+- [x] `UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P50` — force join waits for its JOIN to land and submits only once at the block bound

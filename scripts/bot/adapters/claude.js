@@ -103,6 +103,10 @@ function sandboxSettings(workspace, stateRoot) {
         }
     };
 }
+// Claude Code's own message when two processes race to refresh the shared
+// login, or one exits mid-refresh; it asks for a retry a minute later.
+const AUTH_REFRESH_RACE = /^Failed to refresh OAuth token\b/;
+const RETRY_TURN = Symbol("retry turn");
 function providerFailure(code, status) {
     if (["rate_limit", "billing_error"].includes(code) || status === 429)
         return new ReviewError("SUBSCRIPTION_LIMIT");
@@ -375,88 +379,109 @@ class ClaudeAdapter {
         this.activity.phase = "waiting-for-model";
         return budget.run(
             async () => {
-                let finish, fail;
-                const complete = new Promise((resolve, reject) => {
-                    finish = resolve;
-                    fail = reject;
-                });
-                complete.catch(() => {});
-                let errorCode = null;
-                const onFailure = (error) => fail(error);
-                const onMessage = (message) => {
-                    try {
-                        if (
-                            ["system", "assistant", "user", "result"].includes(
-                                message.type
-                            )
-                        ) {
-                            check(
-                                message.session_id === this.sessionId,
-                                "UNAUTHORIZED"
-                            );
-                            this.activity.lastEventAt = Date.now();
-                        }
-                        if (
-                            message.type === "system" &&
-                            message.subtype === "init"
-                        ) {
-                            // The session must expose exactly the worker tools.
-                            check(
-                                JSON.stringify([...message.tools].sort()) ===
-                                    JSON.stringify(
-                                        [
-                                            ...(this.workspace ? BUILT_IN : []),
-                                            ...TOOL_NAMES
-                                        ].sort()
-                                    ),
-                                "ISOLATION_UNVERIFIED"
-                            );
-                            this.activity.phase = "model-event";
-                        } else if (message.type === "assistant") {
-                            this.activity.completedItems++;
-                            this.activity.phase = "model-event";
-                            if (message.error) errorCode = message.error;
-                        } else if (message.type === "result") {
-                            this.activity.phase = "completed";
-                            if (message.is_error)
-                                throw providerFailure(
-                                    errorCode,
-                                    message.api_error_status
-                                );
-                            check(
-                                typeof message.result === "string",
-                                "INVALID_RESULT"
-                            );
-                            finish(message.result);
-                        }
-                    } catch (error) {
-                        fail(error);
-                    }
-                };
-                this.process.on("message", onMessage);
-                this.process.on("failure", onFailure);
-                this.active = true;
-                try {
-                    this.process.write({
-                        type: "user",
-                        message: { role: "user", content: prompt },
-                        parent_tool_use_id: null,
-                        session_id: this.sessionId
-                    });
-                    return await complete;
-                } catch (error) {
-                    // Keep the triggering error; the rejected stop promise still
-                    // prevents the session owner from releasing this PR.
-                    await this.stop().catch(() => {});
-                    throw error;
-                } finally {
-                    this.active = null;
-                    this.process.off("message", onMessage);
-                    this.process.off("failure", onFailure);
-                }
+                const first = await this.attempt(prompt, true);
+                if (first !== RETRY_TURN) return first;
+                // A lost login-refresh race: the other process renews the
+                // login, so the same prompt is sent once more after the wait.
+                await new Promise((resolve) =>
+                    setTimeout(resolve, this.config.limits.authRefreshRetryMs)
+                );
+                this.activity.phase = "waiting-for-model";
+                return await this.attempt(prompt, false);
             },
             () => this.stop()
         );
+    }
+    /**
+     * Sends one prompt and settles with the turn's result. A lost login-refresh
+     * race settles with RETRY_TURN while `retryable`, keeping the process.
+     */
+    async attempt(prompt, retryable) {
+        let finish, fail;
+        const complete = new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+        });
+        complete.catch(() => {});
+        let errorCode = null;
+        let authRefreshRace = false;
+        const onFailure = (error) => fail(error);
+        const onMessage = (message) => {
+            try {
+                if (
+                    ["system", "assistant", "user", "result"].includes(
+                        message.type
+                    )
+                ) {
+                    check(
+                        message.session_id === this.sessionId,
+                        "UNAUTHORIZED"
+                    );
+                    this.activity.lastEventAt = Date.now();
+                }
+                if (message.type === "system" && message.subtype === "init") {
+                    // The session must expose exactly the worker tools.
+                    check(
+                        JSON.stringify([...message.tools].sort()) ===
+                            JSON.stringify(
+                                [
+                                    ...(this.workspace ? BUILT_IN : []),
+                                    ...TOOL_NAMES
+                                ].sort()
+                            ),
+                        "ISOLATION_UNVERIFIED"
+                    );
+                    this.activity.phase = "model-event";
+                } else if (message.type === "assistant") {
+                    this.activity.completedItems++;
+                    this.activity.phase = "model-event";
+                    if (message.error) errorCode = message.error;
+                    if (
+                        message.error &&
+                        message.message?.content?.some?.(
+                            (item) =>
+                                item.type === "text" &&
+                                AUTH_REFRESH_RACE.test(item.text)
+                        )
+                    )
+                        authRefreshRace = true;
+                } else if (message.type === "result") {
+                    this.activity.phase = "completed";
+                    if (message.is_error && authRefreshRace && retryable)
+                        return finish(RETRY_TURN);
+                    if (message.is_error)
+                        throw providerFailure(
+                            errorCode,
+                            message.api_error_status
+                        );
+                    check(typeof message.result === "string", "INVALID_RESULT");
+                    finish(message.result);
+                }
+            } catch (error) {
+                fail(error);
+            }
+        };
+        this.process.on("message", onMessage);
+        this.process.on("failure", onFailure);
+        this.active = true;
+        try {
+            this.process.write({
+                type: "user",
+                message: { role: "user", content: prompt },
+                parent_tool_use_id: null,
+                session_id: this.sessionId
+            });
+            return await complete;
+        } catch (error) {
+            // Keep the triggering error; the rejected stop promise still
+            // prevents the session owner from releasing this PR.
+            await this.stop().catch(() => {});
+            throw error;
+        } finally {
+            this.active = null;
+            this.process.off("message", onMessage);
+            this.process.off("failure", onFailure);
+        }
     }
     // Claude keeps transcripts as <config>/projects/<cwd-slug>/<id>.jsonl.
     async delete(sessionId) {

@@ -97,11 +97,17 @@ describe("E2E: Dispute Manager", function () {
                     expectedCount: disputers.length,
                     initiatedWithAuditingData: false
                 });
+                // A fraud-proof upload carries its estimate plus the replay
+                // requirement, so the replayed transition gets its full budget.
+                const replayGas =
+                    await h.channelManager.getStateTransitionReplayGas();
                 for (const recorder of recorders)
                     for (const submission of await recorder.submissions()) {
                         expect(submission.method).to.equal("multicall");
-                        // The chain signer supplies the gas: estimate plus headroom.
-                        expect(submission.gasLimit).to.equal(null);
+                        expect(submission.gasLimit).to.not.equal(null);
+                        expect(
+                            BigInt(submission.gasLimit!) > replayGas
+                        ).to.equal(true);
                     }
                 await h.dispute.resolveDisputeWait({ forkId });
             } finally {

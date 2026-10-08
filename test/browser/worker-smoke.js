@@ -48,8 +48,8 @@ globalThis.runContractExecutorWorkerBrowserSmoke = async () => {
 const TIMESTAMP_INIT_CODE = "0x684260005260206000f3600052600960" + "17f3";
 
 // The browser worker builds the host's clock perception from the adjustment
-// it receives at initialization: block.timestamp is wall time plus that
-// adjustment, and it advances.
+// it receives at initialization: block.timestamp is wall time plus the host
+// Clock's adjustment, and it advances.
 globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
     const adjustmentSeconds = 600;
     const sdk = await createBrowserSdkExecutor({
@@ -69,6 +69,7 @@ globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
         await new Promise((resolve) => setTimeout(resolve, 1100));
         const second = await read();
         return {
+            hostAdjustmentSeconds: sdk.clockAdjustmentSeconds,
             firstOffsetLowerBound: first - wallAfter,
             firstOffsetUpperBound: first - wallBefore,
             advanced: second > first

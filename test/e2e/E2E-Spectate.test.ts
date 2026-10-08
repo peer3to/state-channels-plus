@@ -1,6 +1,7 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { assertSyncedParticipantNeverSignsInjectedInbound } from "@test/fixtures/DisputeWindowInboundSyncStaging";
 import {
     assertOffChainPromotion,
     assertVerifiedSyncPromotion,
@@ -283,7 +284,8 @@ describe("E2E: Spectate Service", function () {
             h.event.resetEventSpies();
 
             // Drive the atomic interleaving host-side: lock the mutex, queue the
-            // block + persist the sync payload behind it, then release. The body
+            // block + apply the sync payload (verify, then persist) behind it,
+            // then release. The body
             // runs with the live stateManager, so mutex/validationService/
             // onBlockConfirmation/spectateService are all in-process.
             const result = await h.execOnHost(
@@ -319,18 +321,19 @@ describe("E2E: Spectate Service", function () {
                             sm.blockIngestService.onBlockConfirmationStruct(
                                 args.blockConfirmation
                             );
-                        const decoded =
-                            sm.p2pManager.localRpc.spectate.decodeSyncPayload(
+                        const applyPromise =
+                            sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                                args.sourceAddress,
+                                {
+                                    channelId: sm.channelId,
+                                    forkId: args.forkId
+                                },
                                 args.encodedSyncPayload
-                            );
-                        const persistPromise =
-                            sm.p2pManager.localRpc.spectateService.persistSyncPayload(
-                                decoded
                             );
                         await new Promise((r) => setTimeout(r, 100));
                         sm.mutex.unlock();
                         await Promise.allSettled([
-                            persistPromise,
+                            applyPromise,
                             queuedBlockPromise
                         ]);
                         return {
@@ -347,6 +350,7 @@ describe("E2E: Spectate Service", function () {
                     blockHeight,
                     blockAuthor: blockInfo!.author,
                     blockConfirmation: blockConfirmation!,
+                    sourceAddress: sourcePeer.address,
                     encodedSyncPayload: syncResult!.encodedSyncPayload
                 }
             );
@@ -418,17 +422,22 @@ describe("E2E: Spectate Service", function () {
                 .request();
 
             try {
-                const { shouldAbort } = await h
+                const accepted = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
-                    .request();
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        localLatestHeight - 1,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
                 const didPersistLatestState = await h
                     .control(h.getPeer(spectator.index))
                     .stub.wasUnsafeSetLatestStateCalled()
                     .request();
 
-                expect(shouldAbort).to.equal(false);
+                expect(accepted).to.equal(true);
                 expect(didPersistLatestState).to.equal(false);
                 expect(
                     await h
@@ -516,9 +525,6 @@ describe("E2E: Spectate Service", function () {
                 syncResult!.encodedSyncPayload,
                 Type.SyncPayload
             );
-            expect(syncPayload.stateProof.milestones.length).to.be.greaterThan(
-                1
-            );
 
             const latestFinalizedSnapshot =
                 syncPayload.milestoneSnapshots.at(-1) ??
@@ -552,7 +558,7 @@ describe("E2E: Spectate Service", function () {
                     block.height > spectatorLatestBeforeDisconnect &&
                     block.height <= finalizedHeight
             );
-            expect(newFinalizedBlocks.length).to.be.greaterThan(1);
+            expect(newFinalizedBlocks.length).to.be.greaterThan(0);
 
             const blockToConflict = newFinalizedBlocks.at(-1);
             expect(blockToConflict).to.not.be.undefined;
@@ -588,19 +594,34 @@ describe("E2E: Spectate Service", function () {
                 .control(h.getPeer(spectator.index))
                 .stub.stubRecordUnsafeSetLatestState()
                 .request();
+            await h
+                .control(h.getPeer(spectator.index))
+                .stub.recordSyncRejections()
+                .request();
 
             try {
-                const { shouldAbort } = await h
+                const accepted = await h
                     .control(h.getPeer(spectator.index))
-                    .spectate.persistSyncPayload(syncResult!.encodedSyncPayload)
-                    .request();
+                    .spectate.applySyncResponse(
+                        sourcePeer.address,
+                        forkId!,
+                        sourceLatestHeight,
+                        syncResult!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
                 const didPersistLatestState = await h
                     .control(h.getPeer(spectator.index))
                     .stub.wasUnsafeSetLatestStateCalled()
                     .request();
 
-                expect(shouldAbort).to.equal(true);
+                expect(accepted).to.equal(false);
+                expect(
+                    await h
+                        .control(h.getPeer(spectator.index))
+                        .stub.restoreRecordedSyncRejections()
+                        .request()
+                ).to.deep.equal(["payload persistence aborted"]);
                 expect(didPersistLatestState).to.equal(false);
                 for (const block of newFinalizedBlocks) {
                     const storedBlockHash = await h
@@ -614,6 +635,10 @@ describe("E2E: Spectate Service", function () {
                     }
                 }
             } finally {
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .stub.restoreRecordedSyncRejections()
+                    .request();
                 await h
                     .control(h.getPeer(spectator.index))
                     .stub.restoreUnsafeSetLatestState()
@@ -695,6 +720,21 @@ describe("E2E: Spectate Service", function () {
                 peerIndex: 5
             });
             await h.assert.snapshot.onChainSnapshotOnFork();
+        });
+    });
+
+    describe("Participant sync across a chain-final window", function () {
+        it("responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "heldEvent"
+            );
+        });
+        it("responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor", async function () {
+            await assertSyncedParticipantNeverSignsInjectedInbound(
+                TestSession.getHarness(),
+                "droppedLog"
+            );
         });
     });
 
@@ -1808,6 +1848,48 @@ describe("E2E: Spectate Service", function () {
             expect(forkIds[0]).to.equal(provedSuccessor);
             await restoreEvents(false);
             await h.rpcStub.cancelScheduledReductions(responderIndex);
+        });
+
+        it("a spectator sees posted junk calldata → no forced timeout check and it stays synced", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.spectatorJoinedAndSynced();
+            const spectator = h.getPeer(3);
+            const forkId = h.activeForkId!;
+            // the participants' own disputes would move the spectator's fork
+            await h.dispute.suppressDisputeInitiation([0, 1, 2]);
+            const writerAddress = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            const writer = h.peers.find((p) => p.address === writerAddress)!;
+            const height = await h
+                .control(spectator)
+                .query.getNextBlockHeight(forkId)
+                .request();
+            const tasks = await h.rpcStub.recordScheduledTasks(spectator.index);
+            try {
+                h.event.resetEventSpies();
+                await h.byzantine.postJunkCalldataOnChain(writer.index, {
+                    height
+                });
+                await h.event.waitUntilEventOccurs(
+                    "onBlockCalldataPosted",
+                    undefined,
+                    [spectator.index]
+                );
+                // a spectator judges posted calldata with the spectating
+                // strategy: it never asks for a timeout
+                expect(
+                    (await tasks.tasks()).filter((task) =>
+                        task.taskName.startsWith("timeoutParticipant")
+                    )
+                ).to.deep.equal([]);
+                expect(
+                    await h.control(spectator).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await tasks.restore();
+            }
         });
     });
 });

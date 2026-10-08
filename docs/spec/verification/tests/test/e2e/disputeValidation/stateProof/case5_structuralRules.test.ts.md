@@ -9,32 +9,19 @@
 
 ## Overview
 
-The suite pins the structural admission rules of `verifyStateProof` as auditors evaluate them
-through the mirrored canonical logic: `preDisputeSetupCalldataPath` yields a milestones-only
-proof, `stubConstructDispute` mutates peer 3's dispute, and peer 1's double-sign provides the
-trigger. The first case copies a real milestone block into `stateProof.signedBlocks` so both
-arrays are non-empty — the milestones-XOR-signedBlocks constraint rejects the proof and the
-dispute dies with `DisputeInvalidStateProof` (the copy keeps headers matching so the header
-check cannot fire first). The second empties `milestones[0].blockConfirmations`, which fails
-milestone verification the same way. The third appends an unfinalized milestone confirmation
-whose author signature belongs to a different signer, killed as
-`DisputeInvalidBlockStructure`. Oracles throughout: dispute initiated with auditing data,
-`onDisputeKilled` observed, the exact proof type stored by honest peers, and the window
-resolved. Header-mismatch and replay-level tampers are out of scope (Case 4 and the
-milestone-content suite). After the permutation atomization the tail-signature case carries
-the block-structure-check permutation; the facet's suffix-break splits target signed-block
-suffixes, not milestone confirmations, and the empty-confirmations case still matches no
-single-scenario ID, so that row stays unassigned.
+The suite submits disputes with malformed milestone proofs and observes real audit counters
+and dispute kills. An empty milestone produces `DisputeInvalidStateProof`. An invalid tail
+author signature, a broken previous-block hash and a skipped height in a genesis block-zero
+run produce `DisputeInvalidBlockStructure`. The tests mutate real constructed disputes and
+check the stored counter type and the resulting window. The table assigns only permutations
+fully established by each declaration; these cases do not establish cross-milestone identity
+consistency for two differently signed blocks.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                                               | Covers                                                                                                                                                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L59) (line 59) | —                                                                                                                                                                                                   |
-| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > invalid tail signature → DisputeInvalidBlockStructure`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L102) (line 102)                                       | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P8`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |
-| [stateProof.milestones.length > 0 AND stateProof.signedBlocks.length > 0 → DisputeInvalidStateProof](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L6) (line 6)                                                                                                  | —                                                                                                                                                                                                   |
+| Test declaration                                                                                                                                                                                                                                                                                                           | Covers                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / stateProof / structural rules > each milestone must have at least one blockConfirmation > stateProof.milestones[0].blockConfirmations = [] → DisputeInvalidStateProof`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L7) (line 7)               | —                                                                                                                                                                                                   |
+| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > invalid tail signature → DisputeInvalidBlockStructure`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L49) (line 49)                                                     | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P8`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |
+| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > genesis block-0 milestone blockConfirmations[1].previousBlockHash = random → DisputeInvalidBlockStructure`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L96) (line 96) | —                                                                                                                                                                                                   |
+| [`E2E: dispute validation / stateProof / structural rules > unfinalized milestone block structure > genesis block-0 milestone skipped height → DisputeInvalidBlockStructure`](../../../../../../../../test/e2e/disputeValidation/stateProof/case5_structuralRules.test.ts#L144) (line 144)                                 | —                                                                                                                                                                                                   |

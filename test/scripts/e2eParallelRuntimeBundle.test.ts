@@ -16,7 +16,8 @@ const {
 const {
     buildRuntimeManifest,
     buildRuntimeBundle,
-    buildDeltaBundle
+    buildDeltaBundle,
+    manifestForDistributedProtocol
 } = require("../../scripts/e2e-parallel/distributed/runtimeBundle.js");
 const {
     extractRuntimeBundle,
@@ -105,7 +106,31 @@ describe("distributed source workspace", function () {
                 "module.exports = {};\n"
             );
 
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                "{}"
+            );
             const manifest = await buildRuntimeBundle(project, transfer);
+            expect(
+                manifest.files.some((entry: { path: string }) =>
+                    /test-costs(?:\.overrides)?\.json$/.test(entry.path)
+                )
+            ).to.equal(false);
+            fs.writeFileSync(
+                path.join(project, "test-costs.json"),
+                '{"version":1,"tasks":{"measured":{}}}'
+            );
+            fs.writeFileSync(
+                path.join(project, "test-costs.overrides.json"),
+                '{"adjusted":{}}'
+            );
+            const costsOnly = await buildRuntimeManifest(project);
+            expect(costsOnly.sourceDigest).to.equal(manifest.sourceDigest);
+
             expect(manifest.version).to.equal(3);
             expect(manifest.rootProjectPath).to.equal("project");
             expect(manifest.runnerEntry).to.equal(
@@ -341,6 +366,51 @@ describe("distributed source workspace", function () {
             }
         } finally {
             for (const pair of openPairs) await pair.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("a manifest derived for an older worker protocol still builds a delta and keeps the local root off the wire", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "source-derived-"));
+        const project = path.join(root, "project");
+        const delta = path.join(root, "transfer", "delta.tgz");
+        try {
+            initializeRepository(project);
+            fs.writeFileSync(
+                path.join(project, "package.json"),
+                JSON.stringify({ name: "project" })
+            );
+            const runner = path.join(
+                project,
+                "scripts",
+                "e2e-parallel",
+                "distributed"
+            );
+            fs.mkdirSync(runner, { recursive: true });
+            fs.writeFileSync(path.join(runner, "worker.js"), "// worker\n");
+            const manifest = await buildRuntimeManifest(project);
+            const derived = manifestForDistributedProtocol(
+                manifest,
+                manifest.distributedProtocol - 1
+            );
+            const relative = derived.files.find((entry: { path: string }) =>
+                entry.path.endsWith("worker.js")
+            ).path;
+
+            const built = await buildDeltaBundle(derived, [relative], delta);
+
+            expect({
+                protocol: derived.distributedProtocol,
+                workspaceChanged: derived.workspaceId !== manifest.workspaceId,
+                fileCount: built.fileCount,
+                rootOnTheWire: JSON.stringify(derived).includes(root)
+            }).to.deep.equal({
+                protocol: manifest.distributedProtocol - 1,
+                workspaceChanged: true,
+                fileCount: 1,
+                rootOnTheWire: false
+            });
+        } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
     });

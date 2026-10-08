@@ -24,11 +24,6 @@ empty.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                     | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts#L17) (line 17) | —      |
+| Test declaration                                                                                                                                                                                                                                                     | Covers                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts#L17) (line 17) | [`REQ-SP-10-JMVHTB.T7.P1`](../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb.t7.p1) |

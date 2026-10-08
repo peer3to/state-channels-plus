@@ -145,6 +145,27 @@ export type HarnessOptions = {
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;
     customPrecompiles?: EvmCustomPrecompileManifest[];
+    /**
+     * Gas granted to every local EVM call of the listed peers (peer index ->
+     * gas), in place of the limit the runtime derives from the manager.
+     * Stages a peer whose local EVM cannot fund a transition the others run.
+     * A listed peer runs its host inline, where the executor factory is
+     * reachable.
+     */
+    executorCallGasLimitByPeer?: Record<number, number>;
+    /**
+     * WebSocket proxies in front of the test node for the listed peers (peer
+     * index -> proxy count). Such a peer's PROVIDER_URLS lists its proxies in
+     * order, so a test can cut one of its RPC nodes without touching the
+     * node. Read them with `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesByPeer?: Record<number, number>;
+    /**
+     * Proxies of `rpcNodeProxiesByPeer` cut before their peer starts (peer
+     * index -> proxy positions), so that peer starts with those RPC nodes
+     * down. Restore them through `PeerTestHarness.getRpcNodeProxies`.
+     */
+    rpcNodeProxiesCutAtStart?: Record<number, number[]>;
 };
 
 export type TestPeer<

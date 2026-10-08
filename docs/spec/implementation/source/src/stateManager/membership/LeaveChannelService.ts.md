@@ -34,9 +34,15 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P14` — leave watchdog rejects after the evidence period expires
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15` — disposal rejects leave before a held watchdog upload completes; late completion preserves the disposal rejection
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16` — fast snapshot failure followed by a missing dispute marker rejects authored leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17` — fast snapshot failure followed by an evidence-expired error rejects authored leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17` — fast snapshot failure followed by an evidence-expired error moves authored leave to awaiting-settlement, and the reduced fork that drops the leaver resolves it
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P18` — an unsigned exit followed by a missing dispute marker rejects authored leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P19` — an unsigned exit followed by an evidence-expired error rejects authored leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P19` — an unsigned exit followed by an evidence-expired error moves authored leave to awaiting-settlement without rejecting
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P20` — an unsigned exit starts one real self-removal dispute and settles leave
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P21` — fallback failure ignores absent and awaiting-exit operations
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P22` — a fallback failure for another fork cannot reject an authored leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23` — Both leave promises settle after the last exit closes the channel and status becomes NOT_OPENED
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24` — Leaving an unobserved join waits for authorization expiry, then settles SYNCED with cleared own-join state and no dispute
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P25` — JOIN observation while leave waits changes it to member exit handling; explicit disposal rejects the unfinished member leave
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P26` — Both founders leave through the public runtime API, both leave promises settle, the channel disappears from the open-channel registry and on-chain participants become empty
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P27` — With an unconsumed on-chain JOIN blocking exit snapshot updates, both founders submit self-removal disputes on the original fork without changing the chain snapshot first; their leave promises settle and reduction seats the sole joiner
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P28` — After an uncertain join submission preserves local pending status but never lands, leave waits for authorization expiry and resolves SYNCED with the address absent from both on-chain participant sets

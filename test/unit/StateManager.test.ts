@@ -35,3 +35,49 @@ describe("StateManager.isActiveFork", function () {
         expect(result).to.deep.equal({ current: true, old: false });
     });
 });
+
+describe("StateManager.getActiveValidationStrategy", function () {
+    it("participant → chain-committed item gets the calldata strategy, a gossip-only item the live strategy", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            (sm) => ({
+                committed:
+                    sm.getActiveValidationStrategy({ onChainTimestamp: 1 }) ===
+                    sm.calldataCommittedStrategy,
+                gossip:
+                    sm.getActiveValidationStrategy({}) ===
+                    sm.blockValidationStrategy,
+                bare:
+                    sm.getActiveValidationStrategy() ===
+                    sm.blockValidationStrategy
+            }),
+            {}
+        );
+        expect(result).to.deep.equal({
+            committed: true,
+            gossip: true,
+            bare: true
+        });
+    });
+
+    it("synced spectator → chain-committed and gossip-only items both get the spectating strategy", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const spectator = await h.join.addSpectatorWait();
+        const result = await h.execOnHost(
+            h.getPeer(spectator.index),
+            (sm) => ({
+                committed:
+                    sm.getActiveValidationStrategy({ onChainTimestamp: 1 }) ===
+                    sm.spectatingValidationStrategy,
+                gossip:
+                    sm.getActiveValidationStrategy({}) ===
+                    sm.spectatingValidationStrategy
+            }),
+            {}
+        );
+        expect(result).to.deep.equal({ committed: true, gossip: true });
+    });
+});

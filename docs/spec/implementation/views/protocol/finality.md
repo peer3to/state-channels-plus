@@ -4,7 +4,7 @@
 
 ## System design
 
-Current: [`StateManager.playTransaction`](../../../../../src/stateManager/StateManager.ts#L478) gates
+Current: [`StateManager.playTransaction`](../../../../../src/stateManager/StateManager.ts#L483) gates
 authoring only on the channel being open, it being the author's turn (`isMyTurn`), and linkage to
 the latest stored block — there is no agreement check. Signature collection runs asynchronously
 via the [`AgreementManager`](../../../../../src/agreementManager/AgreementManager.ts#L20); the author
@@ -29,7 +29,7 @@ authentic author signature) are the linkage checks listed in
 [state-proofs.md §7](./state-proofs.md).
 
 current channel state defined by the integrator's state machine
-([`AStateMachine.getNextToWrite`](../../../../../contracts/V1/AStateMachine.sol#L32)) — names the address
+([`AStateMachine.getNextToWrite`](../../../../../contracts/V1/AStateMachine.sol#L56)) — names the address
 authorized to author the next **block** (block-level, not per-transaction, even though the current
 implementation packs one transaction per block). Every peer validates incoming blocks against it
 ([`ValidationService`](../../../../../src/stateManager/ingest/ValidationService.ts#L26) leader check; this
@@ -46,7 +46,7 @@ path re-derives it on-chain to validate timeout targets
   verifier, so when any milestone exists the provable latest state stops at the last milestone.
   Recorded in full, with its consequences, in [state-proofs.md §8](./state-proofs.md).
 - **Refusing to sign posted blocks when next-to-write.** Current:
-  [`StateManager.shouldSignBlock`](../../../../../src/stateManager/StateManager.ts#L478) declines to sign
+  [`StateManager.shouldSignBlock`](../../../../../src/stateManager/StateManager.ts#L483) declines to sign
   a block that was posted on-chain when the local participant is the next author. This is not
   stated anywhere as intended protocol behavior. **Open question:** confirm the rule's intent
   (presumably avoiding attesting to a block that arrived via the fallback path while the local

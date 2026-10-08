@@ -87,8 +87,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         uint256 evidenceTime = diamond.getEvidenceTime();
 
         vm.warp(FIRST_UPLOAD_TIMESTAMP);
+        DisputeConfirmation memory aliceConfirmation = _disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, ALICE_PK);
         vm.prank(vm.addr(ALICE_PK));
-        diamond.uploadDispute(_disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, ALICE_PK));
+        diamond.uploadDispute(aliceConfirmation);
 
         // the window opened at the first upload, so its evidence period ends one
         // evidence time later; land strictly past it
@@ -96,11 +97,12 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         uint256 lateTimestamp = evidencePeriodEnd + EVIDENCE_OVERSHOOT;
         vm.warp(lateTimestamp);
 
+        DisputeConfirmation memory bobConfirmation = _disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, BOB_PK);
         vm.expectRevert(
             abi.encodeWithSelector(RaceConditionDisputeEvidencePeriodExpired.selector, evidencePeriodEnd, lateTimestamp)
         );
         vm.prank(vm.addr(BOB_PK));
-        diamond.uploadDispute(_disputeConfirmation(EVIDENCE_CHANNEL_ID, forkId, BOB_PK));
+        diamond.uploadDispute(bobConfirmation);
     }
 
     // ---- _handleTimeoutTooEarly: the genesis branch ----
@@ -155,8 +157,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = TIMEOUT_FORK_ID;
         dispute.input.timeout.participant = TIMED_OUT_PARTICIPANT;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0].encodedBlock =
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock =
             abi.encode(_block(PREVIOUS_BLOCK_AUTHOR, TIMEOUT_CHANNEL_ID, TIMEOUT_FORK_ID, PREVIOUS_BLOCK_HEIGHT));
 
         // the timed-out participant, the previous author and the two hashes must
@@ -265,8 +268,9 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
         dispute.input.forkId = CALLDATA_FORK_ID;
         dispute.input.timeout.participant = timedOut;
         dispute.input.timeout.blockHeight = POSTED_BLOCK_HEIGHT;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = previousBlock;
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = previousBlock;
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -284,13 +288,17 @@ contract DisputeFraudProofFacetPayloadsTest is DiamondHarness {
     /// existing-window requirement, so admission turns only on the window state.
     function _disputeConfirmation(bytes32 channelId, bytes32 forkId, uint256 pk)
         internal
-        pure
+        view
         returns (DisputeConfirmation memory confirmation)
     {
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(channelId);
         Dispute memory dispute;
         dispute.input.channelId = channelId;
         dispute.input.forkId = forkId;
         dispute.input.disputer = vm.addr(pk);
+        // anchored at the consumed inbound so the upload reaches the race checks
+        dispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        dispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
 
         confirmation.signedDispute.encodedDispute = abi.encode(dispute);
         confirmation.signedDispute.signature = _sign(pk, confirmation.signedDispute.encodedDispute);

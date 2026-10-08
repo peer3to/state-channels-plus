@@ -145,7 +145,7 @@ export async function expectFacetSelectorsNotRouted(
 }
 
 /** Functions the proxy implements itself - they dispatch before the fallback. */
-export function proxyOwnedFunctions(): DiamondFunction[] {
+function proxyOwnedFunctions(): DiamondFunction[] {
     return functionFragments(
         StateChannelManagerProxy__factory.abi as InterfaceAbi
     ).map((fragment) => ({
@@ -155,7 +155,7 @@ export function proxyOwnedFunctions(): DiamondFunction[] {
 }
 
 /** Facet functions the fallback routes: every facet function the spec doesn't exclude. */
-export function routedFacetFunctions(): DiamondFunction[] {
+function routedFacetFunctions(): DiamondFunction[] {
     return facetRoutingSpecs.flatMap((spec) =>
         functionFragments(spec.abi)
             .filter((fragment) => !(fragment.name in spec.notRouted))

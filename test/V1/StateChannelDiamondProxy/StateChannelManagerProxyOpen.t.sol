@@ -5,7 +5,9 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
-    ErrorTooManyParticipants
+    ErrorTooManyParticipants,
+    RaceConditionChannelAlreadyOpen,
+    RaceConditionOpenChannelExpired
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
@@ -19,6 +21,9 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
     uint256 internal constant THIRD_SIGNER_PK = 0xCA401;
     bytes32 internal constant CHANNEL_ID = keccak256("duplicate-participants");
     bytes32 internal constant PARTIAL_CHANNEL_ID = keccak256("partial-open");
+    bytes32 internal constant DEADLINE_CHANNEL_ID = keccak256("open-deadline");
+    // a deadline far from the default test timestamp, so the warp targets are unambiguous
+    uint256 internal constant OPEN_DEADLINE = 1_000_000;
 
     function setUp() public {
         diamond = deployDiamond();
@@ -104,6 +109,66 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         } catch (bytes memory reason) {
             require(_selectorOf(reason) != ErrorTooManyParticipants.selector, "bound rejected the maximum itself");
         }
+    }
+
+    function test_open_beforeDeadline_opensChannel() public {
+        vm.warp(OPEN_DEADLINE - 1);
+
+        diamond.open(_deadlineOpenConfirmation());
+
+        _assertOpenedWithDeposits();
+    }
+
+    // Same inclusive boundary as joinChannel.
+    function test_open_atDeadline_opensChannel() public {
+        vm.warp(OPEN_DEADLINE);
+
+        diamond.open(_deadlineOpenConfirmation());
+
+        _assertOpenedWithDeposits();
+    }
+
+    // Unanimous signatures do not keep expired terms alive. The revert rolls back
+    // every write, so the exact revert payload is the whole oracle.
+    function test_open_afterDeadline_revertsWithOpenChannelExpired() public {
+        vm.warp(OPEN_DEADLINE + 1);
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionOpenChannelExpired.selector, OPEN_DEADLINE, OPEN_DEADLINE + 1)
+        );
+        diamond.open(confirmation);
+    }
+
+    // The already-open check runs before the deadline check, so a duplicate open of
+    // an open channel reports already-open even once its terms have expired.
+    function test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen() public {
+        vm.warp(OPEN_DEADLINE);
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+        diamond.open(confirmation);
+        vm.warp(OPEN_DEADLINE + 1);
+
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionChannelAlreadyOpen.selector, DEADLINE_CHANNEL_ID));
+        diamond.open(confirmation);
+    }
+
+    function _deadlineOpenConfirmation() internal pure returns (OpenChannelConfirmation memory) {
+        uint256[] memory participantPrivateKeys = new uint256[](2);
+        participantPrivateKeys[0] = SIGNER_PK;
+        participantPrivateKeys[1] = SECOND_SIGNER_PK;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 300;
+        amounts[1] = 200;
+        return _openChannelConfirmationWithDeadline(
+            DEADLINE_CHANNEL_ID, participantPrivateKeys, amounts, true, OPEN_DEADLINE
+        );
+    }
+
+    function _assertOpenedWithDeposits() internal view {
+        (bool isOpen,) = diamond.isChannelOpen(DEADLINE_CHANNEL_ID);
+        assertTrue(isOpen, "valid terms did not open the channel");
+        // 300 + 200 from the signed balances
+        assertEq(diamond.getChannelBalance(DEADLINE_CHANNEL_ID).totalDeposits.amount, 500, "deposits not taken");
     }
 
     function _selectorOf(bytes memory reason) internal pure returns (bytes4) {

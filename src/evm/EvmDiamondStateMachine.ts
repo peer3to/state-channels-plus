@@ -22,6 +22,7 @@ import {
     type LocalDiamondContract
 } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
+import { isInvalidStateTransitionError } from "@/utils/evmErrorHandler";
 import {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
@@ -30,8 +31,13 @@ import {
     BalanceStruct,
     MessageStruct
 } from "@typechain-types/contracts/V1/AStateMachine";
-import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ethers, Signer } from "ethers";
+import {
+    MessageBlockStruct,
+    StateSnapshotStruct,
+    TransactionStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { BytesLike, ethers, Signer } from "ethers";
 import {
     deployLocalDiamondWithStateMachineAddress,
     DeploymentResult,
@@ -152,7 +158,13 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                     outboundMessages as ethers.Result
                 ) as unknown as MessageStruct[]
             };
-        } catch {
+        } catch (error) {
+            // Only a failure inside the EVM is an invalid transition (and may
+            // become a fraud proof). A refusal to run under-funded, an
+            // out-of-gas of the call's own frame, or an executor/transport
+            // failure is a local failure: it is thrown, so the caller restores
+            // its state instead of judging the block.
+            if (!isInvalidStateTransitionError(error)) throw error;
             return {
                 success: false,
                 successCallback: () => {},
@@ -364,6 +376,40 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         } catch (error) {
             throw this.createContextError("processInboundMessage", error);
         }
+    }
+
+    async reduceAndFinalizeLocally(
+        disputes: DisputeStruct[],
+        stateSnapshot: StateSnapshotStruct,
+        encodedStateMachineState: BytesLike,
+        inboundMessageBlocks: MessageBlockStruct[],
+        expectedReducedForkId: BytesLike
+    ): Promise<boolean> {
+        const contract = this.localDiamondContract;
+        const diamondAddress = await contract.getAddress();
+        // executed directly: the signer path discards the call's logs
+        const result = await this.contractExecutor.executeCall(
+            ethers.getBytes(
+                contract.interface.encodeFunctionData("reduceAndFinalize", [
+                    disputes,
+                    stateSnapshot,
+                    encodedStateMachineState,
+                    inboundMessageBlocks,
+                    expectedReducedForkId
+                ])
+            ),
+            diamondAddress
+        );
+        // only a reduction this call commits emits the event; an early return does not
+        const committedTopic = contract.interface.getEvent(
+            "DisputeReducedResultCommitted"
+        ).topicHash;
+        return (result.logs ?? []).some(
+            (log) =>
+                String(log.address).toLowerCase() ===
+                    diamondAddress.toLowerCase() &&
+                log.topics[0]?.toLowerCase() === committedTopic
+        );
     }
 
     async getTotalStateBalance(): Promise<BalanceStruct> {

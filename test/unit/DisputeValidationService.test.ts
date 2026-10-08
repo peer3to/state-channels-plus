@@ -9,6 +9,7 @@ import {
     randomAddress,
     blockStructWithTransactionHeader
 } from "@test/factory";
+import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
@@ -61,35 +62,17 @@ describe("Unit: DisputeValidationService", function () {
             );
             expect(run.disputeFraudProofCount).to.equal(1);
         });
-
-        it("signedBlocks[-1].encodedBlock = junk with no milestones AND postedAuditingData false -> audit skipped, true, no proof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            expect(dispute.postedAuditingData).to.equal(false);
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
-            expect(
-                dispute.input.stateProof.signedBlocks.length
-            ).to.be.greaterThan(0);
-
-            dispute.input.stateProof.signedBlocks.at(-1)!.encodedBlock =
-                randomHash();
-
-            const run = await h.dispute.auditDispute(1, dispute);
-            // project_dispute_gaps.md Gap 1, left open on purpose: with no
-            // milestones the chain's _isLastMilestoneFinalByEveryone returns
-            // true, so firing the proof slashes us instead of the disputer
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.storedProof).to.equal(undefined);
-            expect(run.disputeFraudProofCount).to.equal(0);
-        });
     });
 
     describe("header + structure", function () {
         it("milestones[-1].blockConfirmations[-1] header.channelId = random -> false + DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // no block is final while peer 2 is away: the proof is one
+            // genesis-linked run from block 0, so its last block is eligible
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            expect(dispute.postedAuditingData).to.equal(true);
 
             const bc = dispute.input.stateProof.milestones
                 .at(-1)!
@@ -111,7 +94,7 @@ describe("Unit: DisputeValidationService", function () {
                 )
             ).signedBlock;
 
-            const run = await h.dispute.auditDispute(1, dispute);
+            const run = await h.dispute.auditDispute(1, dispute, auditingData);
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeStateProofHeaderMismatch
@@ -120,13 +103,18 @@ describe("Unit: DisputeValidationService", function () {
 
         it("milestones[-1].blockConfirmations[-1] header.forkId = random -> false + DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // no block is final while peer 2 is away: the proof is one
+            // genesis-linked run from block 0, so its last block is eligible
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            expect(dispute.postedAuditingData).to.equal(true);
 
             const bc = dispute.input.stateProof.milestones
                 .at(-1)!
                 .blockConfirmations.at(-1)!;
             const block = Codec.decode(bc.signedBlock.encodedBlock, Type.Block);
+            // sanity: the honest header matches dispute.input before the tamper
             expect(block.transaction.header.forkId).to.equal(
                 dispute.input.forkId
             );
@@ -142,17 +130,17 @@ describe("Unit: DisputeValidationService", function () {
                 )
             ).signedBlock;
 
-            const run = await h.dispute.auditDispute(1, dispute);
+            const run = await h.dispute.auditDispute(1, dispute, auditingData);
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeStateProofHeaderMismatch
             );
         });
 
-        it("milestones[-1].blockConfirmations += copy signed by a confirmer -> false + DisputeInvalidBlockStructure at blockIndex 0", async function () {
+        it("milestones[-1].blockConfirmations += copy signed by a confirmer -> false + DisputeInvalidBlockStructure at blockIndex 1", async function () {
             const h = TestSession.getHarness();
-            // unfinalized head (pending inbound join) -> the tampered tail sits
-            // in the unfinalized part the structure check walks
+            // unfinalized head (pending inbound join) -> auditing data is
+            // posted, and the appended copy is after the protected head
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
@@ -185,11 +173,11 @@ describe("Unit: DisputeValidationService", function () {
                 run.storedProof!.encodedProof,
                 DisputeFraudProofType.DisputeInvalidBlockStructure
             );
-            // the unfinalized part is the milestone's confirmations after its
-            // head -> the appended copy is its sole entry, index 0
-            expect(
-                Number(evidence.blockIndexInUnfinalizedPartOfStateProof)
-            ).to.equal(0);
+            // counted from the last milestone's start: the appended copy
+            // follows its head
+            expect(Number(evidence.blockIndex)).to.equal(
+                confirmations.length - 1
+            );
         });
     });
 
@@ -353,7 +341,7 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(1);
         });
 
-        it("postedAuditingData true + matching auditingData -> verifyStateProof accepts, true", async function () {
+        it("postedAuditingData true + matching auditingData -> the chain accepts the proof, true", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
             // self-removal is the dispute's stated reason (hasDisputeReason)
@@ -367,7 +355,7 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
-        it("auditingData.latestStateSnapshot.timestamp += 1 (breaks disputeAuditingDataHash) -> false + DisputeInvalidStateProof", async function () {
+        it("auditingData.latestStateSnapshot.timestamp += 1, committed by the dispute (its posted latest snapshot is not the proof's latest state) -> false + DisputeInvalidStateProof, which the chain accepts", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
@@ -378,16 +366,29 @@ describe("Unit: DisputeValidationService", function () {
 
             auditingData.latestStateSnapshot.timestamp =
                 Number(auditingData.latestStateSnapshot.timestamp) + 1;
-            // premise: the tamper broke the on-chain hash commitment
+            // posted data always is the committed data: the disputer commits
+            // the tampered data, whose latest snapshot is not the dispute's
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            );
             expect(
-                hash(Codec.encode(auditingData, Type.DisputeAuditingData))
-            ).to.not.equal(dispute.input.disputeAuditingDataHash);
+                StateSnapshot.from(auditingData.latestStateSnapshot).hash
+            ).to.not.equal(dispute.input.latestStateSnapshotHash);
 
             const run = await h.dispute.auditDispute(1, dispute, auditingData);
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeInvalidStateProof
             );
+            expect(
+                await h.channelManager.isStateProofStepInvalid.staticCall(
+                    dispute,
+                    Codec.decode(
+                        run.storedProof!.encodedProof,
+                        DisputeFraudProofType.DisputeInvalidStateProof
+                    )
+                )
+            ).to.equal(true);
         });
 
         it("dispute.postedAuditingData = false on an unfinalized head -> false + DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
@@ -405,38 +406,45 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        it("auditingData.latestStateSnapshot.snapshotData.totalDeposits.amount += 1 -> false + DisputeInvalidBalanceInvariant", async function () {
+        it("auditingData.latestStateSnapshot.snapshotData.totalDeposits.amount += 1, audited by a pending auditor without a final block at the forged head -> false + DisputeInvalidBalanceInvariant", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
-            const forged = await h.tamper.buildForgedSnapshot(2, (ctx) => ({
-                snapshotData: {
-                    ...ctx.originalSnapshotData,
-                    totalDeposits: {
-                        ...ctx.originalSnapshotData.totalDeposits,
-                        amount:
-                            BigInt(
-                                ctx.originalSnapshotData.totalDeposits.amount
-                            ) + 1n
+            // the colluders' head is one the auditor never finalized
+            const { auditorIndex } = await stageBlindPendingAuditor(
+                h,
+                [0, 1, 2]
+            );
+            const forged = await h.tamper.buildForgedSnapshot(
+                2,
+                (ctx) => ({
+                    snapshotData: {
+                        ...ctx.originalSnapshotData,
+                        totalDeposits: {
+                            ...ctx.originalSnapshotData.totalDeposits,
+                            amount:
+                                BigInt(
+                                    ctx.originalSnapshotData.totalDeposits
+                                        .amount
+                                ) + 1n
+                        }
                     }
-                }
-            }));
+                }),
+                { withoutSignerIndices: [auditorIndex] }
+            );
 
             // same re-stitch as the balanceInvariant e2e: forged head block +
             // forged snapshot committed by the dispute's hashes
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(2);
-            const proof = dispute.input.stateProof;
-            if (proof.signedBlocks.length > 0) {
-                proof.signedBlocks[proof.signedBlocks.length - 1] =
-                    forged.forgedBlock.signedBlock;
-            } else {
-                const milestone = proof.milestones.at(-1)!;
-                milestone.blockConfirmations[0] =
-                    forged.forgedBlock.blockConfirmationStruct;
-                auditingData.milestoneSnapshots[
-                    auditingData.milestoneSnapshots.length - 1
-                ] = forged.forgedSnapshot.toStruct();
-            }
+            // premise: the head is final, so it is the last milestone's
+            // only block and no replayed tail meets the forged block
+            const milestone = dispute.input.stateProof.milestones.at(-1)!;
+            expect(milestone.blockConfirmations).to.have.length(1);
+            milestone.blockConfirmations[0] =
+                forged.forgedBlock.blockConfirmationStruct;
+            auditingData.milestoneSnapshots[
+                auditingData.milestoneSnapshots.length - 1
+            ] = forged.forgedSnapshot.toStruct();
             auditingData.latestStateSnapshot = forged.forgedSnapshot.toStruct();
             dispute.input.latestStateSnapshotHash = forged.forgedSnapshot.hash;
             dispute.input.disputeAuditingDataHash = hash(
@@ -444,7 +452,11 @@ describe("Unit: DisputeValidationService", function () {
             );
             dispute.postedAuditingData = true;
 
-            const run = await h.dispute.auditDispute(0, dispute, auditingData);
+            const run = await h.dispute.auditDispute(
+                auditorIndex,
+                dispute,
+                auditingData
+            );
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeInvalidBalanceInvariant
@@ -638,17 +650,6 @@ describe("Unit: DisputeValidationService", function () {
             });
         });
 
-        // no test: the false branch of isLastMilestoneStoredLocally needs an
-        // auditor that never stored the last milestone's first block.
-        // _isLastMilestoneFinalByEveryone (DisputeFraudProofFacet.sol:764-775)
-        // only reports final when every expected participant signed it, so a
-        // participant auditor necessarily has it; while any participant is
-        // disconnected no milestone forms at all (see "E2E: ... stateProof /
-        // case3_signedBlocksOnly"); and a peer that joined after the milestone
-        // still syncs it, pinned by the test above. only a peer that left the
-        // channel is outside the expected set, and it no longer audits.
-        it.skip("milestones[-1].blockConfirmations[0] missing from the auditor's block storage -> audit skipped", function () {});
-
         // the auditor rebuilds the inbound run the dispute names from its own
         // store, on both the settled and the posted path
         describe("inbound run the auditor does not hold", function () {
@@ -681,7 +682,7 @@ describe("Unit: DisputeValidationService", function () {
                 return { dispute, statedHead };
             };
 
-            it("settled path, unrecoverable gap -> audit abstains: true, zero proofs", async function () {
+            it("settled path, unrecoverable gap -> the audit throws, zero proofs", async function () {
                 const h = TestSession.getHarness();
                 await h.setup(3);
                 await h.lifecycle.openChannel();
@@ -691,8 +692,13 @@ describe("Unit: DisputeValidationService", function () {
 
                 const run = await h.dispute.auditDispute(lagging, dispute);
 
-                // it used to be outcome "threw" (Block hash ... not found)
-                expect(run).to.include({ outcome: "returned", isValid: true });
+                // missing required data is fatal, not an abstention
+                expect(run.outcome).to.equal("threw");
+                expect(
+                    run.outcome === "threw" ? run.threwMessage : ""
+                ).to.contain(
+                    "the inbound run is unavailable after event recovery"
+                );
                 // our own missing history is nobody's fraud
                 expect(run.disputeFraudProofCount).to.equal(0);
                 await held.release({ replay: false });
@@ -725,7 +731,7 @@ describe("Unit: DisputeValidationService", function () {
                 await dropped.release();
             });
 
-            it("posted path with an emptied posted run + gap -> same abstain, zero proofs", async function () {
+            it("posted path with an emptied posted run + gap -> the audit throws, zero proofs", async function () {
                 const h = TestSession.getHarness();
                 const lagging = 1;
                 const { releaseLaggingInbound } =
@@ -745,7 +751,7 @@ describe("Unit: DisputeValidationService", function () {
                     "auditor must not hold the stated inbound head"
                 ).to.equal(null);
 
-                // the attacker hands the auditor nothing: verifyStateProof never
+                // the attacker hands the auditor nothing: the proof check never
                 // binds the posted run to the dispute's stated head
                 DisputeTampering.emptyPostedInboundRun(
                     dispute,
@@ -759,20 +765,25 @@ describe("Unit: DisputeValidationService", function () {
                     auditingData
                 );
 
-                expect(run).to.include({ outcome: "returned", isValid: true });
+                // missing required data is fatal, not an abstention
+                expect(run.outcome).to.equal("threw");
+                expect(
+                    run.outcome === "threw" ? run.threwMessage : ""
+                ).to.contain(
+                    "the inbound run is unavailable after event recovery"
+                );
                 expect(run.disputeFraudProofCount).to.equal(0);
                 await releaseLaggingInbound?.();
             });
         });
 
-        it("stateProof.milestones = [] AND signedBlocks = [] -> stored genesis snapshot + forkId == snapshotDataHash, true", async function () {
+        it("stateProof.milestones = [] -> stored genesis snapshot + forkId == snapshotDataHash, true", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0); // no blocks -> empty proof
             const forkId = h.activeForkId!;
             await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(dispute.input.stateProof.milestones.length).to.equal(0);
-            expect(dispute.input.stateProof.signedBlocks.length).to.equal(0);
 
             // premises for the genesis branches: the dispute pins the genesis
             // snapshot and the forkId is its snapshot-data hash
@@ -793,23 +804,32 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
-        it("stateProof.signedBlocks only (partial-signature fork) -> anchored via previous block, true", async function () {
+        it("one genesis-linked run from block 0 (partial-signature fork) -> true", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupDisconnectedPeer();
             await h.control(h.getPeer(3)).dispute.setForceExit(true).request();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            // no block is final while peer 2 is away: the unfinalized run
+            // builds on genesis from block 0, and peer 2's missing signature
+            // makes the auditing data required
+            expect(dispute.input.stateProof.milestones.length).to.equal(1);
+            const firstBlock = Codec.decode(
+                dispute.input.stateProof.milestones[0].blockConfirmations[0]
+                    .signedBlock.encodedBlock,
+                Type.Block
+            );
             expect(
-                dispute.input.stateProof.signedBlocks.length
-            ).to.be.greaterThan(0);
-            expect(dispute.postedAuditingData).to.equal(false);
+                Number(firstBlock.transaction.header.transactionCnt)
+            ).to.equal(0);
+            expect(dispute.postedAuditingData).to.equal(true);
 
-            const run = await h.dispute.auditDispute(0, dispute);
+            const run = await h.dispute.auditDispute(0, dispute, auditingData);
             expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
-        it("dispute.input.forkId = random on an empty stateProof -> no stored genesis, audit skipped, true", async function () {
+        it("dispute.input.forkId = random on an empty stateProof -> no stored genesis, the audit throws", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0); // empty proof -> genesis snapshot branch
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
@@ -822,12 +842,15 @@ describe("Unit: DisputeValidationService", function () {
             );
 
             // an unknown fork keeps passing the channel-scoped inbound check
-            // (StateChannelCommon.sol:578-594) but has no stored genesis, so
-            // the state proof anchor lookup skips the audit instead
+            // but has no stored genesis: the proof evidence cannot be read,
+            // and missing data is fatal instead of a skipped audit
             dispute.input.forkId = randomHash();
-            const skipped = await h.dispute.auditDispute(1, dispute);
-            expect(skipped).to.include({ outcome: "returned", isValid: true });
-            expect(skipped.disputeFraudProofCount).to.equal(1); // from the audit above
+            const unknownFork = await h.dispute.auditDispute(1, dispute);
+            expect(unknownFork.outcome).to.equal("threw");
+            expect(
+                unknownFork.outcome === "threw" ? unknownFork.threwMessage : ""
+            ).to.contain("Fork not found");
+            expect(unknownFork.disputeFraudProofCount).to.equal(1); // from the audit above
         });
 
         it("localDiamond.isDisputeInboundHashValid false + RPC true -> no DisputeInboundHashNotInChain", async function () {
@@ -864,41 +887,56 @@ describe("Unit: DisputeValidationService", function () {
     });
 
     describe("pipeline", function () {
-        it("signedBlocks[-1].encodedBlock.stateSnapshotHash = ZeroHash -> false + DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+        it("milestones[-1].blockConfirmations[-1] = forged head committing a forged snapshot -> false + DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
             const h = TestSession.getHarness();
+            // no block is final while peer 2 is away: the proof is one
+            // genesis-linked run from block 0, replayed from genesis
             await h.scenario.preDisputeSetupDisconnectedPeer();
-            // rewrite host-side: the block is re-signed by its author, so
-            // structure stays valid and only the replay catches it
-            await h.tamper.stubConstructDispute(
-                3,
-                async (dispute, sm) => {
-                    const svc = sm.p2pManager.localRpc.dispute;
-                    await svc.rewriteLastSignedBlockInDispute(
-                        dispute,
-                        (bs) => ({
-                            ...bs,
-                            stateSnapshotHash: svc.zeroHash
-                        })
-                    );
-                },
-                { autoRestore: true }
+            const forged = await h.tamper.buildForgedSnapshot(3, (ctx) => ({
+                snapshotData: {
+                    ...ctx.originalSnapshotData,
+                    totalDeposits: {
+                        ...ctx.originalSnapshotData.totalDeposits,
+                        amount:
+                            BigInt(
+                                ctx.originalSnapshotData.totalDeposits.amount
+                            ) + 1n
+                    }
+                }
+            }));
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            expect(dispute.input.stateProof.milestones.length).to.equal(1);
+            // the forged head is authentic and linked, so structure stays
+            // valid and only the replay catches it
+            const run0 = dispute.input.stateProof.milestones[0];
+            run0.blockConfirmations[run0.blockConfirmations.length - 1] =
+                forged.forgedBlock.blockConfirmationStruct;
+            auditingData.latestStateSnapshot = forged.forgedSnapshot.toStruct();
+            dispute.input.latestStateSnapshotHash = forged.forgedSnapshot.hash;
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
             );
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-            expect(dispute.input.stateProof.milestones.length).to.equal(0);
+            dispute.postedAuditingData = true;
 
-            const run = await h.dispute.auditDispute(0, dispute);
+            const run = await h.dispute.auditDispute(0, dispute, auditingData);
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
                 DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             );
         });
 
-        // no test: the pipeline only sees false from
-        // interpretFinalValidationResult(DISPUTE) (DisputeValidationStrategy.ts:110);
-        // SUCCESS and DUPLICATE return true (:90, :97) and every other result
-        // throws inside the strategy. each DISPUTE return stores its proof
-        // immediately above it (:78-82, :153-160, :201-208, :224-225, :244-245,
-        // :256-257, :328-329), so false-with-empty-proof-store has no producer
+        // Disposition: unreachable, kept skipped. Predecessor invariant: with
+        // the dispute strategy, onBlockConfirmationStruct returns false only
+        // from DisputeValidationStrategy.interpretFinalValidationResult(DISPUTE);
+        // SUCCESS and DUPLICATE return true and every other result throws
+        // inside the strategy. Every strategy path that returns DISPUTE stores
+        // its dispute fraud proof first, so "false with an empty proof store"
+        // has no producer. Evidence: each replay rejection in this file asserts
+        // false together with its stored proof ("milestones[-1].blockConfirmations[-1]
+        // = forged head committing a forged snapshot -> false +
+        // DisputeInvalidBlockInStateProofApplyFraudProof" above, and the
+        // "state proof decode" and "header + structure" cases).
         it.skip("onBlockConfirmationStruct false with an empty disputeFraudProofs store -> throw", function () {});
     });
 
@@ -986,263 +1024,6 @@ describe("Unit: DisputeValidationService", function () {
                 DisputeFraudProofType.DisputeNotLatestState
             );
             expect(second.disputeFraudProofCount).to.equal(1);
-        });
-    });
-
-    describe("persistDisputeDataWithoutAudit", function () {
-        it("includeUnfinalizedBlocks true -> stateProof.signedBlocks + latestStateSnapshot stored on a peer that missed them", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(3);
-            expect(
-                dispute.input.stateProof.signedBlocks.length
-            ).to.be.greaterThan(1);
-
-            const p = await h.dispute.persistDisputeData(2, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            // the disconnected peer never saw these blocks - the persist is
-            // what puts them (and the head snapshot) into its storage
-            for (const item of p.signedBlocks) {
-                expect(item.storedBefore, item.key).to.equal(false);
-                expect(item.storedAfter, item.key).to.equal(true);
-            }
-            expect(p.snapshots[0].storedBefore).to.equal(false);
-            expect(p.snapshots[0].storedAfter).to.equal(true);
-        });
-
-        it("includeUnfinalizedBlocks false -> stateProof.signedBlocks and latestStateSnapshot not stored", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(3);
-            expect(
-                dispute.input.stateProof.signedBlocks.length
-            ).to.be.greaterThan(1);
-
-            const p = await h.dispute.persistDisputeData(2, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: false
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            for (const item of p.signedBlocks) {
-                expect(item.storedAfter, item.key).to.equal(false);
-            }
-            expect(p.snapshots[0].storedAfter).to.equal(false);
-        });
-
-        it("disputeAuditingData undefined -> stateProof blocks stored, snapshots/messages/state untouched", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute } = await h.dispute.fetchConstructedDispute(3);
-
-            const p = await h.dispute.persistDisputeData(2, dispute, {
-                includeUnfinalizedBlocks: true
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            for (const item of p.signedBlocks) {
-                expect(item.storedAfter, item.key).to.equal(true);
-            }
-            expect(p.snapshots).to.deep.equal([]);
-            expect(p.stateMachineState).to.equal(undefined);
-            expect(p.inboundMessages).to.deep.equal([]);
-            expect(p.outboundMessages).to.deep.equal([]);
-        });
-
-        it('auditingData.latestFinalizedStateStateMachineState = "" -> state store skipped, blocks still stored', async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(3);
-            expect(
-                auditingData.latestFinalizedStateStateMachineState
-            ).to.not.equal("");
-
-            // "" is DisputeManager's in-memory missing-state sentinel and is
-            // not ABI-encodable -> applied host-side after decode
-            const p = await h.dispute.persistDisputeData(2, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true,
-                latestFinalizedStateStateMachineStateOverride: ""
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            // the sentinel has no content-addressed key -> nothing is stored
-            expect(p.stateMachineState).to.equal(undefined);
-            for (const item of p.signedBlocks) {
-                expect(item.storedAfter, item.key).to.equal(true);
-            }
-        });
-
-        it("stateProof.signedBlocks[0].encodedBlock = junk -> skipped, decodable siblings stored", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupDisconnectedPeer();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(3);
-            expect(
-                dispute.input.stateProof.signedBlocks.length
-            ).to.be.greaterThan(1);
-            dispute.input.stateProof.signedBlocks[0].encodedBlock =
-                randomHash();
-
-            const p = await h.dispute.persistDisputeData(2, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            expect(p.undecodableSignedBlockCount).to.equal(1);
-            expect(p.signedBlocks.length).to.be.greaterThan(0);
-            for (const item of p.signedBlocks) {
-                expect(item.storedAfter, item.key).to.equal(true);
-            }
-        });
-
-        it("milestones[0].blockConfirmations[0].signedBlock.encodedBlock = junk, no auditingData -> skipped, no throw", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
-            expect(
-                dispute.input.stateProof.milestones.length
-            ).to.be.greaterThan(0);
-            dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock =
-                randomHash();
-
-            const p = await h.dispute.persistDisputeData(1, dispute, {
-                includeUnfinalizedBlocks: false
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            expect(p.undecodableMilestoneBlockCount).to.equal(1);
-        });
-
-        // the persist never decodes the last milestone's first block: the
-        // finalized state is keyed by its own hash, so junk there only skips
-        // that entry's block store
-        it("milestones[-1].blockConfirmations[0].signedBlock.encodedBlock = junk + auditingData -> skipped, decodable siblings stored", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const lastMilestone = dispute.input.stateProof.milestones.at(-1)!;
-            lastMilestone.blockConfirmations[0].signedBlock.encodedBlock =
-                randomHash();
-
-            const p = await h.dispute.persistDisputeData(1, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            expect(p.undecodableMilestoneBlockCount).to.equal(1);
-            // the finalized state is persisted even though that block is junk
-            expect(p.stateMachineState?.storedAfter).to.equal(true);
-            for (const item of p.milestoneBlocks) {
-                expect(item.storedAfter, item.key).to.equal(true);
-            }
-        });
-
-        it("auditingData + decodable milestones[-1].blockConfirmations[0] -> finalized state stored under that block's snapshot stateMachineStateHash", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-
-            // independent oracle: the key that block's own snapshot commits to
-            const lastMilestoneFirstBlock = Codec.decode(
-                dispute.input.stateProof.milestones.at(-1)!
-                    .blockConfirmations[0].signedBlock.encodedBlock,
-                Type.Block
-            );
-            const blockSnapshot = StateSnapshot.from(
-                Codec.decode(
-                    (await h
-                        .control(h.getPeer(1))
-                        .query.getStateSnapshotStructByHash(
-                            lastMilestoneFirstBlock.stateSnapshotHash
-                        )
-                        .request())!.encodedSnapshot,
-                    Type.StateSnapshot
-                )
-            );
-            const committedStateHash = blockSnapshot.stateMachineStateHash;
-
-            const p = await h.dispute.persistDisputeData(1, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            // content-addressing lands on the same word for honest data
-            expect(p.stateMachineState?.key).to.equal(committedStateHash);
-            expect(p.stateMachineState?.storedAfter).to.equal(true);
-            expect(
-                hash(auditingData.latestFinalizedStateStateMachineState)
-            ).to.equal(committedStateHash);
-        });
-
-        it("auditingData.latestFinalizedStateStateMachineState = another real state -> stored under its own hash, the honest snapshot's key untouched", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-            const forkId = h.activeForkId!;
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const persister = h.control(h.getPeer(1));
-
-            const lastMilestoneFirstBlock = Codec.decode(
-                dispute.input.stateProof.milestones.at(-1)!
-                    .blockConfirmations[0].signedBlock.encodedBlock,
-                Type.Block
-            );
-            const blockSnapshot = StateSnapshot.from(
-                Codec.decode(
-                    (await persister.query
-                        .getStateSnapshotStructByHash(
-                            lastMilestoneFirstBlock.stateSnapshotHash
-                        )
-                        .request())!.encodedSnapshot,
-                    Type.StateSnapshot
-                )
-            );
-            const committedStateHash = blockSnapshot.stateMachineStateHash;
-            const stateBefore = await persister.query
-                .getStateMachineState(committedStateHash)
-                .request();
-
-            // a real state of the same channel from a different height - the
-            // math machine's state changes on every transition
-            const otherSnapshot = await persister.query
-                .getStateSnapshotStructAt(
-                    forkId,
-                    blockSnapshot.blockHeight === 0 ? 1 : 0
-                )
-                .request();
-            const otherStateHash = StateSnapshot.from(
-                Codec.decode(otherSnapshot!.encodedSnapshot, Type.StateSnapshot)
-            ).stateMachineStateHash;
-            const otherState = await persister.query
-                .getStateMachineState(otherStateHash)
-                .request();
-            // premise: the substituted bytes really are a different state
-            expect(otherState).to.not.equal(stateBefore);
-
-            const p = await h.dispute.persistDisputeData(1, dispute, {
-                auditingData,
-                includeUnfinalizedBlocks: true,
-                latestFinalizedStateStateMachineStateOverride: otherState!
-            });
-            expect(p.threwMessage).to.equal(undefined);
-            expect(p.stateMachineState?.key).to.equal(otherStateHash);
-            // the honest key still holds the honest state - substituted bytes
-            // only ever land under their own hash
-            expect(
-                await persister.query
-                    .getStateMachineState(committedStateHash)
-                    .request()
-            ).to.equal(stateBefore);
-            expect(
-                await persister.query
-                    .getStateMachineState(otherStateHash)
-                    .request()
-            ).to.equal(otherState);
         });
     });
 
@@ -1372,14 +1153,21 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(1);
         });
 
-        // no test: timeoutTimestamp comes from
-        // getDisputeWindowCreationTimestamp and previousTimestamp from the
-        // stored previous block, so hitting equality means landing the upload
-        // transaction in one chosen second - only evm_setNextBlockTimestamp
-        // does that, and AGENTS.md forbids node-wide time RPCs on a shared
-        // node. both sides of the strict `<` are pinned by the too-early and
-        // pass-through tests above, and by the three-way forfeit test which
-        // moves previousTimestamp across the same comparison
+        // Disposition: reachable only with owned chain time, kept skipped.
+        // timeoutTimestamp is the window's creation block timestamp and
+        // previousTimestamp comes from the stored previous block or snapshot
+        // (its timestamp or current timestamp, per the forfeit signature), so equality
+        // means mining the upload in one chosen second. Only
+        // evm_setNextBlockTimestamp does that deterministically, and it needs
+        // a node the test owns for the whole session: the harness session
+        // runs on the shared slot node (test/AGENTS.md forbids node-wide time
+        // RPCs there), and withIsolatedHardhatNode serves raw-provider tests
+        // only, with no deployment, peers or discovery. Both sides of the
+        // strict `<` stay pinned: "window creation timestamp < previous block
+        // timestamp + timeoutWaitTime -> false + TimeoutTooEarly", "window
+        // creation timestamp >= previous block timestamp + timeoutWaitTime ->
+        // timeout checks pass, true", and the three-way forfeit test below,
+        // which moves previousTimestamp across the same comparison.
         it.skip("window creation timestamp == previous block timestamp + timeoutWaitTime -> accepted", function () {});
 
         it("timeout.participantSignatureOnPreviousBlock: 0x / timed-out signer / other signer -> TimeoutTooEarly, none, TimeoutTooEarly", async function () {
@@ -1428,6 +1216,13 @@ describe("Unit: DisputeValidationService", function () {
                 3
             );
 
+            // Capture the writer from block 2 before opening the window:
+            // concurrent dispute audits temporarily install replay state in the VM.
+            const nextWriter = await h
+                .control(h.getPeer(1))
+                .query.getNextToWrite()
+                .request();
+
             // open the window inside (tAuth + wait, tCal + wait)
             await h.event.waitUntilTimestamp(tAuth + wait + 1);
             await h.control(h.getPeer(2)).dispute.setForceExit(true).request();
@@ -1443,8 +1238,9 @@ describe("Unit: DisputeValidationService", function () {
             expect(windowTs).to.be.greaterThan(tAuth + wait);
             expect(windowTs).to.be.lessThan(tCal + wait);
 
-            // disputer 0's proof heads at block 2; timeout blames height 3
-            await h.tamper.plantFreshTimeoutForNextWriter(0);
+            // disputer 0's proof heads at block 2; timeout blames height 3,
+            // the writer after block 2 as the auditor holding it computes
+            await h.tamper.plantFreshTimeoutForParticipant(0, nextWriter);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(Number(dispute.input.timeout.blockHeight)).to.equal(3);
             // a calldata-committed head counts as final, so constructDispute
@@ -1485,16 +1281,18 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
-        // no test: the [check] N/N Threshold check reads the block at
-        // timeout.blockHeight, which the [check] isLinked to stateProof check
-        // above it pins to stateProof head + 1. didEveryoneSign needs every
-        // participant of that block signed, so if the disputer is one of them
-        // it signed above the dispute's own snapshot height and the earlier
-        // DisputeNotLatestState fires instead. that leaves only a disputer
-        // outside the block's participant set, which uploadDispute rejects
-        // with ErrorCantParticipateInDispute - enforced by
-        // "E2E: dispute validation / uploadRevert / channelId" and
-        // "... / uploadRevert / disputer".
+        // Disposition: unreachable, kept skipped. Predecessor invariants: the
+        // N/N threshold check reads the block at timeout.blockHeight, which the
+        // earlier isLinked check pins to stateProof head + 1 ("dispute.input.
+        // timeout.blockHeight += 1 -> false + TimeoutNotLinkedToLatestState").
+        // didEveryoneSign needs every participant of that block, so a
+        // participant disputer signed above its own snapshot height and the
+        // earlier DisputeNotLatestState fires first ("stateProof truncated
+        // below the disputer's latest signed block -> false +
+        // DisputeNotLatestState carrying that block"). A disputer outside the
+        // block's participant set cannot upload at all: uploadDispute rejects
+        // it ("E2E: dispute validation / uploadRevert / channelId" and
+        // "E2E: dispute validation / uploadRevert / disputer").
         it.skip("block at timeout.blockHeight signed by every participant -> false + TimeoutThreshold", function () {});
 
         it("timeout.blockHeight = a block whose calldata is on-chain, isForced true -> false + TimeoutCalldataPosted", async function () {
@@ -1632,7 +1430,7 @@ describe("Unit: DisputeValidationService", function () {
             await h
                 .control(block1Author)
                 .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
-                .request();
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() });
 
             const run = await h.dispute.auditDispute(1, dispute);
             expect(run).to.include({ outcome: "returned", isValid: true });

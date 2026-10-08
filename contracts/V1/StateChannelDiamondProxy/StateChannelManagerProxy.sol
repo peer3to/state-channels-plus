@@ -70,18 +70,21 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(FraudProofFacet.hasInvalidTimestamp.selector, _fraudProofFacet);
         _registerRoute(DisputeFraudProofFacet.applyDisputeFraudProofs.selector, _disputeFraudProofFacet);
         _registerRoute(DisputeFraudProofFacet.validateTimeoutCalldataPostedProof.selector, _disputeFraudProofFacet);
-        _registerRoute(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone.selector, _disputeFraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.isAuditingDataOmissionAllowed.selector, _disputeFraudProofFacet);
         _registerRoute(DisputeFraudProofFacet.hasStateProofHeaderMismatch.selector, _disputeFraudProofFacet);
         _registerRoute(DisputeFraudProofFacet.isDisputeInboundHashValid.selector, _disputeFraudProofFacet);
         _registerRoute(StateSnapshotFacet.updateStateSnapshotFork.selector, _stateSnapshotFacet);
         _registerRoute(StateSnapshotFacet.updateStateSnapshotSameFork.selector, _stateSnapshotFacet);
         _registerRoute(JoinChannelFacet.joinChannel.selector, _joinChannelFacet);
         _registerRoute(JoinChannelFacet.topUpBalance.selector, _joinChannelFacet);
-        _registerRoute(StateProofFacet.verifyStateProof.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isCorrectLatestState.selector, _stateProofFacet);
-        _registerRoute(StateProofFacet.areSignedBlocksLinkedAndVerified.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.getAnchorSnapshot.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isBlockChallengeEligible.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isStateProofBelowOnChainAnchor.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isTimeoutSupersededByFinalState.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isStateProofStepInvalid.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isDisputeConflictingWithFinalState.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isInvalidBlockStructureInStateProof.selector, _stateProofFacet);
-        _registerRoute(StateProofFacet.findFirstInvalidBlockStructureInStateProof.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.verifyMilestones.selector, _stateProofFacet);
         _registerRoute(StateProofFacet.isMilestoneFinal.selector, _stateProofFacet);
         _registerRoute(UtilityFacet.getParticipants.selector, _utilityFacet);
@@ -103,11 +106,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getChainFallbackTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getEvidenceTime.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getGasLimit.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getStateTransitionReplayGas.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getMaxChannelParticipants.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
         _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
-        _registerRoute(UtilityFacet.isBlockAuthentic.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getWindowCommitments.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getDisputeWindowCreationTimestamp.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getReducedResult.selector, _utilityFacet);
@@ -191,6 +194,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
+        // Opening terms are valid up to and including their deadline, the same boundary as joinChannel
+        require(
+            openChannelData.deadlineTimestamp >= block.timestamp,
+            RaceConditionOpenChannelExpired(openChannelData.deadlineTimestamp, block.timestamp)
+        );
 
         require(
             openChannelData.participants.length <= _getMaxChannelParticipants(),
@@ -335,6 +343,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         stateMachineImplementation.setState(encodedState);
         (bool success, bytes memory response) =
             address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
+        if (!success) _requireFundedReplay(response);
         if (success && response.length > 0) {
             (, outboundMessages) = abi.decode(response, (bool, Message[]));
         }
@@ -356,6 +365,24 @@ contract StateChannelManagerProxy is StateChannelCommon {
     }
 
     // ********** private/internal functions **********
+
+    /// @dev A transition the machine rejected is an invalid transition and stays a verdict for
+    /// the caller. A machine frame that refused to run without its full stipend, or that ran out
+    /// of gas outright (empty returndata), is no verdict at all: the sender under-funded the
+    /// transaction, and adjudicating on it would let the gas attached decide a fraud proof.
+    /// Fail the whole call instead so the sender retries with enough gas.
+    function _requireFundedReplay(bytes memory response) internal pure {
+        if (response.length == 0) revert ErrorStateTransitionFrameOutOfGas();
+        bytes4 selector;
+        assembly ("memory-safe") {
+            selector := mload(add(response, 32))
+        }
+        if (selector == ErrorInsufficientGasForStateTransition.selector) {
+            assembly ("memory-safe") {
+                revert(add(response, 32), mload(response))
+            }
+        }
+    }
 
     /// @dev Registers a compiler-derived selector once during construction.
     function _registerRoute(bytes4 selector, address facet) internal {

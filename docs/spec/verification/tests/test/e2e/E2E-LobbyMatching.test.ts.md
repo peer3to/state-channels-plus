@@ -16,13 +16,51 @@ events, deferred negotiation handoff, and LocalDiscovery replacement while a com
 observed. The replacement cases count real authentication calls before and after handoff. Both terminal
 owners stop replacement by leaving the topic.
 
+The normal matching case counts on-chain transactions: the higher participant sends exactly one opening
+transaction and the lower sends none. The exact submitted payload and both signatures are asserted by the
+`OpenChannelNegotiationService` suite.
+
 The pending-selection upgrade case holds the pick reply and its matching RPC-expiry task until the real WebRTC upgrade completes. It asserts one captured expiry task, pending selection and no blacklist, then releases the reply and observes channel opening. The bound-order cases exercise timeout liability separately.
+
+The signed-attempt remote-abort case waits for both peers to observe transport closure before checking their respective zero/one strike outcomes. Run 453 queried the lower peer before its socket-close event arrived. The signature retention and eventual chain-opening assertions remain unchanged; runtime revalidation is pending.
+
+The expired-opening case shortens the lower proposer's opening window to six seconds with a host stub
+that offsets only the clock read that derives the deadline. Six seconds is below the higher peer's
+30-second minimum, so a second stub offsets only the higher peer's clock read that sets its deadline
+bounds, lowering that minimum to one second for this one proposal; a real deadline over 30 seconds plus
+setup, matching, and the expiry observation would not fit the global test timeout. The case parks the
+higher peer's real submission after it co-signed. It waits until the higher peer's own expiry observation ends the signed attempt,
+then polls the latest block until its timestamp is past the deadline, and only then releases the
+retained signatures to the real submission. The wait sends no transactions and calls no time RPC: it
+relies on the interval-mined E2E node to advance chain time, so on an automine node it times out. A
+record-only wrapper reads the reverted transaction's error back from its trace. The oracle is exactly
+one recorded rejection, `RaceConditionOpenChannelExpired`, and the negotiated channel still closed on
+chain. Without the contract check the same release opens the channel and the case fails.
+
+The late-mined-opening case uses the same two deadline stubs and the submission hold. It also holds
+both peers' opening-expiry observation tasks, so the signed attempts stay current. After the latest
+block is past the deadline, it asserts the higher peer's attempt is unchanged and only then releases
+the submission, so the higher peer's own `open` is mined late on a live attempt. The oracle is exactly
+one recorded rejection, `RaceConditionOpenChannelExpired`; the higher peer's attempt then ends, the
+negotiated channel stays closed, and the higher peer records no strike and no blacklist against the
+lower peer. The case then drops the higher peer's held expiry task, runs the lower peer's held task to
+end its signed attempt, and requires both peers to open one fresh channel with a different ID on the
+same topic. It settles the reverted receipt as the expected detached error. When the receipt-failure
+close spends a strike instead, the case fails on the strike count.
+
+The too-close-deadline case shortens the lower proposer's opening window to ten seconds, below the
+higher peer's 30-second minimum, without lowering that minimum, and installs the submission hold on the
+higher peer so that any submission would be parked and counted. It waits until the higher peer
+blacklists the lower peer, then asserts that the proposer's stub derived the short deadline, that the
+higher peer parked no submission, and that no opening rejection was recorded: the proposer is excluded
+before the higher peer signs or submits anything. It then waits until the lower peer's own signed attempt ends at its
+deadline before leaving the lobby.
 
 ## Tests and covered test IDs
 
 | Test declaration                                                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: lobby matching > matches two authenticated peers, derives one ID, and opens one channel`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L10) (line 10)                                                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P1`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b), [`REQ-LOBBY-1-PZTPKD.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd.t1.p1), [`REQ-LOBBY-9-N894C0.T1.P8`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p8), [`REQ-NEG-1-RTKPT1.T1.P4`](../../../../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p4) |
+| [`E2E: lobby matching > matches two authenticated peers, derives one ID, and opens one channel`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L10) (line 10)                                                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P1`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b), [`REQ-LOBBY-1-PZTPKD.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd.t1.p1), [`REQ-LOBBY-9-N894C0.T1.P8`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p8), [`REQ-NEG-1-RTKPT1.T1.P7`](../../../../specification/peer-communication/channel-negotiation.md#req-neg-1-rtkpt1.t1.p7) |
 | [`E2E: lobby matching > keeps two caller-supplied lobby topics isolated`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L154) (line 154)                                                                        | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P2`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b), [`REQ-LOBBY-1-PZTPKD.T1.P2`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd.t1.p2)                                                                                                                                                                                                                                                |
 | [`E2E: lobby matching > converges four peers on one topic into two exclusive pairs`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L216) (line 216)                                                             | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P3`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b), [`INV-LOBBY-1-TW7RZT.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#inv-lobby-1-tw7rzt.t1.p1), [`INV-LOBBY-1-TW7RZT.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#inv-lobby-1-tw7rzt.t1.p3), [`REQ-LOBBY-4-E0TARV.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-4-e0tarv.t1.p3)  |
 | [`E2E: lobby matching > suspends a repeatedly silent picker at the retry bound and pairs with another peer on the same topic`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L276) (line 276)                   | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P4`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b), [`REQ-LOBBY-7-BXQ1QA.T1.P1`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p1), [`REQ-LOBBY-7-BXQ1QA.T1.P3`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p3), [`REQ-LOBBY-7-BXQ1QA.T1.P8`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa.t1.p8)  |
@@ -42,4 +80,7 @@ The ordinary regression keeps transcript-derived negotiation distinct from targe
 returns a generic committed peer; `joinLobby` starts negotiation and consumes its direct outcome. An
 already-open derived ID is a protocol failure with punishment, listener cleanup, and no raw-topic sync path.
 | [`E2E: lobby matching > keeps a signed attempt observing the chain after a remote abort and opens on the observed submission`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1375) (line 1375) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P16`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b) |
-| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1470) (line 1470) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b) |
+| [`E2E: lobby matching > rejects retained opening signatures submitted on chain after the SDK expired the opening terms`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1480) (line 1480) | [`REQ-ENFADM-4-2NN96F.T1.P4`](../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) |
+| [`E2E: lobby matching > closes the peer without a strike and rematches when a live attempt's own opening is mined after the deadline`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1551) (line 1551) | [`REQ-NEG-4-ZQ0985.T1.P19`](../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985.t1.p19) |
+| [`E2E: lobby matching > excludes a proposer whose opening deadline leaves less than the minimum window, without submitting`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1682) (line 1682) | [`INV-NEG-1-6FW90P.T1.P11`](../../../../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p.t1.p11) |
+| [`E2E: lobby matching > retries a targeted connect on the same runtime after a remote abort`](../../../../../../test/e2e/E2E-LobbyMatching.test.ts#L1730) (line 1730) | [`INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P17`](../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingService.ts.md#integration-test-lobby-matching-1-6we54b) |

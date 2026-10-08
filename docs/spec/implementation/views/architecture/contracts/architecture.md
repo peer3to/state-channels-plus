@@ -15,7 +15,7 @@
 ## 1. Purpose & observable contract
 
 The on-chain manager is one deployed entry contract —
-[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L25) —
+[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L24) —
 that presents the whole diamond surface at a single address while the logic is split across
 separately deployed **facets** reached by `delegatecall`. All state lives in the proxy's storage;
 facets execute in that storage context.
@@ -45,7 +45,7 @@ What it explicitly does not guarantee (Current):
   replaced or added after deployment.
 - **No EIP-2535 compliance.** Selector routing exists, but there is no `diamondCut` and no loupe;
   introspection is the single non-standard read-only
-  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80).
+  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L147).
   The Diamond resemblance is structural (proxy + selector routing + facets + shared storage), not
   standard-conformant.
 
@@ -94,9 +94,9 @@ The mechanics, each verified in code:
   variables; the layout is defined in exactly one place. Storage is at the default root (slot 0),
   not under namespaced Diamond-storage slots.
 - **Selector routing in the fallback.** The proxy declares no forwarder bodies. `fallback()`
-  ([#L67](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67))
+  ([#L134](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L134))
   resolves `msg.sig` through the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L396)
   and delegatecalls that facet with raw `msg.data`. Revert data still bubbles through the unchanged
   [`GeneralUtils._delegatecall`](../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6).
   The constructor registers each entry with `_registerRoute(Facet.fn.selector, facetAddress)`, so
@@ -106,17 +106,17 @@ The mechanics, each verified in code:
   collision protection, events, and upgrade tests.
 - **Functions implemented on the proxy itself.** Only what needs the proxy's own storage and
   composition: `postBlockCalldata`
-  ([#L92](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L92)),
-  `open` ([#L119](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L119)),
+  ([#L159](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159)),
+  `open` ([#L192](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L192)),
   `depositAssetsComposable`
-  ([#L199](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L199)),
+  ([#L287](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L287)),
   `withdrawAssetsComposable`
-  ([#L243](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L243)),
+  ([#L331](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L331)),
   `executeStateTransition`
-  ([#L249](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)),
-  `multicall` ([#L264](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L264)),
+  ([#L337](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L337)),
+  `multicall` ([#L353](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L353)),
   and the read-only introspection `facetAddressForSelector`
-  ([#L80](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L80)),
+  ([#L147](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L147)),
   plus the fallback and the constructor
   ([#L33](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L33)).
   A selector the proxy declares itself never reaches the fallback, so those selectors are
@@ -132,11 +132,11 @@ The mechanics, each verified in code:
   and a facet running under delegatecall shares the proxy's `address(this)`, so the pattern works
   from inside facets. The proxy's own `open` calls itself as
   `StateChannelManagerProxy(address(this)).depositAssetsComposable(...)`
-  ([#L159](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L159)).
+  ([#L245](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L245)).
   External callers can never satisfy the guard.
 - **Consumer fallback of last resort.** An unconfigured selector resolves to
   `consumerFacetAddress`
-  ([#L355](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L355)),
+  ([#L398](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L398)),
   so the integrator's `openChannelGenesis`, `deposit`, `withdraw`, and any custom consumer function
   are reachable at the proxy address. Note this forwards **every** unrouted selector — see the
   reachability concern in [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).
@@ -150,7 +150,7 @@ The mechanics, each verified in code:
       ([report](../../../source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md));
       they need no storage context;
     - the **proxy-storage views**
-      ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L262)) —
+      ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)) —
       participants, slash sets, snapshots, balances, timing config, calldata commitments, dispute
       windows and their period predicates — are routed selectors and run under `delegatecall`, so
       they read the **proxy's** storage.
@@ -163,19 +163,16 @@ The mechanics, each verified in code:
     in sync.
 
 - **The state machine is a separate deployment.** `stateMachineImplementation` is an
-  [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L6) instance with its own storage; the
+  [`AStateMachine`](../../../../../../contracts/V1/AStateMachine.sol#L10) instance with its own storage; the
   manager drives it with plain calls (`setState` → execute → `getState`) during dispute
   re-execution. All channels currently share the single implementation instance
   (`executeStateTransition` ignores `channelId` for machine selection — noted in code).
 - **Test-only variant.**
   [`LocalDiamond`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L20) extends the
-  proxy with storage-sync event handlers and a zero consumer facet for local testing. It also
-  redeclares `isBlockAuthentic`
-  ([#L442](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L442)) so local
-  deployments keep reaching its debug `_isBlockAuthentic` override
-  ([#L446](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)): a declared
-  function dispatches before the fallback, whereas production routes that selector to
-  `UtilityFacet`. It is not a production deployable.
+  proxy with storage-sync event handlers and a zero consumer facet for local testing. It keeps a
+  debug `_isBlockAuthentic` override ([#L444](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444)). Neither it nor production has an
+  external block-authenticity or block-decoding selector for the client. It is not a production
+  deployable.
 - **Callers use one manager binding.** `connectStateChannelManager` starts with the exact
   `StateChannelManagerInterface` function/event surface and generated `errorAbis`, then appends any
   consumer ABI. SDK fragments win duplicate signatures; consumer-only fragments remain available

@@ -24,6 +24,28 @@ the existing top-level handler, including the detached-error route for backgroun
 [EventSyncService](../../source/src/stateManager/eventSync/EventSyncService.ts.md), and
 [DisputeManagerFacet](../../source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md).
 
+### Auditing data and replay funding at submission
+
+Omission is allowed for an empty genesis proof, a last milestone containing the matching chain anchor,
+or the required participant signatures. The signature set includes chain participants and pending
+joiners through the committed inbound head, minus committed slashes. Construction decides whether
+to post the dispute's auditing data with
+`isAuditingDataOmissionAllowed`, asked local-first. A local "omission not allowed" posts the data with no
+chain read: posting is never wrong, only costlier. A local "omission allowed" would leave the data out, which
+is slashable if the lagging mirror was wrong, so the chain manager answers the same query and its
+answer decides ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
+A thrown local or chain failure aborts construction; only a completed local answer can select fallback.
+
+The two sends that can replay a transition — the fraud-proof `multicall` in front of an upload and
+`applyDisputeFraudProofs` in `killDispute` — carry their estimate (with the signer's headroom) plus
+the manager's `getStateTransitionReplayGas()`, so the replayed transition always gets its full
+budget and an honest proof that is sent is never refused for gas, whether the estimator searches
+or reports only the gas spent. On a searching estimator the limit declares more than needed (at
+least about 2.5 × the requirement), which must still fit the block gas limit ([`FIND-GASEST-2-94YFZ6`](../../../audit/open-findings.md#find-gasest-2-94yfz6))
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+The plain and calldata uploads pass no gas limit (estimate plus signer headroom). See
+[DisputeManager](../../source/src/disputeManager/DisputeManager.ts.md).
+
 ### 4.2 Evidence and kill period (Current semantics)
 
 Both periods use the single `evidenceTime` configuration value

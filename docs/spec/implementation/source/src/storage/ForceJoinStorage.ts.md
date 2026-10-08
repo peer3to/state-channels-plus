@@ -19,4 +19,6 @@ Marker lifecycle
 - [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P1` — read before set
 - [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P2` — set/read/clear cycle
 - [ ] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P3` — repeated clear idempotent
-- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P4` — deferred eligibility retains the height, started state blocks a duplicate, and clear resets both
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P5` — An expired real evidence window preserves the pending submission height and leaves disputeStarted false
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P6` — A delayed JOIN preserves tracking before inclusion; the later block bound sets disputeStarted and a repeated check does not submit again
+- [x] `UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN.P7` — Normal block seating clears the submission height; an in-flight deadline cannot restore the started flag

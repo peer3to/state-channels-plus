@@ -1,5 +1,5 @@
 import { Codec, Type } from "../utils/Codec";
-import { recoverSigner } from "@/cache";
+import { isContractAcceptedSignature, recoverSigner } from "@/cache";
 import {
     ForkId,
     BlockHeight,
@@ -78,6 +78,26 @@ export default class Block {
             onChainTimestamp,
             signedBlock.encodedBlock as Bytes
         );
+    }
+
+    /**
+     * The queue keeps the author-signed block apart from the confirmations it
+     * merges; this copy carries only the author signature and shares the
+     * decoded struct, the encoded bytes and the cached hash, so an entry costs
+     * no second decode or hash. The caller must own this instance (for example
+     * storage's per-call copy of its argument).
+     */
+    authorSignedCopy(): Block {
+        const copy = new Block(
+            this.block,
+            this._originalSignature,
+            new Set(),
+            this._onChainTimestamp,
+            this._encodedBlock
+        );
+        copy._blockHash = this._blockHash;
+        copy._blockHashBytes = this._blockHashBytes;
+        return copy;
     }
 
     static tryFromBlockConfirmation(
@@ -222,6 +242,22 @@ export default class Block {
     get signerAddress(): Address {
         return this.signatureToAddress(this._originalSignature);
     }
+
+    /**
+     * Author authenticity: the original signature recovers to the header's
+     * declared participant under the contracts' acceptance rule (same EIP-191
+     * scheme over keccak256(encodedBlock) as `retrieveSignerAddress`, and only
+     * encodings OpenZeppelin ECDSA accepts; see recoverSigner), evaluated
+     * through the per-thread signer recovery cache instead of an EVM call. A
+     * rejected signature is inauthentic, never an exception.
+     */
+    get isAuthentic(): boolean {
+        try {
+            return this.signerAddress === this.author;
+        } catch {
+            return false;
+        }
+    }
     get confirmationSignerAddresses(): Set<Address> {
         const addresses = new Set<Address>();
         for (const sig of this._confirmationSignatures) {
@@ -232,6 +268,23 @@ export default class Block {
 
     get allSignerAddresses(): Set<Address> {
         return this.deriveAllSignerAddresses();
+    }
+
+    /**
+     * The signers (author and confirmations) whose signatures the contracts
+     * accept; a rejected signature is peer data that names no signer.
+     */
+    get acceptedSignerAddresses(): Set<Address> {
+        const addresses = new Set<Address>();
+        for (const signature of [
+            this._originalSignature,
+            ...this._confirmationSignatures
+        ]) {
+            // a rejected signature counts as no signer, as on chain
+            if (isContractAcceptedSignature(signature))
+                addresses.add(this.signatureToAddress(signature));
+        }
+        return addresses;
     }
 
     async signAsAuthor(signer: Signer): Promise<Block> {

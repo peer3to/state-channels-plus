@@ -7,13 +7,11 @@ import {
 } from "@test/harness";
 import { expect } from "chai";
 
-// dispute.input.latestInboundMessageBlockHash is validated by walking the on-chain
-// inbound chain backwards. Junk values that don't exist anywhere in the chain are
-// caught by the DisputeInboundHashNotInChain fraud proof. The genesis 0x0 + height=0
-// happy path lives in disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts.
+// upload refuses any anchor other than the chain's inbound head (disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts),
+// so the junk and behind anchors below never reach a committed dispute to prove
 
 describe("E2E: dispute validation / inboundHash", function () {
-    it("dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain", async function () {
+    it.skip("dispute.input.latestInboundMessageBlockHash = random (not on-chain) → DisputeInboundHashNotInChain", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
@@ -44,7 +42,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
-    it("dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain", async function () {
+    it.skip("dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight > 0 → DisputeInboundHashNotInChain", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
@@ -75,11 +73,8 @@ describe("E2E: dispute validation / inboundHash", function () {
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
-    // _uploadDispute never validates the inbound hash, and naming a real
-    // earlier block is not DisputeInboundHashNotInChain either -> the auditor
-    // walks forward from snapshotData.latestInboundMessageBlockHash and can
-    // never reach it
-    it("dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState", async function () {
+    // an anchor at the head is behind the pinned state only if signers signed inbound the chain doesn't hold
+    it.skip("dispute.input.lastInboundMessageBlockHeight below the pinned snapshotData.latestInboundMessageBlockHeight → DisputeInboundAnchorBehindLatestState", async function () {
         const h = TestSession.getHarness();
         const attackerIndex = 1;
         // larger agreementTime avoids writer-timeout disputes racing the upload

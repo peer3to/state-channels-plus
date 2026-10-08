@@ -11,6 +11,8 @@ import "./UtilityFacetInterface.sol";
 /// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
 /// storage - hence the `StateChannelCommon` base.
 contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
+    uint256 internal constant REPLAY_CALL_DEPTH = 4;
+
     /// EIP-191 - the digest every signature over `encodedData` is actually made
     /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
     /// `retrieveSignerAddresses` must agree on it or a recovered signer set
@@ -307,6 +309,17 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _getGasLimit();
     }
 
+    /// Gas a fraud-proof transaction needs when its replay path starts so that every replayed
+    /// transition is granted its full budget; the work before the replay comes on top. The replay sits REPLAY_CALL_DEPTH calls
+    /// below the transaction (multicall, facet delegatecall, executeStateTransition, the state
+    /// machine), and EIP-150 keeps 1/64 of the gas at each of them.
+    function getStateTransitionReplayGas() public view returns (uint256 required) {
+        required = stateMachineImplementation.getStateTransitionGasRequirement();
+        for (uint256 i = 0; i < REPLAY_CALL_DEPTH; i++) {
+            required = required * 64 / 63 + 1;
+        }
+    }
+
     function getAllTimes() public view returns (uint256, uint256, uint256, uint256) {
         return _getAllTimes();
     }
@@ -379,12 +392,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _getChannelBalance(channelId);
     }
 
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
-        return _isBlockAuthentic(_block);
-    }
-
     function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        return _canParticipateInDisputes(channelId, participant);
+        return _canParticipateInDisputesNow(channelId, participant);
     }
 
     function isChannelOpen(bytes32 channelId) public view returns (bool, StateSnapshot memory) {

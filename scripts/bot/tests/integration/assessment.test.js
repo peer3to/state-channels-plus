@@ -202,6 +202,108 @@ async function unchangedNextHead(human, tree) {
         0
     );
 }
+function relocatedGeneralFinding(corruptStoredState) {
+    return gitFixture(async ({ input, source }) => {
+        const wire = wireFixture();
+        Object.assign(wire.input, {
+            head: input.head,
+            base: input.base,
+            mergeBase: input.mergeBase
+        });
+        wire.pull.head.sha = input.head;
+        const original = wire.reviews.pop();
+        wire.comments.push({
+            ...original,
+            html_url: original.html_url.replace(
+                "pullrequestreview-",
+                "issuecomment-"
+            ),
+            issue_url: `https://api.github.com/repos/${wire.input.repository.name}/issues/${wire.input.pr}`,
+            body: wrapFinding(
+                wire.finding.id,
+                original.body.split("\n\n---")[0]
+            )
+        });
+        const store = publicationStore();
+        const makePublisher = () =>
+            new Publisher(
+                wire.input,
+                new GitHubWriter(wire.input, {
+                    token: "recorded",
+                    botId: 9,
+                    exchange: wire.exchange
+                }),
+                { eligible: true, specApproved: false, repoRoot: source },
+                store
+            );
+        // The model closes the general finding and names a line for it.
+        const relocated = {
+            ...wire.finding,
+            status: "fixed",
+            body: "The boundary is fixed.",
+            path: "README.md",
+            line: 1
+        };
+        const output = proposed(wire.input, relocated, wire.finding);
+        output.report = output.report
+            .replace("General PR comment", "Inline comment")
+            .replace(
+                JSON.stringify({ id: wire.finding.id, kind: "general" }),
+                JSON.stringify({
+                    id: wire.finding.id,
+                    kind: "inline",
+                    path: relocated.path,
+                    line: relocated.line,
+                    side: "RIGHT"
+                })
+            );
+        assert.equal(
+            (await makePublisher().publish(output)).status,
+            "complete"
+        );
+        const stored = (await store.load(wire.input)).states
+            .at(-1)
+            .findings.find((finding) => finding.id === wire.finding.id);
+        assert.deepEqual([stored.path, stored.line], [null, null]);
+        if (corruptStoredState) {
+            // A round published before the fix stored the model's location.
+            const journal = await store.load(wire.input);
+            const states = structuredClone(journal.states);
+            const corrupted = states.at(-1).findings[0];
+            corrupted.path = relocated.path;
+            corrupted.line = relocated.line;
+            await store.save(wire.input, digest(journal), states);
+        }
+        const closedBody = wire.comments.find((item) => item.id === 2).body;
+        const writes = wire.calls.filter((call) =>
+            ["PATCH", "PUT"].includes(call.method)
+        ).length;
+        wire.input.head = "2".repeat(40);
+        wire.input.attempt = "next-head";
+        wire.pull.head.sha = wire.input.head;
+        assert.equal(
+            (await makePublisher().publish(result(wire.input))).status,
+            "complete"
+        );
+        const retained = (await store.load(wire.input)).states
+            .at(-1)
+            .findings.find((finding) => finding.id === wire.finding.id);
+        assert.deepEqual(
+            [retained.path, retained.line, retained.threadId],
+            [null, null, null]
+        );
+        assert.equal(
+            wire.comments.find((item) => item.id === 2).body,
+            closedBody
+        );
+        assert.equal(
+            wire.calls.filter((call) => ["PATCH", "PUT"].includes(call.method))
+                .length,
+            writes
+        );
+    });
+}
+
 describe("assessment GitHub lifecycle", function () {
     it("publishes new same-head findings while replaying exact and joined deliveries without duplicate writes", async function () {
         const { binding } = require("../../protocol");
@@ -1748,6 +1850,12 @@ describe("assessment GitHub lifecycle", function () {
             wire.calls.filter((call) => call.method === "PATCH").length,
             2
         );
+    });
+    it("keeps a general finding general when the model names a line for it, through the next head", async function () {
+        await relocatedGeneralFinding(false);
+    });
+    it("publishes the next head over a general finding stored with a model-given line", async function () {
+        await relocatedGeneralFinding(true);
     });
     it("publishes a new general finding as its own section-labelled comment", async function () {
         const wire = wireFixture();

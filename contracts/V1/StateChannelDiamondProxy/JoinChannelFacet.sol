@@ -61,6 +61,9 @@ contract JoinChannelFacet is StateChannelCommon {
         );
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
+        require(
+            !_isForkDisputed(channelId, expectedForkId), RaceConditionJoinChannelForkDisputed(channelId, expectedForkId)
+        );
         if (isTopUp) {
             require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound(channelId, jc.participant));
             require(
@@ -74,10 +77,6 @@ contract JoinChannelFacet is StateChannelCommon {
             require(
                 participantUnion.length + 1 <= _getMaxChannelParticipants(),
                 ErrorTooManyParticipants(participantUnion.length + 1, _getMaxChannelParticipants())
-            );
-            require(
-                !_isForkDisputed(channelId, expectedForkId),
-                RaceConditionForceInboundJoinForkDisputed(channelId, expectedForkId)
             );
         }
 

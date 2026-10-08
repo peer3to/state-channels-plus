@@ -64,9 +64,33 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel:distributed` is the canonical full test gate and runs all
-Mocha tests across the configured distributed workers; pass `--e2e-only` to
-limit discovery to `test/e2e`. Always use the distributed runner, also for
+`yarn test:parallel:distributed --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without those flags, parallel-runner self-tests and browser tests are excluded. The full gate runs three
+tiers across the configured distributed workers: all Mocha tests, the forge
+tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
+limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
+
+During development, leave these optional groups disabled unless the changes
+touch their relevant files or dependencies:
+
+- Use `--test-parallel-script` when changing parallel-runner scripts, their
+  configuration, or their self-tests.
+- Use `--test-browser` when changing browser code, browser build/runtime
+  dependencies, or browser tests, including shared code that affects those paths.
+
+Run only the relevant optional group and focused tests for those changes. Do not
+add both flags routinely to development validation; CI runs both groups on every
+full gate so the development cycle stays lean.
+
+Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
+run only on a protocol 14 or newer worker host whose runner image was built with
+`yarn test:parallel:image`. When no such host connects within the discovery
+window, the run skips them with a warning that lists them instead of failing,
+so a green run is not complete until that warning has been checked. A Mocha
+test file that launches Chromium must carry that marker in its leading
+comments. See the README's
+[Browser tests](README.md#browser-tests) section.
+
+Always use the distributed runner, also for
 focused subsets and repeated loops (`--grep <regexp>` works there too); it is
 the only runner that reproduces farm load. Use the local `yarn test:parallel`
 only for a small focused selection of about ten tests or fewer; anything larger
@@ -179,6 +203,10 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 - When adding a deviation, implement it on **all** strategies — a deliberate
   `throw` ("should not be relevant/called") is a valid implementation when the
   deviation is impossible for that pipeline.
+- **Exception: double signatures.** Two different signatures by one signer over
+  one message are a signature-level offense for every message type, so they are
+  detected in `SignerRecoveryCache` and punished by `P2PManager`, not through
+  `AValidationStrategy`.
 - **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
   block + ad-hoc sender parameter.** Entries merge signatures and
   `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own
@@ -250,7 +278,7 @@ methods }`. Never interleave a field declaration between methods. When adding a
   below) + a `StateChannelManagerInterface` decl; TS calls
   `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
-  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
+  `verifyMilestones`). Broadly-shared primitive → `internal`
   `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
   `public` wrapper on `UtilityFacet` when TS or a test needs to call it
   (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
@@ -370,6 +398,11 @@ limit, so it implements only what needs its own storage and composition (`open`,
 - Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
 
 ### Required Human review decisions
+
+- When the human makes a review decision in this conversation, record it in the
+  assessment and ready-to-post reply, and update affected decision/finding records.
+  Do not ask for the same decision again. Keep drafts in the review UI’s supported
+  reply section; do not post them without an explicit request.
 
 - When an automated review flags an unresolved design choice, implementing agents
   must ask their human unless the specification or an existing human decision

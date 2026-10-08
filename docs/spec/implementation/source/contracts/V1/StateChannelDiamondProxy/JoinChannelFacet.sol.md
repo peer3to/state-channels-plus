@@ -30,16 +30,20 @@ Admission and atomic deposit
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P9` — top-up unknown-participant revert
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P10` — participant-signature revert
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P11` — threshold-shortfall revert against a live channel, decoded to the widened threshold set and the recovered signer set
-- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P12` — snapshot-pin race
+- [ ] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P12` — snapshot-pin race
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P13` — join after an on-chain slash succeeds without the slashed participant's signature
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P14` — on-chain-slashed participant's top-up reverts before deposit
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P15` — malformed threshold signature reverts
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P16` — stale top-up snapshot pin reverts without changing participant lifecycle state
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P17` — join pending participant reverts per the snapshot ∪ pending membership rule
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P18` — join at the exact deadline succeeds
-- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P19` — pending participant's top-up succeeds
+- [ ] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P19` — pending participant's top-up succeeds
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P20` — atomic deposit failure propagates through join without admission effects
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P21` — threshold-shortfall revert names the submitter, the exact threshold participant set, and the exact set the supplied signatures recover to
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P22` — a confirmation carrying as many signatures as the threshold has members but one from a non-member reverts, and the payload names the non-member as the recovered signer
-- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P23` — snapshot-pin race revert decodes to both hash operands: the submitted hash is the stale pin the joiner sent and the current hash is the newly posted on-chain snapshot
+- [ ] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P23` — snapshot-pin race revert decodes to both hash operands: the submitted hash is the stale pin the joiner sent and the current hash is the newly posted on-chain snapshot
 - [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P24` — disputed-fork join revert names the rejected channel and the disputed fork as two distinct operands
+- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P25` — disputed-fork top-up by an existing or pending participant reverts without deposit
+- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P26` — disputed-fork top-up revert names the rejected channel and the disputed fork as two distinct operands
+- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P27` — A join targeting the current snapshot passes its guard and deposits for the authorized joiner
+- [x] `UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P28` — A same-fork join targeting a different snapshot reverts with both current and submitted snapshot hashes before any deposit

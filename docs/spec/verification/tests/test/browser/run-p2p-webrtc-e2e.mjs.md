@@ -9,7 +9,7 @@
 
 ## Overview
 
-The browser job in the CI workflow runs this gate after installing Chromium and compiling artifacts. Local runs remain available through the package script. CI execution itself is established only after the workflow runs on a pull request.
+The browser job in the CI workflow runs this gate inside the distributed runner image, under the environment's container limits (read-only root, no capabilities, a 256 MB `/tmp`), after installing and compiling in that same container, and reports the peak `/tmp` use. Local runs remain available through the package script. CI execution itself is established only after the workflow runs on a pull request.
 
 The runner behind package script `test:browser:webrtc` stands up a hardhat node (switched to
 interval mining so the browser's parallel HTTP nonce ordering works), a local-discovery relay

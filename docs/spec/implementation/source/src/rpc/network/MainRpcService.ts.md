@@ -24,3 +24,4 @@ Roster, readiness, and disposal for [`INV-RPC-1-SJS2T6` (Identity-bound dispatch
 - [x] `UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P6` — rejected custom readiness in inline mode
 - [x] `UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P7` — delayed custom readiness in worker mode
 - [x] `UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P8` — rejected custom readiness in worker mode
+- [x] `UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9` — the runtime RPC root's shutdown hook `dispose()` settles a pending handshake wait on a never-authenticated transport as not completed at once, far before its timeout, and a later wait on that transport settles as not completed at once

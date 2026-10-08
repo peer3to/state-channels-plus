@@ -7,9 +7,9 @@
 ## Requirements
 
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
-  Partial: Reachability only — this file cannot show that callers actually use the mirror instead of a local re-implementation; that judgment stays with each calling report.
 - [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
   Partial: Local mirror only; production manager addresses use `connectStateChannelManager` from [stateChannelManager.ts](stateChannelManager.ts.md).
+- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1
 
@@ -26,3 +26,19 @@ Merged mirror ABI and binding
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P6` — a routed facet view answers on the deployed mirror through the binding
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P7` — a `LocalDiamond`-only handler executes on the deployed mirror through the binding
 - [x] `UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1.P8` — every manager error appears once in the local ABI
+
+## UNIT-TEST-PREFER-LOCAL-1-XC95T6
+
+Local-first read with chain fallback
+
+- Setup: `preferLocal(local, onChain, acceptLocal)` with counting local and chain reads and a boolean acceptance rule; the local failure is a revert as the local signer surfaces it (synthetic, or a real `ContractExecutor` call through `LocalContractExecutorSigner`), a plain non-revert error, a real signer failure, or a non-`Error` thrown value; the chain read or the acceptance rule may also fail
+- Oracle: The returned answer or rejection and the number of chain reads: an accepted local answer returns with zero chain reads; a rejected answer returns the chain's answer after exactly one chain read; every local failure including a revert and an acceptance-rule failure reject with that same error and zero chain reads; a chain-read failure rejects with that failure
+
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P1` — accepted local answer kept without a chain read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P2` — rejected local answer replaced by the chain's answer
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P4` — non-revert local failure propagates without a chain read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P5` — the chain read that confirms a rejected local answer fails: that failure propagates
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P8` — a real local signer call that never reaches the EVM fails without the revert marker and propagates with no chain read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P10` — the acceptance rule throws: that failure propagates with no chain read
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P11` — a local EVM revert propagates as the same error with zero chain reads
+- [x] `UNIT-TEST-PREFER-LOCAL-1-XC95T6.P12` — a real contract call reverting in the local executor propagates as the same error with zero chain reads

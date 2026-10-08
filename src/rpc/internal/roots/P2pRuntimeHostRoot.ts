@@ -1,5 +1,4 @@
 import { createRoot, type RootStartContext } from "../createRoot";
-import type { RemoteRoot } from "../RemoteRoot";
 import type { P2pRuntimeClientRoot } from "./P2pRuntimeClientRoot";
 import { WebRTCWorkerBridgeRoot } from "./WebRTCWorkerBridgeRoot";
 import { ChainSignerService } from "../services/chainSigner/ChainSignerService";
@@ -9,6 +8,7 @@ import { P2pSignerService } from "../services/p2pSigner/P2pSignerService";
 import { SdkSetupService } from "../services/sdkSetup/SdkSetupService";
 import Clock from "@/Clock";
 import { AContractExecutor } from "@/evm/contractExecutor";
+import { localEvmCallGasLimit } from "@/evm/contractExecutor/ContractExecutor";
 import {
     createContractExecutor,
     type ContractExecutorFactoryOptions
@@ -176,7 +176,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         // but its failure must still settle the paired client's `ready` promise.
         this.chainContext = await createRuntimeChainContext(
             payload.config,
-            payload.signerSecret
+            payload.signerSecret,
+            this.rootLogger
         );
         const { signer } = this.chainContext;
         const signerAddress = (this.signerAddress = await signer.getAddress());
@@ -224,9 +225,12 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             chainFallbackTime: Number(configTimes[2]),
             evidenceTime: Number(configTimes[3])
         });
-        this.disputeExecutionGasLimit = Number(
-            await connectedScmContract.getGasLimit()
-        );
+        const [disputeExecutionGasLimit, stateTransitionReplayGas] =
+            await Promise.all([
+                connectedScmContract.getGasLimit(),
+                connectedScmContract.getStateTransitionReplayGas()
+            ]);
+        this.disputeExecutionGasLimit = Number(disputeExecutionGasLimit);
         this.maxChannelParticipants = Number(
             await connectedScmContract.getMaxChannelParticipants()
         );
@@ -268,6 +272,10 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             {
                 dedicatedThread: payload.config.VM_DEDICATED_THREAD,
                 customPrecompiles: payload.customPrecompiles,
+                callGasLimit: localEvmCallGasLimit(
+                    disputeExecutionGasLimit,
+                    stateTransitionReplayGas
+                ),
                 logger: payload.config.VM_DEDICATED_THREAD
                     ? undefined
                     : logger.child({ component: "ContractExecutor" })
@@ -350,6 +358,8 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
             storage,
             logger,
             () => this.dispose(),
+            // Local-only: consumer custom RPCs parent their child roots here.
+            { owner: this },
             customRpcResolved?.customRpc,
             customRpcResolved?.customRpcOptions
         );
@@ -425,6 +435,13 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                         // destroy then rejects as unhandled.
                         if (provider && !Clock.ownsProvider(provider))
                             await provider.destroy();
+                        // The Clock keeps reading through it, but this
+                        // runtime's node reconnects and their logs end here;
+                        // the Clock destroys it once a new provider replaces it.
+                        else if (provider) {
+                            provider.stopReconnecting();
+                            Clock.releaseProvider(provider);
+                        }
                     } finally {
                         if (runtimeHandle) {
                             await runtimeHandle.stateManager.dispose();
@@ -455,5 +472,3 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         );
     }
 }
-
-export type P2pRuntimeHostRemoteRoot = RemoteRoot<P2pRuntimeHostRoot>;

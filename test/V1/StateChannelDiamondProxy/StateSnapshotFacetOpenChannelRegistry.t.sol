@@ -48,7 +48,7 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
     function test_updateStateSnapshotSameFork_repeatedFinalCloseDoesNotChangeRegistry() public {
         _openChannel(CHANNEL_A, _privateKeys());
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
-            _makeFinalCloseSnapshot(CHANNEL_A, _participants(), _privateKeys());
+            _makeSameForkSnapshot(CHANNEL_A, new address[](0), _privateKeys());
         MessageBlock[] memory outbound = new MessageBlock[](0);
         diamond.updateStateSnapshotSameFork(CHANNEL_A, proofs, snapshots, outbound);
 
@@ -117,7 +117,7 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
 
     function _closeChannel(bytes32 channelId) internal {
         (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
-            _makeFinalCloseSnapshot(channelId, _participants(), _privateKeys());
+            _makeSameForkSnapshot(channelId, new address[](0), _privateKeys());
         diamond.updateStateSnapshotSameFork(channelId, proofs, snapshots, new MessageBlock[](0));
         (bool open,) = diamond.isChannelOpen(channelId);
         assertFalse(open);
@@ -136,12 +136,6 @@ contract StateSnapshotFacetOpenChannelRegistryTest is DiamondHarness {
         pks = new uint256[](2);
         pks[0] = ALICE_PK;
         pks[1] = BOB_PK;
-    }
-
-    function _participants() internal pure returns (address[] memory participants) {
-        participants = new address[](2);
-        participants[0] = vm.addr(ALICE_PK);
-        participants[1] = vm.addr(BOB_PK);
     }
 
     function _oneId(bytes32 a) internal pure returns (bytes32[] memory ids) {

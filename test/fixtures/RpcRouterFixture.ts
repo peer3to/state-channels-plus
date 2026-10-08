@@ -13,6 +13,7 @@ import type { RuntimeProbeRoot } from "./runtimeRpc/probe/runtime/RuntimeProbeSe
 import { RuntimeRpcControl } from "./runtimeRpc/RuntimeRpcControl";
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { CustomRpcManifest } from "@/rpc/network/registry";
 import RpcMethodsProxy from "@/rpc/network/RpcHandleProxy";
 import RpcHandler from "@/rpc/network/RpcHandler";
 import InternalTransport from "@/transport/InternalTransport";
@@ -165,10 +166,14 @@ export async function assertTransferredPort(inline: boolean): Promise<void> {
 
 export async function withRuntimeRpc(
     operation: (sdk: LoggerSdkFixture) => Promise<void>,
-    inline = true
+    inline = true,
+    customRpcManifest?: CustomRpcManifest
 ): Promise<void> {
     const receiver = await startLogReceiver();
-    const sdk = await createLoggerSdkFixture(receiver, { inlineSdk: inline });
+    const sdk = await createLoggerSdkFixture(receiver, {
+        inlineSdk: inline,
+        customRpcManifest
+    });
     try {
         await operation(sdk);
     } finally {

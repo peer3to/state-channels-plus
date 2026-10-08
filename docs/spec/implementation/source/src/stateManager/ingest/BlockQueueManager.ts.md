@@ -16,6 +16,8 @@
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-QSTORE-3-DEKYG6` (Queue scheduling)](../../../../../specification/storage/queue.md#req-qstore-3-dekyg6)
+- [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
+  Partial: Intake decoding is not at parity with the contracts' decoder ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 
 ## UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2
 
@@ -45,9 +47,13 @@ Intake gates and lifetime
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P24` — wrong channel is rejected before sender refresh or retention
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P25` — forged author is rejected before sender refresh or retention
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28` — a failed unknown copy preserves the existing honest contribution
-- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P32` — clear a disputed gossip queue while an audit replay is held; replay persists the snapshot and reduction completes
+- [ ] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P32` — clear a disputed gossip queue while an audit replay is held; replay persists the snapshot and reduction completes
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P33` — a failed membership read can retry on the next request
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34` — sync with no sender transport ends intake without queueing the block
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P35` — an unknown source still absent after a failed refresh invokes ordinary sync and does not retain the copy
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36` — sync succeeds but the sender is still absent: blacklisted with no queue entry
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37` — stopping the manager clears a future queued block and cancels its timeout
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38` — a queued entry that merged a gossip copy with the chain-committed copy is executed in the chain-committed context: the gossip source is cut and the chain-only consequence still runs
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P39` — a chain-committed entry parked above the next height keeps that context across its restore and is judged once its height is next
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P40` — a network copy whose author signature is each contract-rejected encoding of the author's real signature (compact 64-byte, `v` of 0/1, EIP-155 `v`, high `s`, zero `r`, zero `s`, `r` at the group order, 66 bytes, 63 bytes, empty) is refused at intake with `keepConnection` false and the block is not stored; the same bytes with the canonical signature are then committed and countersigned by the observer
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P41` — After an older valid sync and future gossip, a queue-timeout probe installs a newer compact proof that omits the probed block, keeps every honest source unblacklisted, and allows later progress

@@ -4,7 +4,9 @@
 >
 > **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
-No specified behavior: Assembles the next state snapshot for a transaction: carries the previous snapshot forward, binds consumed inbound blocks (hash, height, deposits), builds the outbound block for a leave (height, withdrawals, `participantChanges`), and reports the writer-turn and state-machine refusals as `success: false` or a throw.
+## Requirements
+
+- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 
 ## UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7
 

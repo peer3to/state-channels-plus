@@ -4,11 +4,20 @@ import type { ForkId } from "@/types/types";
 import { Logger } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
+    EvidenceComparisonFault,
+    HeldEvidenceComparisonRelease,
+    RecordedEvidenceAudit,
+    RecordedEvidenceComparison
+} from "@test/fixtures/customRpc/harnessControl/services/stub/node/EvidenceComparisonRecorder";
+import type {
     BlockWorkHoldPoint,
     DisputeSubmissionFailureSpec,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
+    RecordedGasEstimate,
+    RecordedReplayGasRead,
     ReductionSimulationErrorName,
+    ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldMembershipReceiptKind,
     HeldNegotiationReplyKind,
@@ -18,6 +27,24 @@ import type {
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+
+/** Client handle on one peer's evidence-comparison recorder. */
+export type EvidenceComparisonRecording = {
+    comparisons: () => Promise<RecordedEvidenceComparison[]>;
+    /** The `shouldAddOwnEvidence` calls, in call order. */
+    audits: () => Promise<RecordedEvidenceAudit[]>;
+    /** Wait until `count` comparisons have settled. */
+    waitUntilSettled: (count: number, timeoutMs?: number) => Promise<void>;
+    /** Wait until `count` audits have asked for a comparison. */
+    waitUntilAudited: (count: number, timeoutMs?: number) => Promise<void>;
+    /** Wait until the `hold` fault parks a comparison. */
+    waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+    /** Continue the held comparison for real, or fail it. */
+    releaseHeld: (release: HeldEvidenceComparisonRelease) => Promise<void>;
+    /** Ask `shouldAddOwnEvidence` again with the last audited dispute. */
+    repeatLastAudit: () => Promise<RecordedEvidenceAudit>;
+    restore: () => Promise<void>;
+};
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -684,6 +711,28 @@ export class RpcStubActions<
         };
     }
 
+    /**
+     * Hold only the inbound storage write of a peer's InboundMessagesProcessed
+     * handler: its local diamond still applies the event, while inbound
+     * storage lags it.
+     */
+    async holdInboundMessageStorage(peerIndex: number): Promise<{
+        /** Restore the storage write; held writes replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldInboundMessageStorage().request();
+        this.logger.debug(
+            `Holding inbound storage writes on peer ${peerIndex}`
+        );
+        return {
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageStorage(replay).request();
+            }
+        };
+    }
+
     async dropSlashLogs(peerIndex: number) {
         return this.dropEventLogs(peerIndex, ["ChainSlashed", "DisputeKilled"]);
     }
@@ -854,17 +903,138 @@ export class RpcStubActions<
         };
     }
 
-    /** Keep a peer out of a kill race. Returns a teardown. */
+    /**
+     * Answer a peer's chain-signer estimates for the manager `methods` scaled
+     * by `numerator / denominator` (the real estimate is still taken and
+     * recorded). Stands in for an estimator that reports a smaller or larger
+     * figure for the same fraud-proof transaction.
+     */
+    async scaleReplayGasEstimates(
+        peerIndex: number,
+        options: {
+            methods: ReplayGasEstimateMethod[];
+            numerator: number;
+            denominator: number;
+        }
+    ): Promise<{
+        estimates: () => Promise<RecordedGasEstimate[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl()
+            .stubScaleReplayGasEstimates(
+                options.methods,
+                options.numerator,
+                options.denominator
+            )
+            .request();
+        return {
+            estimates: () => ctl().getRecordedReplayGasEstimates().request(),
+            restore: async () => {
+                await ctl().restoreScaleReplayGasEstimates().request();
+            }
+        };
+    }
+
+    /**
+     * Record a peer's reads of the manager's replay requirement (still
+     * forwarded to the chain); the first `failFirst` reads reject instead.
+     * `hold` parks each read, recorded as pending, until `release`.
+     */
+    async recordReplayGasReads(
+        peerIndex: number,
+        options: { failFirst?: number; hold?: boolean } = {}
+    ): Promise<{
+        reads: () => Promise<RecordedReplayGasRead[]>;
+        waitUntilHeld: (count: number, timeoutMs?: number) => Promise<void>;
+        release: () => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl()
+            .stubRecordReplayGasReads(
+                options.failFirst ?? 0,
+                options.hold ?? false
+            )
+            .request();
+        return {
+            reads: () => ctl().getRecordedReplayGasReads().request(),
+            waitUntilHeld: (
+                count,
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
+                waitFor(
+                    async () =>
+                        (await ctl().getHeldReplayGasReadCount().request()) >=
+                        count,
+                    timeoutMs
+                ),
+            release: async () => {
+                await ctl().releaseReplayGasReads().request();
+            },
+            restore: async () => {
+                await ctl().restoreReplayGasReads().request();
+            }
+        };
+    }
+
+    /**
+     * Park the peer's audit proof walks (after the audit's pre-walk checks,
+     * before the walk, its replay and persistence). `waitUntilHeld` resolves
+     * once walks of proofs ending at every given block hash are parked (a
+     * hash listed twice needs two parked walks); `release` lets one of them
+     * continue; `restore` releases the rest.
+     */
+    async holdProofWalks(peerIndex: number): Promise<{
+        waitUntilHeld: (latestBlockHashes: string[]) => Promise<void>;
+        release: (latestBlockHash: string) => Promise<void>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldProofWalks().request();
+        return {
+            waitUntilHeld: (latestBlockHashes) =>
+                waitFor(async () => {
+                    const held = await ctl()
+                        .getHeldProofWalkBlockHashes()
+                        .request();
+                    return latestBlockHashes.every(
+                        (hash) =>
+                            held.filter((parked) => parked === hash).length >=
+                            latestBlockHashes.filter(
+                                (wanted) => wanted === hash
+                            ).length
+                    );
+                }, this.harness.event.protocolEventTimeoutMs()),
+            release: async (latestBlockHash) => {
+                if (
+                    !(await ctl()
+                        .releaseHeldProofWalk(latestBlockHash)
+                        .request())
+                )
+                    throw new Error(
+                        `No parked proof walk ends at ${latestBlockHash}`
+                    );
+            },
+            restore: async () => {
+                await ctl().restoreProofWalks().request();
+            }
+        };
+    }
+
     /**
      * Park a peer's auditing-data rebuilds until `release`; `waitUntilHeld`
      * resolves once a rebuild is parked.
      */
-    async holdAuditingDataRebuild(peerIndex: number): Promise<{
+    async holdAuditingDataRebuild(
+        peerIndex: number,
+        at: "output" | "auditingData" = "output"
+    ): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         release: () => Promise<void>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
-        await ctl().stubHoldAuditingDataRebuild().request();
+        await ctl().stubHoldAuditingDataRebuild(at).request();
         return {
             waitUntilHeld: (
                 timeoutMs = this.harness.event.protocolEventTimeoutMs()
@@ -882,7 +1052,8 @@ export class RpcStubActions<
      */
     async holdSnapshotPostSend(peerIndex: number): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
-        release: () => Promise<void>;
+        /** Resolves with the first parked send's revert name, or null when it was mined or nothing was parked. */
+        release: () => Promise<string | null>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldSnapshotPostSend().request();
@@ -892,9 +1063,26 @@ export class RpcStubActions<
                     withFirstBlockGrace: true
                 })
             ) => ctl().waitForHeldSnapshotPostSend().request({ timeoutMs }),
-            release: async () => {
-                await ctl().restoreSnapshotPostSend().request();
-            }
+            release: () => ctl().restoreSnapshotPostSend().request()
+        };
+    }
+
+    /**
+     * Fail a peer's first `failures` adopt-only snapshot posts at their send;
+     * later sends run for real. `restore` returns every multicall's call names.
+     */
+    async failFirstAdoptionPost(
+        peerIndex: number,
+        failures: number = 1
+    ): Promise<{
+        recorded: () => Promise<string[][]>;
+        restore: () => Promise<string[][]>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubFailFirstAdoptionPost(failures).request();
+        return {
+            recorded: () => ctl().getRecordedMulticallNames().request(),
+            restore: () => ctl().restoreAdoptionPost().request()
         };
     }
 
@@ -1153,5 +1341,58 @@ export class RpcStubActions<
             .control(this.harness.getPeer(peerIndex))
             .stub.waitForSpectateSyncCalls(count)
             .request({ timeoutMs });
+    }
+
+    /**
+     * Record the evidence comparisons a peer runs after its dispute audits
+     * (each call is forwarded). `fault` fails only the next comparison.
+     */
+    async recordEvidenceComparisons(
+        peerIndex: number,
+        options: { fault?: EvidenceComparisonFault } = {}
+    ): Promise<EvidenceComparisonRecording> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordEvidenceComparisons(options.fault).request();
+        const recorded = () => ctl().getRecordedEvidenceComparisons().request();
+        const comparisons = async () => (await recorded()).comparisons;
+        const audits = async () => (await recorded()).audits;
+        return {
+            comparisons,
+            audits,
+            waitUntilSettled: (
+                count,
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
+                waitFor(
+                    async () =>
+                        (await comparisons()).filter(
+                            (comparison) => comparison.outcome !== "pending"
+                        ).length >= count,
+                    timeoutMs
+                ),
+            waitUntilAudited: (
+                count,
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
+                waitFor(
+                    async () => (await audits()).length >= count,
+                    timeoutMs
+                ),
+            waitUntilHeld: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await recorded()).isHolding, timeoutMs),
+            releaseHeld: async (release) => {
+                if (
+                    !(await ctl()
+                        .releaseHeldEvidenceComparison(release)
+                        .request())
+                )
+                    throw new Error("No evidence comparison is held");
+            },
+            repeatLastAudit: () => ctl().repeatLastEvidenceAudit().request(),
+            restore: async () => {
+                await ctl().restoreEvidenceComparisons().request();
+            }
+        };
     }
 }

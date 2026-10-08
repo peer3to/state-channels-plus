@@ -7,6 +7,7 @@
 ## Requirements
 
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
+- [`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)
 - [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
@@ -32,3 +33,5 @@ Attempt discipline
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P12` — a held real candidate computation resumed after live sync persists and submits nothing obsolete
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P13` — a leaving signer that becomes SYNCED during installation skips reduction submission
 - [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14` — a released chain-write read that fails after the runtime is torn down ends as the disposal outcome: no chain write, no detached error
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P17` — the reduce is sent as its own transaction and a failed adopt-only post is retried once, after which the chain holds the reduced fork
+- [x] `UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P18` — when the retry fails too there is no third attempt: the failure surfaces as a detached error, the reduce stays recorded and the chain keeps its fork

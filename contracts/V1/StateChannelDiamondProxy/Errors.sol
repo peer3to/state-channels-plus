@@ -6,6 +6,9 @@ error ErrorAtLeastTwoParticipantsRequired(uint256 participantCount);
 error ErrorTooManyParticipants(uint256 requested, uint256 maximum);
 error ErrorDuplicateParticipant(address participant);
 
+//State transition replay
+error ErrorStateTransitionFrameOutOfGas();
+
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted(
     bytes32 forkId, uint256 transactionCnt, address participant, bytes32 existingCommitment
@@ -107,6 +110,7 @@ error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 act
 
 //Race conditions
 error RaceConditionChannelAlreadyOpen(bytes32 channelId);
+error RaceConditionOpenChannelExpired(uint256 deadlineTimestamp, uint256 currentTimestamp);
 error RaceConditionBlockCalldataTimestampTooLate(uint256 maxTimestamp, uint256 currentTimestamp);
 error RaceConditionSnapshotForkMismatch(bytes32 currentForkId, bytes32 submittedForkId);
 error RaceConditionBlockHeightTooOld(uint256 currentBlockHeight, uint256 submittedBlockHeight);
@@ -135,9 +139,13 @@ error RaceConditionJoinChannelSnapshotMismatch(bytes32 currentSnapshotHash, byte
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );
-error RaceConditionForceInboundJoinForkDisputed(bytes32 channelId, bytes32 forkId);
+error RaceConditionSnapshotUpdateDisputedFork(bytes32 channelId, bytes32 forkId);
+error RaceConditionSnapshotUpdateNotLatestFork(bytes32 targetForkId, bytes32 latestForkId);
+error RaceConditionJoinChannelForkDisputed(bytes32 channelId, bytes32 forkId);
+error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
+error RaceConditionDisputeInboundNotLatest(
+    bytes32 latestInboundMessageBlockHash, bytes32 disputeInboundMessageBlockHash
+);
 error ErrorDisputeThrottled(address disputer, uint256 throttleExpiry, uint256 currentTimestamp);
 error ErrorDuplicateSelectorRegistration(bytes4 selector);
 error ErrorRouteTargetHasNoCode(bytes4 selector, address target);
-
-error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);

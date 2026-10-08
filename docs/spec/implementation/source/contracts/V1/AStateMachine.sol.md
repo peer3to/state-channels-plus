@@ -12,9 +12,9 @@
   Partial: Interface implemented; integrator conformance pending — Canonical field/collection ordering is application-defined and neither statically checked nor generically tested.
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
-- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
   Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
 - [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
@@ -46,6 +46,27 @@ Context injection and round trips
 - [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P5` — injected time field
 - [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P6` — injected position field
 - [ ] `UNIT-TEST-ASTATE-MACHINE-1-67J5W6.P7` — removeParticipant membership entry
+
+## UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF
+
+Transition runs only with its full budget
+
+- Setup: Restore a Math state, then call `stateTransition` directly with gas below the requirement, exactly `gasLimit`, exactly `getStateTransitionGasRequirement()`, and ample gas; on a cheap `add`, a never-finishing `burn`, a `guardedAdd` that catches an inner out-of-gas, a bare `revert()`, and a revert with a reason
+- Oracle: Below the requirement every transition reverts with `ErrorInsufficientGasForStateTransition` and state is unchanged; funded, `add` and `guardedAdd` change the sum by one, `burn` and a bare revert revert with "result length 0", and a reason is re-raised unchanged
+
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P1` — a transition that runs out of gas, called with less gas than its requirement, is refused with `ErrorInsufficientGasForStateTransition`
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P2` — a cheap transition called with less gas than its requirement is refused before it runs and changes no state
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P3` — a funded transition that runs out of gas within the full budget reverts with "result length 0"
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P4` — exactly `getStateTransitionGasRequirement()` attached runs the transition
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P5` — exactly `gasLimit` attached is refused (EIP-150 keeps 1/64 in the caller)
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P6` — a funded transition that catches an inner out-of-gas takes its full-budget branch
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P7` — a transition that catches an inner out-of-gas, under-funded, is refused
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P8` — a funded bare `revert()` (empty returndata) reverts with "result length 0"
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P9` — a funded transition's own revert reason is re-raised unchanged
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P11` — a transition that emits fewer messages than the previous one reports only its own messages, and `getOutboundMessages` returns only those
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P12` — for any call-input size up to 128 KiB and any attached gas around the requirement, a transition that runs is granted its full budget
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P13` — after a transition that left many outbound messages, with the machine's storage cold, a transition funded with only its requirement is refused with `ErrorInsufficientGasForStateTransition` (the deletion is not paid from the requirement), and funded for the deletion as well it runs on its full budget and reports no messages
+- [x] `UNIT-TEST-ASTATE-MACHINE-2-Z2XXMF.P14` — the same message-producing transition, run after no previous messages, after a few very long ones and after a few short ones (storage cold each time), returns the same messages and never spends more than on empty storage
 
 ## UNIT-TEST-SM-ASTATE-1-S1YSJG
 

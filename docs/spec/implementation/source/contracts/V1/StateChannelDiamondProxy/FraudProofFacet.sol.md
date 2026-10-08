@@ -7,6 +7,7 @@
 ## Requirements
 
 - [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
+  Contradicts: Two handlers return a valid verdict against an honest participant, so a proof that shows no misconduct appends to the slash set: the unlinked previous snapshot ([`FIND-SECURITY-2-J3J60V`](../../../../../audit/open-findings.md#find-security-2-j3j60v)) and the pruned genuine inbound block ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
 - [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
 - [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
 - [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
@@ -19,7 +20,6 @@
 - [`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../../../../../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
-- [`INV-SP-6-GNW74H` (Extending the proved anchor with unfinalized blocks is safe because signing is a)](../../../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
 - [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../../../../../specification/protocol-model/time.md#req-time-1-fm4651)
 - [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../../../../../specification/protocol-model/time.md#req-time-4-83v27z)
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)

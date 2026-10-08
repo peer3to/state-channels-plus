@@ -2,7 +2,11 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block } from "@/models";
-import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
+import {
+    BlockOrigin,
+    type BlockPredecessor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address, Bytes } from "@/types/types";
 import { difference, Logger } from "@/utils";
@@ -31,21 +35,39 @@ export default class BlockIngestService {
     /**
      * Struct adapter for callers that replay confirmations outside the queue
      * (dispute stateProof replay, spectate sync): wraps into a sourceless
-     * entry — those pipelines don't punish by transport.
+     * entry — those pipelines don't punish by transport. Dispute replay
+     * passes the `predecessor` the block is judged from.
      */
     public async onBlockConfirmationStruct(
         blockConfirmation: BlockConfirmationStruct,
         options?: {
             validationStrategy?: AValidationStrategy;
+            predecessor?: BlockPredecessor;
         }
     ): Promise<boolean> {
-        return this.onBlockConfirmation(
-            this.stateManager.storage.queues.createEntry(
-                Block.fromBlockConfirmation(blockConfirmation),
-                { origin: BlockOrigin.PROOF }
-            ),
-            options
-        );
+        // Same decoding as network intake: bytes that do not decode are
+        // refused through the strategy, like an inauthentic block.
+        const block = Block.tryFromBlockConfirmation(blockConfirmation);
+        if (!block) {
+            const strategy =
+                options?.validationStrategy ||
+                this.stateManager.getActiveValidationStrategy();
+            return this.rejectBlock(
+                strategy,
+                await strategy.authenticateBlockFailed(blockConfirmation),
+                "onBlockConfirmationStruct - block does not decode",
+                {
+                    block: LoggerUtils.getBlockConfirmationStructMetadata(
+                        blockConfirmation
+                    )
+                }
+            );
+        }
+        const entry = this.stateManager.storage.queues.createEntry(block, {
+            origin: BlockOrigin.PROOF
+        });
+        entry.predecessor = options?.predecessor;
+        return this.onBlockConfirmation(entry, options);
     }
 
     // Passes the block confirmation through a verification pipeline.
@@ -73,7 +95,8 @@ export default class BlockIngestService {
             await sm.mutex.lock({ taskName: "onBlockConfirmation" });
 
             strategy =
-                options?.validationStrategy || sm.getActiveValidationStrategy();
+                options?.validationStrategy ||
+                sm.getActiveValidationStrategy(entry.block);
             block = entry.block;
 
             // A fork transition can land while we wait for the mutex, so the
@@ -98,7 +121,8 @@ export default class BlockIngestService {
                 return keepConnection;
             }
 
-            if (sm.storage.blocks.getBlock(block.hash)) {
+            // a replayed block is re-judged from its predecessor even when stored
+            if (!entry.predecessor && sm.storage.blocks.getBlock(block.hash)) {
                 sm.blockQueueManager.scheduleStoredBlockConfirmationMerge(
                     entry,
                     strategy
@@ -109,12 +133,7 @@ export default class BlockIngestService {
             let validationResult: BlockValidationResult =
                 BlockValidationResult.SUCCESS;
 
-            const isAuthentic =
-                await sm.validationService.isBlockConfirmationAuthentic(
-                    block.blockConfirmationStruct
-                );
-
-            if (!isAuthentic) {
+            if (!block.isAuthentic) {
                 validationResult = await strategy.authenticateBlockFailed(
                     block.blockConfirmationStruct
                 );
@@ -138,6 +157,11 @@ export default class BlockIngestService {
                     validationResult
                 );
             }
+
+            // replay positions the state machine at the block's predecessor;
+            // live pipelines already hold it (blocks execute in order)
+            if (entry.predecessor)
+                await sm.diamondStateMachine.setState(entry.predecessor.state);
 
             validationResult =
                 await sm.validationService.validateBlockConfirmation(
@@ -172,6 +196,7 @@ export default class BlockIngestService {
 
             const coordinates = block.coordinates;
             const previousStateSnapshot =
+                entry.predecessor?.snapshot ??
                 sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow(
                     coordinates
                 );

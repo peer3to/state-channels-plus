@@ -135,6 +135,17 @@ Active fork eligibility
 - [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P1` — current fork before and after disposal
 - [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P2` — current and old forks after a real reduction
 
+## UNIT-TEST-STATE-MANAGER-7-YRC0N3
+
+Validation context selection
+
+- Setup: Judge work items with and without an on-chain posting timestamp as a committed participant and as a non-participant observer.
+- Oracle: The committed participant judges a chain-committed item in the chain-committed context and a gossip-only item in the live context; an observer judges either in the spectating context and escalates nothing.
+
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1` — participant, chain-committed item → chain-committed context
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P2` — non-participant observer, chain-committed item → spectating context, no escalation
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P3` — participant, gossip-only item → live context
+
 ## UNIT-TEST-SM-STATE-MANAGER-1-WKTVE3
 
 Transition pipeline atomicity

@@ -10,6 +10,7 @@
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+- [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
@@ -38,7 +39,7 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P14` — on-chain post-timing predicate alone
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15` — linked invalid-transition conflict class
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16` — wrong-genesis conflict class
-- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P17` — replayed-own-block double-sign conflict class
+- [ ] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P17` — replayed-own-block double-sign conflict class
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18` — unlinked unattributable conflict class
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19` — timestamp boundary without recoverable calldata
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P20` — author-membership predicate binds the author to the previous snapshot and to a coordinate-matched resulting snapshot
@@ -51,7 +52,12 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P27` — shared malformed confirmation punishes both actual suppliers
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P28` — duplicate malformed bytes use one charged slot and are removed once
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P29` — sourceless replay strips irrelevant malformed confirmations without transport punishment
-- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P30` — calldata strategy rejects the impossible confirmation-bearing shape
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P30` — calldata strategy strips a merged malformed confirmation as the live strategy does
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P31` — With installed next height 3 and pruned free height 1 lacking its predecessor, live validation returns NOT_READY through its strategy deviation hook, without disconnect, dispute or requeue
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P32` — With older history pruned but a different block retained at height 2 below next height 3, a conflicting unlinked arrival still reaches conflictingButNotLinkedBlockDetected and returns DISCONNECT without a dispute
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P33` — With older history pruned, an unlinked arrival at the actual next height reaches blockIsNotLinkedAndIsNotFirstBlock and returns DISCONNECT without a dispute
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P34` — Dispute-context validation at a pruned free height bypasses the live free-height drop and reaches its impossible nonzero-linkage guard, which throws
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

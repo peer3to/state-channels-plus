@@ -64,6 +64,25 @@ Negotiation admission and balance
 - [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P6` — blacklists zero remote opening balance and clears its unsigned attempt
 - [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P7` — losing the committed peer bars it from the lobby session and leaves its identity standing intact
 
+## UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA
+
+Opening-data hook and stale-attempt rule
+
+- Setup: Run a committed ordinary negotiation with a probe peer on each side of the address order, through the base service (default hook) and a root service that derives, fails, or holds `buildOpeningData`; cancel a held attempt with `dispose`, start a replacement with another peer, then settle the held hook
+- Oracle: The proposal or accepted data equals the hook result for the exact agreed terms in address order; a hook failure ends the attempt locally with no proposal, co-signature, strike or close; a late hook result or failure after cancellation leaves the replacement current with its channel, deadline and pending outcome, and the replacement opens while the old peer gets no signature and no penalty
+
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1` — lower role, default hook: proposes empty data, no deriving hook is called, the channel opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2` — higher role, default hook: accepts an empty-data proposal, no deriving hook is called, the channel opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P3` — lower role, deriving hook: one hook call with the exact agreed channel ID, participants and balances in address order, and the proposal carries its result
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P4` — higher role, deriving hook: one hook call with the exact agreed terms in address order, and a proposal carrying that data is co-signed and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P5` — lower role, hook fails: attempt and channel ID cleared, no proposal sent, retry outcome, no strike, blacklist or close
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6` — higher role, hook fails: the proposal is refused with "Opening data unavailable", nothing is co-signed, attempt and channel ID cleared, retry outcome, no penalty
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P7` — lower role, hook result arrives after cancellation: no proposal for the old attempt and the replacement stays current and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P8` — lower role, hook failure arrives after cancellation: the replacement stays current with its channel, deadline and pending outcome, and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P9` — higher role, hook result arrives after cancellation: the old proposal is answered without signing, the old channel never opens, the replacement stays current and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P10` — higher role, hook failure arrives after cancellation: the old proposal fails with "Opening data unavailable", the replacement stays current and opens
+- [x] `UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P11` — after a cancelled attempt's late failure the replacement opens with exactly the local and new peer, and the old peer gets no proposal, open, strike, blacklist or close
+
 ## UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73
 
 Await target-open classification

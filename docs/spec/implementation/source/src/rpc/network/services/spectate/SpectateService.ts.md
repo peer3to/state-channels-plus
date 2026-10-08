@@ -7,9 +7,13 @@
 ## Requirements
 
 - [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
+  Contradicts: The supplied genesis timestamp is still persisted; downstream impact needs recheck under the new trusted walk ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
+  Contradicts: `persistSyncPayload` still stores the responder's unchecked `disputeConfirmations`, and in some cases its `latestStateSnapshot`, for a window this sync did not reduce itself ([`FIND-SYNC-4-KGP4KF`](../../../../../../../audit/open-findings.md#find-sync-4-kgp4kf)).
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
-  Contradicts: Two divergences from the synchronization algorithm text, decided by no requirement: the requester aborts a stale proof only when the on-chain snapshot is strictly past the proved position (the text says "at or past"), and the responder serves the on-chain-tip-to-genesis outbound range only across forks. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM`](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
+  Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
+  Contradicts: a dispute committed after `generateSyncPayload` walked its tip fork makes a latest-mode request fail step 2.8.1 and blacklist the honest responder ([`FIND-SYNC-2-VV16K8`](../../../../../../../audit/open-findings.md#find-sync-2-vv16k8)).
+  Contradicts: a local reduction out-of-gas in `sync` is classified as invalid served evidence and blacklists the responder; reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
   Partial: [`DEF-10-199C7F`](../../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending).
@@ -18,6 +22,8 @@
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
+- [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
+  Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
 
@@ -38,20 +44,88 @@ Requester verification chain
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P10` — forged pre-genesis outbound blocks
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P11` — forged latest-fork outbound blocks
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P12` — participant peer-cut abort
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P23` — a sync request that fails by refusal or timeout records one strike on the selected peer and no verdict
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13` — same-fork proof remains adoptable when its exact target snapshot lands before validation
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P14` — height-too-old simulation with the exact target already on-chain and no pending reductions succeeds
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P15` — height-too-old simulation with a different on-chain snapshot fails
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P16` — exact target with pending reductions succeeds only when the reductions-only multicall simulates
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P17` — exact target with a failing pending reduction is rejected
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P18` — a second sync toward a peer with one in flight answers false without cutting the peer, while a probe that waits behind it runs once it settles
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P19` — ordinary pinned sync adopts a verified successor without an optional flag
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P20` — ordinary pinned sync refuses an unknown fork and preserves local fork identity
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P21` — concurrent proof verification does not treat a local simulated reduction as chain finality
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P22` — a chain reduction landing after window persistence cannot reject an honest proof
-- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P26` — an already-final chain window contributes no reduction input to snapshot simulation
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P23` — an already-final chain window contributes no local reduction input
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P24` — two source syncs share one local EVM; a second persist after the first reduction cannot reject either proof or blacklist either responder
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P25` — two identical supplied windows cause one finality multicall and reject with more than one unreduced window
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P25` — two identical supplied windows cause one finality multicall and reject with dispute window not linked
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27` — an unfinalized block whose bytes do not decode is refused by the pipeline: the sync rejects with "block confirmation rejected", never "block confirmation threw"
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P28` — a pinned proof whose fork is disputed after it was served is accepted, and the responder is neither rejected nor blacklisted
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P29` — a same-fork proof ending at the on-chain height with a different snapshot is rejected because it regresses the on-chain snapshot
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P30` — a milestone snapshot above the on-chain anchor that was altered is rejected as invalid milestones
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31` — a forged outbound block above the on-chain anchor is rejected as invalid latest-fork outbound blocks
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P33` — a proof whose milestones all start below the on-chain anchor behind a forged newer snapshot is rejected as invalid milestones and nothing is installed
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P34` — a same-fork proof whose threshold is the on-chain snapshot ahead of the fork genesis verifies with only the milestones and outbound blocks above it
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P35` — a same-fork proof ending below the on-chain height is rejected because it regresses the on-chain snapshot
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P36` — a first dispute window on a real fork of the channel other than the on-chain fork is rejected as dispute window not linked
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P37` — a second dispute window that does not start at the first window's reduced fork is rejected as dispute window not linked
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P38` — a single dispute window starting at the on-chain fork is accepted with no rejection
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P39` — a payload served while the chain was still on the window's fork and applied after the chain adopted the window's reduced fork: the adopted prefix is skipped, the sync is accepted with no rejection, and the responder is not blacklisted
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P40` — the same late payload with its chain-final window claiming a reduced fork the chain did not record: nothing is skipped and the sync is rejected as dispute window not linked
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P41` — An injected internal failure on the second sync-replay tail block throws, preserves the first replayed full state, stores no failed block, and does not blacklist the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42` — An unpinned latest request with missing local fork installation uses the chain-derived target, refuses without blacklisting the requester
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43` — An unpinned request to a responder on an old local fork installs the verified chain-derived successor without blacklisting either peer
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P44` — A participant sync accepts its local finalized tier without mirror or chain walks or responder penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P45` — After local-final proof verification succeeds, a forged latest-fork outbound block still fails the independent sync check
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the mirror proof walk and does not query the chain
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47` — A fresh requester missing a consumed top-up accepts canonical proof verification after the mirror returns false, with no penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; subsequent block replay rejects sync and blacklists the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor fallback after genesis-start verification fails
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P50` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain fallback without penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P51` — Undecodable retained last-block bytes return false at all three proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P52` — Local-final executor failure during sync throws with no later walk, proof-rejection reason or blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P53` — Mirror executor failure during fresh sync throws with no chain walk, installed head, proof rejection or blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P54` — Node RPC failure after mirror false during fresh sync throws without installing a head or penalizing the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P55` — A checked block signed by a real participant other than its author makes sync reject/blacklist without storing proof blocks
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P56` — An unrecoverable required confirmation makes sync reject/blacklist as invalid proof, without throwing or storing proof blocks
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P57` — Undecodable material inside a wholly skipped pre-anchor milestone does not prevent sync; planted historical block and snapshot are not stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P58` — Excess milestone snapshots make sync reject/blacklist and store neither proof blocks nor excess snapshots/states/change points
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P59` — Missing milestone snapshot makes sync reject/blacklist without storing proof blocks or change points
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P60` — Exact one-snapshot-per-milestone payload syncs successfully, stores the checked head, and reconstructs a chain-valid proof
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P61` — An empty genesis proof with zero snapshot entries syncs successfully and installs the genesis state with head remaining -1
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P62` — A participant missing unfinalized genesis-linked block zero syncs and replays it from genesis, reaches the same block and state, then authors onward; the progressed proof verifies on chain
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P63` — Two unfinalized participant changes remain inside the final milestone tail rather than starting milestones; a sync-only observer replays them, obtains the same state and participants, and reconstructs a verified proof
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P64` — A spectator with its own later finalized point accepts an earlier-start proof containing a newer unfinalized tail, preserves its finalized block, reaches the same latest state, and does not blacklist the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P65` — A spectator rejects and blacklists a responder serving a valid historical proof ending below its finalized point, preserving its current height and application-state hash
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P66` — A spectator rejects and blacklists an honest isolated spectator whose own proof ends below the requester final point; requester head remains unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P67` — A spectator rejects and blacklists an honest same-key restarted responder whose resynced but later isolated proof is older; the requester preserves its final block and application-state hash
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P68` — When the chain anchor advances into an in-flight proof range, sync succeeds without blacklisting, persists the anchor block and newer state while omitting below-anchor history, and rebuilds an anchor-start proof that synchronizes a fresh spectator
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P69` — A tail block also used as earlier-change support is replayed during real observer sync; every tail block hash and latest application-state hash match the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P70` — A forged transition in a repeated tail block passes proof persistence but is executed during tail replay; a fresh spectator reaches SYNCED then returns to OPENED and closes, while the honest responder proof remains valid
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P71` — Applying the same anchor-rooted proof twice while its head is locally final accepts both, performs no second state install or replay, and preserves exact stored block hashes/signers and state hash
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P72` — Applying an older proof then a newer final proof accepts both and installs the new state while preserving older-only block hashes/signers and storing newer proof block hashes
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P73` — After installing the anchor state, receiving a valid run with earlier genuine supplied state still accepts and replays using held state to reach the responder tip without blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P74` — Receiving a proof rooted before a newly adopted anchor retains the observed anchor and suffix, and reconstructs a chain-valid proof whose material starts no earlier than that anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P75` — Syncing past an unposted finalized departure stores its participant-change point and reconstructs a valid multi-milestone proof including the departure hop
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P76` — After a first sync, a newer proof verifies from private finality without another mirror-anchor or chain walk, while reconstruction still starts at the original mirrored anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P77` — Applying known proof data twice then new data produces state-install counts 1/0/1, zero replay on repetition, preserves earlier block hashes, and yields the new state and a chain-valid reconstruction
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P78` — A synced unfinalized tail persists both replayed blocks, their snapshots and full states and advances the active head through the tail
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P79` — A wholly pre-anchor milestone with forged participant snapshot is skipped without storing its block/snapshot/change point; retained proof syncs and reconstructs from the anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P80` — A forged participant-change prefix inside an anchor-containing run is clipped; its block/snapshot/change point is absent while retained suffix syncs and reconstructs from the anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P81` — A later support block retains the signature needed for virtual finality, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P82` — Verified support evidence outside replay is stored as a block with its signatures but does not cause its resulting snapshot or full state to be stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P83` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction ending at the merged block proves it final as a one-block milestone
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P84` — A threshold hop above the anchor syncs without contiguous gap history; those gap heights remain absent and reconstruction verifies from the anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P85` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while stored original support evidence remains unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously stored support blocks remain
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P87` — After installing a newer finalized proof, an older valid payload is rejected as below local finality, blacklists the responder and leaves the active head unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P88` — An overlapping occurrence with different authenticated contents at the same height/author is rejected as invalid milestones, blacklists its responder and stores none of the inspected proof blocks
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P89` — When requester latest height equals the served finalized replay base, sync reuses its state without unsafeSetLatestState, reaches the tip and matches responder state without blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P90` — When requester latest height is one below the served finalized replay base, sync installs the base, reaches the tip and matches responder state without blacklist
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P91` — An unpinned latest-state sync served while responder successor installation is held moves the requester off the source fork and blacklists neither side
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P92` — sync persists only the checked region when the chain anchor advances across malformed skipped history
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P93` — a chain-final window the chain has not adopted, whose inbound list carries an extra fabricated successor: the sync is accepted, none of the listed inbound blocks is stored, and the requester's inbound head is unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P94` — a window the requester reduces locally during the sync: the sync is accepted and exactly the served inbound blocks are stored, with the inbound head on the last one
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P95` — the P93 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted, none of the listed inbound blocks is stored, and the inbound head is unchanged
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P96` — the P93 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond after this sync persisted the window and before it reduces: both syncs are accepted, only the genuine inbound blocks are stored, and the inbound head is on the last genuine block
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97` — a window the requester reduces locally during the sync whose inbound list carries an extra fabricated successor: the local reduction reverts, the sync is rejected as a served reduction that reverts, no listed inbound block is stored, the inbound head is unchanged, and the local window stays unreduced
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P98` — an unreduced window at the on-chain fork whose disputes name a fork without a dispute window, claiming a fabricated reduced fork with a self-consistent genesis: the sync is rejected as a dispute window mismatch, the responder is blacklisted, the requester stays on its fork, the local window stays unreduced, and no inbound block is stored
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P99` — the P98 payload when its disputes name the window's fork under a channel without a dispute window: the sync is rejected as a dispute window mismatch, the responder is blacklisted, the requester stays on its fork, the local window stays unreduced, and no inbound block is stored
+- [ ] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P100` — a chain-final window the chain has not adopted, followed by a window the requester reduces during the sync: the sync is accepted, none of the first window's listed inbound blocks is stored, the second window's served inbound blocks are stored, and the inbound head is on the second window's last block. Owed: no test yet, blocked on harness staging of two linked dispute windows
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

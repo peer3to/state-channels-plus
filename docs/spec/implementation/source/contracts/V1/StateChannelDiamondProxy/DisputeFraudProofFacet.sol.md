@@ -9,8 +9,11 @@
 - [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
 - [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
-- [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
+- [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+  Partial: The posted block's author signature is not verified ([`FIND-TIMEOUT-2-J7S0TS`](../../../../../audit/open-findings.md#find-timeout-2-j7s0ts)).
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
@@ -26,12 +29,12 @@ Kill application
 - Oracle: Valid kills remove + slash; invalid self-slash; closed windows revert; killed disputes skipped
 
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P1` — DisputeNotLatestState family
-- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P2` — kill accepted at open window edge
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P2` — kill accepted at open window edge
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P3` — already-killed skip
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4` — self-slash branch
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P5` — timeout predicate parity with auditor preflight
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P6` — DisputeInvalidOutputState family
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P7` — DisputeInvalidStateProof family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P7` — DisputeInvalidStateProof family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P8` — DisputeInvalidBalanceInvariant family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P9` — DisputeOnChainSlashesNotSubset family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P10` — TimeoutThreshold family
@@ -42,9 +45,9 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P15` — DisputeInvalidBlockInStateProofApplyFraudProof family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P16` — DisputeLastMilestoneNotFinalAndNoAuditingData family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P17` — InvalidDisputeReason family
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P18` — DisputeStateProofHeaderMismatch family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P18` — DisputeStateProofHeaderMismatch family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P19` — DisputeInboundHashNotInChain family
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P20` — DisputeInvalidBlockStructure family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P20` — DisputeInvalidBlockStructure family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P21` — DisputeBlockAuthorNotParticipant family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P22` — kill reverts after window closes
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P23` — a DisputeOnChainSlashesNotSubset proof whose listed slashes are all recorded on chain reverts `RaceConditionOnChainSlashes` naming both address arrays, not their sizes
@@ -52,3 +55,181 @@ Kill application
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P25` — a TimeoutTooEarly proof that denies an on-chain timestamp for a previous block whose calldata is posted reverts `RaceConditionUnexpectedBlockCalldataPosted` naming that block's fork, height, author and stored commitment
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P26` — the same undatable genesis reached through `validateTimeoutCalldataPostedProof` reverts `RaceConditionGenesisTimestampNotAvailable` naming channel, origin fork and target fork
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P27` — `validateTimeoutCalldataPostedProof` with a posted previous block and no claimed timestamp for it reverts `RaceConditionUnexpectedBlockCalldataPosted` naming the previous block's fork, height, author and stored commitment rather than the timed-out block's
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P28` — a member slashed before the dispute window opened stays expected at construction (no window) and at proof time (window open) unless the dispute lists it
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P29` — a JOIN or top-up recorded above the dispute anchor, with the open block pruned, leaves the expected set unchanged before and after its adoption
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P30` — a JOIN at or below the anchor stays expected before and after its consumption
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P31` — a slash landing after the dispute window opened that the dispute does not list cannot flip a non-final verdict to final; the committed slash list decides
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P32` — DisputeInvalidStateProof without calldata judges the proof against the chain set and kills the disputer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P33` — a last-milestone proof against an unchanged set slashes the submitter and leaves the dispute committed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P34` — a `TimeoutCalldataPosted` proof whose latest state snapshot is not linked to the dispute's latest proved state is invalid and slashes its submitter, although its block replays successfully on that snapshot
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P35` — a `TimeoutCalldataPosted` proof whose replayed machine state does not hash to the linked snapshot's state hash is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P36` — a `TimeoutCalldataPosted` proof whose posted block's `previousBlockHash` is not the latest proved block (or genesis snapshot) is invalid and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P37` — a `TimeoutCalldataPosted` proof whose posted block links to the hash of the latest proved block's signed bytes kills the timeout even when those bytes are a non-canonical encoding of the block
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P38` — Different snapshot at exactly the proved final height kills the dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P39` — The same snapshot at the final height does not establish conflict
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P40` — A block above the proved final height does not establish conflict
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P41` — An invalid supporting final proof cannot kill a dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P42` — Fork genesis is not a block final point for the conflict counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P43` — A pointed block in wholly skipped history cannot establish conflict
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P44` — A real final state on another fork cannot establish conflict
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P45` — A block before the retained anchor within its run cannot establish conflict
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P46` — A final proof containing the anchor establishes its final state and kills a conflicting anchor-height block
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P47` — A conflicting first block of a later milestone can be countered at the proved final height
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P48` — After the chain anchor advances beyond an old final proof, its final start can establish conflict at the newer anchor
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P49` — Finality above the timeout height kills the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P50` — Finality exactly at the timeout height kills the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P51` — A same-fork chain anchor above the timeout height suffices with an empty supporting proof
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P52` — Finality below the timeout height cannot kill it
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P53` — Missing required hop signatures cannot establish timeout-superseding finality
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P54` — A dispute without a timeout is not killed by timeout supersession
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P55` — Fork genesis does not establish a block final point at the timeout height
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P56` — A higher anchor on another fork cannot supersede the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P57` — A same-fork anchor exactly at the timeout height supersedes it
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P58` — A real supporting final state on another fork cannot supersede the timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P59` — Missing hop threshold is countered through the milestone pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P60` — A hop consuming an inbound run absent on chain is countered at that step
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P61` — A posted snapshot not committed by its block is a counterable step fault
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P62` — An undecodable retained block is countered through its block pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P63` — A broken retained link is countered through its block pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P64` — A retained block on another fork is countered through its block pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P65` — A retained block for another channel is countered through its block pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P66` — A wrong author signature is countered through the pointed block
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P67` — An unrecoverable confirmation signature is countered through the pointed block
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P68` — Pointing at a valid block cannot prove a different broken link in its run
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P69` — A broken link below the anchor cannot establish a retained step fault
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P70` — A matching anchor first in the last milestone permits auditing-data omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P71` — A matching anchor inside the last milestone permits auditing-data omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P72` — A matching anchor last in the last milestone permits auditing-data omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P73` — Everyone-final evidence without pending joiners permits omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P74` — Everyone-final evidence including pending joiners permits omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P75` — Omission without a required pending signature is killed by the availability counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P76` — An anchor in an earlier milestone alone does not permit omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P77` — Omission satisfying neither availability alternative is killed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P78` — Posted auditing data is not killed by the omission counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P79` — A later slash does not retroactively permit auditing-data omission
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P80` — A milestone wholly below the anchor after a kept run is a pointed step fault; the counter removes the dispute and slashes its submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P81` — Pointing at the valid first run of a proof with a later skipped-after-kept fault preserves the dispute and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P82` — A posted anchor-run block committing another snapshot is a pointed milestone fault that kills the dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P83` — A genesis-zero run with the wrong genesis predecessor is killed through its milestone pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P84` — A later milestone whose starting height is below the previous kept milestone is killed at that step
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P85` — An honest posted single-hop proof rejects the step counter, keeps its commitment and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P86` — Genuine previous and resulting snapshots prove a missing-leaver-signature fault at the middle hop and kill its dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P87` — A substituted previous snapshot adding a required signer cannot invalidate an honest middle hop; the challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P88` — A posted hop that consumes a JOIN without its joiner signature is killed using its genuine committed snapshot
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P89` — A substituted resulting snapshot claiming consumption of a later JOIN cannot invalidate the honest hop
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P90` — A substituted previous snapshot widening the consumed inbound interval cannot create a missing-joiner-signature fault
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P91` — The hop after a run containing the anchor in its middle starts from that anchor set; missing its leaver signature kills at the later hop
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P92` — A hop after a wholly skipped milestone with junk first-block bytes is checked from the anchor and killed for missing threshold
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P93` — A block pointer into a wholly skipped milestone rejects without killing an otherwise valid retained proof
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P94` — A block pointer past its milestone rejects without reverting, retaining the dispute and slashing its challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P95` — A block pointer to a broken link in the second milestone kills with its genuine previous snapshot
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P96` — A substituted previous snapshot rejects a block-step challenge even though the pointed middle run has a real broken link
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P97` — An authenticated invalid step kills an omitted-data dispute even when the missing-data counter also applies
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P98` — Excess snapshot entries in committed auditing data are killed through the step counter despite an otherwise honest hop
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P99` — Challenger-supplied genesis data belonging to the ancestor fork cannot establish a fault in a dated successor-fork proof
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P100` — A successor genesis without its required origin-window date is a fault at the first step and kills the dispute
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P101` — A posted hop consuming a JOIN while omitting the joiner from its resulting set is killed at that hop without predecessor application-state evidence
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P102` — The valid later hop after a faulty join-consumption hop rejects a step challenge aimed at that later hop
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P103` — A posted hop listing the joiner but missing its signature is killed at the join hop
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P104` — A genuine joiner-authored block spliced with a foreign predecessor is killed through the join hop block pointer
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P105` — A correctly linked joiner-authored support block makes the join hop valid; full chain walk succeeds and its step counter is rejected
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P106` — Increasing prior honest hops from eight to thirty-two adds less counter gas than the stated fraction of a full-walk comparison, while both pointed challenges kill their disputes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P107` — A strictly higher same-fork anchor kills a dispute ending below it without supplied signature evidence
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P108` — An anchor at the same numeric height as a non-genesis dispute tip cannot kill by the below-anchor counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P109` — An anchor below a non-genesis dispute tip cannot kill by the below-anchor counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P110` — A higher anchor on another fork cannot kill by the same-fork below-anchor counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P111` — A genesis chain snapshot does not kill an empty genesis claim by the below-anchor counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P112` — A block-zero resulting anchor kills an empty genesis claim despite equal numeric height zero
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P113` — A later same-fork anchor kills an empty genesis claim
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P114` — The chain anchor alone kills an older dispute by a submitter who supplied no signatures on the newer anchor
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P115` — A real structural link fault at the matching anchor boundary cannot kill through the block-structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P116` — With the anchor inside the run, last-milestone index two still names block 52 and a structural fault there kills
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P117` — With the anchor at the run start, last-milestone index two still names block 52 and a structural fault there kills
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P118` — An invalid author signature on unfinalized genesis-linked block zero kills through the structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P119` — An actual timestamp fault in an earlier milestone cannot be challenged by a pointer outside the last milestone; the challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P120` — Advancing the chain anchor past a previously eligible faulty block makes its block-structure challenge reject
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P121` — An invalid author signature at anchor-final block zero does not kill through the structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P122` — An invalid author signature at genesis-linked threshold-zero position kills through the structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P123` — An invalid author signature at a nonzero last milestone first block does not kill through the structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P124` — A broken link in the last-milestone tail kills through the structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P125` — An outsider author at anchor-final block zero does not kill through the author-membership counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P126` — An outsider author at threshold-final genesis zero kills through the author-membership counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P127` — An outsider author at a nonzero last-milestone first block does not kill through the author-membership counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P128` — An outsider author in the last-milestone tail kills through the author-membership counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P129` — A proven invalid timestamp at anchor-final block zero does not kill through the wrapped-block counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P130` — A proven invalid timestamp at threshold-final genesis zero kills through the wrapped-block counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P131` — A proven invalid timestamp at a nonzero last-milestone first block does not kill through the wrapped-block counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P132` — A proven invalid timestamp in the last-milestone tail kills through the wrapped-block counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P133` — A foreign-fork header at the nonzero first block of the last milestone does not kill through the header-mismatch counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P134` — A foreign-fork header in the last-milestone tail kills through the header-mismatch counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P135` — A foreign-fork header at anchor-final zero does not kill through the header-mismatch counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P136` — A foreign-fork header at genesis-linked zero kills through the header-mismatch counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P137` — A real structural fault below the matching anchor does not kill through the block-structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P138` — A real structural fault after the matching anchor kills through the block-structure counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P139` — A foreign-fork prefix block below the matching anchor leaves the retained walk valid and does not kill through header mismatch
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P140` — A structural fault in the retained last run after a wholly skipped milestone is killed using its unchanged last-run index
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P141` — A foreign-fork header after the matching anchor kills through the header-mismatch counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P142` — Extra full signature evidence on an eligible faulty tail block does not protect it; the wrapped counter kills and slashes the dispute submitter while leaving its different issuer unslashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P143` — An eligible but structurally correct block does not establish an offense; its counter preserves the dispute and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P144` — Without a matching anchor in the last run, a missing current participant signature makes omission ineligible
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P145` — Without a matching anchor in the last run, a missing pending participant signature makes omission ineligible
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P146` — A slash listed in the dispute removes that signer from required-everyone omission finality; the omission counter leaves the dispute and its submitter standing
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P147` — An already recorded slash omitted from the dispute list keeps that signer required; insufficient evidence is killed by the availability counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P148` — A falsely listed slash can permit the omission predicate but is independently killed through the slash-subset counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P149` — An ancestor-fork anchor cannot permit data omission for a successor run lacking everyone signatures; the availability counter kills
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P150` — A successor-fork run lacking a matching anchor may still omit data when everyone required signed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P151` — An omitted-data anchor run with a broken retained link is killed through its pointed block step
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P152` — An omitted-data dispute claiming a snapshot different from its latest proof block is killed through a milestone step
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P153` — A valid omitted-data anchor run rejects the step counter and slashes its challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P154` — Permitted omission under last-run everyone signatures does not protect an earlier hop missing a required signature; the pointed counter kills
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P155` — A forged resulting snapshot that adds an unsigned participant cannot invalidate an honest hop; the challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P156` — A substituted resulting snapshot cannot establish a real invalid hop's offense; the step counter rejects the unauthenticated evidence
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P157` — A milestone pointer past the final milestone cannot establish the invalid hop's offense and is rejected
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P158` — An authenticated departure after a consumed JOIN remains a valid proof even though the joiner is absent at the final point; its departure-step challenge rejects
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P159` — A hop consuming a join that the joiner signed rejects an invalid-step accusation
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P160` — A correctly signed rejoin hop verifies and rejects an invalid-step accusation
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P161` — Valid latest-state balance with omitted auditing data rejects the balance counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P162` — Invalid latest-state balance with omitted auditing data kills through the balance counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P163` — Valid latest-state balance with posted auditing data rejects the balance counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P164` — Invalid latest-state balance with posted auditing data kills through the balance counter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P165` — A passing finalized-state balance does not excuse failing latest-state balance; the balance counter kills
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P166` — A failing finalized-state balance does not invalidate a passing latest-state balance; the balance counter rejects
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P167` — Supplying an earlier failing finalized state instead of the latest dispute state cannot establish the balance offense
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P168` — A supporting final-proof envelope naming a different fork cannot establish conflict with this dispute; it retains the dispute and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P169` — A pointed dispute block naming a different fork cannot establish same-fork final-state conflict; the conflict counter retains the dispute and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P170` — A final-proof envelope naming a different fork cannot supersede the timeout; the counter retains the dispute and slashes the challenger
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P171` — A departed but chain-eligible submitter's false timeout is killed by qualifying timely posted calldata from the accused author at the accused height; submitter is slashed and accused remains standing
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P172` — Posted calldata after the timeout window cannot refute a departed submitter's timeout; the dispute stays and unsupported challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P173` — Posted calldata by another author at the timeout height cannot refute the timeout; the dispute stays and challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P174` — The accused author's posted calldata at another height cannot refute the timeout; the dispute stays and challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P175` — A posted block whose transition fails from the departure state cannot refute the timeout; the dispute stays and challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P176` — After block zero finalizes and its snapshot is posted, upload of a previously built empty-genesis claim produces auditor below-anchor counters, a chain kill and exactly the submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P177` — A mirror kept at genesis still produces the below-anchor counter after block-zero snapshot adoption, and the stale genesis claim is killed with only its submitter slashed while the other auditor kill is suppressed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P178` — A pending joiner admitted after anchor posting disputes below that anchor without having authored or confirmed it; auditors store below-anchor counters, the chain kills and only the joiner is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P179` — A correct last run spanning before, at and after its interior anchor produces no stored auditor counters or kill events through kill expiry and no on-chain slashes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P180` — Forging block zero below the anchor leaves a real broken link below the cutoff; manual structure, transition and author challenges do not kill, honest auditors store no counters through kill expiry, and only the challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P181` — Forging a prefix block breaks the anchor predecessor link, but both prefix and anchor positions remain protected; batched manual challenges produce no kill through expiry and only the challenger slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P182` — An invalid transition appended after an interior anchor produces an auditor wrapped-block counter at unchanged last-run index five, a chain kill and only the submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P183` — A retained appended block signed by a different key than its named author produces an auditor structure counter at index five, a chain kill and only the dispute submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P184` — An appended outsider-authored block after the anchor produces an auditor author-membership counter at index five, a chain kill and only the submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P185` — A foreign-fork header in the retained last-run tail produces auditor header-mismatch counters, a chain kill and only the submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P186` — A manual structure challenge at the last-run length cannot kill a correct dispute; honest auditors store no counters through expiry and only the challenger is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P187` — With genesis still the chain anchor, an unfinalized block-zero run posting auditing data and carrying a replaced author signature produces structure counters, a chain kill and only the submitter slash
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P188` — A correct unfinalized genesis-zero run produces no auditor counter or kill through kill expiry and nobody is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P189` — A forged genesis-zero transaction re-signed by all participants remains eligible at index zero: an out-of-range challenge first fails and slashes its challenger, then a manual transition counter kills and slashes the submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P190` — A correct threshold-final genesis-zero run produces no auditor counter or kill through kill expiry and nobody is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P191` — After block-zero snapshot adoption, a forged block-zero body at the protected anchor position is ineligible; no auditor counter or kill occurs through expiry and nobody is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P192` — A faulty tail block issued by a participant other than its dispute submitter produces wrapped-block counters and a chain kill, and the eventual exact chain slash set contains both issuer and submitter
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P193` — An invalid tail block issued by another participant and carrying every participant signature still produces wrapped-block counters, a chain kill and exactly the issuer and submitter slashes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P194` — A correct tail block issued by another participant with every participant signature produces no auditor counter or kill through expiry and no slashes
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P195` — A pending auditor lacking the anchor application state kills a colluding omitted-data fork using its own final proof; decoded kill event names that auditor and only the conflict family, exact-height chain verification proves a different snapshot, and only submitter is slashed
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P196` — An off-chain leaver kept chain-eligible falsely times out the next author after that block obtains direct required signatures excluding the leaver; an auditor stores TimeoutThreshold, the claim is killed, and executed reduction excludes her, slashes only her, clears timeout and keeps the accused
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P197` — A chain-eligible leaver falsely times out an accused block below threshold but posted as timely calldata; auditors store TimeoutCalldataPosted, the forced claim is killed, and executed reduction excludes/slashes the leaver while clearing timeout and keeping accused
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P198` — A chain-eligible leaver's honest timeout of an author that produced nothing survives without counters or kills; no one is slashed and executed reduction retains her dispute and the accused timeout
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P199` — A fresh pending auditor with finality at or above the wrong-author timeout target, no departure state and no accused calldata exclusively kills with TimeoutSupersededByFinalState; reduction clears the false timeout, slashes/excludes leaver and keeps accused, without acquiring old state
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P200` — Below-target finality, a foreign-fork proof envelope and stripped confirmation evidence each return false for timeout supersession; their submitted batch produces no kill and slashes its challenger, then genuine final evidence kills with the expected family and slashes the leaver
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P201` — Apply an omitted-data step counter with the same earlier threshold fault and 8 versus 32 blocks in an unrelated final run. Both disputes are killed; apply-cost growth is less than half the measured signature/link-walk growth
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P202` — An omitted-data dispute with a missing threshold is killed by its authenticated invalid-step proof even when the missing-data counter also applies
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P203` — a failing proof that declares the zero target, submitted by a non-participant, leaves a valid committed dispute committed and slashes nobody
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P204` — for every proof family with a well-formed failing payload, a zero declared target submitted by a non-participant never kills a valid committed dispute or records a slash; the slash-subset family reverts `RaceConditionOnChainSlashes`
+- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P205` — a zero-target failing proof from an eligible submitter slashes the submitter and keeps the dispute committed

@@ -36,7 +36,6 @@ Consequence profile
 - [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P15` — blockForkIsDisputed hook
 - [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P16` — blockIsNotNextAndIsInTheFuture hook
 - [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P17` — blockIsNotLinkedAndIsNotFirstBlock hook
-- [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P18` — prepareStateMachineForLeaderCheck hook
 - [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P19` — objectiveInvalidTimestampDetected hook
 - [ ] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P20` — subjectiveInvalidTimestampDetected hook
 - [x] `UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P21` — observer replay of a real double sign aborts without fraud evidence or a dispute request

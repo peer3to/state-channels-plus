@@ -22,7 +22,7 @@ Family packaging
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P5` — invalid-block-in-state-proof family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P6` — inbound-hash-not-in-chain family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P7` — slashes-not-subset family
-- [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P8` — balance-invariant family
+- [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P8` — balance-invariant family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P9` — not-latest-state family
 - [x] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P10` — invalid-output-state family
 - [ ] `UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P11` — block-author-not-participant family

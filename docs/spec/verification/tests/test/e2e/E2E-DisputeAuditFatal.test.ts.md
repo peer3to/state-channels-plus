@@ -1,0 +1,17 @@
+# E2E-DisputeAuditFatal.test.ts — Test report
+
+> **Test file:** [test/e2e/E2E-DisputeAuditFatal.test.ts](../../../../../../test/e2e/E2E-DisputeAuditFatal.test.ts) > **Status:** Authored; engineer verification pending.
+
+## Overview
+
+Injects execution and data-access failures into real dispute audits. Checks that failures surface as fatal errors rather than false proof verdicts or fabricated counters.
+
+Required-state deletion uses the stub control service; required snapshot deletion also retains its genesis guard.
+
+## Tests and covered test IDs
+
+| Test declaration                                                                                                                                                                                                                                                                                    | Covers                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: fatal dispute audits > E21: a verification read that throws during a live audit is fatal: no fraud proof, no kill, no dispute, and no fallback to the chain read`](../../../../../../test/e2e/E2E-DisputeAuditFatal.test.ts#L23) (line 23)                                                   | [`REQ-SP-9-RNXP56.T5.P7`](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t5.p7), [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P58`](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |
+| [`E2E: fatal dispute audits > E21: an auditor missing the full finalized state its replay starts from is fatal: no fallback to a weaker check, no fraud proof, no kill, no dispute`](../../../../../../test/e2e/E2E-DisputeAuditFatal.test.ts#L72) (line 72)                                        | [`REQ-SP-9-RNXP56.T5.P8`](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t5.p8), [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P59`](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |
+| [`E2E: fatal dispute audits > E21: an auditor that cannot build the on-chain evidence for a proof it cannot verify (a milestone snapshot it must hold is missing) is fatal: no unsupported counter, no kill, no dispute`](../../../../../../test/e2e/E2E-DisputeAuditFatal.test.ts#L133) (line 133) | [`REQ-SP-9-RNXP56.T5.P9`](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t5.p9), [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P60`](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |

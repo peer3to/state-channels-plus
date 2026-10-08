@@ -1,8 +1,12 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
+import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
+import type DisputeManager from "@/disputeManager/DisputeManager";
 import type P2PManager from "@/P2PManager";
+import type PeerProfile from "@/PeerProfile";
+import type { BannablePeerInfo } from "@/PeerProfile";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type LobbyMatchingRpcMethods from "@/rpc/network/services/lobbyMatching/LobbyMatchingRpcMethods";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
@@ -12,9 +16,17 @@ import type {
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
-import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
+import { deserializeRpcFrame } from "@/rpc/Rpc";
+import type StateManager from "@/stateManager/StateManager";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, ForkId, Hash } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -31,7 +43,13 @@ import type {
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { hexlify, resolveAddress } from "ethers";
+import {
+    type ContractTransactionResponse,
+    hexlify,
+    JsonRpcApiProvider,
+    resolveAddress,
+    type TransactionRequest
+} from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
 
@@ -42,6 +60,7 @@ export type BlockWorkHoldPoint =
     | "authoring"
     | "commit"
     | "signature"
+    | "confirmation"
     | "confirmationValidation"
     | "proofConfirmationValidation"
     | "storedMerge"
@@ -59,12 +78,18 @@ type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
+    | "proofWalkHold"
+    | "auditingDataBuild"
+    | "disputeKillMulticall"
     | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
+    | "adoptionPostFailure"
     | "expiredCalldataPost"
     | "broadcast"
     | "calldataPosting"
+    | "undecodableUnfinalizedBlock"
+    | "invalidBlockStructurePredicate"
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
@@ -81,6 +106,7 @@ export type StubKey =
     | "stateManagerAbort"
     | "snapshotUpdatedEvents"
     | "inboundMessageEvents"
+    | "inboundMessageStorage"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
@@ -96,6 +122,8 @@ export type StubKey =
     | "constructDisputeEntry"
     | "disputeSubmissions"
     | "disputeFraudProofApplies"
+    | "replayGasEstimates"
+    | "replayGasReads"
     | "disputeKill"
     | "timeoutCheck"
     | "scheduledTasks"
@@ -231,7 +259,48 @@ export type RecordedDisputeSubmission = {
     gasLimit: string | null;
     /** Set once `dispute()` awaited the returned transaction. */
     waited: boolean;
+    /** Custom error a forwarded send or its `wait()` reverted with, or null. */
+    revert: RecordedRevert | null;
 };
+
+/** A decoded custom-error revert: its name and its arguments as strings. */
+export type RecordedRevert = { name: string; args: string[] };
+
+function recordedRevert(error: unknown): RecordedRevert | null {
+    const decoded = tryDecodeCustomError(error);
+    return (
+        decoded && {
+            name: decoded.name,
+            args: decoded.errorDescription.args.map(String)
+        }
+    );
+}
+
+/**
+ * The error that carries the revert data of a failed `wait()`. A mined revert
+ * carries none: replay the same call on the state it was mined on.
+ */
+async function withRevertData(
+    tx: ContractTransactionResponse,
+    error: unknown
+): Promise<unknown> {
+    if (tryDecodeCustomError(error)) return error;
+    const blockNumber = (error as { receipt?: { blockNumber?: number } })
+        .receipt?.blockNumber;
+    if (!blockNumber) return error;
+    try {
+        await tx.provider.call({
+            from: tx.from,
+            to: tx.to,
+            data: tx.data,
+            value: tx.value,
+            blockTag: blockNumber - 1
+        });
+    } catch (replayError) {
+        return replayError;
+    }
+    return error;
+}
 
 export type DisputeSubmissionFailureSpec = {
     /** Solidity custom error to revert with (its selector is the revert data). */
@@ -269,13 +338,45 @@ export type HeldOnChainSlashesQueryState = {
 export type RecordedFraudProofApply = {
     /** Participants named by the applied dispute fraud proofs. */
     participants: string[];
+    /** `gasLimit` override sent with the transaction, or null. */
+    gasLimit: string | null;
     /** Failure message from the send or from `wait()`, or null when it landed. */
     error: string | null;
-    /** Custom-error name decoded from that failure, when there was one. */
+    /**
+     * Custom-error name decoded from that failure, when there was one; for a
+     * mined revert, from the replay of the same call.
+     */
     customError: string | null;
     /** Set once `killDispute` awaited the returned transaction. */
     waited: boolean;
 };
+
+/** Manager methods whose sends carry a fraud-proof replay. */
+export type ReplayGasEstimateMethod = "multicall" | "applyDisputeFraudProofs";
+
+/** One chain-signer estimate taken by the replay-gas estimate probe. */
+export type RecordedGasEstimate = {
+    /** Manager method the estimated transaction calls. */
+    method: ReplayGasEstimateMethod;
+    /** The signer's real estimate (its headroom included), decimal. */
+    estimate: string;
+    /** What the probe answered the caller, decimal. */
+    answer: string;
+};
+
+/** One `getStateTransitionReplayGas` read seen by the read probe. */
+export type RecordedReplayGasRead = {
+    outcome: "pending" | "resolved" | "rejected";
+    /** The manager's answer, decimal, once resolved. */
+    replayGas: string | null;
+};
+
+/** Message of the internal error `failBlockReplayAt` throws. */
+export const BLOCK_REPLAY_FAULT_MESSAGE = "stubbed block replay failure";
+
+/** Message of the read failure the replay-gas read probe injects. */
+export const REPLAY_GAS_READ_STUB_FAILURE =
+    "stubbed getStateTransitionReplayGas failure";
 
 export type PausedConstructDisputeStatus = {
     /** Calls parked at the held boundary so far. */
@@ -295,6 +396,13 @@ export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
 export type ChainLogQuerySpan = {
     fromBlock: number | null;
     toBlock: number | null;
+};
+
+/** One recorded double-signature handler log entry. */
+export type DoubleSignatureLogEntry = {
+    level: "debug" | "warn" | "error";
+    message: string;
+    metadata: Record<string, string>;
 };
 
 /**
@@ -333,6 +441,13 @@ export class StubService extends ANetworkRpcService<
     }[] = [];
     private blockWorkRelease?: () => void;
     private blockWorkRestore?: () => void;
+    // Double-signature handler log entries recorded while forwarding them.
+    private doubleSignatureLogObservation?: {
+        entries: DoubleSignatureLogEntry[];
+        restore: () => void;
+    };
+    // Restores the real blacklist write after an injected failure.
+    private restoreBlacklistWrite?: () => void;
     private disputeParticipationObservation?: {
         attempts: number;
         warnings: number;
@@ -375,6 +490,10 @@ export class StubService extends ANetworkRpcService<
     capturedInitHandshakeTransport?: NetworkTransport;
     /** Opening submissions parked by the hold stub, released together. */
     heldOpeningSubmissions: (() => void)[] = [];
+    /** Decoded contract error names of opening submissions the chain rejected. */
+    openingSubmissionRejections: string[] = [];
+    /** Deadline the short-opening-deadline stub gave this proposer's terms. */
+    shortOpeningDeadline: Timestamp | null = null;
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;
@@ -386,6 +505,11 @@ export class StubService extends ANetworkRpcService<
     private timeoutStoreCalls = 0;
     private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
+    // the one-shot block replay fault: its restore, and whether it fired
+    private restoreBlockReplay?: () => void;
+    private blockReplayFaultFired = false;
+    // the force-join dispute triggers suppressed so far, in order
+    private readonly suppressedForceJoinTriggers: string[] = [];
     initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
     abortCalled = false;
@@ -418,6 +542,10 @@ export class StubService extends ANetworkRpcService<
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly heldInboundMessageArgs: unknown[][] = [];
+    /** onInboundMessage arg-tuples held by the inbound-storage hold stub. */
+    readonly heldInboundStorageArgs: Parameters<
+        StateManager["onInboundMessage"]
+    >[] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
     /** Subscribed inbound logs the drop stub has already lost once. */
@@ -495,13 +623,28 @@ export class StubService extends ANetworkRpcService<
     fraudProofApplyHold?: DisputeSubmissionHold;
     /** Failure the apply probe injects, when installed. */
     fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
+    /** Estimates seen by the replay-gas estimate probe (newest last). */
+    readonly recordedGasEstimates: RecordedGasEstimate[] = [];
+    /** Reads seen by the replay-gas read probe (newest last). */
+    readonly recordedReplayGasReads: RecordedReplayGasRead[] = [];
+    /** Gate the replay-gas read probe parks reads on, when installed. */
+    replayGasReadHold?: DisputeSubmissionHold;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
     heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
     heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
+    /** Audit proof walks parked by the proof-walk hold, by their proof's latest block hash. */
+    readonly heldProofWalks: {
+        latestBlockHash: string;
+        release: () => void;
+    }[] = [];
     /** State for the hold on this peer's snapshot post at its send. */
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
+    /** The first parked send's custom revert name once released, or null when it was mined. */
+    snapshotPostSendOutcome?: Promise<string | null>;
+    /** Call names of every multicall this peer sent while the adoption-post failure stub was installed. */
+    recordedMulticallNames: string[][] = [];
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
@@ -515,6 +658,53 @@ export class StubService extends ANetworkRpcService<
     private postMatchTargetRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+    /** Record-only probe on the post-audit evidence comparison. */
+    readonly evidenceComparisons = new EvidenceComparisonRecorder();
+    /** Profiles the unregister stubs took out of the profile maps, with their peer info. */
+    private readonly unregisteredProfiles: {
+        profile: PeerProfile;
+        peerInfo: BannablePeerInfo | undefined;
+    }[] = [];
+    /** Inbound request frames recorded by the capture stub, oldest first. */
+    private capturedRequestFrames: {
+        serializedRpc: string;
+        transport: NetworkTransport;
+    }[] = [];
+    private restoreRequestFrameCapture?: () => void;
+
+    /**
+     * Shift the clock read that directly follows this peer's next
+     * `buildOpeningData` call by `offsetSeconds`. The offset applies to that
+     * one read only; every later read uses the real clock.
+     */
+    public shiftClockReadAfterOpeningData(
+        offsetSeconds: number,
+        onShiftedRead?: (shiftedNow: Timestamp) => void
+    ): void {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `buildOpeningData` is protected on the service; the stub patches it by name.
+        const target = service as unknown as {
+            buildOpeningData: (...parameters: unknown[]) => Promise<unknown>;
+        };
+        const original = target.buildOpeningData;
+        target.buildOpeningData = async (...parameters: unknown[]) => {
+            const data = await original.apply(service, parameters);
+            target.buildOpeningData = original;
+            const realClock = Clock.getTimeInSeconds;
+            const restore = () => {
+                Clock.getTimeInSeconds = realClock;
+            };
+            Clock.getTimeInSeconds = () => {
+                restore();
+                const shiftedNow = realClock.call(Clock) + offsetSeconds;
+                onShiftedRead?.(shiftedNow);
+                return shiftedNow;
+            };
+            // Never leave the offset behind if the deadline read did not come.
+            setTimeout(restore, 0);
+            return data;
+        };
+    }
 
     public recordLeaveWatchdog(): void {
         this.leaveWatchdogRestore?.();
@@ -608,6 +798,65 @@ export class StubService extends ANetworkRpcService<
             return warn(...args);
         };
         this.disputeParticipationObservation = observation;
+    }
+
+    /** Record the P2PManager double-signature log entries, forwarding each. */
+    public observeDoubleSignatureLogs(): void {
+        this.restoreDoubleSignatureLogs();
+        const logger = this.sm.p2pManager.logger;
+        const levels = ["debug", "warn", "error"] as const;
+        const originals = levels.map((level) => logger[level]);
+        const entries: DoubleSignatureLogEntry[] = [];
+        levels.forEach((level, index) => {
+            const original = originals[index].bind(logger);
+            logger[level] = (message, ...rest) => {
+                if (
+                    typeof message === "string" &&
+                    message.includes("ouble signature")
+                ) {
+                    entries.push({
+                        level,
+                        message,
+                        metadata: { ...(rest[0] as Record<string, string>) }
+                    });
+                }
+                return original(message, ...rest);
+            };
+        });
+        this.doubleSignatureLogObservation = {
+            entries,
+            restore: () =>
+                levels.forEach((level, index) => {
+                    logger[level] = originals[index];
+                })
+        };
+    }
+
+    public getDoubleSignatureLogs(): DoubleSignatureLogEntry[] {
+        return this.doubleSignatureLogObservation?.entries ?? [];
+    }
+
+    public restoreDoubleSignatureLogs(): void {
+        this.doubleSignatureLogObservation?.restore();
+        this.doubleSignatureLogObservation = undefined;
+    }
+
+    /** Make every blacklist write fail until restored. */
+    public stubBlacklistWriteFailure(): void {
+        this.restoreBlacklistWriteFailure();
+        const profiles = this.sm.p2pManager.profileManager;
+        const blacklistPeer = profiles.blacklistPeer;
+        profiles.blacklistPeer = () => {
+            throw new Error("injected blacklist write failure");
+        };
+        this.restoreBlacklistWrite = () => {
+            profiles.blacklistPeer = blacklistPeer;
+        };
+    }
+
+    public restoreBlacklistWriteFailure(): void {
+        this.restoreBlacklistWrite?.();
+        this.restoreBlacklistWrite = undefined;
     }
 
     public getDisputeParticipationObservation() {
@@ -1153,23 +1402,23 @@ export class StubService extends ANetworkRpcService<
     }
 
     public holdSyncReductionResult(): void {
-        const contract = this.sm.diamondStateMachine.localDiamondContract;
-        const original = contract.reduceAndFinalize;
+        const diamondStateMachine = this.sm.diamondStateMachine;
+        const original =
+            diamondStateMachine.reduceAndFinalizeLocally.bind(
+                diamondStateMachine
+            );
         const hold = this.createRpcHold("spectate");
         this.syncReductionHold = hold;
-        this.restoreSyncReduction = () =>
-            Reflect.set(contract, "reduceAndFinalize", original);
-        Reflect.set(
-            contract,
-            "reduceAndFinalize",
-            async (...args: Parameters<typeof original>) => {
-                const result = await original(...args);
-                this.restoreSyncReduction?.();
-                hold.entered += 1;
-                await hold.gate;
-                return result;
-            }
-        );
+        this.restoreSyncReduction = () => {
+            diamondStateMachine.reduceAndFinalizeLocally = original;
+        };
+        diamondStateMachine.reduceAndFinalizeLocally = async (...args) => {
+            const result = await original(...args);
+            this.restoreSyncReduction?.();
+            hold.entered += 1;
+            await hold.gate;
+            return result;
+        };
     }
 
     public getSyncReductionEntered(): number {
@@ -1180,6 +1429,32 @@ export class StubService extends ANetworkRpcService<
         this.restoreSyncReduction?.();
         this.restoreSyncReduction = undefined;
         this.syncReductionHold?.release();
+    }
+
+    /**
+     * Stop this peer running the participant-timeout check, so a staged
+     * scenario is not cut short by a real timeout dispute.
+     */
+    public suppressTimeoutCheck(): void {
+        const timeouts = this.sm.participantTimeoutService;
+        if (!this.stubOriginals.has("timeoutCheck")) {
+            this.stubOriginals.set(
+                "timeoutCheck",
+                timeouts["tryTimeoutParticipant"]
+            );
+        }
+        timeouts["tryTimeoutParticipant"] = async () => undefined;
+    }
+
+    /** Undo {@link suppressTimeoutCheck}; false when it was not installed. */
+    public restoreSuppressTimeoutCheck(): boolean {
+        const original = this.stubOriginals.get("timeoutCheck");
+        if (original === undefined) return false;
+        const timeouts = this.sm.participantTimeoutService;
+        timeouts["tryTimeoutParticipant"] =
+            original as (typeof timeouts)["tryTimeoutParticipant"];
+        this.stubOriginals.delete("timeoutCheck");
+        return true;
     }
 
     public recordSyncRejections(): void {
@@ -1273,7 +1548,8 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
-    public holdSyncWindowPersistence(): void {
+    // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
+    public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
         const service = this.p2pManager.localRpc.spectateService;
         const original =
             service.fetchAndPersistOnChainDisputeWindows.bind(service);
@@ -1283,6 +1559,12 @@ export class StubService extends ANetworkRpcService<
             service.fetchAndPersistOnChainDisputeWindows = original;
         };
         service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
+            if (at === "beforeFetch") {
+                this.restoreSyncWindow?.();
+                hold.entered += 1;
+                await hold.gate;
+                return await original(...args);
+            }
             const windows = await original(...args);
             this.restoreSyncWindow?.();
             hold.entered += 1;
@@ -1301,21 +1583,37 @@ export class StubService extends ANetworkRpcService<
         this.syncWindowHold?.release();
     }
 
+    // records each sync's supplied windows and those the chain had not finalized, which the sync must reduce
     public recordSyncReductionWindows(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.tryMulticallSnapshotUpdate.bind(service);
+        const original = service.applySyncResponse.bind(service);
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
         this.syncReductionWindows = [];
         this.restoreSyncReductionRecorder = () => {
-            service.tryMulticallSnapshotUpdate = original;
+            service.applySyncResponse = original;
         };
-        service.tryMulticallSnapshotUpdate = async (...args) => {
-            this.syncReductionWindows.push({
-                suppliedForks: args[2].disputeWindows.map(
-                    (window) => window.forkId
-                ),
-                reductionForks: args[3].map((window) => window.forkId)
-            });
-            return await original(...args);
+        service.applySyncResponse = async (
+            peerAddress,
+            syncRequest,
+            encodedSyncPayload
+        ) => {
+            const suppliedForks = Codec.decode(
+                encodedSyncPayload,
+                Type.SyncPayload
+            ).disputeWindows.map((window) => window.forkId);
+            const reductionForks: ForkId[] = [];
+            for (const forkId of suppliedForks) {
+                if (
+                    !(await contract.isReduceChallengePeriodExpired(
+                        syncRequest.channelId,
+                        forkId
+                    ))
+                )
+                    reductionForks.push(forkId);
+            }
+            this.syncReductionWindows.push({ suppliedForks, reductionForks });
+            return await original(peerAddress, syncRequest, encodedSyncPayload);
         };
     }
 
@@ -1368,10 +1666,13 @@ export class StubService extends ANetworkRpcService<
         this.originalQueueProbe = undefined;
     }
 
-    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+    public async startTimeoutConstruction(
+        writer: string,
+        height: BlockHeight = 1
+    ): Promise<boolean> {
         await this.sm.participantTimeoutService["createTimeOutDispute"](
             this.sm.forkId,
-            1,
+            height,
             writer,
             0
         );
@@ -1442,9 +1743,116 @@ export class StubService extends ANetworkRpcService<
         return this.heldHandshakeTransports.length;
     }
 
+    /** Held transports whose remote peer already acknowledged this peer. */
+    public getAckedHeldHandshakeCount(): number {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        return this.heldHandshakeTransports.filter((transport) =>
+            service.didReceiveAck(transport)
+        ).length;
+    }
+
     public releaseInitHandshakes(): void {
         this.releaseHandshakes?.();
         this.releaseHandshakes = undefined;
+    }
+
+    /**
+     * Fault injection: take a proven peer's profile out of the profile
+     * owner, as if it was dropped after the handshake. Its transports stay
+     * open and keep their proven address.
+     */
+    public unregisterPeerProfile(peerAddress: Address): boolean {
+        const profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(peerAddress);
+        if (!profile) return false;
+        this.unregisterProfile(profile);
+        return true;
+    }
+
+    /**
+     * Fault injection: take the profile of every transport the handshake
+     * hold parked out of the profile owner. Those transports then have
+     * neither a profile nor a proven address.
+     */
+    public unregisterHeldHandshakeProfiles(): number {
+        let unregistered = 0;
+        for (const transport of this.heldHandshakeTransports) {
+            const profile =
+                this.p2pManager.profileManager.getProfileByTransport(transport);
+            if (!profile) continue;
+            this.unregisterProfile(profile);
+            unregistered += 1;
+        }
+        return unregistered;
+    }
+
+    /** Register every profile the unregister stubs removed again. */
+    public restoreUnregisteredProfiles(): number {
+        const restored = this.unregisteredProfiles.splice(0);
+        for (const { profile, peerInfo } of restored) {
+            if (peerInfo) profile.setHolepunchPeerInfo(peerInfo);
+            this.p2pManager.profileManager.registerProfile(profile);
+        }
+        return restored.length;
+    }
+
+    /**
+     * Record-only: keep every inbound request frame for `service` that
+     * reaches the network router, with the connection it arrived on.
+     */
+    public captureInboundRequestFrames(service: string): void {
+        this.restoreInboundRequestFrames();
+        const router = this.p2pManager.rpcRouter;
+        const onRpc = router.onRpc;
+        const frames: typeof this.capturedRequestFrames = [];
+        this.capturedRequestFrames = frames;
+        router.onRpc = function (serializedRpc, transport) {
+            const frame = deserializeRpcFrame(serializedRpc);
+            if (
+                frame?.kind === "request" &&
+                frame.rpc.service === service &&
+                !transport.isTrusted
+            ) {
+                frames.push({ serializedRpc, transport });
+            }
+            return onRpc.call(this, serializedRpc, transport);
+        };
+        this.restoreRequestFrameCapture = () => {
+            router.onRpc = onRpc;
+        };
+    }
+
+    /**
+     * Fault injection: deliver a captured request frame again on the actual
+     * connection it arrived on, through the network router entry point.
+     */
+    public async injectCapturedRequestFrame(
+        index: number
+    ): Promise<{ transportClosed: boolean }> {
+        const frame = this.capturedRequestFrames[index];
+        if (!frame) throw new Error(`no captured request frame ${index}`);
+        const transportClosed = frame.transport.isClosed;
+        await this.p2pManager.rpcRouter.onRpc(
+            frame.serializedRpc,
+            frame.transport
+        );
+        return { transportClosed };
+    }
+
+    public restoreInboundRequestFrames(): void {
+        this.restoreRequestFrameCapture?.();
+        this.restoreRequestFrameCapture = undefined;
+        this.capturedRequestFrames = [];
+    }
+
+    private unregisterProfile(profile: PeerProfile): void {
+        const profileManager = this.p2pManager.profileManager;
+        const peerInfo = profile.getHolepunchPeerInfo();
+        // Unmap every live transport, not only the preferred one.
+        for (const transport of profile.getLiveTransports())
+            profileManager.unregisterProfile(profile, transport);
+        profileManager.unregisterProfile(profile);
+        this.unregisteredProfiles.push({ profile, peerInfo });
     }
 
     public countInitHandshakeCalls(): void {
@@ -1671,6 +2079,19 @@ export class StubService extends ANetworkRpcService<
                 await enter();
                 return original.apply(owner, args);
             };
+        } else if (point === "confirmation") {
+            // parks every queued confirmation until release, so a timeout
+            // check meets the posted block still in flight
+            const owner = this.sm.blockIngestService;
+            const original = owner.onBlockConfirmation;
+            this.blockWorkRestore = () => {
+                owner.onBlockConfirmation = original;
+            };
+            owner.onBlockConfirmation = async (...args) => {
+                this.blockWorkEntered += 1;
+                await gate;
+                return original.apply(owner, args);
+            };
         } else {
             const owner = this.sm.signer;
             const original = owner.signMessage;
@@ -1734,6 +2155,8 @@ export class StubService extends ANetworkRpcService<
     }
 
     public releaseReductionHolds(): void {
+        this.restoreDoubleSignatureLogs();
+        this.restoreBlacklistWriteFailure();
         this.restoreDisputeParticipationObservation();
         this.restoreAdmissionObservation();
         this.restoreForkLeave();
@@ -1963,24 +2386,226 @@ export class StubService extends ANetworkRpcService<
         }) as typeof localDiamond.getOnChainSlashedParticipants;
     }
 
-    /** Release parked callers and reinstall the real query. */
     /**
-     * Park every auditing-data rebuild (`DisputeManager.getAuditingData`)
-     * until released. A final dispute committed without its auditing data
-     * makes the commit handler rebuild it before installing the result, so
-     * the hold keeps that install waiting while an ordinary attempt runs.
+     * Test-harness pruning of history below an anchor: deletes this peer's
+     * stored blocks of `forkId` below `anchorHeight` through the real
+     * `BlockStorage.deleteBlock`, keeping the anchor block and everything
+     * above it. Snapshots and state-machine states stay: their storage has no
+     * delete API. Returns the pruned heights.
      */
-    public installAuditingDataRebuildHold(): void {
-        const disputeManager = this.sm.disputeManager;
+    public pruneStoredBlocksBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): BlockHeight[] {
+        const blocks = this.sm.storage.blocks;
+        if (!blocks.getBlock(forkId, anchorHeight))
+            throw new Error(
+                `pruneStoredBlocksBelowAnchor: no stored anchor block at height ${anchorHeight} of ${forkId}`
+            );
+        const pruned: BlockHeight[] = [];
+        for (let height = 0; height < anchorHeight; height++)
+            if (blocks.deleteBlock(forkId, height)) pruned.push(height);
+        return pruned;
+    }
+
+    /**
+     * Fault injection: the next execution of the block at `forkId:height`
+     * (`SnapshotAssemblyService.assembleFromTransaction`, the state
+     * transition step of every replay) throws a genuine internal error
+     * instead of a verdict. One-shot: the real method is back once it fired.
+     */
+    public failBlockReplayAt(forkId: ForkId, height: BlockHeight): void {
+        this.restoreBlockReplayFault();
+        const assembly = this.sm.snapshotAssemblyService;
+        const original = assembly.assembleFromTransaction;
+        this.blockReplayFaultFired = false;
+        this.restoreBlockReplay = () => {
+            assembly.assembleFromTransaction = original;
+        };
+        assembly.assembleFromTransaction = (async (...args) => {
+            const [coordinates] = args;
+            if (
+                coordinates.forkId === forkId &&
+                coordinates.height === height
+            ) {
+                this.restoreBlockReplayFault();
+                this.blockReplayFaultFired = true;
+                throw new Error(BLOCK_REPLAY_FAULT_MESSAGE);
+            }
+            return Reflect.apply(original, assembly, args);
+        }) as typeof assembly.assembleFromTransaction;
+    }
+
+    /**
+     * Keep this peer's force-join route closed: every force-join dispute it
+     * would start (block bound or deadline) is recorded by its trigger and
+     * reported as started, so the deadline does not re-arm. Its other
+     * dispute routes are untouched.
+     */
+    public suppressForceJoinDispute(): void {
+        // private: MembershipService's single entry to the force-join dispute
+        Reflect.set(
+            this.sm.membershipService,
+            "startForceJoinDispute",
+            async (trigger: string) => {
+                this.suppressedForceJoinTriggers.push(trigger);
+                return true;
+            }
+        );
+    }
+
+    public getSuppressedForceJoinTriggers(): string[] {
+        return [...this.suppressedForceJoinTriggers];
+    }
+
+    public didBlockReplayFaultFire(): boolean {
+        return this.blockReplayFaultFired;
+    }
+
+    public restoreBlockReplayFault(): boolean {
+        if (!this.restoreBlockReplay) return false;
+        this.restoreBlockReplay();
+        this.restoreBlockReplay = undefined;
+        return true;
+    }
+
+    /**
+     * Test-harness removal of one signer's confirmation signature from this
+     * peer's stored block of `forkId` at `height` (the author's signature
+     * cannot be removed). The block is stored again without it; the view does
+     * not move.
+     */
+    public stripStoredBlockSignature(
+        forkId: ForkId,
+        height: BlockHeight,
+        signer: Address
+    ): void {
+        const blocks = this.sm.storage.blocks;
+        const block = blocks.getBlock(forkId, height);
+        if (!block)
+            throw new Error(
+                `stripStoredBlockSignature: no stored block at height ${height} of ${forkId}`
+            );
+        if (block.author === signer)
+            throw new Error(
+                "stripStoredBlockSignature: the author's signature cannot be removed"
+            );
+        const signatures = [...block.confirmationSignatures];
+        const kept = signatures.filter(
+            (signature) => block.signatureToAddress(signature) !== signer
+        );
+        if (kept.length === signatures.length)
+            throw new Error(
+                `stripStoredBlockSignature: ${signer} did not sign height ${height}`
+            );
+        const stripped = block.authorSignedCopy().expandSignatures(kept);
+        blocks.deleteBlock(forkId, height);
+        blocks.storeBlock(stripped, {
+            hash: stripped.hash,
+            coordinates: stripped.coordinates,
+            justPersist: true
+        });
+    }
+
+    /**
+     * Test-harness pruning of one stored state snapshot by hash. Snapshot
+     * storage has no delete API, so this removes the entry from its map. A
+     * genesis snapshot is refused.
+     */
+    public deleteStoredSnapshot(snapshotHash: Hash): void {
+        const snapshots = this.sm.storage.stateSnapshots;
+        const snapshot = snapshots.getStateSnapshotByHash(snapshotHash);
+        if (!snapshot)
+            throw new Error(
+                `deleteStoredSnapshot: no stored snapshot ${snapshotHash}`
+            );
+        if (snapshot.isGenesis)
+            throw new Error("deleteStoredSnapshot: a genesis snapshot is kept");
+        snapshots["snapshotsByHash"].delete(snapshotHash);
+    }
+
+    /** Remove one required application state; session teardown discards the peer. */
+    public deleteStoredState(stateHash: Hash): boolean {
+        return this.sm.storage.stateMachineStates["statesByHash"].delete(
+            stateHash
+        );
+    }
+
+    /**
+     * Test-harness pruning of the snapshots and application states below an
+     * anchor: for every stored block of `forkId` below `anchorHeight`, its
+     * resulting snapshot and that snapshot's state-machine state are removed
+     * (their storages have no delete API). The anchor block's snapshot and
+     * state and the fork genesis are kept. Run it before pruning the blocks.
+     * Returns the pruned snapshot hashes.
+     */
+    public pruneStoredSnapshotsBelowAnchor(
+        forkId: ForkId,
+        anchorHeight: BlockHeight
+    ): Hash[] {
+        const blocks = this.sm.storage.blocks;
+        const snapshots = this.sm.storage.stateSnapshots;
+        const states = this.sm.storage.stateMachineStates;
+        const anchorBlock = blocks.getBlock(forkId, anchorHeight);
+        if (!anchorBlock)
+            throw new Error(
+                `pruneStoredSnapshotsBelowAnchor: no stored anchor block at height ${anchorHeight} of ${forkId}`
+            );
+        const anchor = snapshots.getStateSnapshotByHash(
+            anchorBlock.stateSnapshotHash
+        );
+        const genesis = snapshots.getGenesisSnapshotByForkId(forkId);
+        const keptStates = new Set(
+            [anchor, genesis].map((kept) =>
+                String(kept?.snapshotData.stateMachineStateHash)
+            )
+        );
+        const pruned: Hash[] = [];
+        for (let height = 0; height < anchorHeight; height++) {
+            const block = blocks.getBlock(forkId, height);
+            const snapshot =
+                block &&
+                snapshots.getStateSnapshotByHash(block.stateSnapshotHash);
+            if (
+                !snapshot ||
+                snapshot.isGenesis ||
+                snapshot.hash === anchor?.hash
+            )
+                continue;
+            const stateHash = String(
+                snapshot.snapshotData.stateMachineStateHash
+            ) as Hash;
+            if (!keptStates.has(String(stateHash)))
+                states["statesByHash"].delete(stateHash);
+            snapshots["snapshotsByHash"].delete(snapshot.hash);
+            pruned.push(snapshot.hash);
+        }
+        return pruned;
+    }
+
+    /**
+     * Park every dispute output computation (the local diamond's
+     * `computeDisputeOutputSnapshotData`) until released. Its two callers are
+     * `DisputeManager.constructDispute`, after the dispute marker and before
+     * the dispute is signed or stored, and the commit handler of a final
+     * dispute, before it installs the reduced result. `at: "auditingData"`
+     * parks `DisputeManager.buildAuditingData` instead: inside
+     * `constructDispute`, before it reads the force-exit flag.
+     */
+    public installAuditingDataRebuildHold(
+        at: "output" | "auditingData" = "output"
+    ): void {
+        if (at === "auditingData") return this.installAuditingDataBuildHold();
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
         if (!this.stubOriginals.has("auditingDataRebuild")) {
             this.stubOriginals.set(
                 "auditingDataRebuild",
-                disputeManager.getAuditingData.bind(disputeManager)
+                localDiamond.computeDisputeOutputSnapshotData
             );
         }
         const original = this.stubOriginals.get(
             "auditingDataRebuild"
-        ) as typeof disputeManager.getAuditingData;
+        ) as typeof localDiamond.computeDisputeOutputSnapshotData;
         let releaseGate!: () => void;
         const gate = new Promise<void>((resolve) => {
             releaseGate = resolve;
@@ -1995,16 +2620,22 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldAuditingDataRebuild = held;
-        disputeManager.getAuditingData = (async (
-            ...args: Parameters<typeof original>
-        ) => {
-            held.entered += 1;
-            this.heldAuditingDataRebuildWaiters
-                .splice(0)
-                .forEach((resolve) => resolve());
-            await gate;
-            return original(...args);
-        }) as typeof disputeManager.getAuditingData;
+        // the callers use only staticCall; the hold patches that member
+        localDiamond.computeDisputeOutputSnapshotData = Object.assign(
+            original.bind(localDiamond),
+            {
+                staticCall: async (
+                    ...args: Parameters<typeof original.staticCall>
+                ) => {
+                    held.entered += 1;
+                    this.heldAuditingDataRebuildWaiters
+                        .splice(0)
+                        .forEach((resolve) => resolve());
+                    await gate;
+                    return original.staticCall(...args);
+                }
+            }
+        ) as unknown as typeof original;
     }
 
     /**
@@ -2098,16 +2729,29 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldSnapshotPostSend = held;
+        this.snapshotPostSendOutcome = undefined;
         // Only the send is held; simulation and population keep the real
         // contract method's properties, including when another hold wraps it.
         contract.multicall = new Proxy(original, {
-            apply: async (target, receiver, parameters) => {
+            apply: (target, receiver, parameters) => {
                 held.entered += 1;
                 this.heldSnapshotPostSendWaiters
                     .splice(0)
                     .forEach((resolve) => resolve());
-                await gate;
-                return Reflect.apply(target, receiver, parameters);
+                const sent = gate.then(
+                    (): ReturnType<typeof original> =>
+                        Reflect.apply(target, receiver, parameters)
+                );
+                if (held.entered === 1)
+                    this.snapshotPostSendOutcome = sent
+                        .then((response) => response.wait())
+                        .then(
+                            () => null,
+                            (error) =>
+                                tryDecodeCustomError(error)?.name ??
+                                String(error)
+                        );
+                return sent;
             }
         });
     }
@@ -2121,6 +2765,55 @@ export class StubService extends ANetworkRpcService<
             original as StateChannelManagerInterface["multicall"];
         this.stubOriginals.delete("snapshotPostSend");
         return true;
+    }
+
+    /**
+     * Fail this peer's first `failures` adopt-only snapshot posts (a multicall
+     * whose only call is `updateStateSnapshotFork`) at their send, and record
+     * the call names of every multicall the peer sends; later sends run for real.
+     */
+    public installAdoptionPostFailure(failures: number): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("adoptionPostFailure")) {
+            this.stubOriginals.set("adoptionPostFailure", contract.multicall);
+        }
+        const original = this.stubOriginals.get(
+            "adoptionPostFailure"
+        ) as StateChannelManagerInterface["multicall"];
+        this.recordedMulticallNames = [];
+        let failed = 0;
+        contract.multicall = new Proxy(original, {
+            apply: (target, receiver, parameters) => {
+                const names = (parameters[0] as string[]).map(
+                    (data) =>
+                        contract.interface.parseTransaction({ data })?.name ??
+                        "unknown"
+                );
+                this.recordedMulticallNames.push(names);
+                if (
+                    failed < failures &&
+                    names.length === 1 &&
+                    names[0] === "updateStateSnapshotFork"
+                ) {
+                    failed++;
+                    return Promise.reject(
+                        new Error("injected adoption post send failure")
+                    );
+                }
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
+    }
+
+    /** Restore the real send; the call names recorded while installed. */
+    public restoreAdoptionPostFailure(): string[][] {
+        const original = this.stubOriginals.get("adoptionPostFailure");
+        if (original !== undefined) {
+            this.sm.stateChannelManagerContract.multicall =
+                original as StateChannelManagerInterface["multicall"];
+            this.stubOriginals.delete("adoptionPostFailure");
+        }
+        return this.recordedMulticallNames;
     }
 
     /** Resolve with the parked count once a post is held at its send. */
@@ -2137,13 +2830,111 @@ export class StubService extends ANetworkRpcService<
         );
     }
 
+    private installAuditingDataBuildHold(): void {
+        const disputeManager = this.sm.disputeManager;
+        if (!this.stubOriginals.has("auditingDataBuild")) {
+            this.stubOriginals.set(
+                "auditingDataBuild",
+                disputeManager["buildAuditingData"].bind(disputeManager)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "auditingDataBuild"
+        ) as DisputeManager["buildAuditingData"];
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldAuditingDataRebuild = held;
+        disputeManager["buildAuditingData"] = (async (...args) => {
+            held.entered += 1;
+            this.heldAuditingDataRebuildWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+            await gate;
+            return original(...args);
+        }) as DisputeManager["buildAuditingData"];
+    }
+
+    /**
+     * Park every proof walk of this peer's audits (after their pre-walk
+     * checks, before the walk, its replay and the persistence of what it
+     * verified) until the test releases it by the proof's latest block hash.
+     */
+    public installProofWalkHold(): void {
+        const agreementManager = this.sm.agreementManager;
+        if (!this.stubOriginals.has("proofWalkHold"))
+            this.stubOriginals.set(
+                "proofWalkHold",
+                agreementManager.walkStateProofTiers.bind(agreementManager)
+            );
+        const original = this.stubOriginals.get(
+            "proofWalkHold"
+        ) as typeof agreementManager.walkStateProofTiers;
+        const held = this.heldProofWalks;
+        agreementManager.walkStateProofTiers = async function* (
+            forkId,
+            stateProof,
+            evidence
+        ) {
+            const latest =
+                agreementManager.getLatestBlockFromStateProof(stateProof);
+            await new Promise<void>((release) =>
+                held.push({
+                    latestBlockHash: String(latest?.hash ?? ""),
+                    release
+                })
+            );
+            yield* original(forkId, stateProof, evidence);
+        };
+    }
+
+    /** Release the parked walk whose proof ends at `latestBlockHash`. */
+    public releaseHeldProofWalk(latestBlockHash: string): boolean {
+        const index = this.heldProofWalks.findIndex(
+            (walk) => walk.latestBlockHash === latestBlockHash
+        );
+        if (index === -1) return false;
+        const [walk] = this.heldProofWalks.splice(index, 1);
+        walk!.release();
+        return true;
+    }
+
+    /** Release every parked walk and restore the real walk. */
+    public restoreProofWalkHold(): boolean {
+        this.heldProofWalks.splice(0).forEach((walk) => walk.release());
+        const original = this.stubOriginals.get("proofWalkHold");
+        if (original === undefined) return false;
+        this.sm.agreementManager.walkStateProofTiers =
+            original as typeof this.sm.agreementManager.walkStateProofTiers;
+        this.stubOriginals.delete("proofWalkHold");
+        return true;
+    }
+
     public releaseAuditingDataRebuildHold(): boolean {
         this.heldAuditingDataRebuild?.release();
         this.heldAuditingDataRebuild = undefined;
+        const build = this.stubOriginals.get("auditingDataBuild");
+        if (build !== undefined) {
+            this.sm.disputeManager["buildAuditingData"] =
+                build as DisputeManager["buildAuditingData"];
+            this.stubOriginals.delete("auditingDataBuild");
+            return true;
+        }
         const original = this.stubOriginals.get("auditingDataRebuild");
         if (original === undefined) return false;
-        this.sm.disputeManager.getAuditingData =
-            original as typeof this.sm.disputeManager.getAuditingData;
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.computeDisputeOutputSnapshotData =
+            original as typeof localDiamond.computeDisputeOutputSnapshotData;
         this.stubOriginals.delete("auditingDataRebuild");
         return true;
     }
@@ -2189,6 +2980,36 @@ export class StubService extends ANetworkRpcService<
             this.heldOnChainSlashesQueryWaiters.push(() =>
                 resolve(held.entered)
             )
+        );
+    }
+
+    /**
+     * Record the contract error of a mined opening submission that reverted.
+     * An interval-mined node accepts the transaction and reverts it in its
+     * block, so the error is read back from the read-only transaction trace.
+     */
+    async recordMinedOpeningRejection(transactionHash: string): Promise<void> {
+        const provider = this.chainProvider;
+        const receipt = await provider.waitForTransaction(transactionHash);
+        if (!receipt || receipt.status !== 0) return;
+        if (!(provider instanceof JsonRpcApiProvider))
+            throw new Error("Expected a JSON-RPC chain provider");
+        const trace: { returnValue: string } = await provider.send(
+            "debug_traceTransaction",
+            [
+                transactionHash,
+                {
+                    disableMemory: true,
+                    disableStack: true,
+                    disableStorage: true
+                }
+            ]
+        );
+        const revertData = trace.returnValue.startsWith("0x")
+            ? trace.returnValue
+            : `0x${trace.returnValue}`;
+        this.openingSubmissionRejections.push(
+            tryDecodeCustomError({ data: revertData })?.name ?? "undecoded"
         );
     }
 
@@ -2389,12 +3210,13 @@ export class StubService extends ANetworkRpcService<
 
         let failuresRemaining = failure?.times ?? Infinity;
         const record = async (
-            submission: Omit<RecordedDisputeSubmission, "waited">,
+            submission: Omit<RecordedDisputeSubmission, "waited" | "revert">,
             send: () => Promise<unknown>
         ) => {
             const entry: RecordedDisputeSubmission = {
                 ...submission,
-                waited: false
+                waited: false,
+                revert: null
             };
             this.recordedDisputeSubmissions.push(entry);
             const hold = this.disputeSubmissionHold;
@@ -2406,7 +3228,29 @@ export class StubService extends ANetworkRpcService<
             if (activeFailure) failuresRemaining -= 1;
             if (activeFailure?.at === "send")
                 throw this.submissionFailure(activeFailure);
-            if (forward && !activeFailure) return send();
+            if (forward && !activeFailure) {
+                let tx: ContractTransactionResponse;
+                try {
+                    tx = (await send()) as ContractTransactionResponse;
+                } catch (error) {
+                    entry.revert = recordedRevert(error);
+                    throw error;
+                }
+                const originalWait = tx.wait.bind(tx);
+                tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                    try {
+                        const receipt = await originalWait(...args);
+                        entry.waited = true;
+                        return receipt;
+                    } catch (error) {
+                        entry.revert = recordedRevert(
+                            await withRevertData(tx, error)
+                        );
+                        throw error;
+                    }
+                }) as typeof tx.wait;
+                return tx;
+            }
             return {
                 // a tx that reverts also reverts the preflight `call` that
                 // tryHandleEvmError retries through
@@ -2486,19 +3330,24 @@ export class StubService extends ANetworkRpcService<
 
         contract.multicall = this.asRecordingContractMethod(
             contract.multicall,
-            (calls: string[], overrides?: unknown) =>
-                record(
+            (calls: string[], overrides?: unknown) => {
+                const send = () =>
+                    Reflect.apply(originals.multicall, contract, [
+                        calls,
+                        ...(overrides ? [overrides] : [])
+                    ]);
+                const described = this.describeMulticall(calls);
+                // only dispute uploads are recorded; snapshot posts and reductions pass through
+                if (!described.encodedDispute) return send();
+                return record(
                     {
-                        ...this.describeMulticall(calls),
+                        ...described,
                         method: "multicall",
                         gasLimit: this.overrideGasLimit(overrides)
                     },
-                    () =>
-                        Reflect.apply(originals.multicall, contract, [
-                            calls,
-                            ...(overrides ? [overrides] : [])
-                        ])
-                )
+                    send
+                );
+            }
         );
     }
 
@@ -2522,7 +3371,10 @@ export class StubService extends ANetworkRpcService<
     /** Decode a dispute multicall's legs into the fields a test asserts on. */
     private describeMulticall(
         calls: string[]
-    ): Omit<RecordedDisputeSubmission, "waited" | "method" | "gasLimit"> {
+    ): Omit<
+        RecordedDisputeSubmission,
+        "waited" | "revert" | "method" | "gasLimit"
+    > {
         const contract = this.sm.stateChannelManagerContract;
         const innerMethods: string[] = [];
         let encodedDispute = "";
@@ -2608,7 +3460,7 @@ export class StubService extends ANetworkRpcService<
         if (!this.stubOriginals.has("disputeFraudProofApplies")) {
             this.stubOriginals.set(
                 "disputeFraudProofApplies",
-                contract.applyDisputeFraudProofs.bind(contract)
+                contract.applyDisputeFraudProofs
             );
         }
         const original = this.stubOriginals.get(
@@ -2624,62 +3476,88 @@ export class StubService extends ANetworkRpcService<
             : undefined;
         this.fraudProofApplyFailure = failure;
 
-        contract.applyDisputeFraudProofs = (async (
-            proofs: DisputeFraudProofStruct[]
-        ) => {
-            const entry: RecordedFraudProofApply = {
-                participants: proofs.map((proof) => String(proof.participant)),
-                error: null,
-                customError: null,
-                waited: false
-            };
-            this.recordedFraudProofApplies.push(entry);
-            const hold = this.fraudProofApplyHold;
-            if (hold) {
-                hold.held += 1;
-                await hold.gate;
-            }
-            const fail = (error: unknown) => {
-                entry.error =
-                    error instanceof Error ? error.message : String(error);
-                entry.customError = tryDecodeCustomError(error)?.name ?? null;
-            };
-            // an injected failure replaces the send entirely - forwarding it
-            // would leave a landed transaction behind a "failed" apply
-            if (failure) {
-                const reject = () => {
-                    const error = this.submissionFailure(failure);
-                    fail(error);
-                    throw error;
+        contract.applyDisputeFraudProofs = this.asRecordingContractMethod(
+            original,
+            async (proofs: DisputeFraudProofStruct[], overrides?: unknown) => {
+                const entry: RecordedFraudProofApply = {
+                    participants: proofs.map((proof) =>
+                        String(proof.participant)
+                    ),
+                    gasLimit: this.overrideGasLimit(overrides),
+                    error: null,
+                    customError: null,
+                    waited: false
                 };
-                if (failure.at === "send") reject();
-                return {
-                    // a tx that reverts also reverts the preflight `call` that
-                    // tryHandleEvmError retries through
-                    provider: { call: async () => reject() },
-                    wait: async () => reject()
+                this.recordedFraudProofApplies.push(entry);
+                const hold = this.fraudProofApplyHold;
+                if (hold) {
+                    hold.held += 1;
+                    await hold.gate;
+                }
+                const fail = (error: unknown) => {
+                    entry.error =
+                        error instanceof Error ? error.message : String(error);
+                    entry.customError =
+                        tryDecodeCustomError(error)?.name ?? null;
                 };
-            }
-            let tx;
-            try {
-                tx = await original(proofs);
-            } catch (error) {
-                fail(error);
-                throw error;
-            }
-            const originalWait = tx.wait.bind(tx);
-            tx.wait = (async (...args: Parameters<typeof originalWait>) => {
+                // an injected failure replaces the send entirely - forwarding it
+                // would leave a landed transaction behind a "failed" apply
+                if (failure) {
+                    const reject = () => {
+                        const error = this.submissionFailure(failure);
+                        fail(error);
+                        throw error;
+                    };
+                    if (failure.at === "send") reject();
+                    return {
+                        // a tx that reverts also reverts the preflight `call` that
+                        // tryHandleEvmError retries through
+                        provider: { call: async () => reject() },
+                        wait: async () => reject()
+                    };
+                }
+                let tx;
                 try {
-                    const receipt = await originalWait(...args);
-                    entry.waited = true;
-                    return receipt;
+                    tx = await Reflect.apply(original, contract, [
+                        proofs,
+                        ...(overrides ? [overrides] : [])
+                    ]);
                 } catch (error) {
                     fail(error);
                     throw error;
                 }
-            }) as typeof tx.wait;
-            return tx;
-        }) as typeof contract.applyDisputeFraudProofs;
+                const originalWait = tx.wait.bind(tx);
+                const sent = tx;
+                sent.wait = (async (
+                    ...args: Parameters<typeof originalWait>
+                ) => {
+                    try {
+                        const receipt = await originalWait(...args);
+                        entry.waited = true;
+                        return receipt;
+                    } catch (error) {
+                        fail(error);
+                        // a mined revert carries no revert data: name it by
+                        // replaying the same call, as tryHandleEvmError does
+                        if (entry.customError === null)
+                            await sent.provider
+                                .call({
+                                    from: sent.from,
+                                    to: sent.to,
+                                    data: sent.data,
+                                    value: sent.value
+                                })
+                                .catch((replayError: unknown) => {
+                                    entry.customError =
+                                        tryDecodeCustomError(replayError)
+                                            ?.name ?? null;
+                                });
+                        throw error;
+                    }
+                }) as typeof sent.wait;
+                return sent;
+            }
+        );
     }
 
     public restoreDisputeFraudProofApplies(): boolean {
@@ -2692,6 +3570,152 @@ export class StubService extends ANetworkRpcService<
         contract.applyDisputeFraudProofs =
             original as typeof contract.applyDisputeFraudProofs;
         this.stubOriginals.delete("disputeFraudProofApplies");
+        return true;
+    }
+
+    /**
+     * Probe on this peer's chain-signer estimates for transactions calling
+     * one of `methods` on the manager: each estimate is taken by the real
+     * signer (its headroom included), recorded, and answered scaled by
+     * `numerator / denominator`. Scaling stands in for an estimator that
+     * reports a different figure for the same transaction (a spent-gas
+     * estimator answers below the replay requirement, a searching one at or
+     * above it); the transaction itself is unchanged and still sent for real
+     * by the caller. Other estimates pass through unrecorded.
+     */
+    public installReplayGasEstimateScale(
+        methods: ReplayGasEstimateMethod[],
+        numerator: number,
+        denominator: number
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const runner = contract.runner;
+        if (!runner?.estimateGas)
+            throw new Error("the manager contract's runner cannot estimate");
+        this.restoreReplayGasEstimateScale();
+        this.stubOriginals.set(
+            "replayGasEstimates",
+            Object.getOwnPropertyDescriptor(runner, "estimateGas") ?? null
+        );
+        const estimateGas = runner.estimateGas.bind(runner);
+        const selectors = new Map(
+            methods.map((method) => [
+                contract.interface.getFunction(method)!.selector,
+                method
+            ])
+        );
+        this.recordedGasEstimates.length = 0;
+        Reflect.set(
+            runner,
+            "estimateGas",
+            async (tx: TransactionRequest): Promise<bigint> => {
+                const estimate = await estimateGas(tx);
+                const method = selectors.get(String(tx.data).slice(0, 10));
+                if (method === undefined) return estimate;
+                const answer =
+                    (estimate * BigInt(numerator)) / BigInt(denominator);
+                this.recordedGasEstimates.push({
+                    method,
+                    estimate: String(estimate),
+                    answer: String(answer)
+                });
+                return answer;
+            }
+        );
+    }
+
+    public restoreReplayGasEstimateScale(): boolean {
+        if (!this.stubOriginals.has("replayGasEstimates")) return false;
+        const original = this.stubOriginals.get(
+            "replayGasEstimates"
+        ) as PropertyDescriptor | null;
+        const runner = this.sm.stateChannelManagerContract.runner!;
+        if (original) Object.defineProperty(runner, "estimateGas", original);
+        else Reflect.deleteProperty(runner, "estimateGas");
+        this.stubOriginals.delete("replayGasEstimates");
+        return true;
+    }
+
+    /**
+     * Record-only probe on the manager's `getStateTransitionReplayGas` read:
+     * every read is recorded with how it settled and forwarded to the real
+     * contract, except the first `failFirst` reads, which reject with
+     * REPLAY_GAS_READ_STUB_FAILURE instead of reaching the chain. `hold`
+     * parks each read (recorded as pending) until released, before it is
+     * forwarded.
+     */
+    public installReplayGasReadRecorder(
+        failFirst: number,
+        hold: boolean
+    ): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("replayGasReads"))
+            this.stubOriginals.set(
+                "replayGasReads",
+                contract.getStateTransitionReplayGas
+            );
+        const original = this.stubOriginals.get(
+            "replayGasReads"
+        ) as StateChannelManagerInterface["getStateTransitionReplayGas"];
+        this.recordedReplayGasReads.length = 0;
+        this.replayGasReadHold?.release();
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        this.replayGasReadHold = hold ? { gate, release, held: 0 } : undefined;
+        let failuresRemaining = failFirst;
+        contract.getStateTransitionReplayGas = this.asRecordingContractMethod(
+            original,
+            async (...args: never[]): Promise<bigint> => {
+                const entry: RecordedReplayGasRead = {
+                    outcome: "pending",
+                    replayGas: null
+                };
+                this.recordedReplayGasReads.push(entry);
+                const held = this.replayGasReadHold;
+                if (held) {
+                    held.held += 1;
+                    await held.gate;
+                }
+                if (failuresRemaining > 0) {
+                    failuresRemaining -= 1;
+                    entry.outcome = "rejected";
+                    throw new Error(REPLAY_GAS_READ_STUB_FAILURE);
+                }
+                try {
+                    const replayGas: bigint = await Reflect.apply(
+                        original,
+                        contract,
+                        args
+                    );
+                    entry.outcome = "resolved";
+                    entry.replayGas = String(replayGas);
+                    return replayGas;
+                } catch (error) {
+                    entry.outcome = "rejected";
+                    throw error;
+                }
+            }
+        );
+    }
+
+    /** Let every parked replay-gas read (and any later one) through. */
+    public releaseReplayGasReads(): boolean {
+        const hold = this.replayGasReadHold;
+        if (!hold) return false;
+        this.replayGasReadHold = undefined;
+        hold.release();
+        return true;
+    }
+
+    public restoreReplayGasReads(): boolean {
+        this.releaseReplayGasReads();
+        const original = this.stubOriginals.get("replayGasReads");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.getStateTransitionReplayGas =
+            original as StateChannelManagerInterface["getStateTransitionReplayGas"];
+        this.stubOriginals.delete("replayGasReads");
         return true;
     }
 

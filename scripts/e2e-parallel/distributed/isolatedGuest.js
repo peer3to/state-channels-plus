@@ -17,6 +17,7 @@ const {
 const {
     unpackInfrastructureProcessLogChunk
 } = require("./infrastructureLogTransfer");
+const { buildWorkerForkEnvironment } = require("./remoteEnvironment");
 const {
     commitSourceManifest,
     inspectWorkspace,
@@ -68,16 +69,6 @@ function resourceFailure(error, phase) {
         message: error.message
     });
     return true;
-}
-
-function dependencyFiles(repository) {
-    const prefix = `${repository.path}/`;
-    return new Set([
-        `${prefix}package.json`,
-        `${prefix}pnpm-lock.yaml`,
-        `${prefix}yarn.lock`,
-        `${prefix}package-lock.json`
-    ]);
 }
 
 async function workspaceOffer(payload) {
@@ -151,21 +142,6 @@ async function completeSource(payload) {
                 storeDir: path.join(root, "package-store"),
                 commandRunner: new IsolatedGuestCommandRunner(),
                 env: {},
-                shouldInstall(repository) {
-                    return (
-                        cache.preparationChanged ||
-                        !fs.existsSync(
-                            path.join(
-                                cache.workspace,
-                                repository.path,
-                                "node_modules"
-                            )
-                        ) ||
-                        cache.changed.some((entry) =>
-                            dependencyFiles(repository).has(entry)
-                        )
-                    );
-                },
                 selectPrepareScript: (repository) =>
                     selectPrepareScript(
                         repository,
@@ -234,17 +210,14 @@ function startWorker(config) {
     const entry = path.join(__dirname, "worker.js");
     worker = fork(entry, [], {
         cwd: offer.projectRoot,
-        env: {
-            PATH: process.env.PATH,
-            HOME: path.join(root, "home"),
-            NODE_PATH: [
+        env: buildWorkerForkEnvironment({
+            source: process.env,
+            home: path.join(root, "home"),
+            nodePaths: [
                 path.join(offer.runnerRoot, "node_modules"),
-                path.join(offer.projectRoot, "node_modules"),
-                process.env.NODE_PATH
+                path.join(offer.projectRoot, "node_modules")
             ]
-                .filter(Boolean)
-                .join(path.delimiter)
-        },
+        }),
         stdio: ["ignore", "pipe", "pipe", "ipc"],
         detached: false
     });

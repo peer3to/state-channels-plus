@@ -10,6 +10,7 @@
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
   Partial: [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report).
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
   Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
 - [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
@@ -37,6 +38,30 @@ Mirror equivalence
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P2` — time-drift divergence
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P3` — replication convergence
 - [ ] `UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1.P4` — proof-predicate agreement
+
+## UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG
+
+Invalid transition versus local failure
+
+- Setup: Build `EvmDiamondStateMachine` over a Math machine on a real executor (inline, or SDK-owned with a corrupted request) and call `stateTransition` with a reverting, an under-funded and an executor-failed transition
+- Oracle: Only the in-EVM revert returns an invalid result; the other two throw and leave the machine sum unchanged
+
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P1` — a transition that reverts inside the EVM returns `success: false` with no outbound messages
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P2` — a refusal to run under-funded is thrown, not returned as an invalid transition, and the transition does not run
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P3` — a failed executor connection is thrown, not returned as an invalid transition, and the transition does not run
+
+## UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC
+
+Local reduction outcome
+
+- Setup: Teleport a session to an expired, unreduced dispute window, persist the chain window into the requester's local diamond, and call `reduceAndFinalizeLocally` with the served window inputs (altered per permutation)
+- Oracle: The returned flag is true only when this call committed the reduction; the local window records the committed fork; a revert throws and commits nothing
+
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1` — served inputs on an unreduced window return true and the local window records the expected fork
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2` — a repeat on the window already reduced to the expected fork returns false and keeps that fork
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3` — a repeat expecting another fork throws `RaceConditionReductionExpectationDoesntMatch` and keeps the committed fork
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P4` — disputes naming a fork without a dispute window return false and leave the local window unreduced
+- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P5` — an inbound list with a fabricated successor throws `ErrorDisputeInboundMessageBlocksInvalid` and leaves the local window unreduced
 
 ## UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC
 

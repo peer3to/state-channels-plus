@@ -1,12 +1,9 @@
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import { PartialAuditingDataError } from "@/disputeManager/DisputeManager";
 import { Block, StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import type StateManager from "@/stateManager";
 import type { ReductionGenesis } from "@/stateManager/reduction";
-import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import Storage from "@/storage";
-import { BlockOrigin } from "@/storage/QueueStorage";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import {
@@ -30,18 +27,15 @@ import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import {
-    BlockConfirmationStruct,
     MessageBlockStruct,
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
-    DisputeConfirmationStruct,
-    DisputeStruct
+    DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { TransactionResponse } from "ethers";
-import { isEqual } from "lodash";
 
 export type EventCoordinate = {
     blockNumber: number;
@@ -318,21 +312,10 @@ export class EventHandler {
         );
         this.p2pEventHooks.onPostedCalldata?.();
 
-        const blockConfirmation: BlockConfirmationStruct = {
+        await this.stateManager.blockQueueManager.ingestPostedBlock({
             signedBlock,
-            signatures: []
-        };
-        await this.stateManager.blockQueueManager.ingestBlockConfirmation(
-            blockConfirmation,
-            {
-                origin: BlockOrigin.CALLDATA,
-                onChainTimestamp: Number(timestamp),
-                validationStrategy: new CalldataCommittedStrategy(
-                    this.stateManager.disputeManager,
-                    this.stateManager.blockValidationStrategy
-                )
-            }
-        );
+            onChainTimestamp: timestamp
+        });
     }
 
     async onDisputeCommitted(
@@ -429,41 +412,36 @@ export class EventHandler {
             this.storage.disputes.storeDisputeConfirmation(disputeConfirmation);
             let genesis: ReductionGenesis;
             try {
-                if (!disputeAuditingData) {
-                    const { isPartial, auditingData } =
-                        await this.stateManager.disputeManager.getAuditingData(
-                            forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    if (isPartial) {
-                        // cannot rebuild the final dispute's data yet. the
-                        // confirmation is already stored, so the ordinary reduce
-                        // path picks the window up with this dispute in it and
-                        // derives the same result
-                        this.logger.warn(
-                            "Final dispute genesis deferred: auditing data could not be rebuilt locally",
-                            { channelId, forkId, dispute: disputeMeta }
-                        );
-                        this.stateManager.reductionManager.schedule(
-                            forkId,
-                            Number(disputeCreationTimestamp) +
-                                this.stateManager.timeConfig.chainFallbackTime,
-                            true
-                        );
-                        return;
-                    }
-                    disputeAuditingData = auditingData;
-                }
-
                 const latestSnapshot =
                     this.stateManager.agreementManager.getLatestSnapshotFromStateProof(
                         dispute.input.stateProof,
                         forkId
                     );
+                const inboundMessageBlocks =
+                    disputeAuditingData?.inboundMessageBlocks ??
+                    (await this.stateManager.eventSyncService.loadSynchronizedInboundRun(
+                        dispute.input.latestInboundMessageBlockHash as Hash,
+                        latestSnapshot.latestInboundMessageBlockHash,
+                        latestSnapshot.timestamp,
+                        channelId
+                    ));
+                if (!inboundMessageBlocks) {
+                    // cannot read the final dispute's inbound run yet. the
+                    // confirmation is already stored, so the ordinary reduce
+                    // path picks the window up with this dispute in it and
+                    // derives the same result
+                    this.logger.warn(
+                        "Final dispute genesis deferred: inbound run unavailable",
+                        { channelId, forkId, dispute: disputeMeta }
+                    );
+                    this.stateManager.reductionManager.schedule(
+                        forkId,
+                        Number(disputeCreationTimestamp) +
+                            this.stateManager.timeConfig.chainFallbackTime,
+                        true
+                    );
+                    return;
+                }
                 const latestStateMachineState =
                     this.storage.stateMachineStates.getStateMachineState(
                         latestSnapshot.stateMachineStateHash as Hash
@@ -479,14 +457,14 @@ export class EventHandler {
                         dispute.input,
                         latestSnapshot.toStruct(),
                         latestStateMachineState,
-                        disputeAuditingData.inboundMessageBlocks
+                        inboundMessageBlocks
                     );
                 const disputeOutputState =
                     await this.diamondStateMachine.localDiamondContract.computeDisputeOutputState.staticCall(
                         dispute.input,
                         latestSnapshot.toStruct(),
                         latestStateMachineState,
-                        disputeAuditingData.inboundMessageBlocks
+                        inboundMessageBlocks
                     );
                 genesis = {
                     genesisSnapshot: {
@@ -538,6 +516,20 @@ export class EventHandler {
                 channelId,
                 forkId
             );
+        // only participants and pending participants audit: data
+        // availability is guaranteed to them alone
+        if (!isCommittedParticipantStatus(this.stateManager.status)) {
+            await this.persistDisputeAndNotify(
+                channelId,
+                forkId,
+                disputeConfirmation
+            );
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Number(killPeriodEnd)
+            );
+            return;
+        }
         if (windowExists && isExpired) {
             // The kill period is over, so this dispute can no longer be
             // challenged. Preserve all available data and reduce from it.
@@ -545,38 +537,18 @@ export class EventHandler {
                 "onDisputeCommited: Kill period EXPIRED! Unconditionally persisting the dispute!",
                 { dispute: disputeMeta }
             );
-            let persistableAuditingData = disputeAuditingData;
-            if (!persistableAuditingData) {
-                try {
-                    const derived =
-                        await this.stateManager.disputeManager.getAuditingData(
-                            forkId,
-                            dispute.input.stateProof,
-                            {
-                                disputeLatestInboundMessageBlockHash:
-                                    dispute.input.latestInboundMessageBlockHash
-                            }
-                        );
-                    if (!derived.isPartial) {
-                        persistableAuditingData = derived.auditingData;
-                    } else {
-                        this.logger.warn(
-                            "Expired dispute proof data is partial; snapshots, state, or messages are unavailable",
-                            { dispute: disputeMeta }
-                        );
-                    }
-                } catch (error) {
-                    this.logger.warn(
-                        "Expired dispute auditing data is unavailable; persisting decodable committed blocks only",
-                        { dispute: disputeMeta, error }
-                    );
-                }
-            }
-            this.stateManager.disputeValidationService.persistDisputeDataWithoutAudit(
-                dispute,
-                persistableAuditingData,
-                { includeUnfinalizedBlocks: true }
-            );
+            // Audit it anyway: the replay persists the blocks, snapshots
+            // and states the reduction reads. Its verdict can no longer kill.
+            const isValid =
+                await this.stateManager.disputeValidationService.validateDispute(
+                    dispute,
+                    disputeAuditingData
+                );
+            if (!isValid)
+                this.logger.warn(
+                    "Expired dispute is invalid, but can no longer be killed",
+                    { dispute: disputeMeta }
+                );
             await this.persistDisputeAndNotify(
                 channelId,
                 forkId,
@@ -622,14 +594,15 @@ export class EventHandler {
                 }
             );
 
-            // Sequential: kill must mine first so the spammer appears in onChainSlashes,
-            // otherwise the counter-dispute would be constructed with onChainSlashes=[]
-            // and could itself be killed as InvalidDisputeReason.
-            //  TODO - should be multicall
-            await this.stateManager.disputeManager.killDispute(dispute);
-            // TODO, under the multicall pass the expectation who to slash (who will be killed) to dispute(),
-            // otherwise don't run dispute(forkId) here, since we pickup on-chain slashes from DisputeKilled event and here we might end up creating an empty dispute since we didn't observe on-chain slashes
-            // await this.stateManager.disputeManager.dispute(forkId);
+            // Our own evidence goes in at once: the kill and our dispute, which
+            // counts the killed submitter's slash, land in one multicall. A peer
+            // that already disputed this fork only kills.
+            if (this.storage.disputes.didIDispute(forkId))
+                await this.stateManager.disputeManager.killDispute(dispute);
+            else
+                await this.stateManager.disputeManager.dispute(forkId, {
+                    kill: dispute
+                });
             return;
         }
 
@@ -641,7 +614,10 @@ export class EventHandler {
         );
 
         const canConstructMoreEvidence =
-            await this.canConstructMoreEvidence(dispute);
+            await this.stateManager.disputeManager.shouldAddOwnEvidence(
+                forkId,
+                dispute
+            );
         if (canConstructMoreEvidence) {
             this.logger.info(
                 `More evidence can be constructed for dispute ${formattedHash}, disputing...`
@@ -675,64 +651,6 @@ export class EventHandler {
             diamondStateMachine: this.diamondStateMachine,
             logger: this.logger
         });
-    }
-
-    private async canConstructMoreEvidence(
-        dispute: DisputeStruct
-    ): Promise<boolean> {
-        // Create our own dispute
-        let ourDispute: DisputeStruct;
-        try {
-            ourDispute = (
-                await this.stateManager.disputeManager.constructDispute(
-                    this.stateManager.forkId
-                )
-            ).dispute;
-        } catch (error) {
-            if (!(error instanceof PartialAuditingDataError)) throw error;
-            // we cannot rebuild our own auditing data -> we have no more
-            // evidence to give. the caller falls through to scheduling the
-            // reduction instead of dying on the throw
-            this.logger.warn(
-                "No more evidence: own auditing data could not be rebuilt locally",
-                {
-                    forkId: this.stateManager.forkId,
-                    dispute: LoggerUtils.getDisputeMetadata(dispute)
-                }
-            );
-            return false;
-        }
-
-        this.logger.verbose("Constructed our own dispute for comparison", {
-            ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
-            theirDispute: LoggerUtils.getDisputeMetadata(dispute)
-        });
-
-        let hasMoreEvidence;
-        try {
-            // Compare reduced disputes to see if we have more evidence
-            const singleDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [dispute]
-                );
-            const combinedDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [ourDispute, dispute]
-                );
-            hasMoreEvidence = !isEqual(
-                singleDisputeReduction,
-                combinedDisputeReduction
-            );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            this.logger.error("Error during dispute reduction comparison", {
-                errors: error,
-                custom
-            });
-            throw error;
-        }
-        this.logger.debug(`hasMoreEvidence=${hasMoreEvidence}`);
-        return hasMoreEvidence;
     }
 
     async onChainSlashed(
@@ -775,6 +693,8 @@ export class EventHandler {
         reducer: Address,
         coordinate: EventCoordinate
     ): Promise<void> {
+        // The fork's dispute window is over; its evidence comparison with it.
+        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
         // sync LocalDiamond state
         await this.diamondStateMachine.localDiamondContract.onDisputeReducedResultCommitted(
             channelId,
@@ -894,6 +814,9 @@ export class EventHandler {
         disputeHash: Hash,
         blockTimestamp: Timestamp
     ): Promise<void> {
+        // The cached comparison may have been against the killed dispute; the
+        // next audit of this fork compares again.
+        this.stateManager.disputeManager.forgetEvidenceComparison(forkId);
         this.stateManager.membershipService.observeOnChainSlash(disputer);
         await this.diamondStateMachine.localDiamondContract.onOnChainSlashAdded(
             channelId,
@@ -940,7 +863,7 @@ export class EventHandler {
         } catch (error) {
             const customError = tryDecodeCustomError(error);
             if (
-                customError?.errorDescription.name ===
+                customError?.name ===
                 "RaceConditionDisputeEvidencePeriodExpired"
             ) {
                 this.logger.info(

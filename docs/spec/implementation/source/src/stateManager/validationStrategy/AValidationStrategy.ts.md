@@ -32,10 +32,9 @@ Consequence profile
 - [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P15` — blockForkIsDisputed hook
 - [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P16` — blockIsNotNextAndIsInTheFuture hook
 - [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P17` — blockIsNotLinkedAndIsNotFirstBlock hook
-- [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P18` — prepareStateMachineForLeaderCheck hook
 - [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P19` — objectiveInvalidTimestampDetected hook
 - [ ] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P20` — subjectiveInvalidTimestampDetected hook
 - [x] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P21` — normalization strips an unrecoverable confirmation and punishes only its supplier
 - [x] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P22` — spectating normalization preserves valid confirmations after a malformed first value
 - [x] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P23` — sourceless replay strips irrelevant malformed confirmations without transport punishment
-- [x] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P24` — calldata strategy rejects the impossible confirmation-bearing shape
+- [x] `UNIT-TEST-AVALIDATION-STRATEGY-1-N6Z4YR.P24` — calldata strategy strips a merged malformed confirmation as the live strategy does

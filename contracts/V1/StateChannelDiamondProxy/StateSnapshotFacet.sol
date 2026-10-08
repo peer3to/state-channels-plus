@@ -32,19 +32,23 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorSnapshotGenesisTimestampMismatch(genesisTimestamp, newStateSnapshot.timestamp)
         );
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
-        bool updated = false;
+        bytes32 latestForkId = currentStateSnapshot.forkId;
+        bool reachable = false;
+        DisputeWindow storage disputeWindow = disputeWindowMap[latestForkId];
         while (disputeWindow.reducedResult.forkId != bytes32(0)) {
             (bool challengePeriodExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
             if (!challengePeriodExpired) break;
-            if (disputeWindow.reducedResult.forkId == targetForkId) {
-                _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
-                updated = true;
-                break;
-            }
-            disputeWindow = disputeWindowMap[disputeWindow.reducedResult.forkId];
+            latestForkId = disputeWindow.reducedResult.forkId;
+            if (latestForkId == targetForkId) reachable = true;
+            disputeWindow = disputeWindowMap[latestForkId];
         }
-        require(updated, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        require(reachable, ErrorStateSnapshotNotValid(currentStateSnapshot.forkId, targetForkId));
+        // adoption changes the current state -> only the latest fork, and never a disputed one
+        require(targetForkId == latestForkId, RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId));
+        require(
+            !_isForkDisputed(channelId, targetForkId), RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId)
+        );
+        _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
     }
 
     function updateStateSnapshotSameFork(
@@ -66,7 +70,9 @@ contract StateSnapshotFacet is StateChannelCommon {
             RaceConditionBlockHeightTooOld(currentStateSnapshot.blockHeight, newStateSnapshot.blockHeight)
         );
         require(
-            _verifyMilestones(currentStateSnapshot.forkId, milestoneProofs, milestoneSnapshots, currentStateSnapshot),
+            _isNewSnapshotProvenByThreshold(
+                channelId, currentStateSnapshot, milestoneProofs, milestoneSnapshots, newStateSnapshot
+            ),
             ErrorInvalidStateProof(currentStateSnapshot.forkId, milestoneProofs.length, milestoneSnapshots.length)
         );
         require(
@@ -77,6 +83,9 @@ contract StateSnapshotFacet is StateChannelCommon {
                 channelBalances[channelId].latestInboundMessageBlockHash
             )
         );
+        if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
+            revert RaceConditionSnapshotUpdateDisputedFork(channelId, currentStateSnapshot.forkId);
+        }
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
     }
@@ -126,16 +135,26 @@ contract StateSnapshotFacet is StateChannelCommon {
         emit StateSnapshotUpdated(channelId, newSnapshot);
     }
 
-    function _verifyMilestones(
-        bytes32 forkId,
+    /// The walk from the on-chain snapshot finalizes `newStateSnapshot`: the snapshot the last milestone's first
+    /// block commits to, proven by threshold. `isSnapshotNewer` already rejected the on-chain snapshot itself.
+    function _isNewSnapshotProvenByThreshold(
+        bytes32 channelId,
+        StateSnapshot memory currentStateSnapshot,
         MilestoneProof[] memory milestoneProofs,
         StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) internal returns (bool) {
-        bool isValid = StateChannelManagerInterface(address(this)).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
+        StateSnapshot memory newStateSnapshot
+    ) internal view returns (bool) {
+        // a genesis start happens only while the on-chain snapshot is that genesis
+        ProofWalkInput memory input = ProofWalkInput(
+            channelId,
+            currentStateSnapshot.forkId,
+            StateProof(milestoneProofs),
+            currentStateSnapshot.snapshotData,
+            milestoneSnapshots
         );
-        return isValid;
+        ProofWalkResult memory result = StateChannelManagerInterface(address(this)).verifyMilestones(input);
+        return
+            result.valid && keccak256(abi.encode(result.finalizedSnapshot)) == keccak256(abi.encode(newStateSnapshot));
     }
 
     function _applyOutboundMessageBlocks(

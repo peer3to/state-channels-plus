@@ -19,6 +19,7 @@
 - [`REQ-FP-4-WHKBXP` (A recorded slash disqualifies the participant from dispute participation and…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-4-whkbxp)
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
 - [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
+- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
 
 ## UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK
 
@@ -47,6 +48,62 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P18` — committing a second reduced result against an already-reduced window reverts naming three distinct forks: the window's own, the reduced fork already committed and the one submitted now
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P19` — an outbound EXIT message whose amount disagrees with its embedded exit channel reverts naming the participant, the embedded exit amount and the message amount as three distinguishable values
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P20` — persisting an inbound message block whose hash is already stored reverts naming both the channel and the block hash
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P21` — A milestone-only proof survives ABI round-trip, selects the last block of its last milestone as its latest state, and walks to its proven first-block final point
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P22` — An empty proof verifies with genesis as its final point and replay index zero, and its genesis latest-state claim passes
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P23` — With a non-genesis chain anchor, an empty proof still returns genesis as its final point and is separately below that anchor
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P24` — A nonempty anchor-only proof returns the exact anchor snapshot, has no replay tail, passes latest-state linkage and is not below the anchor
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P25` — An author-only genesis block zero verifies with genesis still final and replay beginning at zero
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P26` — A linked author-only genesis-zero run verifies with genesis final and replay beginning at zero
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P27` — A threshold-signed genesis-zero run finalizes block zero and sets replay index one
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P28` — A block-zero resulting snapshot used as chain anchor finalizes zero without threshold signatures and starts replay at index one
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P29` — A threshold-signed block at height zero committing another snapshot does not match the block-zero chain anchor, with either supplied snapshot entry
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P30` — A matching anchor at the first run position verifies, remains final and sets replay index one
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P31` — A matching anchor at the middle run position verifies, remains final and sets replay index two
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P32` — A matching anchor at the final run position verifies, remains final and sets replay index to run length
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P33` — A run block at anchor height committing another snapshot returns invalid without classifying the supplied evidence as snapshot mismatch
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P34` — A threshold-proven first hop above the anchor verifies without an anchor block and finalizes that hop
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P35` — An above-anchor first hop without the required signatures returns invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P36` — Including the anchor block allows an author-only extension above it while keeping the anchor as final point
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P37` — Linkage of an author-only tail does not advance finality beyond the matching anchor
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P38` — A broken retained link after the anchor makes the walk invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P39` — A threshold-signed block zero with the wrong genesis predecessor makes the walk invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P40` — Wholly pre-anchor milestones and a crossing-run prefix are skipped despite junk, missing threshold and forged entries; retained anchor and replay index remain correct
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P41` — A foreign-fork first block below the matching anchor in a crossing run is skipped and the retained walk succeeds
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P42` — A valid genesis-built proof remains valid after the chain start advances to block zero, preserving its later final point and replay index
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P43` — Advancing the anchor into a proof makes that matching interior anchor its final point and adjusts replay index
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P44` — Advancing the anchor to the proof endpoint leaves a valid walk with no replay tail
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P45` — Advancing the anchor beyond the proof endpoint leaves a valid walk final at the anchor with no remaining tail
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P46` — A participant-addition hop with old and new union signatures verifies and finalizes its authenticated snapshot
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P47` — A participant-removal hop with the old and new union signatures verifies and finalizes its authenticated snapshot
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P48` — A proven departure followed by a proven join uses each hop's own union, so the departed signer is not needed for the later join
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P49` — Omitting the earlier departure hop leaves its signer required by the anchor-to-join union; missing that signature rejects the hop
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P50` — Direct signatures on one block establish a valid above-anchor threshold hop and its final point
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P51` — Distinct author signatures across linked blocks establish virtual-voting finality of the first block
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P52` — Direct first-block signatures plus a linked later author signature establish the same first-block final point
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P53` — Below-threshold signatures on an above-anchor hop return invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P54` — Exactly the required signer set finalizes an above-anchor hop
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P55` — A complete required signer set plus an outside signer still finalizes the hop
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P56` — A removal hop missing the departing old-set member signature is invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P57` — An addition hop missing the joining new-set member signature is invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P58` — Several unfinalized membership changes committed in one anchor run remain a valid replay tail without advancing the finalized point
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P59` — Separating unsigned membership changes into claimed final hops returns invalid
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P60` — Duplicate signatures from one required participant cannot replace the missing required signer
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P61` — An outside signer cannot replace a missing required participant
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P62` — A genesis-zero addition with the complete old/new/consumed-joiner union finalizes zero
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P63` — A genesis-zero removal with the old/new union including the leaver finalizes zero
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P64` — A genesis-zero removal missing the leaver signature remains a valid unfinalized run replayed from genesis
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P65` — A genesis-zero addition missing the joiner signature remains a valid unfinalized run replayed from genesis
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P66` — A supplied hop snapshot at another height returns invalid with snapshotMismatch true
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P67` — A supplied snapshot with the correct height but wrong state hash returns invalid with snapshotMismatch true
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P68` — A later on-chain slash preserves validity of a complete historical proof and does not remove the slashed signer from its required threshold
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P69` — An empty milestone returns invalid without snapshotMismatch
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P70` — A missing milestone snapshot entry returns invalid with snapshotMismatch
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P71` — An excess milestone snapshot entry returns invalid with snapshotMismatch
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P72` — Exactly one correct snapshot entry for a single hop verifies and yields the correct final point and replay index
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P73` — Overlapping anchor and later-final runs carrying different signature evidence for their shared block verify with the later first block finalized
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P74` — A changed shared block in the second overlapping run breaks the proof even when its supplied snapshot matches that changed block
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P75` — A hop consuming a JOIN while the joiner is absent from both endpoint sets fails without that joiner signature, with authenticated snapshot evidence
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P76` — A hop consuming a JOIN while the joiner is absent from both endpoint sets verifies with that joiner signature and finalizes its snapshot
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

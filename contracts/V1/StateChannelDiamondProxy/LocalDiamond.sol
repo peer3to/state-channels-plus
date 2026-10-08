@@ -105,7 +105,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         stateSnapshots[channelId] = stateSnapshot;
     }
 
@@ -116,7 +118,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         bytes32 blockHash = keccak256(abi.encode(messageBlock));
         ChannelBalance storage channelBalance = channelBalances[channelId];
         _persistInboundMessageBlock(channelId, blockHash, messageBlock);
@@ -231,7 +235,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         channelBalances[channelId].totalWithdrawals = totalWithdrawals;
     }
 
@@ -241,7 +247,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
@@ -431,22 +439,16 @@ contract LocalDiamond is StateChannelManagerProxy {
         return _isDisputeInboundAnchorBehindLatestState(dispute, latestStateSnapshot);
     }
 
-    function getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory stateProof)
+    /// The state-proof walk from a locally trusted final snapshot instead of the mirrored anchor (local only).
+    function verifyMilestonesFromTrustedStart(ProofWalkInput memory input, StateSnapshot memory trustedSnapshot)
         public
-        pure
-        returns (BlockConfirmation[] memory)
+        view
+        returns (ProofWalkResult memory)
     {
-        return _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
+        return _walkStateProof(input, trustedSnapshot);
     }
 
     // ========== Override for debugging - Browser compatible console logs ==========
-
-    /// @dev The production `isBlockAuthentic` is routed to `UtilityFacet`; declaring
-    ///     it here keeps local deployments on the debug variant below, since a
-    ///     declared function dispatches before the fallback.
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
-        return _isBlockAuthentic(_block);
-    }
 
     function _isBlockAuthentic(SignedBlock memory _block) internal view override returns (bool) {
         (bool decoded, Block memory decodedBlock) =

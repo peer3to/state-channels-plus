@@ -16,6 +16,7 @@ import {
     addressesEqual
 } from "@/utils";
 import type { DisputeFraudStruct } from "@/utils/Codec";
+import { blockStructWithTransactionHeader } from "@test/factory";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -30,7 +31,12 @@ import {
     DisputeAuditingDataStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { BytesLike, Signer, ZeroAddress } from "ethers";
+import {
+    BytesLike,
+    ContractTransactionReceipt,
+    Signer,
+    ZeroAddress
+} from "ethers";
 
 export type DisputeTamper = (
     dispute: DisputeStruct,
@@ -122,8 +128,8 @@ export class DisputeTampering {
     }
 
     /**
-     * Upload posted auditing data with no inbound run. verifyStateProof never
-     * binds inboundMessageBlocks to the dispute's stated head, so re-pinning
+     * Upload posted auditing data with no inbound run. The state-proof checks
+     * never bind inboundMessageBlocks to the dispute's stated head, so re-pinning
      * the auditing-data hash keeps the upload accepted while the auditor is
      * handed nothing.
      */
@@ -173,6 +179,37 @@ export class DisputeTamperingActions<
         private logger: Logger
     ) {}
 
+    /**
+     * Re-sign the last confirmation of the dispute's last milestone with its
+     * transaction header merged with `header`, by the block's own author: a
+     * state proof whose header no longer matches `dispute.input`.
+     */
+    async mismatchLastMilestoneHeader(
+        dispute: DisputeStruct,
+        header: { channelId?: Hash; forkId?: ForkId }
+    ): Promise<void> {
+        const confirmation = dispute.input.stateProof.milestones
+            .at(-1)
+            ?.blockConfirmations.at(-1);
+        if (!confirmation)
+            throw new Error("mismatchLastMilestoneHeader: no milestone");
+        const block = Codec.decode(
+            confirmation.signedBlock.encodedBlock,
+            Type.Block
+        );
+        const author = this.harness.peers.find(
+            (peer) => peer.address === block.transaction.header.participant
+        );
+        if (!author)
+            throw new Error("mismatchLastMilestoneHeader: author not a peer");
+        confirmation.signedBlock = (
+            await Block.fromBlockStruct(
+                blockStructWithTransactionHeader(block, header),
+                author.signer
+            )
+        ).signedBlock;
+    }
+
     async postTamperedDispute(
         authorPeerIndex: number,
         tamper: DisputeTamper,
@@ -200,6 +237,24 @@ export class DisputeTamperingActions<
             final?: boolean;
         } = {}
     ): Promise<PostedDispute & { finalResolution?: FinalDisputeResolution }> {
+        const submit = await this.prepareTamperedDispute(
+            authorPeerIndex,
+            tamper,
+            options
+        );
+        return submit();
+    }
+
+    /** Prepare and sign before opening a window shared by several uploads. */
+    async prepareTamperedDispute(
+        authorPeerIndex: number,
+        tamper: DisputeTamper,
+        options: {
+            forkId?: ForkId;
+            markMalicious?: boolean;
+            final?: boolean;
+        } = {}
+    ) {
         const markMalicious = options?.markMalicious ?? true;
         const forkId = options?.forkId;
 
@@ -258,57 +313,66 @@ export class DisputeTamperingActions<
             `Peer ${authorPeerIndex} submitting tampered dispute for fork ${targetForkId}`
         );
 
-        const channelManager = peer.p2pInstance.stateChannelManagerContract;
-        let receipt;
-        try {
-            const txResp = dispute.postedAuditingData
-                ? await channelManager.uploadDisputeWithCalldata(
-                      disputeConfirmation,
-                      auditingData
-                  )
-                : await channelManager.uploadDispute(disputeConfirmation);
-            receipt = await txResp.wait();
-        } catch (error) {
-            if (!options.final) throw error;
-            throw new Error(
-                `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
-            );
-        }
-        if (!receipt) throw new Error("Dispute upload receipt unavailable");
-
-        this.harness.context.tamperedDisputes.push(dispute);
-
-        if (!options.final) return { dispute, disputeConfirmation };
-
-        const committedEvent = receipt.logs
-            .map((log) => {
-                try {
-                    return channelManager.interface.parseLog(log);
-                } catch {
-                    return null;
-                }
-            })
-            .find(
-                (event) =>
-                    (event?.name === "DisputeCommitted" ||
-                        event?.name === "DisputeCommittedWithAuditingData") &&
-                    event.args.isFinal === true
-            );
-        if (!committedEvent) {
-            throw new Error(
-                `Threshold signatures did not finalize dispute for peer ${authorPeerIndex} on fork ${targetForkId}`
-            );
-        }
-
-        return {
-            dispute,
-            disputeConfirmation,
-            finalResolution: {
-                forkId: dispute.outputSnapshotDataHash as ForkId,
-                genesisTimestamp: Number(
-                    committedEvent.args.disputeCreationTimestamp
-                )
+        // This upload bypasses the poster's DisputeManager, so its own audit
+        // of it would dispute the same window again; the contract takes one
+        // dispute per participant per window. Its kills still go out.
+        await this.harness.dispute.suppressDisputeInitiation([authorPeerIndex]);
+        return async (): Promise<
+            PostedDispute & { finalResolution?: FinalDisputeResolution }
+        > => {
+            const channelManager = peer.p2pInstance.stateChannelManagerContract;
+            let receipt;
+            try {
+                const txResp = dispute.postedAuditingData
+                    ? await channelManager.uploadDisputeWithCalldata(
+                          disputeConfirmation,
+                          auditingData
+                      )
+                    : await channelManager.uploadDispute(disputeConfirmation);
+                receipt = await txResp.wait();
+            } catch (error) {
+                if (!options.final) throw error;
+                throw new Error(
+                    `Threshold-final dispute upload failed for peer ${authorPeerIndex} on fork ${targetForkId}: ${error instanceof Error ? error.message : String(error)}`
+                );
             }
+            if (!receipt) throw new Error("Dispute upload receipt unavailable");
+
+            this.harness.context.tamperedDisputes.push(dispute);
+
+            if (!options.final) return { dispute, disputeConfirmation };
+
+            const committedEvent = receipt.logs
+                .map((log) => {
+                    try {
+                        return channelManager.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .find(
+                    (event) =>
+                        (event?.name === "DisputeCommitted" ||
+                            event?.name ===
+                                "DisputeCommittedWithAuditingData") &&
+                        event.args.isFinal === true
+                );
+            if (!committedEvent) {
+                throw new Error(
+                    `Threshold signatures did not finalize dispute for peer ${authorPeerIndex} on fork ${targetForkId}`
+                );
+            }
+
+            return {
+                dispute,
+                disputeConfirmation,
+                finalResolution: {
+                    forkId: dispute.outputSnapshotDataHash as ForkId,
+                    genesisTimestamp: Number(
+                        committedEvent.args.disputeCreationTimestamp
+                    )
+                }
+            };
         };
     }
 
@@ -318,12 +382,15 @@ export class DisputeTamperingActions<
         buildProof: (ctx: {
             dispute: DisputeStruct;
             genesisSnapshot: StateSnapshot;
-        }) => DisputeFraudStruct
-    ): Promise<void> {
+        }) => DisputeFraudStruct,
+        // default: the disputer submits against its own dispute, naming itself
+        options: { participant?: string; submitter?: Signer } = {}
+    ): Promise<ContractTransactionReceipt> {
         const peer = this.harness.getPeer(disputerIndex);
-        this.harness.contextApi.markMaliciousPeer({
-            maliciousPeerIndex: disputerIndex
-        });
+        if (!options.submitter)
+            this.harness.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: disputerIndex
+            });
         const dispute = peer.eventSpies.onInitiatingDispute!.lastCall
             .args[1] as DisputeStruct;
         const genesisResult = await this.harness
@@ -341,15 +408,15 @@ export class DisputeTamperingActions<
         const proofStruct = buildProof({ dispute, genesisSnapshot });
         const forged: DisputeFraudProofStruct = {
             proofType: toSolidityDisputeFraudProofType(proofType),
-            participant: dispute.input.disputer,
+            participant: options.participant ?? dispute.input.disputer,
             dispute,
             encodedProof: Codec.encode(proofStruct, proofType)
         };
-        const tx =
-            await peer.p2pInstance.stateChannelManagerContract.applyDisputeFraudProofs(
-                [forged]
-            );
-        await tx.wait();
+        const channelManager = options.submitter
+            ? this.harness.channelManager.connect(options.submitter)
+            : peer.p2pInstance.stateChannelManagerContract;
+        const tx = await channelManager.applyDisputeFraudProofs([forged]);
+        return (await tx.wait())!;
     }
 
     /**
@@ -444,9 +511,15 @@ export class DisputeTamperingActions<
             .request();
     }
 
+    /**
+     * The head block of `peerIndex` re-signed with a snapshot `mutate`
+     * builds, by its author and every other harness peer but
+     * `options.withoutSignerIndices` (peers outside the colluding set).
+     */
     async buildForgedSnapshot(
         peerIndex: number,
-        mutate: ForgeSubmitterSnapshotMutate
+        mutate: ForgeSubmitterSnapshotMutate,
+        options?: { withoutSignerIndices?: number[] }
     ): Promise<ForgedSnapshotBuild> {
         const peer = this.harness.getPeer(peerIndex);
         const forkId = this.harness.activeForkId;
@@ -518,7 +591,11 @@ export class DisputeTamperingActions<
         );
         const confirmationSigs = await Promise.all(
             this.harness.peers
-                .filter((p) => p !== author)
+                .filter(
+                    (p) =>
+                        p !== author &&
+                        !options?.withoutSignerIndices?.includes(p.index)
+                )
                 .map((p) => forgedBlock.sign(p.signer))
         );
         forgedBlock.expandSignatures(confirmationSigs);

@@ -24,10 +24,7 @@ import {
 import { Codec, hash, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
-import type {
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 import { ZeroHash } from "ethers";
 
@@ -53,14 +50,6 @@ export default class ValidationService {
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger
-        );
-    }
-
-    public async isBlockConfirmationAuthentic(
-        blockConfirmation: BlockConfirmationStruct
-    ): Promise<boolean> {
-        return this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
-            blockConfirmation.signedBlock
         );
     }
 
@@ -110,8 +99,8 @@ export default class ValidationService {
             return await strategy.channelNotOpened(entry);
         }
 
-        // Author is a participant
-        if (!(await this.isBlockAuthorParticipant(block, block.channelId))) {
+        // Author is a participant; SUCCESS continues the remaining checks
+        if (!(await this.isBlockAuthorParticipant(entry))) {
             this.logger.warn(
                 "validateBlockConfirmation - author is not participant",
                 {
@@ -119,7 +108,10 @@ export default class ValidationService {
                     block: LoggerUtils.getBlockMetadata(block, this.storage)
                 }
             );
-            return await strategy.blockAuthorIsNotParticipant(entry);
+            const authorResult =
+                await strategy.blockAuthorIsNotParticipant(entry);
+            if (authorResult !== BlockValidationResult.SUCCESS)
+                return authorResult;
         }
 
         // Check conflicting block
@@ -165,8 +157,26 @@ export default class ValidationService {
             return await strategy.blockIsNotNextAndIsInTheFuture(entry);
         }
 
+        // A free height below the installed history: a compact sync proof
+        // skipped it, so the block is inconclusive, not misbehaviour - drop it
+        if (
+            strategy.enforcesLiveForkAndOrderingGates &&
+            block.height < expectedNextHeight &&
+            !this.storage.blocks.getBlock(block.forkId, block.height)
+        ) {
+            this.logger.verbose(
+                "validateBlockConfirmation - free height below the installed history",
+                {
+                    strategy: strategy.name,
+                    expectedNextHeight,
+                    block: LoggerUtils.getBlockMetadata(block, this.storage)
+                }
+            );
+            return await strategy.blockIsBelowInstalledHistory(entry);
+        }
+
         // Is linked
-        if (!this.isLinked(block)) {
+        if (!this.isLinked(block, this.previousOf(entry))) {
             // if first block -> wrong genesis fraud proof
             if (block.height === 0) {
                 this.logger.warn("validateBlockConfirmation - wrong genesis", {
@@ -182,12 +192,8 @@ export default class ValidationService {
             return await strategy.blockIsNotLinkedAndIsNotFirstBlock(entry);
         }
 
-        // isNextLeader - dispute replay must position the state machine at the
-        // block's predecessor first; live pipelines are already positioned.
-        await strategy.prepareStateMachineForLeaderCheck(
-            entry,
-            this.diamondStateMachine
-        );
+        // isNextLeader - the state machine holds the block's predecessor state
+        // (dispute replay positions it in BlockIngestService)
         const nextLeader = await this.diamondStateMachine.getNextToWrite();
         if (nextLeader !== block.author) {
             this.logger.warn(
@@ -204,7 +210,7 @@ export default class ValidationService {
         }
 
         // Time logic
-        const timeResult = await this.validateTimeLogic(block, strategy);
+        const timeResult = await this.validateTimeLogic(entry, strategy);
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
@@ -332,13 +338,23 @@ export default class ValidationService {
 
     // ────────────────────── Helpers ─────────────────────
 
-    private async isBlockAuthorParticipant(
-        block: Block,
-        channelId: ChannelId
-    ): Promise<boolean> {
-        const previousSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
+    /** What `entry` is judged from: its replay predecessor, else the stored history below it. */
+    private previousOf(entry: QueuedBlockEntry): {
+        block?: Block;
+        snapshot?: StateSnapshot;
+    } {
+        return (
+            entry.predecessor ??
+            this.storage.getPreviousBlockAndSnapshot(entry.block.coordinates)
         );
+    }
+
+    private async isBlockAuthorParticipant(
+        entry: QueuedBlockEntry
+    ): Promise<boolean> {
+        const { block } = entry;
+        const channelId = block.channelId;
+        const previousSnapshot = this.previousOf(entry).snapshot;
 
         if (!previousSnapshot) {
             // No local anchor to bind against - fall back to the on-chain union.
@@ -420,20 +436,14 @@ export default class ValidationService {
         );
     }
 
-    private isLinked(block: Block): boolean {
-        const { forkId, height } = block.coordinates;
-        if (height === 0) {
-            const genesisSnapshot =
-                this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
-
-            return genesisSnapshot?.hash === block.previousBlockHash;
-        }
-
-        const prevBlock = this.storage.blocks.getBlock(forkId, height - 1);
-        if (!prevBlock) {
-            return false;
-        }
-        return prevBlock.hash === block.previousBlockHash;
+    /** `block` extends `previous`: its block, or at height 0 the fork genesis. */
+    private isLinked(
+        block: Block,
+        previous: { block?: Block; snapshot?: StateSnapshot }
+    ): boolean {
+        if (block.height === 0)
+            return previous.snapshot?.hash === block.previousBlockHash;
+        return previous.block?.hash === block.previousBlockHash;
     }
 
     private async checkConflictingBlock(
@@ -447,7 +457,11 @@ export default class ValidationService {
             block.height
         );
 
-        if (!maybePreExistingBlock) {
+        // an identical stored block (dispute replay re-judges it) is no conflict
+        if (
+            !maybePreExistingBlock ||
+            maybePreExistingBlock.hash === block.hash
+        ) {
             return BlockValidationResult.SUCCESS;
         }
 
@@ -462,7 +476,12 @@ export default class ValidationService {
         }
 
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
-        if (this.isLinked(block)) {
+        if (
+            this.isLinked(
+                block,
+                this.storage.getPreviousBlockAndSnapshot(block.coordinates)
+            )
+        ) {
             this.logger.warn(
                 "checkConflictingBlock - isLinked but conflict detected",
                 {
@@ -489,9 +508,10 @@ export default class ValidationService {
      * fetching a better on-chain timestamp if needed.
      */
     private async validateTimeLogic(
-        block: Block,
+        entry: QueuedBlockEntry,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
+        const { block } = entry;
         const nowSeconds = Clock.getTimeInSeconds();
 
         // Calculate previousTimestamp
@@ -500,24 +520,22 @@ export default class ValidationService {
         let previousBlock: Block | undefined;
         let previousStateSnapshot: StateSnapshot | undefined;
         // previous block or snapshot
-        const previousBlockOrSnapshot = this.storage.getPreviousBlockOrSnapshot(
-            block.coordinates
-        );
-        if (previousBlockOrSnapshot.block) {
-            previousBlock = previousBlockOrSnapshot.block;
+        const previous = this.previousOf(entry);
+        if (previous.block) {
+            previousBlock = previous.block;
             previousTimestamp = previousBlock.getRelevantTimestamp(
                 block.author
             );
             previousOriginalTimestamp = previousBlock.timestamp;
         } else {
-            previousStateSnapshot = previousBlockOrSnapshot.stateSnapshot;
+            previousStateSnapshot = previous.snapshot;
             previousTimestamp = previousStateSnapshot!.timestamp;
             previousOriginalTimestamp = previousStateSnapshot!.timestamp;
         }
 
         // OBJECTIVE: isValidTimestamp check
         const invalidTimestampProof =
-            this.fraudProofService.buildInvalidTimestampProof(block);
+            this.fraudProofService.buildInvalidTimestampProof(block, previous);
         const isValidTimestamp =
             !(await this.diamondStateMachine.localDiamondContract.hasInvalidTimestamp.staticCall(
                 invalidTimestampProof
@@ -603,7 +621,7 @@ export default class ValidationService {
             );
 
             // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
-            return this.validateTimeLogic(block, strategy);
+            return this.validateTimeLogic(entry, strategy);
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain

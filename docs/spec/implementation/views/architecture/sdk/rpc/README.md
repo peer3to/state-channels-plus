@@ -90,7 +90,7 @@ A service (a subclass of [`ANetworkRpcService`](../../../../../../../src/rpc/net
 internal helpers, and business logic — e.g.
 [`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9)
 owns the per-peer acknowledgment maps, and
-[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L35) owns the in-flight
+[`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L36) owns the in-flight
 sync set and the whole payload-generation/verification machinery. It pairs with an **RpcMethods**
 class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes *only* the
 deliberately public, remotely callable methods. The dispatcher instantiates the RpcMethods class
@@ -113,7 +113,7 @@ helpers and stored callbacks belong on the service or in JavaScript `#private` f
 
 ### 2.2 MainRpcService — the root
 
-[`MainRpcService`](../../../../../../../src/rpc/network/MainRpcService.ts#L10) is the dispatch root. Its constructor
+[`MainRpcService`](../../../../../../../src/rpc/network/MainRpcService.ts#L16) is the dispatch root. Its constructor
 instantiates the six built-in services as public properties (`initHandshakeService`,
 `webRTCSetupService`, `stateTransitionService`, `spectateService`, `isForkDisputedService`,
 `joinChannelService`); the property name is the wire-visible service name (`rpc.service`).
@@ -129,7 +129,7 @@ Constructor identity is not stable across module graphs, so it is not part of ei
 resolution or incoming dispatch. The structural check only classifies the service; normal RPC
 guards and payload validation still apply.
 
-[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L48)
+[`OpenChannelNegotiationService`](../../../../../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L138)
 is exported but **not** instantiated by `MainRpcService`; it only becomes reachable when an
 integrator's custom root wires it in (§2.5). Until wired, its name resolves to nothing and frames
 addressed to it disconnect the sender like any unknown service.
@@ -182,12 +182,12 @@ under every mode its type admits (e.g. a `void` method must tolerate being broad
 ### 2.5 Custom roots — manifest + registry
 
 Integrators extend the boundary by subclassing `MainRpcService` and shipping the subclass as a
-[`CustomRpcManifest`](../../../../../../../src/rpc/network/registry.ts#L12) (`{module, exportName?, options?}`) via
+[`CustomRpcManifest`](../../../../../../../src/rpc/network/registry.ts#L24) (`{module, exportName?, options?}`) via
 `p2pSetup(options.customRpcManifest)` ([architecture.md](../architecture.md) §1.1). The host side
 resolves the manifest with
 [`resolveCustomRpcConstructor`](../../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L5) (dynamic module
 load; throws unless the export is a constructor) and passes the constructor into
-[`P2PManager`](../../../../../../../src/P2PManager.ts#L34), which instantiates it in place of the base root and
+[`P2PManager`](../../../../../../../src/P2PManager.ts#L40), which instantiates it in place of the base root and
 derives `remoteRpc` from it. Typing flows through the `TCustomRpc extends MainRpcService`
 parameter, so custom services get the same typed sending surface as built-ins
 (`RemoteRpcProxyType<TCustomRpc>`), including through `hostRpc` (§3). `customRpcOptions` without a
@@ -257,7 +257,7 @@ substitutes. Examples of the split done right:
 [`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
 rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
 past the skew comparison);
-[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L97)
+[`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L100)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
 sync, not an unhandled rejection;
 [`JoinChannelService.signJoinRequest`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)
@@ -511,7 +511,7 @@ state effect is a defect.
   §2.2), then `P2PManager.dispose()` disconnects all transports — rejecting all pending requests —
   and disposes discovery. Handlers already in flight are not cancelled; long-running service work
   checks `stateManager.isDisposed` at its own checkpoints (e.g.
-  [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242)).
+  [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409)).
 - **Transport replacement.** Peer identity is the EVM address; profiles (and blacklist state)
   survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H` (Identity-keyed blacklisting)](../components.md#inv-sdk-6-ccg31h)). The
   WebRTC upgrade retires the old transport after an `agreementTime` grace; address-targeted

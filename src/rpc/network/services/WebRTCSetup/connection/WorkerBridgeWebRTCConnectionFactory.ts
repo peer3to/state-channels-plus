@@ -9,11 +9,9 @@ import type {
 import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
 import type { SerializedError } from "@/rpc/internal/errorWire";
 import { deserializeError } from "@/rpc/internal/errorWire";
+import type { RemoteRoot } from "@/rpc/internal/RemoteRoot";
 import type { WebRTCMainThreadBridgeRoot } from "@/rpc/internal/roots/WebRTCMainThreadBridge";
-import type {
-    WebRTCWorkerBridgeRoot,
-    WebRTCWorkerBridgeRemoteRoot
-} from "@/rpc/internal/roots/WebRTCWorkerBridgeRoot";
+import type { WebRTCWorkerBridgeRoot } from "@/rpc/internal/roots/WebRTCWorkerBridgeRoot";
 
 class ProxyRTCDataChannel implements WebRTCDataChannelLike {
     onmessage: ((event: { data: any }) => void) | null = null;
@@ -64,7 +62,7 @@ class ProxyRTCDataChannel implements WebRTCDataChannelLike {
 }
 
 class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
-    private workerBridgeRemoteRoot?: WebRTCWorkerBridgeRemoteRoot;
+    private workerBridgeRemoteRoot?: RemoteRoot<WebRTCWorkerBridgeRoot>;
     private readonly callbacksByPeerAddress = new Map<
         WebRTCPeerAddress,
         WebRTCConnectionCallbacks
@@ -79,7 +77,7 @@ class WorkerBridgeWebRTCConnectionFactory implements WebRTCConnectionFactory {
     >();
 
     /** Bind the bridge created and owned by the RuntimeHost. */
-    public attachBridge(remoteRoot: WebRTCWorkerBridgeRemoteRoot): void {
+    public attachBridge(remoteRoot: RemoteRoot<WebRTCWorkerBridgeRoot>): void {
         this.workerBridgeRemoteRoot = remoteRoot;
         remoteRoot.onClosed(() => {
             if (!remoteRoot.isDisposing)

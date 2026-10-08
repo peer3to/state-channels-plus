@@ -1,5 +1,4 @@
 import { type RootStartContext } from "../createRoot";
-import type { RemoteRoot } from "../RemoteRoot";
 import {
     ContractExecutorService,
     type ContractExecutorInitialization
@@ -33,9 +32,14 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
 
     // Implements root cleanup through the shared recursive disposal contract.
     public override dispose(): Promise<void> {
-        return this.disposeRoot(() => {
-            this.executor.dispose();
-        });
+        return this.disposeRoot(
+            () => {
+                this.executor.dispose();
+            },
+            // Admitted EVM work may still call a child (a custom precompile),
+            // so it settles before children are disposed.
+            () => this.executor.closeAdmission()
+        );
     }
 
     /**
@@ -54,5 +58,3 @@ export class ContractExecutorRoot extends AInternalRpcRoot {
         await this.executor.init(this.initialization);
     }
 }
-
-export type ContractExecutorRemoteRoot = RemoteRoot<ContractExecutorRoot>;

@@ -56,3 +56,5 @@ Upload bookkeeping
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P14` — window-created-too-early race revert
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P15` — evidence rejected past period edge
 - [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P16` — the past-deadline rejection on a populated window reverts `RaceConditionDisputeEvidencePeriodExpired` carrying the window's computed evidence-period end and the strictly later current timestamp as two distinct values
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P18` — anchor hash one block below the inbound head reverts RaceConditionDisputeInboundNotLatest(head, anchor) without mutation, in both upload modes
+- [x] `UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P19` — anchor at the inbound head is accepted, in both upload modes

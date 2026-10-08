@@ -1,28 +1,51 @@
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash", function () {
-    it("dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight = 0 → dispute upload succeeds (genesis anchor is always a valid ancestor)", async function () {
+    it("dispute.input.latestInboundMessageBlockHash below the chain inbound head → RaceConditionDisputeInboundNotLatest", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetupCalldataPath();
+        await h.lifecycle.start(3, 3);
+        const forkId = h.activeForkId!;
+        const disputer = h.getPeer(0);
 
-        // bytes32(0) is the genesis anchor — always valid at upload time even when
-        // the on-chain inbound chain has advanced past genesis. `_isDisputeInboundHashValid`
-        // walks the inbound chain backwards and accepts any valid ancestor + height match.
-        await h.tamper.postTamperedDispute(1, (dispute) => {
-            dispute.input.latestInboundMessageBlockHash = ethers.ZeroHash;
-            dispute.input.lastInboundMessageBlockHeight = 0n;
-        });
+        const { dispute, disputeConfirmation } =
+            await h.dispute.fetchConstructedDispute(disputer.index, forkId);
+        // the genesis anchor sits below the open's inbound block, the chain's inbound head
+        dispute.input.latestInboundMessageBlockHash = ethers.ZeroHash;
+        dispute.input.lastInboundMessageBlockHeight = 0n;
+        dispute.postedAuditingData = false;
+        await h.tamper.resignDispute(
+            disputer.signer,
+            dispute,
+            disputeConfirmation
+        );
 
-        // Upload succeeded → at least one dispute committed on-chain on the active fork.
-        await h.assert.dispute.committedWait({
-            peersIndices: [1],
-            expectedCount: 1
-        });
+        const inboundHead = await h.channelManager.getChannelBalance(
+            h.channelId
+        );
+        expect(
+            inboundHead.latestInboundMessageBlockHeight > 0n,
+            "the open appended an inbound block"
+        ).to.equal(true);
+
+        const contract = disputer.p2pInstance.stateChannelManagerContract;
+        await expect(contract.uploadDispute(disputeConfirmation))
+            .to.be.revertedWithCustomError(
+                contract,
+                "RaceConditionDisputeInboundNotLatest"
+            )
+            .withArgs(
+                inboundHead.latestInboundMessageBlockHash,
+                ethers.ZeroHash
+            );
+        expect(
+            await h.channelManager.getDisputeWindowCreationTimestamp(
+                h.channelId,
+                forkId
+            )
+        ).to.equal(0n);
     });
 
-    // dispute.input.latestInboundMessageBlockHash junk variants (non-genesis hash, or
-    // genesis hash with height>0) are exercised in disputeInputFields/inboundHash.test.ts —
-    // they trigger DisputeInboundHashNotInChain via the fraud-proof pipeline, not via
-    // upload revert, so they live under the field-level coverage tree.
+    // junk anchors (random hash, genesis hash with height > 0) hit this same gate
 });

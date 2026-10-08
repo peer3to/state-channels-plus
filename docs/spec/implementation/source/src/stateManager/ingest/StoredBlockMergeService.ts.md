@@ -23,10 +23,10 @@ Stored confirmation strategy outcomes
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P5` — stray + a real new signature → stray stripped, the real one merges, BROADCAST
 - [ ] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P6` — under SpectatingValidationStrategy a genuine new signature → BROADCAST and persisted
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P7` — under CalldataCommittedStrategy the event-shaped confirmation (no signatures) → DUPLICATE, the tripwire never fires
-- [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P8` — under CalldataCommittedStrategy a genuine new signature → the unreachable tripwire throws
+- [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P8` — under CalldataCommittedStrategy a genuine new signature from a merged gossip copy → BROADCAST and persisted, as the live strategy
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P9` — under DisputeValidationStrategy a genuine new signature → DUPLICATE, not re-gossiped
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P10` — a real synced spectator persists late signatures without an outgoing confirmation
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P11` — a pending joiner persists late signatures without relaying before participant promotion
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P13` — unrecoverable confirmations are removed while the stored block remains committed
 - [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P14` — a committed participant using SpectatingValidationStrategy broadcasts genuine signature growth
-- [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P15` — each stored copy retains at most N source values before ordinary validation; independent copies merge admitted confirmations
+- [x] `UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P15` — each stored copy retains at most N source values before ordinary validation and a nonce-variant overflow blacklists its source as a double signer; independent copies merge admitted confirmations

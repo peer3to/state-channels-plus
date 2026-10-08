@@ -1034,13 +1034,13 @@ describe("discovery runtime port", function () {
     it("authored leave fast fallback rejects on missing-marker", async function () {
         await assertAuthoredLeaveFallback(false, "missing-marker");
     });
-    it("authored leave fast fallback rejects on evidence-expired", async function () {
+    it("authored leave fast fallback on evidence-expired awaits settlement and resolves on the reduced fork", async function () {
         await assertAuthoredLeaveFallback(false, "evidence-expired");
     });
     it("authored leave slow fallback rejects on missing-marker", async function () {
         await assertAuthoredLeaveFallback(true, "missing-marker");
     });
-    it("authored leave slow fallback rejects on evidence-expired", async function () {
+    it("authored leave slow fallback on evidence-expired awaits settlement instead of rejecting", async function () {
         await assertAuthoredLeaveFallback(true, "evidence-expired");
     });
     it("authored leave slow fallback settles through one dispute", async function () {

@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 const path = require("path");
-const { DEFAULT_LOG_DIR } = require("./constants");
+const { DEFAULT_LOG_DIR, DEFAULT_COST_CACHE_PATH } = require("./constants");
 const { DEFAULT_FORGE_THREADS } = require("./forgeConfig");
 
 const HELP_TEXT = `Usage: yarn test:parallel [options]
@@ -15,23 +15,32 @@ Options:
                                   Mocha filename glob relative to test/
       --forge-test-pattern <glob>
                                   Solidity filename glob relative to test/
+      --browser-test-pattern <glob>
+                                  Browser gate filename glob relative to test/
       --e2e-only                 Discover only Mocha tests under test/e2e
       --forge-only               Discover only Foundry (forge) test contracts
       --no-forge                 Skip Foundry (forge) test contracts
       --forge-threads <count>    Threads per forge task (default 1)
+      --test-parallel-script    Include parallel-runner infrastructure tests
+      --test-browser            Include browser gates and browser-required Mocha tests
+      --browser-only             Discover only browser gates
+      --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
+      --schedule fifo|cost      Task selection policy (default cost)
+      --cost-cache <path>       Task cost cache path (default .cache/test-costs.json)
+      --cost-cache-read-only    Read task costs but never write them (CI)
       --keep-infra-logs          Keep infrastructure logs even when all tests pass
       --source-tests             Run the TypeScript sources under ts-node instead of the compiled dist tree
-      --skip-build               Reuse the existing dist tree instead of rebuilding it first
+      --skip-build               Reuse existing contracts and dist tree without rebuilding
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes
-      --cpu-limit <count>        Distributed worker CPU request (advisory; no container quota)
+      --cpu-limit <count>        Distributed cost CPU budget in cores (no container quota)
       --disk-limit-bytes <bytes> Distributed environment disk request
       --pids-limit <count>       Distributed environment process limit
       --sdk-thread               Run the SDK host in a worker thread
@@ -43,9 +52,10 @@ Options:
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
 
-By default all Mocha tests and all Foundry test contracts under test/ are
-discovered and logs are written to a new logs/run-N directory. Use --e2e-only
-only when the ordinary Mocha tier is not needed; it also drops the forge tier.
+By default Mocha tests (excluding parallel-runner and browser-required tests)
+and all Foundry test contracts under test/ are discovered and logs are written to a new logs/run-N directory.
+Use --e2e-only only when the ordinary Mocha tier is not needed; it also drops
+the forge and browser tiers.
 Each forge task uses one thread by default because the runner already
 parallelizes across tasks. Override it with --forge-threads.`;
 
@@ -64,6 +74,9 @@ function isAcceptableLogDir(value) {
 function parseCliArgs(argv) {
     const options = {
         logDir: DEFAULT_LOG_DIR,
+        costCachePath: DEFAULT_COST_CACHE_PATH,
+        costCacheReadOnly: false,
+        schedule: "cost",
         // Explicit --logDir → that exact dir is used (and cleared);
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
         logDirProvided: false,
@@ -75,6 +88,7 @@ function parseCliArgs(argv) {
         testPattern: undefined,
         mochaTestPattern: undefined,
         forgeTestPattern: undefined,
+        browserTestPattern: undefined,
         help: false,
         e2eOnly: false,
         // Foundry test contracts are discovered alongside Mocha tests by
@@ -82,6 +96,11 @@ function parseCliArgs(argv) {
         forge: true,
         forgeOnly: false,
         forgeThreads: DEFAULT_FORGE_THREADS,
+        // Browser gates are opt-in via --test-browser;
+        // --no-browser drops them, --browser-only drops every other tier.
+        browser: false,
+        testParallelScript: false,
+        browserOnly: false,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
@@ -117,6 +136,36 @@ function parseCliArgs(argv) {
 
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
+
+        if (arg === "--schedule" || arg.startsWith("--schedule=")) {
+            const value =
+                arg === "--schedule"
+                    ? argv[++i]
+                    : arg.slice("--schedule=".length);
+            if (!["fifo", "cost"].includes(value))
+                throw new Error("--schedule requires fifo or cost");
+            options.schedule = value;
+            continue;
+        }
+
+        if (arg === "--cost-cache" || arg.startsWith("--cost-cache=")) {
+            const value =
+                arg === "--cost-cache"
+                    ? argv[++i]
+                    : arg.slice("--cost-cache=".length);
+            if (
+                !value?.trim() ||
+                value.startsWith("-") ||
+                value.includes("\u0000")
+            )
+                throw new Error("--cost-cache requires a nonempty path");
+            options.costCachePath = value;
+            continue;
+        }
+        if (arg === "--cost-cache-read-only") {
+            options.costCacheReadOnly = true;
+            continue;
+        }
 
         if (arg === "--help" || arg === "-h") {
             options.help = true;
@@ -175,6 +224,20 @@ function parseCliArgs(argv) {
             );
             continue;
         }
+        if (arg === "--browser-test-pattern") {
+            const next = argv[i + 1];
+            if (!next || next.startsWith("-"))
+                throw new Error("--browser-test-pattern requires a value");
+            options.browserTestPattern = next;
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--browser-test-pattern=")) {
+            options.browserTestPattern = arg.slice(
+                "--browser-test-pattern=".length
+            );
+            continue;
+        }
         if (arg === "--e2e-only") {
             options.e2eOnly = true;
             continue;
@@ -185,6 +248,23 @@ function parseCliArgs(argv) {
         }
         if (arg === "--no-forge") {
             options.forge = false;
+            continue;
+        }
+        if (arg === "--test-parallel-script") {
+            options.testParallelScript = true;
+            continue;
+        }
+        if (arg === "--test-browser") {
+            options.browser = true;
+            continue;
+        }
+        if (arg === "--browser-only") {
+            options.browserOnly = true;
+            options.browser = true;
+            continue;
+        }
+        if (arg === "--no-browser") {
+            options.browser = false;
             continue;
         }
         if (arg === "--forge-threads") {
@@ -471,11 +551,23 @@ function parseCliArgs(argv) {
     if (options.forgeOnly && options.e2eOnly) {
         throw new Error("--forge-only conflicts with --e2e-only");
     }
+    if (options.browserOnly && argv.includes("--no-browser")) {
+        throw new Error("--browser-only conflicts with --no-browser");
+    }
+    if (options.browserOnly && options.e2eOnly) {
+        throw new Error("--browser-only conflicts with --e2e-only");
+    }
+    if (options.browserOnly && options.forgeOnly) {
+        throw new Error("--browser-only conflicts with --forge-only");
+    }
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");
     }
     if (options.distributed) {
-        const slots = options.forgeOnly ? 0 : options.slots;
+        // Neither tier talks to a warm slot, so an entry made only of their
+        // tasks asks its workers for none.
+        const slots =
+            options.forgeOnly || options.browserOnly ? 0 : options.slots;
         options.executionProfile = Object.fromEntries(
             Object.entries({
                 schedulerTickMs: options.schedulerTickMs,
@@ -498,12 +590,16 @@ function parseCliArgs(argv) {
 
 /**
  * Which discovery tiers a parsed CLI selects. `--e2e-only` narrows the Mocha
- * tier to test/e2e and drops forge with it (forge contracts never live there).
+ * tier to test/e2e and drops forge and the browser gates with it (neither lives
+ * there).
  */
 function resolveDiscoverySelection(options) {
     return {
-        includeMocha: !options.forgeOnly,
-        includeForge: options.forge !== false && !options.e2eOnly
+        includeMocha: !options.forgeOnly && !options.browserOnly,
+        includeForge:
+            options.forge !== false && !options.e2eOnly && !options.browserOnly,
+        includeBrowser:
+            options.browser !== false && !options.e2eOnly && !options.forgeOnly
     };
 }
 

@@ -31,4 +31,4 @@ Genesis deposit mirror
 - Oracle: Honest replay passes the balance invariant; changing the deposit total produces the matching fraud proof
 
 - [x] `UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ.P1` — honest nonzero genesis deposits pass
-- [x] `UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ.P2` — altered nonzero genesis deposits fail
+- [ ] `UNIT-TEST-LOCAL-DIAMOND-2-G8M3VQ.P2` — altered nonzero genesis deposits fail

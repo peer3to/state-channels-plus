@@ -3,7 +3,7 @@ pragma solidity ^0.8.8;
 import "./StateChannelCommon.sol";
 import "./UtilityFacet.sol";
 import "./Errors.sol";
-import "hardhat/console.sol";
+import "../types/DisputeFraudProofTypes.sol";
 
 contract StateProofFacet is StateChannelCommon {
     function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
@@ -12,16 +12,11 @@ contract StateProofFacet is StateChannelCommon {
         virtual
         returns (bool)
     {
-        if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
-            return false;
-        }
-
-        (bool validLatestBlock, bool hasBlock, Block memory latestBlock) = _tryGetLatestBlock(dispute.input.stateProof);
-        if (!validLatestBlock) {
-            return false;
-        }
+        (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
         if (hasBlock) {
-            return (latestBlock.stateSnapshotHash == dispute.input.latestStateSnapshotHash);
+            (bool decoded, Block memory latestBlock) =
+                UtilityFacet(utilityFacetAddress).tryDecodeBlock(latestSignedBlock.encodedBlock);
+            return decoded && latestBlock.stateSnapshotHash == dispute.input.latestStateSnapshotHash;
         }
 
         if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, genesisStateSnapshotData)) {
@@ -43,297 +38,215 @@ contract StateProofFacet is StateChannelCommon {
         return (dispute.input.latestStateSnapshotHash == keccak256(abi.encode(genesisStateSnapshot)));
     }
 
-    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
+    /**
+     * The invalid-state-proof counter, judged on one step: the proof's latest state is not the dispute's, or the
+     * pointed step of the walk from the on-chain anchor fails. With posted data the committed auditing data is the
+     * evidence: its hash is checked (linear in the posted data, as the dispute's own commitment hash is), then only
+     * the step's entries are read; a committed snapshot its block does not commit to is the disputer's fault. With
+     * omitted data the challenger supplies the genesis data and the step's snapshots; evidence that does not fit makes
+     * the challenge invalid.
+     */
+    function isStateProofStepInvalid(Dispute memory dispute, DisputeInvalidStateProof memory proof)
         public
-        virtual
+        view
         returns (bool)
     {
-        // reference check - is this the auditingData the dispute committed to?
-        if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(disputeAuditingData))) {
-            return false;
-        }
-
-        if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, disputeAuditingData.genesisStateSnapshotData)) {
-            return false;
-        }
-        if (dispute.input.stateProof.milestones.length != 0 && dispute.input.stateProof.signedBlocks.length != 0) {
-            return false;
-        }
-
-        if (!_tryVerifyMilestones(dispute, disputeAuditingData)) {
-            return false;
-        }
-
-        if (dispute.input.stateProof.signedBlocks.length != 0) {
-            if (!_areSignedBlocksLinkedAndVerified(dispute.input.stateProof.signedBlocks)) {
-                return false;
+        DisputeAuditingData memory data = proof.auditingData;
+        uint256 milestoneIndex = proof.milestoneIndex;
+        StateSnapshot memory previousSnapshot = proof.previousStateSnapshot;
+        StateSnapshot memory resultingSnapshot = proof.resultingStateSnapshot;
+        if (dispute.postedAuditingData) {
+            if (dispute.input.disputeAuditingDataHash != keccak256(abi.encode(data))) return false;
+            if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(data.latestStateSnapshot))) return true;
+            // the committed data holds one snapshot per milestone
+            if (data.milestoneSnapshots.length != dispute.input.stateProof.milestones.length) return true;
+            if (milestoneIndex < data.milestoneSnapshots.length) {
+                resultingSnapshot = data.milestoneSnapshots[milestoneIndex];
+                if (milestoneIndex != 0) previousSnapshot = data.milestoneSnapshots[milestoneIndex - 1];
             }
-        }
-
-        if (!isCorrectLatestState(dispute, disputeAuditingData.genesisStateSnapshotData)) {
+        } else if (!_isGenesisSnapshotDataLinkedToFork(dispute.input.forkId, data.genesisStateSnapshotData)) {
+            // fraud prover supplies the genesis reference -> it must be linked to the fork
             return false;
         }
-
-        //check commitment to latestStateSnapshot
-        if (dispute.input.latestStateSnapshotHash != keccak256(abi.encode(disputeAuditingData.latestStateSnapshot))) {
-            return false;
-        }
-        return true;
+        if (!isCorrectLatestState(dispute, data.genesisStateSnapshotData)) return true;
+        (bool isFault, bool snapshotMismatch) = _isStateProofStepFault(
+            ProofWalkInput(
+                dispute.input.channelId,
+                dispute.input.forkId,
+                dispute.input.stateProof,
+                data.genesisStateSnapshotData,
+                new StateSnapshot[](0)
+            ),
+            stateSnapshots[dispute.input.channelId],
+            milestoneIndex,
+            proof.hasBlockIndex,
+            proof.blockIndex,
+            previousSnapshot,
+            resultingSnapshot
+        );
+        return isFault || (snapshotMismatch && dispute.postedAuditingData);
     }
 
-    function _tryGetLatestBlock(StateProof memory stateProof)
-        internal
+    /// The on-chain anchor of `forkId`; see `_getAnchorSnapshot`.
+    function getAnchorSnapshot(bytes32 channelId, bytes32 forkId)
+        public
         view
-        returns (bool isValid, bool hasBlock, Block memory blockData)
+        returns (bool canUseOnChainSnapshot, StateSnapshot memory onChainSnapshot)
     {
-        SignedBlock memory latestSignedBlock;
-        (hasBlock, latestSignedBlock) = _getLatestSignedBlock(stateProof);
-        if (!hasBlock) {
-            return (true, false, blockData);
-        }
+        return _getAnchorSnapshot(channelId, forkId);
+    }
 
+    /// The state-proof walk with finality, from the anchor this contract's storage holds.
+    function verifyMilestones(ProofWalkInput memory input) public view virtual returns (ProofWalkResult memory) {
+        return _walkStateProof(input, stateSnapshots[input.channelId]);
+    }
+
+    /// The dispute's latest state is strictly below the same-fork non-genesis on-chain anchor, which is already
+    /// final. An empty proof claims the fork genesis, which that anchor is past even at equal height zero.
+    function isStateProofBelowOnChainAnchor(Dispute memory dispute) public view returns (bool) {
+        (bool canUseOnChainSnapshot, StateSnapshot memory onChainSnapshot) =
+            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        if (!canUseOnChainSnapshot) return false;
+        if (dispute.input.stateProof.milestones.length == 0) return true;
+        (bool hasBlock, SignedBlock memory latestSignedBlock) = _getLatestSignedBlock(dispute.input.stateProof);
+        if (!hasBlock) return false;
         (bool decoded, Block memory latestBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(latestSignedBlock.encodedBlock);
-        if (!decoded) {
-            return (false, true, blockData);
-        }
-        return (true, true, latestBlock);
+        return decoded && latestBlock.transaction.header.transactionCnt < onChainSnapshot.blockHeight;
     }
 
-    function _tryVerifyMilestones(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        internal
-        returns (bool isValid)
+    /// The dispute's timeout names a height that a threshold-final state on the same fork already reaches: the
+    /// same-fork chain anchor, or the final point of `proof.finalProof` walked from the chain's start.
+    function isTimeoutSupersededByFinalState(Dispute memory dispute, TimeoutSupersededByFinalState memory proof)
+        public
+        view
+        returns (bool)
     {
-        StateSnapshot memory genesisStateSnapshot = StateSnapshot({
-            snapshotData: disputeAuditingData.genesisStateSnapshotData,
-            forkId: dispute.input.forkId,
-            blockHeight: 0,
-            timestamp: 0
-        });
+        Timeout memory timeout = dispute.input.timeout;
+        if (timeout.participant == address(0)) return false;
+        (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
+            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        if (canUseOnChainSnapshot && anchor.blockHeight >= timeout.blockHeight) return true;
+        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        return isFinal && finalPoint.blockHeight >= timeout.blockHeight;
+    }
 
-        try StateChannelManagerInterface(address(this)).verifyMilestones(
-            dispute.input.forkId,
-            dispute.input.stateProof.milestones,
-            disputeAuditingData.milestoneSnapshots,
-            genesisStateSnapshot
-        ) returns (bool milestoneProofsValid) {
-            return milestoneProofsValid;
-        } catch {
-            return false;
+    /**
+     * The dispute's block at `blockIndex` of milestone `milestoneIndex`, one its walk checks, is at the height of a
+     * threshold-final state F of the same fork (`proof.finalProof`) and commits another snapshot: the dispute's
+     * history conflicts with the final history. Only F's own height is compared: the final proof proves the snapshot
+     * at that height, not which blocks lie below it.
+     */
+    function isDisputeConflictingWithFinalState(Dispute memory dispute, DisputeConflictsWithFinalState memory proof)
+        public
+        view
+        returns (bool)
+    {
+        (bool isFinal, StateSnapshot memory finalPoint) = _finalPointOf(dispute, proof.finalProof);
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (!isFinal || proof.milestoneIndex >= milestones.length) return false;
+        MilestoneProof memory milestone = milestones[proof.milestoneIndex];
+        if (proof.blockIndex >= milestone.blockConfirmations.length) return false;
+        WalkCursor memory cursor;
+        cursor.start = stateSnapshots[dispute.input.channelId];
+        cursor.useOnChainSnapshot = _canStartFromOnChainSnapshot(cursor.start, dispute.input.forkId);
+        // a block the dispute's walk does not check (history below the anchor) is no conflict
+        (bool isKept, bool hasHeight, uint256 fromIndex) = _checkedRunStart(milestone, cursor);
+        if (!isKept || !hasHeight || proof.blockIndex < fromIndex) return false;
+        (bool decoded, Block memory conflicting) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
+            milestone.blockConfirmations[proof.blockIndex].signedBlock.encodedBlock
+        );
+        return decoded && conflicting.transaction.header.channelId == dispute.input.channelId
+            && conflicting.transaction.header.forkId == dispute.input.forkId
+            && conflicting.transaction.header.transactionCnt == finalPoint.blockHeight
+            && conflicting.stateSnapshotHash != keccak256(abi.encode(finalPoint));
+    }
+
+    /// The final point of `finalProof` walked from the chain's start, when the proof is on the dispute's channel and
+    /// fork, walks, and ends above the fork genesis (no block commits the genesis).
+    function _finalPointOf(Dispute memory dispute, ProofWalkInput memory finalProof)
+        internal
+        view
+        returns (bool isFinal, StateSnapshot memory finalPoint)
+    {
+        if (finalProof.channelId != dispute.input.channelId || finalProof.forkId != dispute.input.forkId) {
+            return (false, finalPoint);
         }
+        ProofWalkResult memory walk = _walkStateProof(finalProof, stateSnapshots[finalProof.channelId]);
+        return (
+            walk.valid && _canStartFromOnChainSnapshot(walk.finalizedSnapshot, finalProof.forkId),
+            walk.finalizedSnapshot
+        );
     }
 
-    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view returns (bool) {
-        return _areSignedBlocksLinkedAndVerified(signedBlocks);
+    /**
+     * A block-specific challenge can punish the dispute submitter only for a block after the protected boundary:
+     * the last milestone's first block or the same-fork anchor, whichever is later. `blockIndex` counts from the
+     * start of the last milestone. With a genesis anchor, a last milestone starting at block zero leaves zero
+     * eligible; block zero's resulting snapshot as the anchor protects zero.
+     */
+    function isBlockChallengeEligible(Dispute memory dispute, uint256 blockIndex) public view returns (bool) {
+        MilestoneProof[] memory milestones = dispute.input.stateProof.milestones;
+        if (milestones.length == 0) return false;
+        BlockConfirmation[] memory lastRun = milestones[milestones.length - 1].blockConfirmations;
+        if (blockIndex >= lastRun.length) return false;
+        (bool firstDecoded, Block memory firstBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[0].signedBlock.encodedBlock);
+        (bool decoded, Block memory challengedBlock) =
+            UtilityFacet(utilityFacetAddress).tryDecodeBlock(lastRun[blockIndex].signedBlock.encodedBlock);
+        if (!firstDecoded || !decoded) return false;
+
+        (bool canUseOnChainSnapshot, StateSnapshot memory anchor) =
+            _getAnchorSnapshot(dispute.input.channelId, dispute.input.forkId);
+        uint256 firstHeight = firstBlock.transaction.header.transactionCnt;
+        uint256 boundaryEnd = 1;
+        if (canUseOnChainSnapshot && firstHeight <= anchor.blockHeight) {
+            boundaryEnd = anchor.blockHeight - firstHeight + 1;
+        } else if (!canUseOnChainSnapshot && firstHeight == 0) {
+            boundaryEnd = 0;
+        }
+        if (blockIndex < boundaryEnd) return false;
+        return !canUseOnChainSnapshot || challengedBlock.transaction.header.transactionCnt > anchor.blockHeight;
     }
 
+    /**
+     * Input-only structure check of the last milestone's block at `blockIndex`: the block must be authentic and,
+     * after the first, link to its predecessor in the same run by hash and height + 1. Out-of-range positions are no
+     * offense.
+     */
     function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
         public
         view
         returns (bool)
     {
-        BlockConfirmation[] memory unfinalized = _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
-        if (blockIndex >= unfinalized.length) return false;
+        if (stateProof.milestones.length == 0) return false;
+        MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
+        if (blockIndex >= lastMilestone.blockConfirmations.length) return false;
 
-        return _isInvalidBlockStructureInStateProof(stateProof, unfinalized, blockIndex);
+        return _isInvalidBlockStructureInStateProof(lastMilestone, blockIndex);
     }
 
-    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
-        public
+    function _isInvalidBlockStructureInStateProof(MilestoneProof memory milestone, uint256 blockIndex)
+        internal
         view
-        returns (bool found, uint256 blockIndex)
+        returns (bool)
     {
-        BlockConfirmation[] memory unfinalized = _getUnfinalizedBlockConfirmationsFromStateProof(stateProof);
-        for (uint256 i = 0; i < unfinalized.length; i++) {
-            if (_isInvalidBlockStructureInStateProof(stateProof, unfinalized, i)) return (true, i);
-        }
-        return (false, 0);
-    }
-
-    function _isInvalidBlockStructureInStateProof(
-        StateProof memory stateProof,
-        BlockConfirmation[] memory unfinalized,
-        uint256 blockIndex
-    ) internal view returns (bool) {
-        SignedBlock memory currentSignedBlock = unfinalized[blockIndex].signedBlock;
+        SignedBlock memory currentSignedBlock = milestone.blockConfirmations[blockIndex].signedBlock;
         if (!_isBlockAuthentic(currentSignedBlock)) return true;
+        if (blockIndex == 0) return false;
 
         (bool currentDecoded, Block memory currentBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentSignedBlock.encodedBlock);
         if (!currentDecoded) return true;
 
-        if (stateProof.milestones.length == 0 && blockIndex == 0) {
-            return currentBlock.transaction.header.transactionCnt != 0;
-        }
-
-        SignedBlock memory previousSignedBlock;
-        if (stateProof.milestones.length > 0) {
-            MilestoneProof memory lastMilestone = stateProof.milestones[stateProof.milestones.length - 1];
-            previousSignedBlock = lastMilestone.blockConfirmations[blockIndex].signedBlock;
-        } else {
-            previousSignedBlock = stateProof.signedBlocks[blockIndex - 1];
-        }
+        SignedBlock memory previousSignedBlock = milestone.blockConfirmations[blockIndex - 1].signedBlock;
 
         (bool previousDecoded, Block memory previousBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(previousSignedBlock.encodedBlock);
         if (!previousDecoded) return true;
 
         return currentBlock.previousBlockHash != keccak256(previousSignedBlock.encodedBlock)
-            || currentBlock.transaction.header.transactionCnt != previousBlock.transaction.header.transactionCnt + 1;
-    }
-
-    function _areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
-        internal
-        view
-        returns (bool isLinked)
-    {
-        bytes32 previousBlockHash;
-        for (uint256 i = 0; i < signedBlocks.length; i++) {
-            bytes memory currentBlockEncoded = signedBlocks[i].encodedBlock;
-            (bool decoded, Block memory currentBlock) =
-                UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentBlockEncoded);
-            if (!decoded) {
-                return false;
-            }
-            //check is linked
-            if (i == 0 && currentBlock.transaction.header.transactionCnt != 0) {
-                return false;
-            }
-            if (i != 0 && previousBlockHash != currentBlock.previousBlockHash) {
-                return false;
-            }
-            previousBlockHash = keccak256(currentBlockEncoded);
-            //verify original signature
-            (address signer, bool isValid) =
-                UtilityFacet(utilityFacetAddress).retrieveSignerAddress(currentBlockEncoded, signedBlocks[i].signature);
-            if (!isValid) {
-                return false;
-            }
-            if (signer != currentBlock.transaction.header.participant) {
-                return false;
-            }
-
-            // This doesn't check if the signer is a participant -> if it's a dishonest block it will fail on the STF and the dispute will be slashed
-        }
-        return true;
-    }
-
-    function _deriveMilestoneUnionParticipants(
-        bytes32 channelId,
-        SnapshotData memory previousSnapshotData,
-        SnapshotData memory resultingSnapshotData
-    ) internal view returns (address[] memory expectedParticipants) {
-        expectedParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            previousSnapshotData.participants, resultingSnapshotData.participants
-        );
-
-        if (channelId == bytes32(0)) {
-            return expectedParticipants;
-        }
-
-        address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
-            channelId,
-            resultingSnapshotData.latestInboundMessageBlockHash,
-            previousSnapshotData.latestInboundMessageBlockHash
-        );
-        expectedParticipants =
-            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(expectedParticipants, pendingParticipants);
-        return expectedParticipants;
-    }
-
-    function _isMilestoneFinalWithExpectedParticipants(
-        bytes32 forkId,
-        address[] memory expectedParticipants,
-        MilestoneProof memory milestone
-    ) internal view returns (bool isFinal, bytes32 finalizedSnapshotHash) {
-        // TODO - need a gas limit on verifyMilestone and on verifyStateProof, so large proofs that can't be verified won't be spammed
-        address[] memory thresholdSet = new address[](expectedParticipants.length);
-        uint256 thresholdCount = 0;
-        bytes memory previousEncodedBlock;
-        BlockConfirmation memory currentBlockConfirmation;
-        Block memory currentBlock;
-        address adr;
-        bool isValid;
-        console.log("_isMilestoneFinal: forkId");
-        console.logBytes32(forkId);
-        console.log("_isMilestoneFinal: expectedParticipants", expectedParticipants.length);
-        console.log("_isMilestoneFinal: confirmations", milestone.blockConfirmations.length);
-        if (milestone.blockConfirmations.length == 0) {
-            return (false, bytes32(0));
-        }
-        for (uint256 i = 0; i < milestone.blockConfirmations.length; i++) {
-            currentBlockConfirmation = milestone.blockConfirmations[i];
-            (bool decoded, Block memory decodedBlock) =
-                UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentBlockConfirmation.signedBlock.encodedBlock);
-            if (!decoded) {
-                return (false, bytes32(0));
-            }
-            currentBlock = decodedBlock;
-            if (currentBlock.transaction.header.forkId != forkId) {
-                console.log("_isMilestoneFinal: fail forkId mismatch at i", i);
-                console.logBytes32(currentBlock.transaction.header.forkId);
-                return (false, bytes32(0));
-            }
-            //check linked
-            if (i != 0) {
-                if (currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
-                    console.log("_isMilestoneFinal: fail not linked at i", i);
-                    return (false, bytes32(0));
-                }
-            } else {
-                finalizedSnapshotHash = currentBlock.stateSnapshotHash;
-            }
-            // Collect signatures
-            (adr, isValid) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
-                currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signedBlock.signature
-            );
-            if (!isValid || adr != currentBlock.transaction.header.participant) {
-                console.log("_isMilestoneFinal: fail invalid author signature at i", i);
-                return (false, bytes32(0));
-            }
-            bool isParticipant = UtilityFacet(utilityFacetAddress).isAddressInArray(expectedParticipants, adr);
-            if (isParticipant) {
-                thresholdCount =
-                    _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
-            }
-
-            for (uint256 j = 0; j < currentBlockConfirmation.signatures.length; j++) {
-                (adr, isValid) = UtilityFacet(utilityFacetAddress).retrieveSignerAddress(
-                    currentBlockConfirmation.signedBlock.encodedBlock, currentBlockConfirmation.signatures[j]
-                );
-                if (!isValid) {
-                    console.log("_isMilestoneFinal: fail invalid confirmation signature at i", i);
-                    return (false, bytes32(0));
-                }
-                isParticipant = UtilityFacet(utilityFacetAddress).isAddressInArray(expectedParticipants, adr);
-                if (isParticipant) {
-                    thresholdCount =
-                        _tryInsertAddressInThresholdSet(adr, thresholdSet, thresholdCount, expectedParticipants);
-                }
-            }
-            previousEncodedBlock = currentBlockConfirmation.signedBlock.encodedBlock;
-        }
-
-        console.log("_isMilestoneFinal: thresholdCount", thresholdCount);
-        return (thresholdCount == expectedParticipants.length, finalizedSnapshotHash);
-    }
-
-    //Return set length after tryInsert
-
-    function _tryInsertAddressInThresholdSet(
-        address adr,
-        address[] memory thresholdSet,
-        uint256 currentThresholdCount,
-        address[] memory expectedParticipants
-    ) internal pure returns (uint256) {
-        for (uint256 i = 0; i < expectedParticipants.length; i++) {
-            if (expectedParticipants[i] == adr && thresholdSet[i] != adr) {
-                thresholdSet[i] = adr;
-                return currentThresholdCount + 1;
-            }
-        }
-
-        return currentThresholdCount;
+            || !_isNextHeight(previousBlock, currentBlock);
     }
 
     function isMilestoneFinal(
@@ -341,125 +254,9 @@ contract StateProofFacet is StateChannelCommon {
         SnapshotData memory thresholdSnapshotData,
         MilestoneProof memory milestone
     ) public virtual returns (bool isFinal, bytes32 finalizedSnapshotHash) {
-        return _isMilestoneFinalWithExpectedParticipants(forkId, thresholdSnapshotData.participants, milestone);
-    }
-
-    function verifyMilestones(
-        bytes32 forkId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) public virtual returns (bool isValid) {
-        return _verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
-    }
-
-    function _verifyMilestones(
-        bytes32 forkId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) internal returns (bool isValid) {
-        SnapshotData memory snapshotData = thresholdStateSnapshot.snapshotData;
-        uint256 startIndex = 0;
-        bool skippedMilestone = false;
-        MilestoneProof memory lastSkippedMilestone;
-
-        console.log("verifyMilestones: milestones", milestoneProofs.length);
-        console.log("verifyMilestones: snapshots", milestoneSnapshots.length);
-
-        // For K milestones, K snapshots are provided where each snapshot corresponds to each milestone finalization
-        if (milestoneProofs.length != milestoneSnapshots.length) {
-            console.log("verifyMilestones: fail length mismatch");
-            return false;
-        }
-
-        for (uint256 i = 0; i < milestoneProofs.length; i++) {
-            MilestoneProof memory milestone = milestoneProofs[i];
-            if (milestone.blockConfirmations.length == 0) {
-                return false;
-            }
-
-            (bool decoded, Block memory firstMilestoneBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
-                milestone.blockConfirmations[0].signedBlock.encodedBlock
-            );
-            if (!decoded) {
-                return false;
-            }
-            if (
-                firstMilestoneBlock.transaction.header.forkId == thresholdStateSnapshot.forkId
-                    && firstMilestoneBlock.transaction.header.transactionCnt < thresholdStateSnapshot.blockHeight
-            ) {
-                skippedMilestone = true;
-                lastSkippedMilestone = milestone;
-                startIndex = i + 1;
-                continue;
-            }
-            break;
-        }
-
-        if (startIndex == milestoneProofs.length) {
-            if (!skippedMilestone) {
-                return true;
-            }
-
-            bytes memory previousEncodedBlock;
-            Block memory currentBlock;
-            for (uint256 i = 0; i < lastSkippedMilestone.blockConfirmations.length; i++) {
-                (bool decoded, Block memory decodedBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
-                    lastSkippedMilestone.blockConfirmations[i].signedBlock.encodedBlock
-                );
-                if (!decoded) {
-                    return false;
-                }
-                currentBlock = decodedBlock;
-                if (i != 0 && currentBlock.previousBlockHash != keccak256(previousEncodedBlock)) {
-                    return false;
-                }
-                if (currentBlock.transaction.header.transactionCnt == thresholdStateSnapshot.blockHeight) {
-                    if (currentBlock.stateSnapshotHash != keccak256(abi.encode(thresholdStateSnapshot))) {
-                        return false;
-                    }
-                }
-                previousEncodedBlock = lastSkippedMilestone.blockConfirmations[i].signedBlock.encodedBlock;
-            }
-
-            return true;
-        }
-
-        for (uint256 i = startIndex; i < milestoneProofs.length; i++) {
-            MilestoneProof memory milestone = milestoneProofs[i];
-            bytes32 channelId = bytes32(0);
-            if (milestone.blockConfirmations.length > 0) {
-                (bool decoded, Block memory firstMilestoneBlock) = UtilityFacet(utilityFacetAddress).tryDecodeBlock(
-                    milestone.blockConfirmations[0].signedBlock.encodedBlock
-                );
-                if (!decoded) {
-                    return false;
-                }
-                channelId = firstMilestoneBlock.transaction.header.channelId;
-            } else {
-                return false;
-            }
-            address[] memory expectedParticipants =
-                _deriveMilestoneUnionParticipants(channelId, snapshotData, milestoneSnapshots[i].snapshotData);
-            console.log("verifyMilestones: i", i);
-            console.log("verifyMilestones: expectedParticipants", expectedParticipants.length);
-            console.log("verifyMilestones: confirmations", milestone.blockConfirmations.length);
-            (bool milestoneFinal, bytes32 finalizedSnapshotHash) =
-                _isMilestoneFinalWithExpectedParticipants(forkId, expectedParticipants, milestone);
-            if (!milestoneFinal) {
-                console.log("verifyMilestones: fail milestone not final at i", i);
-                return false;
-            }
-            // isFinal - since this runs in isolation now (not atomically with auditing where everything is checked), revert the transaction if the disputer didn't provide the correct snapshot
-            // Since it's final, the disputer for sure has the correct snapshot, so we can just revert if it's not provided
-            if (keccak256(abi.encode(milestoneSnapshots[i])) != finalizedSnapshotHash) {
-                console.log("verifyMilestones: snapshot hash doesn't match");
-                return false;
-            }
-
-            snapshotData = milestoneSnapshots[i].snapshotData;
-        }
-        return true;
+        (bool isLinked, uint256 thresholdCount, bytes32 fromBlockSnapshotHash,) =
+            _walkMilestoneBlocks(bytes32(0), forkId, milestone, 0, thresholdSnapshotData.participants);
+        if (!isLinked) return (false, bytes32(0));
+        return (thresholdCount == thresholdSnapshotData.participants.length, fromBlockSnapshotHash);
     }
 }

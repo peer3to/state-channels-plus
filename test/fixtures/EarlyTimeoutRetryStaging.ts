@@ -1,7 +1,9 @@
-// @spec-test-coverage-ignore: shared timeout-refusal staging exercised by ParticipantTimeoutService cases
+// @spec-test-coverage-ignore: shared timeout check staging (deadline, early window, refusals) exercised by ParticipantTimeoutService cases
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import Clock from "@/Clock";
 import { timeoutWaitTime } from "@/types";
+import type { Address, BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
@@ -233,4 +235,101 @@ export async function assertTimeoutRetryAfterForkSwitch(
         await tasks.restore();
         await responderHold?.release();
     }
+}
+
+/**
+ * Waits past the writer's timeout deadline exactly as the observer's check
+ * computes it, then runs that real check once.
+ */
+export async function checkTimeoutAfterDeadline(
+    h: MathPeerTestHarness,
+    observerIndex: number,
+    args: {
+        forkId: ForkId;
+        height: BlockHeight;
+        writer: Address;
+        isForced: boolean;
+    }
+): Promise<void> {
+    const observer = h.getPeer(observerIndex);
+    const { relevantTimestamp, timeConfig } = await h.execOnHost(
+        observer,
+        (sm, args) => ({
+            relevantTimestamp: sm.storage
+                .getPreviousBlockOrSnapshot({
+                    forkId: args.forkId,
+                    height: args.height
+                })
+                .block!.getRelevantTimestamp(args.writer),
+            timeConfig: sm.timeConfig
+        }),
+        args
+    );
+    const deadline =
+        relevantTimestamp + timeoutWaitTime(timeConfig, args.height);
+    await waitFor(
+        // one second of slack for the host clock's own rounding
+        async () => Clock.getTimeInSeconds() > deadline + 1,
+        h.event.hostExecTimeoutMs()
+    );
+    await h.execOnHost(
+        observer,
+        (sm, args) =>
+            sm.participantTimeoutService["tryTimeoutParticipant"](
+                args.forkId,
+                args.height,
+                args.writer,
+                args.isForced
+            ),
+        args,
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
+}
+
+/**
+ * Participant 1 opens a real self-removal dispute window before the next
+ * writer's timeout deadline, and the observer's reductions are held so the
+ * fork stays active past that deadline. The observer's uploads are recorded,
+ * not sent.
+ */
+export async function stageWindowBeforeTimeoutDeadline(h: MathPeerTestHarness) {
+    await h.lifecycle.start(3, 2);
+    const observer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    const writerAddress = await h
+        .control(observer)
+        .query.getNextToWrite()
+        .request();
+    const writer = h.peers.find((peer) => peer.address === writerAddress)!;
+    const race = await h.rpcStub.holdReductionRace(observer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(observer.index);
+    await h.execOnHost(h.getPeer(1), (sm) =>
+        sm.membershipService.startSelfRemovalDispute(sm.forkId)
+    );
+    await waitFor(
+        async () =>
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    Number(
+                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                            sm.channelId,
+                            args.forkId
+                        )
+                    ) !== 0,
+                { forkId }
+            ),
+        h.event.hostExecTimeoutMs()
+    );
+    return {
+        observer,
+        writer,
+        forkId,
+        height: 2,
+        recorder,
+        restore: async () => {
+            await recorder.restore();
+            await race.release({ replayEvents: false, keepTasksHeld: true });
+        }
+    };
 }

@@ -41,10 +41,12 @@ export default class StateApplicationService {
         await sm.diamondStateMachine.setState(encodedState);
         let participants: Address[];
         let listedOnChain: boolean;
+        let joinMayLand: boolean;
         let nextToWrite: Address;
         try {
             participants = await sm.diamondStateMachine.getParticipants();
             listedOnChain = await this.isSignerListedOnChain(participants);
+            joinMayLand = await this.mayUnlistedJoinLand(listedOnChain);
             nextToWrite = await sm.diamondStateMachine.getNextToWrite();
         } catch (error) {
             await sm.diamondStateMachine.setState(previousEncodedState);
@@ -64,7 +66,7 @@ export default class StateApplicationService {
         );
         if (previousForkId !== forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
-        this.applyParticipationStatus(participants, listedOnChain);
+        this.applyParticipationStatus(participants, listedOnChain, joinMayLand);
         this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
         await sm.leaveChannelService.onSettledStateObserved();
     }
@@ -97,10 +99,12 @@ export default class StateApplicationService {
         let participants: Address[];
         let nextToWrite: Address;
         let listedOnChain: boolean;
+        let joinMayLand: boolean;
         try {
             participants = await sm.diamondStateMachine.getParticipants();
             nextToWrite = await sm.diamondStateMachine.getNextToWrite();
             listedOnChain = await this.isSignerListedOnChain(participants);
+            joinMayLand = await this.mayUnlistedJoinLand(listedOnChain);
         } catch (error) {
             this.logger.error(
                 "Reduction genesis inspection failed after the VM write; aborting",
@@ -124,7 +128,7 @@ export default class StateApplicationService {
         sm.membershipService.publishOffChainEligibility(
             genesisSnapshot.snapshotData.participants
         );
-        this.applyParticipationStatus(participants, listedOnChain);
+        this.applyParticipationStatus(participants, listedOnChain, joinMayLand);
         this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
 
         // Follow-up: may await; disposal after this point rolls nothing back.
@@ -168,21 +172,45 @@ export default class StateApplicationService {
     }
 
     /**
+     * Whether a pending joiner that neither the state nor the chain lists
+     * submitted a join that can still land (its authorization is open). Read
+     * only in that case.
+     */
+    private async mayUnlistedJoinLand(
+        listedOnChain: boolean
+    ): Promise<boolean> {
+        const sm = this.stateManager;
+        if (listedOnChain || sm.status !== Status.PENDING_PARTICIPANT)
+            return false;
+        return sm.membershipService.isJoinAuthorizationOpen();
+    }
+
+    /**
      * Status reflects the chain. A state that lists the signer makes it a
      * participant; a state that no longer lists it makes it `SYNCED` only
      * once the chain no longer lists it either. A locally reduced fork can
      * drop the signer before the transaction recording that reduction and
      * posting its snapshot is mined; the chain's snapshot event then makes
-     * the transition.
+     * the transition. A pending joiner whose join can still land stays
+     * pending, so its own-join observation still starts the force-join
+     * bounds. Once the authorization expired, a later install or the
+     * leave's join wait lowers it.
      */
     private applyParticipationStatus(
         participants: Address[],
-        listedOnChain: boolean
+        listedOnChain: boolean,
+        joinMayLand: boolean
     ): void {
         const sm = this.stateManager;
         const isParticipant = participants.includes(sm.signerAddress);
         if (isParticipant) {
             sm.setStatus(Status.PARTICIPATING);
+            // a reduction genesis can seat a pending joiner
+            sm.membershipService.onJoinSeated();
+        } else if (joinMayLand) {
+            this.logger.info(
+                "Installed state does not list this signer; its join can still land, keeping PENDING_PARTICIPANT"
+            );
         } else if (!listedOnChain) {
             sm.setStatus(Status.SYNCED);
         } else {

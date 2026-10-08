@@ -13,6 +13,9 @@ export type ContractExecutorFactoryOptions = {
     logger?: Logger;
     dedicatedThread: boolean;
     customPrecompiles?: EvmCustomPrecompileManifest[];
+    // Gas granted to every local EVM call (see localEvmCallGasLimit); the EVM
+    // default when absent.
+    callGasLimit?: bigint;
 };
 
 export async function createContractExecutor(
@@ -36,6 +39,7 @@ export async function createContractExecutor(
                 })
             ),
             config,
+            callGasLimit: options.callGasLimit?.toString(),
             clockAdjustmentSeconds:
                 options.dedicatedThread && Clock.isInitialized()
                     ? Clock.getClockAdjustmentSeconds()

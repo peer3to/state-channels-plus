@@ -4,6 +4,7 @@ import { hash as randomHash } from "@test/factory";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 describe("Unit: ReductionExecutor", function () {
     // a reduce whose inbound run this peer cannot walk yields no reduce data.
@@ -12,17 +13,15 @@ describe("Unit: ReductionExecutor", function () {
     describe("reduce data unavailable", function () {
         it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
             const h = TestSession.getHarness();
-            // The staging's offender is the next writer after two blocks,
-            // peer 2, and the reduction slashes it; the lagging peer under
-            // test must therefore be another participant. With peer 2 as the
-            // lagging peer this case only passed because an aborted runtime
-            // kept reducing after disposal, which the terminal reduction
-            // owner no longer allows.
-            const laggingIndex = 1;
-            const { forkId, held } =
-                await h.scenario.stageDisputeOverHeldInboundGap({
-                    laggingIndex: laggingIndex
-                });
+            // the reading peer is a synced spectator: it does not audit, so it
+            // holds the window while the run stays unavailable. a
+            // participant's audit of that window throws on the run (fatal),
+            // so a participant never reaches the reduce with it missing
+            const {
+                forkId,
+                held,
+                spectatorIndex: laggingIndex
+            } = await h.scenario.stageSpectatedDisputeOverHeldInboundGap();
             const scheduled =
                 await h.rpcStub.recordScheduledTasks(laggingIndex);
 
@@ -79,7 +78,7 @@ describe("Unit: ReductionExecutor", function () {
                     .query.getStatus()
                     .request(),
                 "a deferred reduction must not evict the peer"
-            ).to.equal(Status.PARTICIPATING);
+            ).to.equal(Status.SYNCED);
             expect(
                 await h
                     .control(h.getPeer(laggingIndex))
@@ -247,7 +246,7 @@ describe("Unit: ReductionExecutor", function () {
 
         it("a re-dispatched dispute log that fails again → failed attempt, not a fatal", async function () {
             const h = TestSession.getHarness();
-            const { forkId, race, restoreEvents } =
+            const { forkId } =
                 await h.scenario.disputeWithSuppressedCommitEvents({
                     observerIndex,
                     maliciousPeerIndex
@@ -276,12 +275,9 @@ describe("Unit: ReductionExecutor", function () {
             ).to.be.greaterThan(0);
             await failing.restore();
 
-            await race.release({
-                replayEvents: false,
-                runHeldTasks: false,
-                keepTasksHeld: true
-            });
-            await restoreEvents(false);
+            // Keep event and timer holds until harness disposal. Restoring only
+            // event handlers lets a late chain event await a deferred reduction
+            // whose retry timer is still held, hanging the detached-promise drain.
         });
 
         it("unreadable dispute window → the reduction is not challenged", async function () {
@@ -313,6 +309,116 @@ describe("Unit: ReductionExecutor", function () {
                 keepTasksHeld: true
             });
             await restoreEvents(false);
+        });
+    });
+
+    describe("fork adoption after the reduce", function () {
+        it("the reduce lands alone and a failed adopt-only post is retried once → the chain adopts the reduced fork", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index
+            );
+            // only this peer reduces; the others keep their reduction timers held
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+
+            const chainForkId = async () =>
+                (await h.channelManager.getStateSnapshot(h.channelId))
+                    .forkId as ForkId;
+            await waitFor(
+                async () =>
+                    (await adoption.recorded()).filter(
+                        (names) =>
+                            names.length === 1 &&
+                            names[0] === "updateStateSnapshotFork"
+                    ).length === 2 && (await chainForkId()) !== sourceForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            const recorded = await adoption.restore();
+            const reducedForkId = (
+                await h.channelManager.getReducedResult(
+                    h.channelId,
+                    sourceForkId
+                )
+            ).reducedForkId as ForkId;
+
+            // the reduce is its own transaction, never bundled with the adoption
+            expect(recorded).to.deep.include(["reduceAndFinalize"]);
+            expect(
+                recorded.some(
+                    (names) =>
+                        names.length > 1 &&
+                        names.includes("updateStateSnapshotFork")
+                )
+            ).to.equal(false);
+            expect(await chainForkId()).to.equal(reducedForkId);
+        });
+
+        it("the adopt-only post and its one retry both fail → no third attempt, the failure surfaces, the reduce stays recorded", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork();
+            // The adoption retry is the subject; an idle successor must not
+            // open another timeout dispute while that retry is pending.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.suppressTimeoutCheck(peer.index)
+                )
+            );
+            const reducer = h.getPeer(0);
+            const adoption = await h.rpcStub.failFirstAdoptionPost(
+                reducer.index,
+                2
+            );
+            await h.control(reducer).stub.restoreReductionTasks(true).request();
+            // after the reduction-task restore, which resets scheduleTask
+            const tasks = await h.rpcStub.recordScheduledTasks(reducer.index);
+
+            const adoptionPosts = async () =>
+                (await adoption.recorded()).filter(
+                    (names) =>
+                        names.length === 1 &&
+                        names[0] === "updateStateSnapshotFork"
+                ).length;
+            try {
+                await waitFor(
+                    async () => (await adoptionPosts()) === 2,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const retries = (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith("adoptReducedFork-")
+                );
+                // one retry scheduled, and nothing after the second failure
+                expect(retries).to.have.length(1);
+                expect(await adoptionPosts()).to.equal(2);
+                await TestSession.settleDetached({
+                    expectedErrorIncludes: "injected adoption post send failure"
+                });
+                expect(
+                    (
+                        await h.channelManager.getReducedResult(
+                            h.channelId,
+                            sourceForkId
+                        )
+                    ).reducedForkId
+                ).to.not.equal(ZeroHash);
+                expect(
+                    (await h.channelManager.getStateSnapshot(h.channelId))
+                        .forkId
+                ).to.equal(sourceForkId);
+            } finally {
+                await tasks.restore();
+                await adoption.restore();
+            }
         });
     });
 

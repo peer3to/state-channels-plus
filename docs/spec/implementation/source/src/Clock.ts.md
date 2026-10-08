@@ -24,3 +24,13 @@ Initialization and handover
 - [x] `UNIT-TEST-CLOCK-1-6K546K.P3` — failed replacement does not take ownership and a later live replacement succeeds
 - [ ] `UNIT-TEST-CLOCK-1-6K546K.P4` — reads during replacement continue through the previous initialized instance until atomic cutover
 - [x] `UNIT-TEST-CLOCK-1-6K546K.P5` — overlapping different-provider initializations settle on one usable owner
+
+## UNIT-TEST-CLOCK-RELEASE-1-B836QF
+
+Released provider lifecycle
+
+- Setup: Init with a provider, release it or not, then init with another provider
+- Oracle: A released provider is destroyed once replaced; an owned one is kept
+
+- [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P1` — released provider destroyed on replacement
+- [x] `UNIT-TEST-CLOCK-RELEASE-1-B836QF.P2` — owned provider kept on replacement

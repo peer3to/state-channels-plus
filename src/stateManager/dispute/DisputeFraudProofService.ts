@@ -1,5 +1,6 @@
-import { Block, StateSnapshot } from "@/models";
+import { StateSnapshot } from "@/models";
 import Storage from "@/storage";
+import type { BlockPredecessor } from "@/storage/QueueStorage";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -29,7 +30,9 @@ import {
     DisputeStateProofHeaderMismatchStruct,
     DisputeInvalidBlockStructureStruct,
     DisputeBlockAuthorNotParticipantStruct,
-    DisputeInboundAnchorBehindLatestStateStruct
+    DisputeInboundAnchorBehindLatestStateStruct,
+    TimeoutSupersededByFinalStateStruct,
+    DisputeConflictsWithFinalStateStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeAuditingDataStruct,
@@ -89,12 +92,8 @@ export default class DisputeFraudProofService {
 
     createDisputeInvalidStateProof(
         dispute: DisputeStruct,
-        auditingData: DisputeAuditingDataStruct
+        proof: DisputeInvalidStateProofStruct
     ): Hash {
-        const proof: DisputeInvalidStateProofStruct = {
-            auditingData
-        };
-
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.DisputeInvalidStateProof,
             struct: proof
@@ -270,14 +269,41 @@ export default class DisputeFraudProofService {
         });
     }
 
+    createDisputeStateProofBelowOnChainAnchor(dispute: DisputeStruct): Hash {
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor,
+            struct: { __: false }
+        });
+    }
+
+    createTimeoutSupersededByFinalState(
+        dispute: DisputeStruct,
+        proof: TimeoutSupersededByFinalStateStruct
+    ): Hash {
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.TimeoutSupersededByFinalState,
+            struct: proof
+        });
+    }
+
+    createDisputeConflictsWithFinalState(
+        dispute: DisputeStruct,
+        proof: DisputeConflictsWithFinalStateStruct
+    ): Hash {
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeConflictsWithFinalState,
+            struct: proof
+        });
+    }
+
     createDisputeInvalidBlockInStateProofApplyFraudProof(
         dispute: DisputeStruct,
         fraudProof: FraudProofStruct,
-        blockIndexInUnfinalizedPartOfStateProof: number
+        blockIndex: number
     ): Hash {
         const proof: DisputeInvalidBlockInStateProofApplyFraudProofStruct = {
             fraudProof,
-            blockIndexInUnfinalizedPartOfStateProof
+            blockIndex
         };
 
         return this.storeFraudProof(dispute, {
@@ -288,11 +314,9 @@ export default class DisputeFraudProofService {
 
     createDisputeInvalidBlockStructure(
         dispute: DisputeStruct,
-        blockIndexInUnfinalizedPartOfStateProof: number
+        blockIndex: number
     ): Hash {
-        const proof: DisputeInvalidBlockStructureStruct = {
-            blockIndexInUnfinalizedPartOfStateProof
-        };
+        const proof: DisputeInvalidBlockStructureStruct = { blockIndex };
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.DisputeInvalidBlockStructure,
             struct: proof
@@ -301,25 +325,17 @@ export default class DisputeFraudProofService {
 
     createDisputeBlockAuthorNotParticipant(
         dispute: DisputeStruct,
-        block: Block,
-        previousStateSnapshot: StateSnapshot,
+        predecessor: BlockPredecessor,
         resultingStateSnapshot: StateSnapshot,
-        blockIndexInUnfinalizedPartOfStateProof: number
+        blockIndex: number
     ): Hash {
-        const previousBlock =
-            block.height === 0
-                ? { encodedBlock: "0x", signature: "0x" }
-                : this.storage.blocks.getBlock(block.previousBlockHash)
-                      ?.signedBlock;
-        if (!previousBlock) {
-            throw new Error(
-                `Cannot create dispute block-author proof: previous block ${block.previousBlockHash} is missing`
-            );
-        }
         const proof: DisputeBlockAuthorNotParticipantStruct = {
-            blockIndexInUnfinalizedPartOfStateProof,
-            previousBlock,
-            previousStateSnapshot: previousStateSnapshot.toStruct(),
+            blockIndex,
+            previousBlock: predecessor.block?.signedBlock ?? {
+                encodedBlock: "0x",
+                signature: "0x"
+            },
+            previousStateSnapshot: predecessor.snapshot.toStruct(),
             resultingStateSnapshot: resultingStateSnapshot.toStruct()
         };
         return this.storeFraudProof(dispute, {

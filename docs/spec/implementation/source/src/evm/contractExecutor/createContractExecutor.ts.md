@@ -11,6 +11,7 @@
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm)
+- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-CREATE-CONTRACT-EXECUTOR-1-M5H56N
 

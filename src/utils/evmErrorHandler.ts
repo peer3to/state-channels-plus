@@ -5,32 +5,20 @@ import { ForkId } from "@/types";
 import { ErrorDescription, Signer, ethers } from "ethers";
 import { TransactionResponse } from "ethers";
 
-export type RaceConditionErrorName =
-    | "RaceConditionChannelAlreadyOpen"
-    | "RaceConditionBlockCalldataTimestampTooLate"
-    | "RaceConditionSnapshotForkMismatch"
-    | "RaceConditionBlockHeightTooOld"
-    | "RaceConditionJoinChannelExpired"
-    | "RaceConditionJoinChannelSnapshotMismatch"
-    | "RaceConditionPendingInboundNotConsumed"
-    | "RaceConditionForceInboundJoinForkDisputed"
-    | "RaceConditionDisputeWindowNotOpen"
-    | "RaceConditionDisputeEvidencePeriodExpired"
-    | "RaceConditionDisputeKillPeriodNotExpired"
-    | "RaceConditionDisputeKillPeriodExpired"
-    | "RaceConditionDisputeAlreadyReduced"
-    | "RaceConditionReductionExpectationDoesntMatch"
-    | "RaceConditionDisputeTimeoutCalldataPosted"
-    | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
-    | "RaceConditionDisputeTimeoutNotMinTimestamp"
-    | "RaceConditionDisputeTimeoutWindowCreatedTooEarly"
-    | "RaceConditionUnexpectedBlockCalldataPosted"
-    | "RaceConditionGenesisTimestampNotAvailable"
-    | "RaceConditionOnChainSlashes"
+// every custom error the contracts declare, plus ethers' built-in Error(string) and Panic(uint256)
+export type ContractErrorName =
+    | (typeof errorAbis)[number]["name"]
+    | "Error"
+    | "Panic";
+
+export type RaceConditionErrorName = Extract<
+    ContractErrorName,
+    | `RaceCondition${string}`
     | "ErrorCantParticipateInDispute"
     | "ErrorDisputePostedAuditingDataMismatch"
     | "ErrorDisputeChallengePeriodExpired"
-    | "ErrorDisputeCommitmentNotAvailable";
+    | "ErrorDisputeCommitmentNotAvailable"
+>;
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, (error: CustomEvmError) => void>
@@ -39,6 +27,8 @@ export type RaceConditionErrorHandlers = Partial<
 // interface for parsing errors
 const errorInterface = new ethers.Interface(errorAbis);
 export class CustomEvmError extends Error {
+    // Error.name narrowed to the decoded contract error
+    public override name: ContractErrorName;
     public readonly errorDescription: ErrorDescription;
     public readonly isCustomError = true;
     public readonly originalError: any;
@@ -47,7 +37,8 @@ export class CustomEvmError extends Error {
         super(
             `${customError.name}${customError.args.length > 0 ? ` (args: ${customError.args.join(", ")})` : ""}`
         );
-        this.name = customError.name;
+        // errorInterface is built from errorAbis, so ethers only decodes those names
+        this.name = customError.name as ContractErrorName;
         this.errorDescription = customError;
         this.originalError = originalError;
     }
@@ -84,6 +75,51 @@ export function tryDecodeCustomError(error: any): CustomEvmError | null {
     } catch {
         return null;
     }
+}
+
+/**
+ * How `ContractExecutor` reports an EVM revert of a local contract call. The
+ * local signer and the executor's RPC boundary keep the text in the messages
+ * they wrap it in, so it identifies a revert wherever the error surfaces.
+ */
+export const LOCAL_EVM_EXECUTION_FAILED = "Local EVM execution failed";
+
+/** Whether `error` is a local EVM revert rather than an infrastructure failure. */
+export function isLocalEvmExecutionFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes(LOCAL_EVM_EXECUTION_FAILED);
+}
+
+/**
+ * Why the local EVM failed, as `ContractExecutor` reports it after
+ * LOCAL_EVM_EXECUTION_FAILED: a decoded custom error name, or the EVM's own
+ * exception ("out of gas", "revert", ...). Undefined for an error that is not
+ * a local EVM failure.
+ */
+function localEvmFailureReason(error: unknown): string | undefined {
+    const message = error instanceof Error ? error.message : String(error);
+    const marker = `${LOCAL_EVM_EXECUTION_FAILED}: `;
+    const at = message.indexOf(marker);
+    if (at < 0) return undefined;
+    return message.slice(at + marker.length).trim();
+}
+
+/**
+ * Whether a failed local `stateTransition` call means the transaction is an
+ * invalid state transition: the transition itself failed inside the EVM,
+ * within its full budget. Not invalid: the machine refused to run because the
+ * call could not grant the full budget (ErrorInsufficientGasForStateTransition),
+ * the call's own frame ran out of gas before or after the transition, or the
+ * failure is not in the EVM at all (executor or transport). Only an invalid
+ * state transition may become a fraud proof; anything else is a local failure.
+ */
+export function isInvalidStateTransitionError(error: unknown): boolean {
+    const reason = localEvmFailureReason(error);
+    if (reason === undefined) return false;
+    return (
+        reason !== "ErrorInsufficientGasForStateTransition" &&
+        reason !== "out of gas"
+    );
 }
 
 export function isCustomEvmError(error: any): error is CustomEvmError {

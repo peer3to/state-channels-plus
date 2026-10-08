@@ -299,6 +299,10 @@ class Publisher {
                 finding
             );
             if (!source) return finding;
+            // Published as a general comment, so the finding is general. An
+            // older round could store a location the model gave it later.
+            if (source.kind === "comment")
+                return { ...finding, path: null, line: null };
             check(source.kind === "inline", "INVALID_RESULT");
             const thread = current.threads.find((entry) =>
                 entry.comments.nodes.some(
@@ -323,7 +327,7 @@ class Publisher {
             return { ...finding, id: state.mappings[finding.id] };
         });
         // Omission alone does not establish that any finding has been addressed.
-        for (const old of current.findings.filter(
+        for (const old of recovered.filter(
             (finding) =>
                 !state.findings.some((entry) => entry.id === finding.id)
         )) {

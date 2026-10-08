@@ -92,24 +92,28 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
         );
     }
 
-    /** Persist an encoded sync payload; returns whether spectating aborted. */
-    public async persistSyncPayload(
-        encodedSyncPayload: string
-    ): Promise<{ shouldAbort: boolean }> {
-        const payload = Codec.decode(encodedSyncPayload, Type.SyncPayload);
-        return this.service.spectate.persistSyncPayload(payload);
-    }
-
-    /** Run the live spectate multicall validation with encoded port-safe inputs. */
-    public async tryMulticallSnapshotUpdate(
-        encodedOnChainSnapshot: string,
-        encodedSyncPayload: string
+    /**
+     * Run the real `reduceAndFinalizeLocally` on one window of an encoded sync
+     * payload, expecting its `reducedForkId`; true when this call committed it.
+     */
+    public async reduceSyncWindowLocally(
+        encodedSyncPayload: string,
+        windowIndex: number
     ): Promise<boolean> {
-        return await this.service.spectate.tryMulticallSnapshotUpdate(
-            this.service.sm.channelId,
-            Codec.decode(encodedOnChainSnapshot, Type.StateSnapshot),
-            this.service.decodeSyncPayload(encodedSyncPayload),
-            []
+        const window = Codec.decode(encodedSyncPayload, Type.SyncPayload)
+            .disputeWindows[windowIndex];
+        if (!window) throw new Error("No dispute window at this index");
+        return this.service.sm.diamondStateMachine.reduceAndFinalizeLocally(
+            window.disputeConfirmations.map((disputeConfirmation) =>
+                Codec.decode(
+                    disputeConfirmation.signedDispute.encodedDispute,
+                    Type.Dispute
+                )
+            ),
+            window.latestStateSnapshot,
+            window.latestEncodedStateMachineState,
+            window.inboundMessageBlocksAppliedInReduce,
+            window.reducedForkId
         );
     }
 

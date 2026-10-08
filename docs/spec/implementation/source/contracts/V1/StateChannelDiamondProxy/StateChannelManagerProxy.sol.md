@@ -15,7 +15,9 @@
   Partial: An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here.
 - [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
+- [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
   Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
@@ -30,8 +32,8 @@
 
 Opening and calldata posting
 
-- Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits; post calldata within/after the window, as non-author, and twice
-- Oracle: Only valid unanimous opens store genesis; posting guards enforce author/no-overwrite/deadline; [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) cases documented
+- Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits, terms at and past their opening deadline, a duplicate open after the deadline; post calldata within/after the window, as non-author, and twice
+- Oracle: Only valid unanimous opens within their deadline store genesis; posting guards enforce author/no-overwrite/deadline; [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) cases documented
 
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id
@@ -50,6 +52,9 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P15` — non-author post revert carries the block author and the actual sender
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16` — a participant list larger than the channel's configured participant maximum is rejected, naming the requested and permitted sizes
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17` — a list at exactly the maximum passes the bound and fails later, so the check rejects above the limit rather than at it
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18` — terms submitted at exactly their opening deadline open, so the deadline gate is inclusive like join
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19` — terms submitted after their opening deadline revert with `RaceConditionOpenChannelExpired` carrying the deadline and chain time
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20` — an already-open channel whose terms are past their deadline reports `RaceConditionChannelAlreadyOpen` first, not `RaceConditionOpenChannelExpired`
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 
@@ -92,6 +97,27 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant
+
+## UNIT-TEST-MANAGER-PROXY-3-C3NY4X
+
+Funded replay or no verdict
+
+- Setup: Open a channel and submit `applyFraudProofs` invalid-transition proofs over an honest `add` block, a never-finishing `burn` block, and an honest block whose transition catches an inner out-of-gas (16M budget), each below the machine requirement, with ample gas, with fuzzed gas, and with the measured cost with and without `getStateTransitionReplayGas()`; call `executeStateTransition` as the diamond across a sweep of small gas amounts
+- Oracle: Below the requirement every replay reverts with `ErrorInsufficientGasForStateTransition` and nobody is slashed; funded, the honest blocks keep their author standing and the `burn` block slashes it; for any attached gas an honest author is never slashed and the `burn` author is slashed exactly when the call succeeded; cost plus replay gas always funds the replay; a starved machine frame yields `ErrorStateTransitionFrameOutOfGas`, never a verdict
+
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P1` — an under-funded replay of a never-finishing transition reverts with the machine's refusal and slashes nobody
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P2` — an under-funded replay of a cheap honest transition reverts with the machine's refusal and slashes nobody
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P3` — fuzzed attached gas never slashes the author of an honest cheap block
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P4` — a funded replay of a never-finishing transition slashes the author
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P5` — fuzzed attached gas never acquits a never-finishing transition: the author is slashed exactly when the call succeeds
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P6` — a funded replay of a cheap honest block fails the proof and keeps the author standing
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P7` — an under-funded replay of a transition that catches an inner out-of-gas reverts with the machine's refusal and slashes nobody
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P8` — a funded replay of a transition that catches an inner out-of-gas fails the proof and keeps the author standing
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P9` — fuzzed attached gas never slashes the author of a block whose transition catches an inner out-of-gas
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P10` — a call carrying only its measured funded cost is refused, and the same call carrying that cost plus `getStateTransitionReplayGas()` is judged
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P11` — a machine frame left too little gas to reach its own check fails with empty returndata and `executeStateTransition` reverts with `ErrorStateTransitionFrameOutOfGas`
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P12` — fuzzing both the attached gas and the size of the replayed transition's input (up to 128 KiB) never slashes the author of an honest transition that catches an inner out-of-gas
+- [x] `UNIT-TEST-MANAGER-PROXY-3-C3NY4X.P13` — with many outbound messages left in the machine's storage by an earlier transition, fuzzed attached gas never slashes the author of an honest transition that catches an inner out-of-gas: the deletion either fits beside the full budget or the replay is refused
 
 ## UNIT-TEST-SM-MANAGER-PROXY-1-8GBCH7
 

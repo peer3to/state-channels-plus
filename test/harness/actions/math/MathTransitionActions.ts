@@ -120,6 +120,21 @@ export class MathTransitionActions extends TransitionActions<
         return { leader, observer, authored, startHeight, forkId };
     }
 
+    /**
+     * The next writer authors its block off-wire and posts it as calldata, so
+     * the other peers learn it only from the chain event.
+     */
+    async postNextBlockOnlyOnChainWait(options?: { observerIndex?: number }) {
+        const authored = await this.authorNextBlockOffWireWait(options);
+        await this.harness
+            .control(authored.leader)
+            .validation.postBlockCalldataOnChain(
+                authored.authored.encodedSignedBlock
+            )
+            .request();
+        return authored;
+    }
+
     async peerWrite(options: {
         peer: number;
         value?: number;

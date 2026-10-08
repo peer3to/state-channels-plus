@@ -29,10 +29,23 @@ import {
     RaceConditionOnChainSlashes
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
+import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
 import {
     DisputeBlockAuthorNotParticipant,
+    DisputeConflictsWithFinalState,
+    DisputeInboundAnchorBehindLatestState,
+    DisputeInvalidBalanceInvariant,
+    DisputeInvalidBlockInStateProofApplyFraudProof,
     DisputeInvalidBlockStructure,
-    TimeoutCalldataPosted
+    DisputeInvalidOutputState,
+    DisputeInvalidStateProof,
+    DisputeNotLatestState,
+    InvalidDisputeReason,
+    TimeoutCalldataPosted,
+    TimeoutParticipantNotNext,
+    TimeoutSupersededByFinalState,
+    TimeoutThreshold,
+    TimeoutTooEarly
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
@@ -46,6 +59,14 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         disputeVerificationFacetAddress = address(this);
         stateProofFacetAddress = address(new StateProofFacet());
         utilityFacetAddress = address(new UtilityFacet());
+    }
+
+    /// routes StateProofFacet self-calls (`isMilestoneFinal`) like the proxy fallback does
+    fallback() external {
+        bytes memory result = _delegatecall(stateProofFacetAddress, msg.data);
+        assembly ("memory-safe") {
+            return(add(result, 32), mload(result))
+        }
     }
 
     function seedDispute(Dispute memory dispute, uint256 lastEvidenceSubmissionTimestamp) external {
@@ -90,10 +111,14 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 
     function handleBlockAuthorNotParticipant(bytes memory encodedProof, Dispute memory dispute)
         external
-        view
         returns (address)
     {
         return _handleDisputeBlockAuthorNotParticipant(encodedProof, dispute);
+    }
+
+    /// the chain snapshot a block challenge's region is established against
+    function seedSnapshot(bytes32 channelId, StateSnapshot memory snapshot) external {
+        stateSnapshots[channelId] = snapshot;
     }
 
     /// Exposes the internal slash-window read so the shrink behaviour can be asserted directly.
@@ -593,28 +618,37 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(afterAll[1], second);
     }
 
-    function test_isInvalidBlockStructure_validSignedOnlyChain_returnsFalse() public {
+    // the structure predicate addresses the submitted block index of the last milestone
+    function test_isInvalidBlockStructure_validOneMilestoneChain_returnsFalse() public {
         StateProof memory stateProof = _twoBlockStateProof();
         assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 0));
         assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(stateProof, 2), "past the milestone");
     }
 
     function test_isInvalidBlockStructure_invalidSignature_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1].signature = hex"00";
+        stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
     function test_isInvalidBlockStructure_brokenLink_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1] = _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256("wrong"));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256("wrong"));
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
     function test_isInvalidBlockStructure_skippedHeight_returnsTrue() public {
         StateProof memory stateProof = _twoBlockStateProof();
-        stateProof.signedBlocks[1] =
-            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 2, 2, keccak256(stateProof.signedBlocks[0].encodedBlock));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            2,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
         assertTrue(diamond.isInvalidBlockStructureInStateProof(stateProof, 1));
     }
 
@@ -653,6 +687,78 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
         harness.applyDisputeFraudProofs(proofs);
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+    }
+
+    function test_applyDisputeFraudProofs_validNonzeroVerdict_killsDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("valid-verdict"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 0);
+        address[] memory slashed =
+            harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP);
+        assertEq(slashed.length, 1);
+        assertEq(slashed[0], dispute.input.disputer);
+    }
+
+    // an outsider names target zero on an invalid proof -> the handler's zero
+    // verdict must not count as a match against an honest dispute
+    function test_applyDisputeFraudProofs_zeroTargetOnHonestDispute_doesNotKill() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyValidDispute(keccak256("zero-target"), address(0xA1));
+        // the block-structure proof must fail on this dispute -> handler verdict is zero
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        proofs[0].participant = address(0);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+        assertEq(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length, 0);
+    }
+
+    // every family with a well-formed failing payload: a zero target never kills an honest
+    // dispute or records a slash; the slash-subset family reverts by design
+    function test_applyDisputeFraudProofs_zeroTargetEveryFamily_neverKills() public {
+        for (uint8 i = 0; i <= uint8(type(DisputeFraudProofType).max); i++) {
+            DisputeFraudProofType proofType = DisputeFraudProofType(i);
+            DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+            Dispute memory dispute = _structurallyValidDispute(keccak256(abi.encode("zero-target", i)), address(0xA1));
+            vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+            harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+            DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+            proofs[0].dispute = dispute;
+            proofs[0].proofType = proofType;
+            proofs[0].encodedProof = _defaultDisputeFraudPayload(proofType, dispute);
+            proofs[0].participant = address(0);
+            if (proofType == DisputeFraudProofType.DisputeOnChainSlashesNotSubset) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        RaceConditionOnChainSlashes.selector, CHANNEL_ID, new address[](0), new address[](0)
+                    )
+                );
+            }
+            vm.prank(address(0xBEEF));
+            harness.applyDisputeFraudProofs(proofs);
+
+            assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1, "dispute stays committed");
+            assertEq(
+                harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length,
+                0,
+                "nobody slashed"
+            );
+        }
     }
 
     function test_killDispute_expiredDispute_reverts() public {
@@ -709,6 +815,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         firstDispute.input.channelId = CHANNEL_ID;
         firstDispute.input.forkId = snapshot.forkId;
         firstDispute.input.disputer = participants[0];
+        // anchored at the consumed inbound so the upload reaches the race checks
+        firstDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        firstDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
         vm.prank(participants[0]);
         diamond.uploadDispute(_confirmation(firstDispute));
 
@@ -720,6 +829,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         timeoutDispute.input.disputer = participants[1];
         timeoutDispute.input.timeout.participant = participants[0];
         timeoutDispute.input.timeout.minTimeStamp = eligibleAt;
+        timeoutDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        timeoutDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
 
         vm.prank(participants[1]);
         // the error now carries (windowCreationTimestamp, minTimestamp); this case
@@ -774,7 +885,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         // The signature and block chain are structurally valid. The dedicated
         // proof is needed because the author is absent from both snapshots.
-        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 0));
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
 
@@ -783,26 +895,25 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
             _disputeBlockAuthorNotParticipantProof();
         proof.resultingStateSnapshot.snapshotData.stateMachineStateHash = keccak256("forged");
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
     }
 
     function test_disputeBlockAuthorNotParticipant_authorInEitherSnapshot_rejected() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-        proof.previousStateSnapshot.snapshotData.participants[0] = signer;
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.previousBlockHash = keccak256(abi.encode(proof.previousStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        address signer = vm.addr(1);
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        previousSnapshot.snapshotData.participants[0] = signer;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
 
-        (dispute, proof, signer) = _disputeBlockAuthorNotParticipantProof();
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
-        invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        (previousSnapshot, resultingSnapshot) = _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = signer;
+        (dispute, proof,) = _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0));
     }
 
@@ -813,16 +924,14 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         // the author is not a participant and the proof is valid - matching the
         // off-chain author gate so an honest auditor is never slashed.
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
         // stale: the resulting snapshot belongs to a later height, not this block
-        proof.resultingStateSnapshot.blockHeight = 5;
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        resultingSnapshot.blockHeight = 5;
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
 
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
     }
@@ -835,18 +944,36 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         // not a participant and the proof is valid - matching the off-chain
         // author gate so an honest auditor is never slashed.
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
-        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) =
-            _disputeBlockAuthorNotParticipantProof();
-
-        proof.resultingStateSnapshot.snapshotData.participants[0] = signer;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        resultingSnapshot.snapshotData.participants[0] = vm.addr(1);
         // stale: the resulting snapshot belongs to a different fork, not this block's
-        proof.resultingStateSnapshot.forkId = keccak256("other-fork");
-        Block memory invalidBlock = abi.decode(dispute.input.stateProof.signedBlocks[0].encodedBlock, (Block));
-        invalidBlock.stateSnapshotHash = keccak256(abi.encode(proof.resultingStateSnapshot));
-        dispute.input.stateProof.signedBlocks[0].encodedBlock = abi.encode(invalidBlock);
-        dispute.input.stateProof.signedBlocks[0].signature = _sign(1, abi.encode(invalidBlock));
+        resultingSnapshot.forkId = keccak256("other-fork");
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
 
         assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+    }
+
+    function test_disputeBlockAuthorNotParticipant_indexOutsideUnfinalTail_rejected() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof,) =
+            _disputeBlockAuthorNotParticipantProof();
+        // control: with the chain snapshot at block 0's height, block 1 is in the unfinal tail and the proof holds
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), dispute.input.disputer);
+
+        // the chain snapshot at block 1's height makes block 1 finalized history: the same proof is rejected
+        StateSnapshot memory atBlockOne = abi.decode(abi.encode(proof.previousStateSnapshot), (StateSnapshot));
+        atBlockOne.blockHeight = 1;
+        harness.seedSnapshot(CHANNEL_ID, atBlockOne);
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "final block");
+
+        // an index past the last milestone is not eligible either
+        harness.seedSnapshot(CHANNEL_ID, proof.previousStateSnapshot);
+        proof.blockIndex = 2;
+        assertEq(harness.handleBlockAuthorNotParticipant(abi.encode(proof), dispute), address(0), "past the run");
     }
 
     function test_blockInvalidStateTransition_wrongTurnWithCorrectSnapshot_slashesSigner() public {
@@ -903,14 +1030,24 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, participants[1]));
     }
 
+    /// one milestone of two linked blocks
     function _twoBlockStateProof() internal pure returns (StateProof memory stateProof) {
-        stateProof.signedBlocks = new SignedBlock[](2);
-        stateProof.signedBlocks[0] = _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 0, 1, bytes32(0));
-        stateProof.signedBlocks[1] =
-            _makeSignedBlock(2, CHANNEL_ID, FORK_ID, 1, 2, keccak256(stateProof.signedBlocks[0].encodedBlock));
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 0, 1, bytes32(0));
+        stateProof.milestones[0].blockConfirmations[1].signedBlock = _makeSignedBlock(
+            2,
+            CHANNEL_ID,
+            FORK_ID,
+            1,
+            2,
+            keccak256(stateProof.milestones[0].blockConfirmations[0].signedBlock.encodedBlock)
+        );
     }
 
-    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+    /// a one-milestone dispute of two linked, signed blocks, so the structure proof at (0, 1) fails
+    function _structurallyValidDispute(bytes32 forkId, address disputer)
         internal
         pure
         returns (Dispute memory dispute)
@@ -918,15 +1055,105 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         dispute.input.channelId = CHANNEL_ID;
         dispute.input.forkId = forkId;
         dispute.input.disputer = disputer;
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
-        dispute.input.stateProof.signedBlocks[0].signature = hex"00";
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        SignedBlock memory first = _makeSignedBlock(1, CHANNEL_ID, forkId, 0, 1, bytes32(0));
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = first;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
+            _makeSignedBlock(1, CHANNEL_ID, forkId, 1, 2, keccak256(first.encodedBlock));
+    }
+
+    /// a one-milestone dispute whose second block is unsigned, so the structure proof at (0, 1) holds
+    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute = _structurallyValidDispute(forkId, disputer);
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
+    }
+
+    // a well-formed payload per family, default fields -> fails against an honest dispute
+    function _defaultDisputeFraudPayload(DisputeFraudProofType proofType, Dispute memory dispute)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        SignedBlock memory disputedBlock = dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock;
+        if (proofType == DisputeFraudProofType.DisputeNotLatestState) {
+            // the disputed block itself -> not newer
+            return abi.encode(
+                DisputeNotLatestState({encodedBlock: disputedBlock.encodedBlock, signature: disputedBlock.signature})
+            );
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) {
+            DisputeInvalidOutputState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProof) {
+            DisputeInvalidStateProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
+            DisputeInvalidBalanceInvariant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutThreshold) {
+            TimeoutThreshold memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutCalldataPosted) {
+            TimeoutCalldataPosted memory payload;
+            payload.postedBlock = disputedBlock;
+            payload.previousBlockcalldata = disputedBlock;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutParticipantNotNext) {
+            TimeoutParticipantNotNext memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutTooEarly) {
+            TimeoutTooEarly memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof) {
+            DisputeInvalidBlockInStateProofApplyFraudProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
+            InvalidDisputeReason memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInboundAnchorBehindLatestState) {
+            DisputeInboundAnchorBehindLatestState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockStructure) {
+            DisputeInvalidBlockStructure memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
+            DisputeBlockAuthorNotParticipant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutSupersededByFinalState) {
+            TimeoutSupersededByFinalState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
+            DisputeConflictsWithFinalState memory payload;
+            return abi.encode(payload);
+        }
+        // the remaining families carry a single unused bool
+        return abi.encode(false);
     }
 
     function _structuralProof(Dispute memory dispute) internal pure returns (DisputeFraudProof memory proof) {
         proof.dispute = dispute;
         proof.proofType = DisputeFraudProofType.DisputeInvalidBlockStructure;
-        proof.encodedProof = abi.encode(DisputeInvalidBlockStructure({blockIndexInUnfinalizedPartOfStateProof: 0}));
+        DisputeInvalidBlockStructure memory payload;
+        payload.blockIndex = 1;
+        proof.encodedProof = abi.encode(payload);
         proof.participant = dispute.input.disputer;
     }
 
@@ -1002,34 +1229,64 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         pure
         returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer)
     {
-        signer = vm.addr(1);
-        StateSnapshot memory previousSnapshot;
+        (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot) =
+            _authorNotParticipantSnapshots();
+        return _disputeBlockAuthorNotParticipantProof(previousSnapshot, resultingSnapshot);
+    }
+
+    /// participants that exclude the signer on both sides; the resulting snapshot is block 1's own
+    function _authorNotParticipantSnapshots()
+        internal
+        pure
+        returns (StateSnapshot memory previousSnapshot, StateSnapshot memory resultingSnapshot)
+    {
         previousSnapshot.snapshotData.participants = new address[](1);
         previousSnapshot.snapshotData.participants[0] = address(0xA1);
-        StateSnapshot memory resultingSnapshot;
+        // the chain snapshot of this fork that block 0 commits: the challenged block 1 is after it
+        previousSnapshot.forkId = FORK_ID;
         resultingSnapshot.snapshotData.participants = new address[](1);
         resultingSnapshot.snapshotData.participants[0] = address(0xA2);
         // the resulting snapshot is this block's own -> coordinate-bound
         resultingSnapshot.forkId = FORK_ID;
-        resultingSnapshot.blockHeight = 0;
+        resultingSnapshot.blockHeight = 1;
+    }
+
+    /// a one-milestone dispute [block 0 committing `previousSnapshot`, the signer's block 1 committing
+    /// `resultingSnapshot`]; the proof names block 1 with block 0 as its predecessor, and the chain snapshot
+    /// `previousSnapshot` as the anchor its eligibility is decided from
+    function _disputeBlockAuthorNotParticipantProof(
+        StateSnapshot memory previousSnapshot,
+        StateSnapshot memory resultingSnapshot
+    ) internal pure returns (Dispute memory dispute, DisputeBlockAuthorNotParticipant memory proof, address signer) {
+        signer = vm.addr(1);
+        Block memory previousBlock;
+        previousBlock.transaction.header.channelId = CHANNEL_ID;
+        previousBlock.transaction.header.participant = vm.addr(2);
+        previousBlock.transaction.header.forkId = FORK_ID;
+        previousBlock.stateSnapshotHash = keccak256(abi.encode(previousSnapshot));
+        bytes memory encodedPreviousBlock = abi.encode(previousBlock);
+        SignedBlock memory signedPreviousBlock =
+            SignedBlock({encodedBlock: encodedPreviousBlock, signature: _sign(2, encodedPreviousBlock)});
 
         Block memory invalidBlock;
         invalidBlock.transaction.header.channelId = CHANNEL_ID;
         invalidBlock.transaction.header.participant = signer;
         invalidBlock.transaction.header.forkId = FORK_ID;
-        invalidBlock.transaction.header.transactionCnt = 0;
-        invalidBlock.previousBlockHash = keccak256(abi.encode(previousSnapshot));
+        invalidBlock.transaction.header.transactionCnt = 1;
+        invalidBlock.previousBlockHash = keccak256(encodedPreviousBlock);
         invalidBlock.stateSnapshotHash = keccak256(abi.encode(resultingSnapshot));
         bytes memory encodedBlock = abi.encode(invalidBlock);
         dispute.input.channelId = CHANNEL_ID;
         dispute.input.forkId = FORK_ID;
         dispute.input.disputer = address(0xD1);
-        dispute.input.stateProof.signedBlocks = new SignedBlock[](1);
-        dispute.input.stateProof.signedBlocks[0] =
+        dispute.input.stateProof.milestones = new MilestoneProof[](1);
+        dispute.input.stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](2);
+        dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = signedPreviousBlock;
+        dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
             SignedBlock({encodedBlock: encodedBlock, signature: _sign(1, encodedBlock)});
         proof = DisputeBlockAuthorNotParticipant({
-            blockIndexInUnfinalizedPartOfStateProof: 0,
-            previousBlock: SignedBlock({encodedBlock: "", signature: ""}),
+            blockIndex: 1,
+            previousBlock: signedPreviousBlock,
             previousStateSnapshot: previousSnapshot,
             resultingStateSnapshot: resultingSnapshot
         });

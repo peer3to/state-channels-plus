@@ -36,3 +36,4 @@ Authenticated RPC, deferred queues, and failure routing
 - [x] `UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P16` — replacement authentication cannot release the original queue, while original completion drains it once in FIFO order
 - [x] `UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P17` — a late frame dispatched after authenticated transport close is dropped without execution or punishment
 - [x] `UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P18` — repeated expiries on one identity suspend it at the shared bound
+- [x] `UNIT-TEST-HANDSHAKE-GUARD-1-XHFSXX.P19` — a real shutdown that settles a deferred call's handshake wait before the P2P manager is disposed drops the call with no disconnect, verdict or retry-bound strike

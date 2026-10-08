@@ -2,6 +2,7 @@ import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, sleep, Type } from "@/utils";
+import { assertJoinSignatureDeadlineBoundary } from "@test/fixtures/node/JoinSignatureDeadlineStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import assert from "node:assert/strict";
@@ -175,6 +176,10 @@ describe("JoinChannel signature requests", function () {
                     .request()
             ).to.equal(0);
         }
+    });
+
+    it("accepts the exact responder deadline and rejects one second past it on an owned chain", async function () {
+        await assertJoinSignatureDeadlineBoundary(TestSession.getHarness());
     });
 
     it("validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport", async function () {
@@ -418,37 +423,6 @@ describe("JoinChannel signature requests", function () {
             ),
             /join expired/
         );
-
-        const boundaryTime = await Clock.getBlockchainTime();
-        const boundaryJoin = {
-            ...joinChannel,
-            deadlineTimestamp: BigInt(boundaryTime.timestamp)
-        };
-        const boundarySigned = await SignatureUtils.signJoinChannel(
-            boundaryJoin,
-            joiner.signer
-        );
-        const boundaryResponse = await request(
-            joiner.index,
-            h.getPeer(0).address,
-            String(
-                Codec.encode(
-                    {
-                        encodedJoinChannel: String(boundarySigned.encoded),
-                        signature: String(boundarySigned.signature)
-                    },
-                    Type.SignedJoinChannel
-                )
-            ),
-            String(prepared.expectedSnapshotHash),
-            String(prepared.expectedForkId)
-        );
-        expect(
-            SignatureUtils.getSignerAddress(
-                String(boundarySigned.encoded),
-                String(boundaryResponse.signature)
-            )
-        ).to.equal(h.getPeer(0).address);
 
         await assert.rejects(
             request(

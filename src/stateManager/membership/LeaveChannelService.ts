@@ -1,3 +1,4 @@
+import Clock from "@/Clock";
 import { Block } from "@/models";
 import type { ParticipantChanges } from "@/stateManager/block/SnapshotAssemblyService";
 import type StateManager from "@/stateManager/StateManager";
@@ -6,9 +7,11 @@ import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 
 type LeavePhase =
     | "starting"
+    | "awaiting-join"
     | "awaiting-exit"
     | "exit-authored"
     | "disputing"
@@ -38,6 +41,7 @@ export type LeaveChannelState = {
 export default class LeaveChannelService {
     private readonly logger: Logger;
     private operation?: LeaveOperation;
+    private disposed = false;
 
     constructor(
         private readonly stateManager: StateManager,
@@ -154,12 +158,27 @@ export default class LeaveChannelService {
             operation.forkId !== forkId
         )
             return;
+        // the window already holds commitments -> its reduction settles the leave
+        if (
+            tryDecodeCustomError(error)?.name ===
+            "RaceConditionDisputeEvidencePeriodExpired"
+        ) {
+            operation.phase = "awaiting-settlement";
+            return;
+        }
         this.fail(operation, error);
     }
 
     public async onSettledStateObserved(): Promise<void> {
         const operation = this.operation;
-        if (!operation || operation.phase === "starting") return;
+        // Until its authorization expires, the join may still land: only the
+        // join wait settles an unobserved join.
+        if (
+            !operation ||
+            operation.phase === "starting" ||
+            operation.phase === "awaiting-join"
+        )
+            return;
 
         const sm = this.stateManager;
         const remainsLocal = await sm.membershipService.isSignerInLocalState();
@@ -168,8 +187,10 @@ export default class LeaveChannelService {
                 sm.storage.disputes.didIDispute(operation.forkId)) &&
             sm.forkId !== operation.forkId;
 
+        // A closed channel (NOT_OPENED after the last exit) holds no member,
+        // so an exit that closed it settles the leave as SYNCED would.
         if (
-            sm.status === Status.SYNCED &&
+            (sm.status === Status.SYNCED || sm.status === Status.NOT_OPENED) &&
             !remainsLocal &&
             (disputeSettlementObserved ||
                 !(await sm.membershipService.isSignerOnChain()))
@@ -193,6 +214,7 @@ export default class LeaveChannelService {
     }
 
     public dispose(): void {
+        this.disposed = true;
         const operation = this.operation;
         if (!operation) return;
         this.cancelWatchdog(operation);
@@ -219,9 +241,98 @@ export default class LeaveChannelService {
             return;
         }
 
+        // A pending joiner that has not observed its own join on chain has
+        // nothing to remove yet: it waits until its join authorization has
+        // expired on chain before any exit fallback starts.
+        const sm = this.stateManager;
+        if (
+            sm.status === Status.PENDING_PARTICIPANT &&
+            !sm.membershipService.isOwnJoinObserved()
+        ) {
+            operation.phase = "awaiting-join";
+            this.scheduleJoinWait(operation, 0);
+            return;
+        }
+
         operation.phase = "awaiting-exit";
         this.armWatchdog(operation);
         await this.onSettledStateObserved();
+    }
+
+    /** The leaver's own join arrived on chain: its leave proceeds as a member's. */
+    public onOwnJoinObserved(): void {
+        const operation = this.operation;
+        if (!operation || operation.phase !== "awaiting-join") return;
+        operation.phase = "awaiting-exit";
+        this.armWatchdog(operation);
+    }
+
+    /**
+     * Checks the join once the chain is past the join authorization's
+     * deadline (at least `minimumSeconds` from now). The contract admits a
+     * join only in a block whose timestamp is at most that deadline.
+     */
+    private scheduleJoinWait(
+        operation: LeaveOperation,
+        minimumSeconds: number
+    ): void {
+        const deadline =
+            this.stateManager.membershipService.getJoinAuthorizationDeadline();
+        const untilExpirySeconds =
+            deadline === undefined
+                ? 0
+                : deadline + 1 - Clock.getTimeInSeconds();
+        operation.watchdog = this.stateManager.timeoutManager.scheduleTask(
+            () =>
+                DetachedPromises.observe(
+                    this.settleUnobservedJoin(operation),
+                    (error) => this.fail(operation, error)
+                ),
+            Math.max(minimumSeconds, untilExpirySeconds, 0) * 1000,
+            "terminal channel leave join wait"
+        );
+    }
+
+    /** The join wait still owns this operation: no observation, disposal or replacement happened. */
+    private isAwaitingJoin(operation: LeaveOperation): boolean {
+        return (
+            !this.disposed &&
+            this.operation === operation &&
+            operation.phase === "awaiting-join" &&
+            !this.stateManager.membershipService.isOwnJoinObserved()
+        );
+    }
+
+    /**
+     * The join wait ended without the leaver observing its join; the
+     * membership service owns the join decision. "open": the join can still
+     * land, so the wait continues. "landed": the observation only lags and
+     * the member's leave runs. "expired" or "none" (the join was dropped):
+     * the leave has nothing to remove and settles. An observation, disposal
+     * or replacement during the read wins over the read.
+     */
+    private async settleUnobservedJoin(
+        operation: LeaveOperation
+    ): Promise<void> {
+        operation.watchdog = undefined;
+        if (!this.isAwaitingJoin(operation)) return;
+        const membership = this.stateManager.membershipService;
+        const join = await membership.getOwnJoinState();
+        if (!this.isAwaitingJoin(operation)) return;
+        if (join.state === "open") {
+            this.scheduleJoinWait(operation, 1);
+            return;
+        }
+        if (join.state === "landed") {
+            operation.phase = "awaiting-exit";
+            this.armWatchdog(operation);
+            return;
+        }
+        membership.abandonUnobservedJoin();
+        this.logger.info(
+            "Terminal channel leave settled: the join authorization expired and the join never reached the chain"
+        );
+        operation.resolve();
     }
 
     private armWatchdog(operation: LeaveOperation): void {

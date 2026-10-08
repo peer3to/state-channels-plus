@@ -8,9 +8,9 @@ import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import {
+    type ContractErrorName,
     type CustomEvmError,
     type RaceConditionErrorHandlers,
-    type RaceConditionErrorName,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
@@ -41,11 +41,11 @@ const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
     "RaceConditionReductionExpectationDoesntMatch"
-] as const satisfies readonly RaceConditionErrorName[];
+] as const;
 type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
 
 function isReductionRaceErrorName(
-    errorName: string | undefined
+    errorName: ContractErrorName | undefined
 ): errorName is ReductionRaceErrorName {
     return REDUCTION_RACE_ERRORS.some((candidate) => candidate === errorName);
 }
@@ -329,17 +329,8 @@ export default class ReductionExecutor {
         }
     }
 
+    // the reduce lands alone; adopting the reduced fork is a separate post
     private async prepareSubmission(candidate: LocalReductionCandidate) {
-        const currentOnChainSnapshot = StateSnapshot.from(
-            await this.stateManager.stateChannelManagerContract.getStateSnapshot(
-                this.stateManager.channelId
-            )
-        );
-        const { calldata: forkCalldata } =
-            this.stateManager.snapshotUpdateService.buildForkSnapshotCalldata(
-                candidate.reducedGenesisSnapshot,
-                currentOnChainSnapshot
-            );
         const reduceCalldata =
             this.reductionComputationService.buildReduceAndFinalizeCalldata(
                 candidate.disputes,
@@ -348,7 +339,35 @@ export default class ReductionExecutor {
                 candidate.reduceData.inboundMessageBlocks,
                 candidate.reducedForkId
             );
-        return { calldata: [reduceCalldata, forkCalldata] };
+        return { calldata: [reduceCalldata] };
+    }
+
+    // a failed adoption post is retried once; a refusal on chain is final
+    private adoptReducedFork(forkId: ForkId, retries: number): void {
+        DetachedPromises.collect(
+            this.stateManager.snapshotUpdateService
+                .postStateSnapshotWait(forkId, { forkAdoptionOnly: true })
+                .then(
+                    () => undefined,
+                    (error) => {
+                        if (retries === 0 || this.stateManager.isDisposed)
+                            throw error;
+                        this.logger.warn(
+                            "Fork adoption post failed, retrying once",
+                            {
+                                forkId,
+                                error: errorMessage(error)
+                            }
+                        );
+                        this.stateManager.timeoutManager.scheduleTask(
+                            () => this.adoptReducedFork(forkId, retries - 1),
+                            this.stateManager.timeConfig.chainFallbackTime *
+                                1000,
+                            `adoptReducedFork-${forkId}`
+                        );
+                    }
+                )
+        );
     }
 
     private async simulateSubmission(
@@ -405,6 +424,9 @@ export default class ReductionExecutor {
                 if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
+                // the reduce is mined -> adopt the latest undisputed fork
+                if (!this.stateManager.isDisposed)
+                    this.adoptReducedFork(candidate.reducedForkId, 1);
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
@@ -466,7 +488,7 @@ export default class ReductionExecutor {
     }
 
     private async classifyReductionRace(
-        errorName: string | undefined,
+        errorName: ContractErrorName | undefined,
         forkId: ForkId,
         disputes: DisputeStruct[]
     ): Promise<ReductionSubmissionStatus | undefined> {

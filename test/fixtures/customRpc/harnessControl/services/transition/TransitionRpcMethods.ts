@@ -47,25 +47,6 @@ export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> 
             : null;
     }
 
-    /** Post a fresh snapshot and propagate its exact transaction failure. */
-    public async postStateSnapshotWait(
-        forkId: ForkId
-    ): Promise<{ encodedSnapshot: string } | null> {
-        const struct = (
-            await this.service.sm.snapshotUpdateService.postStateSnapshotWait(
-                forkId
-            )
-        )?.toStruct();
-        return struct
-            ? {
-                  encodedSnapshot: Codec.encode(
-                      struct,
-                      Type.StateSnapshot
-                  ) as string
-              }
-            : null;
-    }
-
     /** Same-fork snapshot-update data (calldata + encoded snapshots). */
     public async prepareUpdateSnapshotSameFork(
         forkId: ForkId

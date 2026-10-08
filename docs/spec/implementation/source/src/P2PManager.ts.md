@@ -18,6 +18,7 @@
 - [`REQ-LOBBY-2-TSWRV6` (Authenticated admission)](../../../specification/peer-communication/lobby-matching.md#req-lobby-2-tswrv6)
 - [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
 - [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
+- [`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../../../specification/protocol-model/identity.md#req-id-5-gw1zey)
 - [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../../../specification/security/trust-model.md#req-trust-5-ndvrw8)
 
 ## UNIT-TEST-P2P-MANAGER-1-9DNSRZ
@@ -110,11 +111,18 @@ Status-driven promotion
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P3` — synced
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P4` — pending participant
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P5` — participating
-- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P6` — participant-read failure
+- [ ] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P6` — participant-read failure
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P7` — closed transport
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P8` — disposed manager
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P9` — replacement and grace retirement
 - [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P10` — missing profile/transport ignored
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P11` — An initial responder eligibility chain read failure reaches one top-level error, calls no successful connection hook and does not itself report runtime abort
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P12` — A throwing initial sync reaches one top-level error and no successful connection hook
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P13` — Teardown during initial handshake work returns without reporting a host error
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P14` — A fresh spectator ignores its first handshake from a chain-slashed peer still listed by the lagging mirror; after successor adoption it sends its first sync to an honest participant and becomes SYNCED on the successor without abort
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P15` — A fresh spectator skips a chain-slashed first-handshake peer when reduction has landed but snapshot adoption is blocked, and synchronizes from an honest participant to the successor without abort
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P16` — A fresh spectator skips a slashed first-handshake peer that has already installed the same successor, and synchronizes from an honest participant to that successor without abort
+- [x] `UNIT-TEST-HANDSHAKE-ROUTING-1-XAEYM2.P17` — A fresh spectator skips an unslashed synced observer absent from authoritative membership, sends its first sync to a participant and reaches SYNCED on the current fork without abort
 
 ## UNIT-TEST-P2PMANAGER-32-RX8SQP
 
@@ -124,3 +132,21 @@ Connected peer projection
 - Oracle: Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy.
 
 - [x] `UNIT-TEST-P2PMANAGER-32-RX8SQP.P1` — prefers a transport address over its registered profile address
+
+## UNIT-TEST-P2PMANAGER-33-XKAJJN
+
+Double-signature exclusion
+
+- Setup: Feed a real runtime block copies and join requests whose signatures include a second nonce signature by a member, a slashed identity, a throwaway key or itself, directly or relayed; make the blacklist write fail; start disposal before a recovery.
+- Oracle: Only an eligible member is blacklisted and disconnected, with full evidence logged; relayers, the node's own address (logged at error level), absent and slashed signers are never blacklisted; a handler failure is logged once and recovery still returns; dispose removes exactly this manager's listener.
+
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P1` — a reported double signer is blacklisted and disconnected
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P2` — the relaying peer is not blacklisted
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P3` — the node's own double signature never blacklists itself
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P4` — a disposed manager's listener is removed
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P5` — a twice-signed join request by a key outside the channel blacklists neither the key nor its relayers
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P6` — a failing blacklist write is logged once and never fails the recovery
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P7` — a slashed identity's double signature is ignored with its eligibility logged
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P8` — the node's own double signature is logged once at error level
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P9` — the blacklisting log carries the full digest and a second signature that recovers to the blacklisted signer
+- [x] `UNIT-TEST-P2PMANAGER-33-XKAJJN.P10` — a manager whose disposal has started ignores an eligible member's double signature

@@ -13,6 +13,7 @@
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
+- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 
@@ -71,3 +72,33 @@ Pre-deployment request dispatch
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P13` — rejects disconnectFromPeers before deployment
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P14` — rejects hostRpc before deployment
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P15` — allows deploy signer address reads before deployment
+
+## UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J
+
+Local EVM call-gas wiring
+
+- Setup: Start a host against a manager whose replay gas exceeds 0xffffff, inline and with a dedicated executor; then with a failing `getStateTransitionReplayGas`
+- Oracle: The executor in each placement runs every call with `localEvmCallGasLimit(getGasLimit(), getStateTransitionReplayGas())`; a failed read fails startup and builds no executor
+
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1` — inline executor gets the host-computed call-gas limit
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2` — dedicated-worker executor gets the same limit after the decimal-string round trip
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3` — a failed `getGasLimit` or `getStateTransitionReplayGas` read fails host startup (inline executor): readiness rejects with the read's error, no executor is requested, and every runtime root the start created is closed
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4` — the same failed read with a dedicated executor thread: readiness rejects, no executor thread is requested, and every runtime root the start created is closed
+
+## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
+
+Exact local owner for the custom RPC
+
+- Setup: Two real inline SDK runtimes in one realm load a custom-RPC manifest whose constructor creates a real child root under the owner it receives.
+- Oracle: Each constructor receives its own host instance, distinct from the other runtime's, before that host stored its runtime; each child is registered in its owner's children. Disposing the second runtime closes its child; the first child stays open and registered and the first runtime keeps serving. Forbidden: a shared or looked-up owner, an owner crossing a port.
+
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX.P1` — two inline peers: exact distinct owners before readiness, children attached to their own owner, one peer's disposal leaves the other peer and its child usable
+
+## UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6
+
+Clock-owned provider on dispose
+
+- Setup: Dispose an inline runtime whose proxied provider the Clock reads through, cut and restore its node, then init the Clock with another provider
+- Oracle: The provider stays open, its node never reconnects, and it and its nodes are destroyed once the Clock replaces it
+
+- [x] `UNIT-TEST-HOST-RELEASED-PROVIDER-1-H172F6.P1` — kept open without reconnects, destroyed on Clock replacement

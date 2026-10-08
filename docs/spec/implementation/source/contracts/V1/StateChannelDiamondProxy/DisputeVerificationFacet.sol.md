@@ -26,8 +26,6 @@
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 - [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
-- [`REQ-SP-5-MTE4RV` (The final block of the proved path supplies the state commitment)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
-- [`INV-SP-6-GNW74H` (Extending the proved anchor with unfinalized blocks is safe because signing is a)](../../../../../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
 
 ## UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3
 

@@ -28,3 +28,6 @@ Targeted connect composition
 - [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3` — observer sync
 - [ ] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P4` — pending reuse
 - [ ] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P5` — participating reuse
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6` — Both lobby founders publish channel discovery records only after becoming PARTICIPATING
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7` — Both lobby founders open the same channel; a later spectator discovers it, synchronizes on that channel and connects to both founders
+- [x] `UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P8` — A later joiner discovers the lobby-opened channel and connectToChannel with shouldJoin succeeds, with its address present among on-chain pending participants

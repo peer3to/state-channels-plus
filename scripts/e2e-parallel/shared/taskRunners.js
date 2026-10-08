@@ -1,13 +1,19 @@
 const { spawnSync } = require("child_process");
+const { BROWSER_TYPECHECK_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
 // Which tier a discovered task belongs to. Every task carries one. This is a
-// scheduling discriminator, not a spawn selector: both tiers are spawned
+// scheduling discriminator, not a spawn selector: every tier is spawned
 // through the Hardhat CLI, forge tasks via the `forge-test` task in
-// tasks/forgeTest.ts. A distributed worker runs the trusted runner from its own
-// checkout while only the project sources are synced, so the Hardhat CLI is the
-// one spawn point the orchestrator can extend.
-const TASK_RUNNERS = { HARDHAT: "hardhat", FORGE: "forge" };
+// tasks/forgeTest.ts and browser gates via the `browser-test` task in
+// tasks/browserTest.ts. A distributed worker runs the trusted runner from its
+// own checkout while only the project sources are synced, so the Hardhat CLI is
+// the one spawn point the orchestrator can extend.
+const TASK_RUNNERS = {
+    HARDHAT: "hardhat",
+    FORGE: "forge",
+    BROWSER: "browser"
+};
 
 const KNOWN_TASK_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 
@@ -22,17 +28,53 @@ function normalizeTaskRunner(runner) {
 
 /**
  * Only hardhat tasks talk to a warm hardhat node, so only they consume a slot
- * and a funded account partition. Forge runs its own EVM in-process.
+ * and a funded account partition. Forge runs its own EVM in-process, and a
+ * browser gate starts the hardhat node it proxies to the page itself.
  */
 function requiresChainSlot(task) {
     return normalizeTaskRunner(task.runner) === TASK_RUNNERS.HARDHAT;
 }
 
-/** How many tasks in a run belong to the forge tier. */
-function countForgeTasks(tasks) {
-    return tasks.filter(
-        (task) => normalizeTaskRunner(task.runner) === TASK_RUNNERS.FORGE
-    ).length;
+/** Every runner a task needs: its own, plus what its test file declares. */
+function runnersNeededByTask(task) {
+    return [normalizeTaskRunner(task.runner), ...(task.requires ?? [])];
+}
+
+/** Whether only a browser-capable worker can run `task`. */
+function requiresBrowser(task) {
+    return runnersNeededByTask(task).includes(TASK_RUNNERS.BROWSER);
+}
+
+/** How many tasks in a run belong to one tier. */
+function countTasksForRunner(tasks, runner) {
+    const selected = normalizeTaskRunner(runner);
+    return tasks.filter((task) => normalizeTaskRunner(task.runner) === selected)
+        .length;
+}
+
+/**
+ * Run a tier's build command before any of its tasks is scheduled. Returns null
+ * when the build is warm, an Error describing the failure otherwise: `missing`
+ * explains an unrunnable command, `failed` a nonzero build.
+ */
+function tierBuildFailure(command, args, { missing, failed }) {
+    const result = spawnSync(command, args, { stdio: "inherit" });
+    if (result.error) {
+        return new Error(
+            `Could not run \`${command} ${args.join(" ")}\`: ${result.error.message}. ` +
+                missing
+        );
+    }
+    if (result.status !== 0) {
+        const exit =
+            result.status === null
+                ? `signal ${result.signal}`
+                : `exit ${result.status}`;
+        return new Error(
+            `\`${command} ${args.join(" ")}\` failed (${exit}). ` + failed
+        );
+    }
+    return null;
 }
 
 /**
@@ -42,29 +84,70 @@ function countForgeTasks(tasks) {
  * directory and race on `out/` and the solidity files cache (`--threads 1` caps
  * test threads, not solc compile jobs). Distributed workers build in their
  * prepare script; the local path has no such step, so it builds once here.
- * Returns null when the build is warm, an Error describing the failure
- * otherwise.
  */
 function forgeBuildFailure() {
-    const result = spawnSync(FORGE_BIN, ["build"], { stdio: "inherit" });
-    if (result.error) {
+    return tierBuildFailure(FORGE_BIN, ["build"], {
+        missing:
+            "Install Foundry, or re-run with --no-forge to skip the forge tier.",
+        failed:
+            "Every forge task would otherwise start its own concurrent build. " +
+            "Fix the build, or re-run with --no-forge to skip the forge tier."
+    });
+}
+
+/**
+ * Check the gates' actual requirement before the tier runs. The browser
+ * typecheck says nothing about it, so without this a whole run ends with two gates failing on a missing
+ * browser, where the forge tier fails immediately on a missing binary. It
+ * launches Chromium the way every gate does and closes it again: headless
+ * launches use Playwright's separate headless-shell build, which can be
+ * installed without the full Chromium that `executablePath()` reports, and
+ * vice versa.
+ */
+async function browserChromiumFailure() {
+    let chromium;
+    try {
+        chromium = require("playwright").chromium;
+    } catch (error) {
         return new Error(
-            `Could not run \`${FORGE_BIN} build\`: ${result.error.message}. ` +
-                "Install Foundry, or re-run with --no-forge to skip the forge tier."
+            `Could not resolve Playwright's Chromium: ${error.message}. ` +
+                "Install the project dependencies, or re-run with --no-browser " +
+                "to skip the browser tier."
         );
     }
-    if (result.status !== 0) {
-        const exit =
-            result.status === null
-                ? `signal ${result.signal}`
-                : `exit ${result.status}`;
+    // Required here, not at load: a distributed worker loads this module for
+    // the tier names, and this check only ever runs on the coordinator.
+    const {
+        launchChromium
+    } = require("../../../test/browser/chromiumLaunch.js");
+    try {
+        const browser = await launchChromium(chromium);
+        await browser.close();
+        return null;
+    } catch (error) {
         return new Error(
-            `\`${FORGE_BIN} build\` failed (${exit}). Every forge task would ` +
-                "otherwise start its own concurrent build. Fix the build, or " +
-                "re-run with --no-forge to skip the forge tier."
+            `${error.message} Or re-run with --no-browser to skip the browser tier.`
         );
     }
-    return null;
+}
+
+/**
+ * Typecheck the browser sources before any browser gate is scheduled. The gates
+ * load `src` through Vite, so `dist/browser` is not an input, and one run needs
+ * the check once rather than once per gate. Local and distributed runs both
+ * perform it here, and only when the run schedules a gate.
+ */
+function browserTypecheckFailure() {
+    const [command, ...args] = BROWSER_TYPECHECK_COMMAND;
+    return tierBuildFailure(command, args, {
+        missing:
+            "Install the project dependencies, or re-run with --no-browser to " +
+            "skip the browser tier.",
+        failed:
+            "A browser gate runs the same sources in Chromium, so sources " +
+            "that fail the browser typecheck are a broken tier. Fix them, or re-run with " +
+            "--no-browser to skip the browser tier."
+    });
 }
 
 module.exports = {
@@ -72,6 +155,11 @@ module.exports = {
     FORGE_BIN,
     normalizeTaskRunner,
     requiresChainSlot,
-    countForgeTasks,
-    forgeBuildFailure
+    runnersNeededByTask,
+    requiresBrowser,
+    countTasksForRunner,
+    tierBuildFailure,
+    forgeBuildFailure,
+    browserChromiumFailure,
+    browserTypecheckFailure
 };

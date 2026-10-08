@@ -564,13 +564,6 @@ export type HolepunchTopicProbe = {
     leaveCalls: string[];
 };
 
-export type HandshakeFailureProbe = {
-    connected: boolean;
-    hookCount: number;
-    syncCallCount: number;
-    failureLogged: boolean;
-};
-
 export type LateHandshakeProbe = {
     connected: boolean;
     hookCount: number;
@@ -2670,69 +2663,30 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
-    public async probeHandshakeParticipantReadFailure(
-        address: string
-    ): Promise<HandshakeFailureProbe> {
+    /**
+     * Destroy this runtime's own chain provider: every later chain read of
+     * this runtime fails as a read on a closed provider.
+     */
+    public async closeChainProvider(): Promise<void> {
+        await this.p2pManager.stateManager.stateChannelManagerContract.runner!.provider!.destroy();
+    }
+
+    /**
+     * On the next completed handshake, abort the runtime and close its chain
+     * provider. This listener runs after the P2PManager listener, so the
+     * participant read is already in flight and fails during the teardown.
+     */
+    public abortOnNextHandshake(): void {
         const stateManager = this.p2pManager.stateManager;
-        const originalChannelId = stateManager.channelId;
-        const transport = this.transport(getChecksumAddress(address));
-
-        const profile = this.registerProfile(
-            transport,
-            getChecksumAddress(address)
-        );
-        stateManager.setStatus(Status.OPENED);
-        await stateManager.setChannelId("0x12");
-        const originalDebug = this.p2pManager.logger.debug.bind(
-            this.p2pManager.logger
-        );
-        let hookCount = 0;
-        let syncCallCount = 0;
-        let failureLogged = false;
-        let resolveConnection!: () => void;
-        const connection = new Promise<void>((resolve) => {
-            resolveConnection = resolve;
-        });
-
-        const sync = sinon
-            .stub(this.p2pManager.localRpc.spectateService, "sync")
-            .callsFake(() => {
-                syncCallCount += 1;
-                return Promise.resolve(true);
-            });
-        const debug = sinon
-            .stub(this.p2pManager.logger, "debug")
-            .callsFake((message, ...metadata) => {
-                if (String(message).includes("participant read failed"))
-                    failureLogged = true;
-                originalDebug(message, ...metadata);
-            });
-        const unsubscribeConnection = stateManager.events.on(
+        const unsubscribe = stateManager.events.on(
             "p2pEventHooks",
-            "onConnection",
+            "handshakeCompleted",
             () => {
-                hookCount += 1;
-                resolveConnection();
+                unsubscribe();
+                stateManager.abort();
+                void this.closeChainProvider();
             }
         );
-
-        try {
-            stateManager.p2pEventHooks.handshakeCompleted?.(
-                getChecksumAddress(address)
-            );
-            await connection;
-            return {
-                connected: this.p2pManager.openConnections.includes(transport),
-                hookCount,
-                syncCallCount,
-                failureLogged
-            };
-        } finally {
-            await stateManager.setChannelId(originalChannelId);
-            sync.restore();
-            debug.restore();
-            unsubscribeConnection();
-        }
     }
 
     public async probeMissingHandshake(

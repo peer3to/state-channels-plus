@@ -27,7 +27,7 @@ surface: the enshrined contract, two client-side signers, the `EventBus`, and
 
 ### 1.1 `p2pSetup` — verified signature
 
-Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L441)
+Implemented by [`EvmDiamondStateMachine.p2pSetup`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L487)
 (the class is exported as `EvmStateMachine`).
 
 Parameters:
@@ -39,7 +39,7 @@ Parameters:
 | `deployStateMachine`                   | `LocalStateMachineDeployer`      | Async deployer `(signer) => address` that deploys one state-machine instance into the local EVM. Called **twice** (§4).                                                                                                                   |
 | `options.peerId`                       | `number?`                        | Logger tag only.                                                                                                                                                                                                                          |
 | `options.peerLogger`                   | `Logger?`                        | Replaces the default logger.                                                                                                                                                                                                              |
-| `options.config`                       | `Partial<Config>?`               | Runtime config overrides; precedence in [`createConfig`](../../../../../../src/utils/config.ts#L147) is overrides > `process.env` > `peer3.config.ts` > defaults. See [../reference/configuration.md](../../operations/configuration.md). |
+| `options.config`                       | `Partial<Config>?`               | Runtime config overrides; precedence in [`createConfig`](../../../../../../src/utils/config.ts#L158) is overrides > `process.env` > `peer3.config.ts` > defaults. See [../reference/configuration.md](../../operations/configuration.md). |
 | `options.signerSecret`                 | `string?`                        | Private key (`0x` + 64 hex) or mnemonic. **A random private key is generated when omitted.**                                                                                                                                              |
 | `options.customRpcManifest`            | `CustomRpcManifest?`             | Integrator RPC root, resolved on the host via [`resolveCustomRpcManifest`](../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L1) and typed through [`registry.ts`](../../../../../../src/rpc/network/registry.ts#L1).         |
 | `options.customPrecompiles`            | `EvmCustomPrecompileManifest[]?` | Integrator precompiles installed into the local EVM executor.                                                                                                                                                                             |
@@ -79,7 +79,7 @@ Top to bottom:
    owns host communication, domain adapters and cleanup. setupP2pRuntime owns configuration and the two application deployments after communication startup.
    P2pInstance holds a direct local reference to this initialized root. Its host
    connection carries RPC and mirrors bus events into the client EventBus.
-3. **Runtime host.** [`startP2pRuntimeHost`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L204)
+3. **Runtime host.** [`startP2pRuntimeHost`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205)
    constructs the live graph: provider + wallet, `Clock` sync, time config from
    the chain (`getAllTimes` → `p2pTime`, `agreementTime`, `chainFallbackTime`,
    `evidenceTime`), the local EVM contract executor, `Storage`, `StateManager`
@@ -87,7 +87,7 @@ Top to bottom:
 4. **Local EVM.** A contract executor (optionally in its own thread,
    `VM_DEDICATED_THREAD`) hosting the two deployed state-machine instances and
    the `LocalDiamond` (§4).
-5. **Chain.** One WebSocket provider per host, derived from `PROVIDER_URL` (§6).
+5. **Chain.** One provider per host over the ordered RPC endpoints in `PROVIDER_URLS`, or the single `PROVIDER_URL` when that list is empty (§6).
 
 ### 2.1 Host/client split — inline vs worker
 
@@ -121,13 +121,17 @@ returned. Application setup owns this sequence; the root owns communication.
 ## 3. Assumptions, constraints & dependencies
 
 - **RPC observation assumption ([`REQ-SDK-2-M2PGDM`](architecture.md#req-sdk-2-m2pgdm)).** _Current:_ the SDK observes the
-  chain exclusively through the single configured `PROVIDER_URL`. The host
-  converts `http(s)` to `ws(s)` and **requires a reachable WebSocket endpoint**
+  chain through the ordered endpoints of `PROVIDER_URLS`, or the single
+  `PROVIDER_URL` when that list is empty. The host converts `http(s)` to
+  `ws(s)` and **requires one reachable WebSocket endpoint** at startup
   ([`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4)
-  throws otherwise). `Clock`, the event listener, event recovery, all local
-  validation staticCalls against the manager, and every on-chain send flow
-  through this one provider. There is no redundancy and no cross-checking;
-  [`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L52)
+  throws otherwise); the others connect in the background. `Clock`, event
+  recovery, all local validation staticCalls against the manager, and every
+  on-chain send go to the first connected endpoint and fail over when it drops;
+  the event listener subscribes on every endpoint
+  (rpcNodes). Every
+  listed endpoint is trusted and answers are not cross-checked;
+  [`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L61)
   documents in code that reduction treats provider failure as fatal. _Intended:_
   redundancy across independent RPC providers reduces availability failures, but
   the trust assumption remains — correct operation is not guaranteed if every
@@ -149,18 +153,25 @@ returned. Application setup owns this sequence; the root owns communication.
 1. **Live instance** — drives the replicated channel state. All happy-path
    execution (`stateTransition`, `getState`/`setState`, `getNextToWrite`,
    balance algebra, `processInboundMessage`) runs against it through
-   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L61).
+   [`EvmDiamondStateMachine`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L67).
 2. **Diamond instance** — embedded in the locally deployed
-   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L413) (see
+   [`LocalDiamond`](../../../../../../src/evm/EvmDiamondStateMachine.ts#L459) (see
    `deployLocalDiamondWithStateMachineAddress`). The `LocalDiamond` is a local
    mirror of the on-chain manager's dispute/fraud-proof logic plus per-channel
    chain state, kept in sync by the
-   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L50) replaying
+   [`EventHandler`](../../../../../../src/eventHandlers/EventHandler.ts#L48) replaying
    observed chain events (`onChannelOpened`, `onStateSnapshotUpdated`,
    `onBlockCalldataPosted`, `onDisputeCommitted`, `onOnChainSlashAdded`, ...).
    Dispute re-execution, replay positioning, and canonical validation
-   predicates (`isBlockAuthentic`, `hasInvalidTimestamp`, `reduce`, ...) run
-   here so they can never mutate the live replicated state.
+   predicates (`hasInvalidTimestamp`, `reduce`, ...) run
+   here so they can never mutate the live replicated state. Block author
+   authenticity is the exception: it is a pure check and runs in TypeScript
+   under the contracts' exact signature acceptance rule (`Block.isAuthentic`),
+   on a block decoded by `Codec` (decoding parity with the contracts is the open
+   [`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)). The local EVM's
+   `ecrecover` precompile is memoized per thread
+   ([EcrecoverCache](../../../source/src/cache/EcrecoverCache.ts.md)); that
+   changes cost only, never a verdict.
 
 The instances MUST stay separate: dispute replay repositions the state machine
 at arbitrary historical states; doing that on the live instance would corrupt
@@ -232,7 +243,7 @@ flowchart TB
     DVS --> LD
     EH -- "mirror chain events" --> LD
 
-    Chain["Chain via single WebSocket RPC (PROVIDER_URL)"]
+    Chain["Chain via ordered WebSocket RPC endpoints (PROVIDER_URLS)"]
     SCEL <-- "logs" --> Chain
     DM -- "uploadDispute / applyFraudProofs" --> Chain
     RM -- "reduceAndFinalize" --> Chain

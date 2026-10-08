@@ -77,6 +77,8 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
                 dispute.input.selfRemoval = false;
                 dispute.input.requireExistingDisputeWindow = false;
                 dispute.input.onChainSlashes = [args.slashedAddress as string];
+                // the committed list drops peer 1 from the historic set -> final, no auditing data owed
+                dispute.postedAuditingData = false;
             },
             { args: { slashedAddress } }
         );

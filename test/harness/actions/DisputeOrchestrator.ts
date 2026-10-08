@@ -6,10 +6,7 @@ import { FraudProofType } from "@/types/sol-enums";
 import { ForkId } from "@/types/types";
 import { Codec, Logger, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type {
-    DisputeValidationRun,
-    PersistDisputeDataProjection
-} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
+import type { DisputeValidationRun } from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
     DisputeAuditingDataStruct,
@@ -113,36 +110,6 @@ export class DisputeOrchestrator<
                         }) * 3
                 })
         );
-    }
-
-    /** Run the real persistDisputeDataWithoutAudit on `peerIndex`. */
-    async persistDisputeData(
-        peerIndex: number,
-        dispute: DisputeStruct,
-        options: {
-            auditingData?: DisputeAuditingDataStruct;
-            includeUnfinalizedBlocks: boolean;
-            /** Applied host-side after decode; "" is not ABI-encodable. */
-            latestFinalizedStateStateMachineStateOverride?: string;
-        }
-    ): Promise<PersistDisputeDataProjection> {
-        return this.harness
-            .control(this.harness.getPeer(peerIndex))
-            .dispute.persistDisputeDataWithoutAudit(
-                Codec.encode(dispute, Type.Dispute) as string,
-                {
-                    encodedAuditingData: options.auditingData
-                        ? (Codec.encode(
-                              options.auditingData,
-                              Type.DisputeAuditingData
-                          ) as string)
-                        : undefined,
-                    includeUnfinalizedBlocks: options.includeUnfinalizedBlocks,
-                    latestFinalizedStateStateMachineStateOverride:
-                        options.latestFinalizedStateStateMachineStateOverride
-                }
-            )
-            .request();
     }
 
     async submitFinalDispute(options: {

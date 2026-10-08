@@ -1,5 +1,6 @@
 "use strict";
 
+const { prosePlanEntries } = require("./specification-plan-prose");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -155,7 +156,7 @@ function collectPermutations(documents) {
             if (!mentions.has(match[0])) mentions.set(match[0], new Set());
             mentions.get(match[0]).add(document);
         }
-        for (const table of tableRows(document)) {
+        for (const table of specificationPlanRows(document)) {
             const planIndex = table.headers.indexOf("plan item");
             const permutationIndex = table.headers.indexOf(
                 "required permutations"
@@ -301,6 +302,14 @@ function tableRows(document) {
     return tables;
 }
 
+// Present prose test entries through the same fields as existing test tables.
+function specificationPlanRows(document) {
+    return [
+        ...tableRows(document),
+        ...prosePlanEntries(readText(document).split(/\r?\n/), document)
+    ];
+}
+
 function collectDefinitions(documents, pattern) {
     const definitions = new Map();
     const duplicates = [];
@@ -342,7 +351,9 @@ function collectDefinitions(documents, pattern) {
                 }
             }
         }
-        for (const table of tableRows(document)) {
+        for (const table of pattern === REQUIREMENT_RE
+            ? tableRows(document)
+            : specificationPlanRows(document)) {
             const candidateIndexes =
                 pattern === REQUIREMENT_RE
                     ? table.headers.some((header) =>
@@ -921,5 +932,6 @@ module.exports = {
     normalize,
     requirementPath,
     sorted,
-    tableRows
+    tableRows,
+    specificationPlanRows
 };

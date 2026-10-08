@@ -4,13 +4,18 @@
 
 ## System design
 
-**Current:** The implementation supports exactly one provider. Configuration exposes a single
-`PROVIDER_URL` string ([src/utils/config.ts](../../../../../src/utils/config.ts#L1)), the event listener
-subscribes through the single provider attached to the contract runner
-([src/StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts#L1)), and the runtime
-chain context derives its WebSocket connection from the same URL
+**Current:** The implementation accepts an ordered list of RPC endpoints. Configuration exposes
+`PROVIDER_URLS`, falling back to the single `PROVIDER_URL` ([src/utils/config.ts](../../../../../src/utils/config.ts#L1)),
+and the runtime chain context opens one reconnecting node per endpoint
 ([src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1)).
-There is no multi-provider redundancy, cross-checking, or failover — **gap**.
+Each request goes to the first connected endpoint and fails over when it drops
+([MultiRpcProvider](../../source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md)); the event listener
+subscribes on every endpoint and catches up after a reconnect
+([src/StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts#L1)). Answers are not
+cross-checked between endpoints: every listed endpoint is trusted. A listed endpoint, a backup
+included, can forge logs on its subscription and so advance the completed-block watermark, after
+which honest streamed logs below it are dropped; cross-endpoint verification is out of scope —
+**accepted limit**.
 
 **Current:** No watchtower, delegate, or third-party monitoring implementation exists in this
 repository — **gap**. The SDK assumes the participant's own client

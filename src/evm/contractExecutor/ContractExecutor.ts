@@ -4,7 +4,12 @@ import AContractExecutor, {
 } from "./AContractExecutor";
 import type { Address, Bytes } from "@/types/types";
 import type { Logger } from "@/utils";
-import { Mutex, toEthereumJsEvmAddress, tryDecodeCustomError } from "@/utils";
+import {
+    LOCAL_EVM_EXECUTION_FAILED,
+    Mutex,
+    toEthereumJsEvmAddress,
+    tryDecodeCustomError
+} from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { EVM } from "@ethereumjs/evm";
 import { Address as EthjsAddress } from "@ethereumjs/util";
@@ -16,6 +21,37 @@ import { ethers } from "ethers";
 // @ethereumjs/evm 10.x still re-scans per call (analysis is only skipped for
 // jump-free code), so upgrading does not fix it — the code-keyed cache in
 // @platform/evmJumpdestCache (installed by createEvm) does.
+
+// The EVM's default call gas (0xffffff, about 16.7M). A local EVM call gets at
+// least this much; see localEvmCallGasLimit for the full rule.
+export const DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT = 0xffffffn;
+
+/**
+ * Gas granted to every local EVM call: the EVM default, raised to the
+ * manager's dispute-execution budget and to twice the manager's replay
+ * requirement. The requirement funds the transition's budget and the fixed
+ * setup only; deleting the previous transition's outbound messages and
+ * copying the input come on top, and cost at most about one more budget (they
+ * undo or move what one budgeted run wrote). With twice the requirement a
+ * local transition is not refused where a funded chain replay runs it, as far
+ * as the chain's block gas limit lets such a replay be sent (a block whose
+ * input alone exceeds that limit cannot be replayed on-chain either). The
+ * requirement is a funding baseline, not a bound on the surrounding work of a
+ * dispute call (proof checks, state restoration); a local out-of-gas there
+ * falls back to the chain.
+ */
+export function localEvmCallGasLimit(
+    disputeExecutionGasLimit: bigint,
+    stateTransitionReplayGas: bigint
+): bigint {
+    let gasLimit = DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
+    if (disputeExecutionGasLimit > gasLimit)
+        gasLimit = disputeExecutionGasLimit;
+    if (2n * stateTransitionReplayGas > gasLimit)
+        gasLimit = 2n * stateTransitionReplayGas;
+    return gasLimit;
+}
+
 export default class ContractExecutor extends AContractExecutor {
     private readonly evm: EVM;
     private readonly logger?: Logger;
@@ -29,9 +65,18 @@ export default class ContractExecutor extends AContractExecutor {
      */
     private readonly clock?: () => number;
 
-    constructor(evm: EVM, logger?: Logger, options?: { clock?: () => number }) {
+    // Gas granted to every call (see localEvmCallGasLimit).
+    private readonly callGasLimit: bigint;
+
+    constructor(
+        evm: EVM,
+        logger?: Logger,
+        options?: { clock?: () => number; callGasLimit?: bigint }
+    ) {
         super();
         this.clock = options?.clock;
+        this.callGasLimit =
+            options?.callGasLimit ?? DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT;
         this.evm = evm;
         this.logger = logger?.child({
             component: "ContractExecutor"
@@ -53,7 +98,7 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.deployOn(this.evm, data);
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -69,7 +114,7 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -94,10 +139,22 @@ export default class ContractExecutor extends AContractExecutor {
                 await evm.journal.revert();
             }
         } finally {
-            // A burst of serialized simulations must yield to timers and I/O
-            // instead of draining the whole queue through microtasks.
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
+    }
+
+    /**
+     * Frees the executor on the next timer turn, never in the current one.
+     * A burst of requests reaches this worker as queued port messages, and
+     * the port drains them in one event-loop callback. A call runs to its end
+     * in microtasks, so with an immediate release each queued request found
+     * the mutex free and ran in that same callback: a dispute audit burst
+     * (about 30 calls) then blocks the loop for its whole sum. Holding the
+     * mutex until a later timer turn queues those requests, and each one
+     * starts in its own loop iteration.
+     */
+    private release(): void {
+        setTimeout(() => this.mutex.unlock(), 0);
     }
 
     private deployOn(evm: EVM, data: Bytes): Promise<ContractExecutionResult> {
@@ -121,6 +178,7 @@ export default class ContractExecutor extends AContractExecutor {
     ): Promise<ContractExecutionResult> {
         const result = await evm.runCall({
             data: ethers.getBytes(data),
+            gasLimit: this.callGasLimit,
             ...(this.clock ? { block: this.ambientBlock() } : {}),
             ...options
         });
@@ -131,7 +189,7 @@ export default class ContractExecutor extends AContractExecutor {
                 ? ethers.hexlify(result.execResult.returnValue)
                 : null;
             const custom = tryDecodeCustomError({ data: errorData });
-            const errorMessage = `EVM execution failed: ${custom?.name || exceptionError.error || exceptionError}`;
+            const errorMessage = `${LOCAL_EVM_EXECUTION_FAILED}: ${custom?.name || exceptionError.error || exceptionError}`;
 
             // Create error with structured data for the proxy to handle
             const error = new Error(errorMessage);

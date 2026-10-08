@@ -5,6 +5,7 @@ import type {
     LobbyRawMethod,
     NegotiationRawMethod
 } from "./ByzantineService";
+import { __doubleSignatureListenerCount } from "@/cache";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -12,6 +13,7 @@ import type Rpc from "@/rpc/Rpc";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
+import { SignatureUtils } from "@/utils/SignatureUtils";
 import type {
     BlockStruct,
     SignedBlockStruct,
@@ -45,6 +47,32 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
         return { hash: String(block.hash), height: Number(block.height) };
+    }
+
+    /**
+     * Start disposing this peer's P2PManager without awaiting it, recover each
+     * signature over the encoded message through the SDK's signer recovery in
+     * the same synchronous step, read the blacklist, then finish disposal.
+     */
+    public async recoverDuringDisposal(
+        encodedMessage: string,
+        signatures: string[]
+    ) {
+        const p2pManager = this.p2pManager;
+        const listenersBefore = __doubleSignatureListenerCount();
+        const disposal = p2pManager.dispose();
+        const recovered = signatures.map((signature) =>
+            String(SignatureUtils.getSignerAddress(encodedMessage, signature))
+        );
+        const blacklisted = recovered.map((address) =>
+            p2pManager.isBlacklisted(address)
+        );
+        await disposal;
+        return {
+            recovered,
+            blacklisted,
+            removedListeners: listenersBefore - __doubleSignatureListenerCount()
+        };
     }
 
     /**
@@ -133,17 +161,22 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
 
     /**
      * Post calldata on-chain with a deliberately invalid signature (the block
-     * hash is double-hashed before signing).
+     * hash is double-hashed before signing). `authentic` signs the real hash
+     * instead, so the junk transaction reaches state-transition validation.
+     * `previousBlockHash` overrides the link to the head.
      */
     public async postJunkCalldataOnChain(options: {
         height: BlockHeight;
         forkId?: ForkId;
         encodedData?: Bytes;
-    }): Promise<{ encodedBlock: string }> {
+        authentic?: boolean;
+        previousBlockHash?: Hash;
+    }): Promise<{ encodedBlock: string; encodedSignedBlock: string }> {
         const forkId = (options.forkId ?? this.service.sm.forkId) as ForkId;
         const height = options.height;
 
-        const previousBlockHash = this.service.previousBlockHash(forkId);
+        const previousBlockHash =
+            options.previousBlockHash ?? this.service.previousBlockHash(forkId);
         const stateSnapshotHash = this.service.stateSnapshotHash(forkId);
         const encodedData: Bytes =
             options.encodedData ??
@@ -169,14 +202,14 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
 
         const encodedBlock = Codec.encode(blockStruct, Type.Block);
         const blockHash = hash(encodedBlock);
-        const corruptedBlockHash = hash(blockHash);
-        const invalidSignature = await this.service.sm.signer.signMessage(
-            ethers.getBytes(corruptedBlockHash)
+        const signedHash = options.authentic ? blockHash : hash(blockHash);
+        const signature = await this.service.sm.signer.signMessage(
+            ethers.getBytes(signedHash)
         );
 
         const signedBlock: SignedBlockStruct = {
             encodedBlock,
-            signature: invalidSignature
+            signature
         };
 
         const maxTimestamp = Clock.getTimeInSeconds() + 1000;
@@ -187,7 +220,13 @@ export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
             );
         await tx.wait();
 
-        return { encodedBlock: encodedBlock as string };
+        return {
+            encodedBlock: encodedBlock as string,
+            encodedSignedBlock: Codec.encode(
+                signedBlock,
+                Type.SignedBlock
+            ) as string
+        };
     }
 
     public sendRawLobbyRpc(

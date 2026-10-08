@@ -29,7 +29,7 @@ signatures — existence in chain storage is the proof.
   `latestInboundMessageBlockHash`. A block author packages the pending inbound range into its
   next channel block (`Block.messageBlocks`); applying the block applies each message in order
   through `processInboundMessage` and rolls `totalDeposits` forward to the last inbound block's
-  `totalBalance` ([`StateManager.applyInboundMessageBlocksToState` / `createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L478)).
+  `totalBalance` ([`StateManager.applyInboundMessageBlocksToState` / `createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L483)).
 - **Validation by peers.** Every validator checks (a) the packaged inbound blocks chain correctly
   from the previous snapshot's inbound tip (`findBrokenInboundMessageChainBlock` → treated as an
   invalid state transition), and (b) every packaged inbound block exists locally or on-chain
@@ -38,7 +38,9 @@ signatures — existence in chain storage is the proof.
   (`ForgedInboundMessageBlock`, see [protocol/fraud-proofs.md](../architecture/sdk/dispute-pipeline.md)).
 - **On-chain ancestry check for disputes.** A dispute's claimed inbound tip must be an ancestor
   (or equal) of the chain's tip: `_isDisputeInboundHashValid` walks the persisted chain from the
-  chain tip toward genesis and also requires the claimed height to match the stored height.
+  chain tip toward genesis and also requires the claimed height to match the stored height. Upload
+  separately requires the anchor to equal the chain's inbound head (hash and height), so a committed
+  dispute always passes this walk.
 - **Pruning.** When a snapshot advance clears storage, inbound blocks from the new snapshot's tip
   backwards are deleted (`_clearOldInboundMessageBlocks` in
   [`StateSnapshotFacet`](../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L8)).
@@ -55,7 +57,7 @@ established separately (finality proof or finalized dispute reduction — §2).
   (`AStateMachine.getOutboundMessages`), the author packages them into exactly one outbound
   message block per channel block: parent = previous snapshot's outbound tip, height + 1,
   `totalBalance` = previous `totalWithdrawals` plus the new message balances
-  ([`StateManager.createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L478)). The new
+  ([`StateManager.createStateSnapshot`](../../../../../src/stateManager/StateManager.ts#L483)). The new
   snapshot (committed by the channel block) carries the new outbound tip. Dispute reduction
   appends at most one deterministic outbound block the same way (`timestamp = 0` for determinism;
   [`DisputeVerificationFacet.generateDisputeOutputState`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L18)).
@@ -89,7 +91,7 @@ not used` in code).
 
 - **Current:** `_updateStateSnapshot` does **not** run the channel-balance invariant check (§6).
   A code comment in
-  [`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L463)
+  [`DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L481)
   states the check is trivial and _"we'll add [it] as the last check onSnapshotUpdate"_.
   **Intended:** run it on every snapshot update so the on-chain snapshot is always a
   non-poisonous single source of truth. **Open question:** confirm and implement, or record the
@@ -103,35 +105,25 @@ not used` in code).
 - **Current:** debug `console.log` calls remain in `verifyBalanceInvariantCheckSnapshot`
   (hardhat's `console.sol`). Must be removed for production deployment.
 
-### 3.2 Abort conditions (Current, enumerated)
+### 3.2 Sync verification and failure boundaries
 
-Request path (peer blacklisted; sync abandoned):
+The [spectate view](../architecture/sdk/rpc/spectate.md) and
+[SpectateService report](../../source/src/rpc/network/services/spectate/SpectateService.ts.md)
+own the current algorithm. Sync is awaited and coalesces applicable in-flight requests.
+Request timeout, refusal or transport loss takes a counted close and returns false. Invalid
+payload evidence is rejected with a peer verdict; internal execution and chain-read errors
+propagate fatally. The caller owns initial-runtime shutdown or established-runtime recovery.
 
-1. RPC timeout, transport error, or the responder declining (responder returns `undefined` for:
-   malformed/unsafe requested height, a fork it cannot prove as the derived tip, a height above
-   its latest, or a missing state proof).
+Verification establishes the fork lineage, genesis, milestone proof from the successful trusted
+start, outbound ranges, final-state bytes and balance invariant. It does not simulate snapshot
+adoption. Pinned requests accept their fork or a verified successor; same-fork results must reach
+the requested minimum. Latest mode derives the latest provable fork from chain dispute state.
 
-Verification path (`applySyncResponse`; each aborts the sync): 2. Payload fails to decode, or any verification step throws. 3. Round-trip time exceeds `agreementTime`. 4. A claimed dispute window does not exist on-chain or its kill period has not expired. 5. More than one dispute window still needs reduction. 6. A window's locally recomputed reduction does not match the payload's claimed successor fork. 7. The tip fork's genesis snapshot is inconsistent (fork mismatch, not genesis-shaped, or state
-hash ≠ hash of supplied encoded state). 8. The on-chain snapshot is already ahead of the proved height (stale proof). 9. Either outbound message-block range fails `verifyOutboundMessageBlocks`. 10. Latest-mode: the tip fork is disputed on-chain. Pinned mode: tip fork ≠ requested fork. 11. The milestone state proof fails `verifyMilestones`. 12. The latest finalized state hash does not match the supplied encoded state. 13. The channel-balance invariant fails (`verifyBalanceInvariantCheckSnapshot`, §6). 14. The simulated on-chain advance (`multicall` `staticCall` of pending `reduceAndFinalize` +
-`updateStateSnapshotFork` + `updateStateSnapshotSameFork`) reverts. 15. A proved finalized block conflicts with a block already in local storage. 16. Replaying an unfinalized block through the confirmation pipeline fails. 17. Pinned mode: the proof's latest block does not reach the requested height.
-
-Abort semantics ([`SpectateService.abort`](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L98)):
-if the node is not yet participating (or pending), the whole state manager aborts — a full local
-stop with no residue; if it is already a participant using spectate-sync for recovery, only the
-offending peer is cut and blacklisted. While spectating,
-`SpectatingValidationStrategy` keeps the same fail-closed split: provable participant fraud
-(double-sign, invalid transition, forged inbound block, objective bad timestamp) → abort and stop
-following; non-provable junk (outsider authors, malformed linkage, stray signatures) → drop and
-blacklist the sender, keep spectating.
-
-- **[`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5).** Spectating MUST NOT create any on-chain or channel obligation; every abort path
-  MUST leave no partial local commitment that could later bind the spectator. **Current:**
-  persistence happens only after all verification (steps 2–14) succeeds, under the state-manager
-  mutex, and is skipped when local storage is already ahead.
-- **Current:** a code TODO notes the local simulation of snapshot updates "need[s] dummy
-  contracts to process withdrawals" — a consumer facet whose `withdraw` touches real external
-  state may make simulation infeasible for spectators. **Open question:** how are
-  consumer-facet side effects stubbed during spectate simulation?
+Verified persistence precedes sequential tail replay. If a later replay block fails, earlier
+verified progress may remain. Sync itself submits no transaction and creates no deposit or signing
+obligation for a spectator. This distinction matters for
+[`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5):
+retained verified data is not a channel commitment. No rollback of all local storage is promised.
 
 ### 4.2 Current / Intended divergences and open questions
 
@@ -184,7 +176,7 @@ assumes the caller verified those chains — the spectate flow does exactly that
 
 | Site                            | Mechanism                                                                                                                                                                                                                                                                          | Status                                                                                                                                     |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Spectate-before-join, step 2.11 | `verifyBalanceInvariantCheckSnapshot` via `staticCall` on the latest finalized snapshot; abort on failure                                                                                                                                                                          | Implemented ([SpectateService](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L35))                                   |
+| Spectate-before-join, step 2.11 | `verifyBalanceInvariantCheckSnapshot` via `staticCall` on the latest finalized snapshot; abort on failure                                                                                                                                                                          | Implemented ([SpectateService](../../../../../src/rpc/network/services/spectate/SpectateService.ts#L36))                                   |
 | Dispute fraud proof             | `DisputeInvalidBalanceInvariant`: a dispute whose proven latest finalized state violates the invariant slashes the disputer ([`DisputeFraudProofFacet._handleDisputeInvalidBalanceInvariant`](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L1)) | Implemented                                                                                                                                |
 | On-chain snapshot update        | none — code comment declares the intent to add it as the last check on snapshot update                                                                                                                                                                                             | **Gap** (`Current:` not checked; `Intended:` checked — open question in §2.3)                                                              |
 | Join submission (`joinChannel`) | none — the joiner is expected to have spectated (fail-closed) first                                                                                                                                                                                                                | **Gap / by design?** **Open question:** whether an on-chain check at join time is wanted given the spectate-path check is client-side only |

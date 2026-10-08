@@ -51,7 +51,7 @@ Position: strictly **after** authentication. The service carries a `HandshakeCom
 ([`WebRTCSetupService` constructor](../../../../../../../src/rpc/network/services/WebRTCSetup/WebRTCSetupService.ts#L1)
 line 45), so every remote signaling method is refused unless the sender transport already maps to a
 completed `PeerProfile`. The upgrade is _initiated_ from
-[`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242):
+[`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409):
 when either side prefers WebRTC, the current transport is not already WebRTC, and
 `localAddress < completedPeerAddress` (a deterministic single-offerer tiebreak that avoids offer glare),
 the lower-addressed peer calls `initiateWebRTC(transport)`.

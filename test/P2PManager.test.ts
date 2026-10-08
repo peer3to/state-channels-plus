@@ -6,6 +6,7 @@ import {
     assertObserverConnectSettlesFalseOnAbort,
     withFreshInitialSyncObserver
 } from "@test/fixtures/AbortDuringInitialSyncStaging";
+import { runHandshakeFailure } from "@test/fixtures/HandshakeFailureStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
@@ -394,20 +395,6 @@ describe("P2PManager", function () {
         expect(result.connectedPeers).to.deep.equal([fixture!.address(1)]);
     });
 
-    it("keeps an OPENED connection and reports once when the participant read fails", async function () {
-        const result = await fixture!
-            .control()
-            .p2pManagerProbe.probeHandshakeParticipantReadFailure(
-                fixture!.address(1)
-            )
-            .request();
-
-        expect(result.connected).to.equal(true);
-        expect(result.syncCallCount).to.equal(0);
-        expect(result.hookCount).to.equal(1);
-        expect(result.failureLogged).to.equal(true);
-    });
-
     it("ignores a completed handshake with no registered transport", async function () {
         const result = await fixture!
             .control()
@@ -706,12 +693,19 @@ describe("P2PManager", function () {
                     )
                 )
             ).to.deep.equal([target, target]);
+            // Neither peer blacklisted the other.
             expect(
-                await h
-                    .control(h.getPeer(0))
-                    .query.isBlacklisted(h.getPeer(1).address)
-                    .request()
-            ).to.equal(false);
+                await Promise.all([
+                    h
+                        .control(h.getPeer(0))
+                        .query.isBlacklisted(h.getPeer(1).address)
+                        .request(),
+                    h
+                        .control(h.getPeer(1))
+                        .query.isBlacklisted(h.getPeer(0).address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
         });
 
         it("explicit same-ID retry creates a fresh matcher and negotiation attempt", async function () {
@@ -1173,5 +1167,41 @@ describe("P2PManager", function () {
                 "failure"
             );
         });
+    });
+});
+
+// ethers' refusal of an eth_call on the runtime's closed chain provider
+const CLOSED_PROVIDER_CHAIN_READ =
+    /^provider destroyed; cancelled request \(operation="eth_call", code=UNSUPPORTED_OPERATION,/;
+
+describe("P2PManager handshake chain failures", function () {
+    it("reports a failed participant read after an OPENED handshake to the runtime's top-level error handling, with no connection hook", async function () {
+        const result = await runHandshakeFailure("read");
+
+        expect(result.hostErrors).to.have.length(1);
+        expect(result.hostErrors[0].message).to.match(
+            CLOSED_PROVIDER_CHAIN_READ
+        );
+        expect(result.hookCount).to.equal(0);
+        expect(result.aborted).to.equal(false);
+    });
+
+    it("reports a throwing sync after an OPENED handshake to the runtime's top-level error handling, with no connection hook", async function () {
+        const result = await runHandshakeFailure("sync");
+
+        expect(result.hostErrors).to.have.length(1);
+        expect(result.hostErrors[0].message).to.match(
+            CLOSED_PROVIDER_CHAIN_READ
+        );
+        expect(result.hookCount).to.equal(0);
+        expect(result.aborted).to.equal(false);
+    });
+
+    it("drops a participant read that fails during runtime teardown: no error, no connection hook", async function () {
+        const result = await runHandshakeFailure("teardown");
+
+        expect(result.hostErrors).to.deep.equal([]);
+        expect(result.hookCount).to.equal(0);
+        expect(result.aborted).to.equal(true);
     });
 });

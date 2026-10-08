@@ -26,10 +26,10 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-37-0Y7YWS`](open-questions.md#oq-37-0y7yws)                                                       | Harness-control RPC root: unguarded, network-reachable, and published in the package                                              | Code            | [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4, [security/open-security-review.md](../audit/security-assessment.md)                                      | Open                              |
 | [`OQ-38-1RBXV3`](open-questions.md#oq-38-1rbxv3)                                                       | Production transport deduplication during targeted derived-to-raw topic handoff lacks automated evidence                          | Code            | [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md)                                                                                                              | Accepted evidence gap             |
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062)   | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
-| [`OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385`](open-questions.md#oq-impl-sync-in-flight-1-wc8385)                 | Ordinary sync collision before intake eligibility recheck                                                                         | Engineer review | [Owner](source/src/stateManager/ingest/BlockQueueManager.ts.md)                                                                                                                                       | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                     | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
-| [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM`](open-questions.md#oq-impl-sync-boundary-1-4afpkm)                   | Sync stale-proof abort boundary and the same-fork outbound range                                                                  | Code            | [synchronization.md](../specification/peer-communication/synchronization.md), [SpectateService](source/src/rpc/network/services/spectate/SpectateService.ts.md)                                       | Open                              |
+| [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM`](open-questions.md#oq-impl-sync-boundary-1-4afpkm)                   | Same-fork outbound range in the sync payload                                                                                      | Code            | [synchronization.md](../specification/peer-communication/synchronization.md), [SpectateService](source/src/rpc/network/services/spectate/SpectateService.ts.md)                                       | Open                              |
 | [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs) | Earliest on-chain timestamp is not enforced in the block store                                                                    | Code            | [BlockStorage](source/src/storage/BlockStorage.ts.md), [QueueStorage](source/src/storage/QueueStorage.ts.md)                                                                                          | Open                              |
+| [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM`](open-questions.md#oq-impl-executor-drain-1-5d71ym)                 | Executor admission drain bound at shutdown                                                                                        | Engineer review | [Owner](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md)                                                                                                              | Resolved                          |
 | [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                                 | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
@@ -200,7 +200,7 @@ next-author refusal clause marked as this open decision.
 
 Grouped smaller items, each a code TODO or observed race: the TypeScript
 `onStateSnapshotUpdated` handler is not `(blockNumber, logIndex)`-ordered, unlike the
-LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Kill-period and dispute-fraud-proof slashing semantics)](../specification/open-questions.md#oq-1-ntjba1)). See
+LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Remaining dispute economics and timing policy)](../specification/open-questions.md#oq-1-ntjba1)). See
 [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), and
 [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md).
 
@@ -279,9 +279,9 @@ closed networks" as an explicit, documented limitation. See
 
 Status: Open, non-blocking performance follow-up. Current behavior retained by Luka on 2026-09-07.
 
-Each sync currently establishes its own chain-finality decisions and builds its own complete
-snapshot-update simulation. This deliberately keeps calldata inclusion independent of another
-sync's local verification progress. A matching locally proven successor is reusable evidence,
+Each sync currently establishes its own chain-finality decisions and recomputes every reduction the
+chain has not finalized. This deliberately keeps verification independent of another sync's local
+verification progress. A matching locally proven successor is reusable evidence,
 but it does not prove that the chain has executed the reduction. See the
 [SpectateService report](source/src/rpc/network/services/spectate/SpectateService.ts.md).
 
@@ -309,14 +309,6 @@ Future implementation design; non-blocking for this queue change. The desired be
 and distinguish local signing, local finality, transaction submission, and confirmed adoption. Do not
 add a second snapshot publisher or claim a submitted transaction already grants dispute standing.
 
-<a id="oq-impl-sync-in-flight-1-wc8385"></a>
-
-## OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385 — Ordinary sync collision before intake eligibility recheck
-
-The engineer chose an unconditional cached eligibility recheck after ingress sync. Ordinary sync currently returns false on an in-flight collision, so intake can blacklist an absent sender before the running proof makes it eligible. Adjust SpectateService.sync later so the caller can await an applicable outcome. The engineer deferred that change; this accepted limitation does not block the current intake correction.
-
-Owner: [implementation report](source/src/stateManager/ingest/BlockQueueManager.ts.md). Decision recorded in the 2026-09-17 implementation review.
-
 <a id="oq-impl-rpc-cooldown-1-xmsnr7"></a>
 
 ## OQ-IMPL-RPC-COOLDOWN-1-XMSNR7 — Cooldown for on-demand RPC queries
@@ -327,12 +319,9 @@ Owner: [implementation report](source/src/stateManager/membership/MembershipServ
 
 <a id="oq-impl-sync-boundary-1-4afpkm"></a>
 
-## OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM — Sync stale-proof abort boundary and the same-fork outbound range
+## OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM — Same-fork outbound range in the sync payload
 
-The synchronization algorithm and the current requester and responder disagree in two places, and no `REQ-SYNC-*` or `INV-SYNC-*` statement decides either ([synchronization.md](../specification/peer-communication/synchronization.md)).
-
-1. **Stale-proof boundary.** Requester step 6 aborts when the on-chain snapshot is "at or past" the proved position on the same fork. The requester aborts only when it is strictly past and accepts the exact-target case, so it can still persist the proven local state.
-2. **Outbound range on the same fork.** The responder algorithm describes the on-chain-tip-to-genesis outbound range as unconditional. The responder treats that segment as cross-fork evidence: empty when the on-chain snapshot and the target genesis share a fork, linked and verified when they differ.
+Responder step 4 of the [synchronization algorithm](../specification/peer-communication/synchronization.md) puts the linked outbound message-block range from the on-chain tip to the target genesis in every payload, and no `REQ-SYNC-*` or `INV-SYNC-*` statement narrows it. The responder treats that segment as cross-fork evidence: `generateSyncPayload` sends it empty when the on-chain snapshot and the target genesis share a fork, and `applySyncResponse` requires it empty in that case, verifying it only when the forks differ.
 
 Requested decision: amend the algorithm text to the present behavior, or keep the text and change the requester and responder.
 
@@ -347,3 +336,11 @@ Owner: [implementation report](source/src/rpc/network/services/spectate/Spectate
 Requested decision: enforce the minimum in the store, or relax the spec clause.
 
 Owner: [implementation report](source/src/storage/BlockStorage.ts.md).
+
+<a id="oq-impl-executor-drain-1-5d71ym"></a>
+
+## OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM — Resolved executor admission drain bound
+
+Engineer decision, recorded 2026-09-29: the executor's admission drain at shutdown is bounded by the same constant as the in-flight reply drain, `IN_FLIGHT_REPLY_DRAIN_MS` (five seconds), now exported from [AInternalRpcRoot](source/src/rpc/internal/AInternalRpcRoot.ts.md). Work still admitted at the limit is abandoned internally, children are disposed, and no host error is raised. Engineer decision, recorded 2026-09-29 after the second implementation review (option a): every caller still waiting at the limit always receives the disposal rejection `Contract executor shut down before the operation finished`, and the operation's later success or failure is dropped internally, so it never replaces that rejection; work that finishes within the limit keeps its own result or error. Strongest rejected alternative: keep the drain unbounded, so admitted work always finishes before its children close; it was rejected because one precompile call that never returns would keep executor disposal, and every owner disposal that waits for it, pending indefinitely. A separate executor constant and a worker-only bound were also rejected: one shutdown limit keeps both disposal waits aligned. Consequences: an admitted operation that runs past the limit may later succeed, or fail against a closed child, and either outcome is discarded while its caller keeps the disposal rejection; the `RuntimeLifecycle` worker disposal case with a held executor call completes again. Affected layers: specification ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59)), the [ContractExecutorService report](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md) and [ContractExecutorRoot](source/src/rpc/internal/roots/ContractExecutorRoot.ts.md), the runtime view, the verification reports for `EvmFactory` and `RuntimeLifecycle`, and the implementation, verification, and security audits.
+
+Owner: [implementation report](source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md).

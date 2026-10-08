@@ -24,3 +24,6 @@ Later cooperative inclusion
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P4` — a commit inserting the spectator promotes it and signs and gossips once
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P5` — dispute replay with a historical union preserves current off-chain eligibility
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P6` — a leaver with a parked exit post stays participating, ingests the blocks committed after its leave block, and broadcasts none of them
+- [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P7` — A successful dispute replay above the frozen view stores every replayed tail block without adding auditor signatures; active next height, status and force-join state stay unchanged
+- [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P8` — A pending auditor replays a tail whose resulting participant set seats it; replayed head is stored without its confirmation, but local status, active height and force-join fields stay unchanged
+- [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P9` — A pending auditor replays a tail that leaves its join unconsumed; latest full state becomes available while pending status, active height and force-join fields stay unchanged

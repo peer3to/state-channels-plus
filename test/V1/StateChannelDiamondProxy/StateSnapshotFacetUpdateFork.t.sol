@@ -100,6 +100,9 @@ contract StateSnapshotFacetUpdateForkTest is DiamondHarness {
         dispute.input.channelId = CHANNEL_ID;
         dispute.input.forkId = current.forkId;
         dispute.input.disputer = participants[0];
+        // anchored at the consumed inbound so the upload reaches the race checks
+        dispute.input.latestInboundMessageBlockHash = current.snapshotData.latestInboundMessageBlockHash;
+        dispute.input.lastInboundMessageBlockHeight = current.snapshotData.latestInboundMessageBlockHeight;
 
         DisputeConfirmation memory confirmation;
         confirmation.signedDispute.encodedDispute = abi.encode(dispute);

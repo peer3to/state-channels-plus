@@ -2,7 +2,11 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { DEFAULT_LOG_DIR } = require("./constants");
+const {
+    CONCURRENCY_STAT_FIELDS,
+    DEFAULT_LOG_DIR,
+    HOLD_REASONS
+} = require("./constants");
 
 function formatDurationMs(durationMs) {
     return `${(durationMs / 1000).toFixed(2)}s`;
@@ -255,7 +259,8 @@ function cleanupNonErrorLogs(
 
     if (!fs.existsSync(resolved)) return;
     for (const entry of fs.readdirSync(resolved)) {
-        if (entry.startsWith("error_")) continue;
+        if (entry.startsWith("error_") || entry === "run-metrics.json")
+            continue;
         const target = path.join(resolved, entry);
         if (
             entry === "infra" &&
@@ -276,6 +281,7 @@ function cleanupNonErrorLogs(
 function runHeader({
     taskCount,
     forgeTaskCount = 0,
+    browserTaskCount = 0,
     grep,
     e2eOnly,
     slotCount,
@@ -286,9 +292,15 @@ function runHeader({
     concurrencyCap
 }) {
     const mochaTier = e2eOnly ? "E2E" : "Mocha";
-    const composition = forgeTaskCount
-        ? `${taskCount - forgeTaskCount} ${mochaTier} + ${forgeTaskCount} forge`
-        : mochaTier;
+    const tiers = [
+        [taskCount - forgeTaskCount - browserTaskCount, mochaTier],
+        [forgeTaskCount, "forge"],
+        [browserTaskCount, "browser"]
+    ].filter(([count]) => count > 0);
+    const composition =
+        tiers.length === 1
+            ? tiers[0][1]
+            : tiers.map(([count, tier]) => `${count} ${tier}`).join(" + ");
     console.log(
         `Running ${taskCount} task(s) [${composition}]${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
@@ -300,6 +312,7 @@ function runHeader({
 function dryRun({
     taskCount,
     forgeTaskCount = 0,
+    browserTaskCount = 0,
     forgeThreads,
     slotCount,
     threadModes,
@@ -313,6 +326,7 @@ function dryRun({
     console.log(
         `  forge tasks      : ${forgeTaskCount}${forgeTaskCount ? ` (${forgeThreads} thread(s) each)` : ""}`
     );
+    console.log(`  browser gates    : ${browserTaskCount}`);
     console.log(`  slots            : ${slotCount}`);
     console.log(`  vmThread         : ${threadModes.vmThread}`);
     console.log(`  sdkThread        : ${threadModes.sdkThread}`);
@@ -351,13 +365,12 @@ function admission({
 }
 
 // Orange: scheduler declined to admit this tick.
-function hold({ seq, total, reason, buffered }) {
-    console.log(
-        colorize(
-            "orange",
-            `[${seq}/${total}] holding — ${reason}${buffered === undefined ? "" : ` · buffer ${buffered}`}`
-        )
-    );
+function holdLine({ seq, total, reason, buffered }) {
+    return `[${seq}/${total}] holding — ${reason}${buffered === undefined ? "" : ` · buffer ${buffered}`}`;
+}
+
+function hold(options) {
+    console.log(colorize("orange", holdLine(options)));
 }
 
 // Light yellow: a starved task gets its single clean retry.
@@ -382,7 +395,7 @@ function infrastructureRetry({ seq, total, label, reason, worker }) {
 // " (on server-3, server-7)" for a task's starved attempts; empty for a
 // purely local run, where the only worker is the local machine.
 function formatStarvedOn(task, workerLabel) {
-    const names = (task.starvedOn || []).map((id) =>
+    const names = (task.starvations || []).map(({ server: id }) =>
         workerLabel ? workerLabel(id) : id
     );
     if (!names.length || names.every((name) => name === "local")) return "";
@@ -716,7 +729,116 @@ function markLogAsError(logDir, logName) {
     }
 }
 
+/** Write `value` as JSON through a temporary file, so readers never see a torn file. */
+function writeJsonAtomic(file, value) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const temporary = path.join(
+        path.dirname(file),
+        `.${path.basename(file)}-${crypto.randomUUID()}.tmp`
+    );
+    try {
+        fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+            flag: "wx"
+        });
+        fs.renameSync(temporary, file);
+    } catch (error) {
+        fs.rmSync(temporary, { force: true });
+        throw error;
+    }
+}
+
+// Metrics are diagnostics: a failed write warns and never fails the run.
+function writeRunMetrics(logDir, metrics) {
+    try {
+        writeJsonAtomic(path.join(logDir, "run-metrics.json"), metrics);
+    } catch (error) {
+        console.warn(`Unable to write run metrics: ${error.message}`);
+    }
+}
+
+function buildRunMetrics({
+    tasks,
+    workers,
+    makespanMs,
+    sumDurationMs,
+    startedAt,
+    workerLabel = (id) => id
+}) {
+    return {
+        version: 1,
+        makespanMs,
+        sumDurationMs,
+        workers: workers.map(
+            ({ id, label, stats, legacyAdmission, startup }) => {
+                const missing =
+                    CONCURRENCY_STAT_FIELDS.some(
+                        (field) => stats?.[field] === undefined
+                    ) || !stats?.holdCounts;
+                return {
+                    id,
+                    label,
+                    legacyAdmission,
+                    ...(startup ? { startup } : {}),
+                    ...Object.fromEntries(
+                        CONCURRENCY_STAT_FIELDS.map((field) => [
+                            field,
+                            stats?.[field] ?? null
+                        ])
+                    ),
+                    holdCounts: Object.fromEntries(
+                        HOLD_REASONS.map((reason) => [
+                            reason,
+                            stats?.holdCounts?.[reason] ?? null
+                        ])
+                    ),
+                    ...(missing
+                        ? {
+                              measurementReason:
+                                  "legacy-worker-stats-unavailable"
+                          }
+                        : {})
+                };
+            }
+        ),
+        starvations: tasks.flatMap((task) =>
+            (task.starvations || []).map((event) => ({
+                ...event,
+                server: workerLabel(event.server)
+            }))
+        ),
+        retries: {
+            starvation: tasks.reduce(
+                (sum, task) => sum + (task.starvationRetryCount || 0),
+                0
+            ),
+            infrastructure: tasks.reduce(
+                (sum, task) => sum + (task.infrastructureRetryCount || 0),
+                0
+            )
+        },
+        tasks: tasks.map((task) => ({
+            label: task.label,
+            durationMs: task.finalAttempt?.durationMs ?? null,
+            peakRssGb: task.finalAttempt?.peakRssGb ?? null,
+            avgCores: task.finalAttempt?.avgCores ?? null,
+            measurementReason: task.finalAttempt
+                ? task.finalAttempt.measurementReason
+                : "legacy-measurements-unavailable",
+            peakElMs: task.finalAttempt?.peakElMs ?? 0,
+            // ms from the run's start to the task's first assignment; null
+            // when no worker ever took it.
+            assignedAtMs:
+                task.firstAssignedAt === undefined
+                    ? null
+                    : task.firstAssignedAt - startedAt
+        }))
+    };
+}
+
 module.exports = {
+    writeJsonAtomic,
+    writeRunMetrics,
+    buildRunMetrics,
     formatCpuDetail,
     formatCpuPressure,
     formatDurationMs,
@@ -740,6 +862,7 @@ module.exports = {
     dryRun,
     admission,
     hold,
+    holdLine,
     starvationRetry,
     infrastructureRetry,
     appendRunnerFailureMarker,

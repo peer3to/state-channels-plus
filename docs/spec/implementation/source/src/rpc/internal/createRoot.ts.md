@@ -28,7 +28,6 @@ Parent-owned root creation
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P8` — Missing worker URL rejects creation, removes its owned connection and leaves SDK requests usable
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P9` — Standalone executor loading completes before return, waits for actual delayed precompile initialization and creates no parent connection or automatic child
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P10` — A missing precompile export rejects standalone creation, unregisters the partial root and preserves another SDK
-- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P11` — Untyped worker-without-parent creation rejects before root allocation; compile-time calls reject the same invalid placement
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P12` — Client communication starts first and retains the same host connection record; application setup stays pending through a held deployment and deploys two distinct contracts before returning the app instance
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P13` — First deployment failure rejects with the original error and removes client/child connections and registered roots
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P14` — Second deployment failure after the first completed rejects with the original error and removes client/child connections and registered roots
@@ -44,3 +43,12 @@ Parent-owned root creation
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P24` — Worker child creation during and after parent disposal rejects before allocation
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P25` — Parent closure during held inline initialization rejects creation and releases the child without affecting its owner
 - [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P26` — Parent closure after readiness automatically disposes the child and releases its relationship
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P27` — A parentless worker creation returns a typed handle whose calls run in the worker; one hidden `ParentlessWorkerParentRoot` is observed, holds exactly that handle as its only child, and the handle is cross-realm
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P28` — Two parentless worker creations observe two distinct hidden parents and both workers serve calls
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P29` — Disposing a parentless worker's handle closes it, leaves its hidden parent disposing with no connections, and a repeated disposal keeps that state
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P30` — A parentless worker whose startup fails rejects creation and leaves its hidden parent disposing with no connections
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P31` — Disposing one of two parentless workers releases only its hidden parent; the other parent stays live and its worker keeps serving
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P32` — A failed parentless creation while another parentless worker is live releases only the failed creation's distinct hidden parent; the live worker keeps serving
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33` — A parentless worker whose thread exits during a real call rejects that call and closes its handle while its hidden parent is not yet disposing; disposing the handle afterwards leaves the hidden parent disposing with no connections
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P34` — A parentless worker created with a caller logger reports its errors through a child of that logger into the caller's store; disposing the handle leaves the caller's logger undisposed and usable
+- [x] `UNIT-TEST-ROOT-CREATION-1-1NWN3V.P35` — A parentless worker whose thread exits while its handle has an error listener delivers exactly the exit cause to that listener, rejects the pending call with it, and the hidden parent does not log it

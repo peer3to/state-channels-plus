@@ -38,7 +38,11 @@ export type P2pSetupOptions = {
     /**
      * Signer secret (private key or mnemonic) owned by the runtime host.
      * Injected signers are intentionally unsupported; a random private
-     * key is generated when omitted.
+     * key is generated when omitted. The host signs with a deterministic
+     * (RFC 6979) ethers wallet built from it: one message always yields one
+     * signature. A signer with random nonces (for example a KMS signer) would
+     * produce a second, different signature when it re-signs, and peers
+     * blacklist a signer that signs one message twice differently.
      */
     signerSecret?: string;
     /**

@@ -30,7 +30,6 @@ Consequence profile
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P11` — wrongGenesisDetected hook
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P12` — conflictingButNotLinkedBlockDetected hook
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P13` — blockIsNotLinkedAndIsNotFirstBlock hook
-- [x] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P14` — prepareStateMachineForLeaderCheck hook
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P15` — objectiveInvalidTimestampDetected hook
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P16` — subjectiveInvalidTimestampDetected hook
 - [ ] `UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6.P17` — channelNotOpened impossible hook

@@ -10,6 +10,7 @@
   Missing: No object-type, chain or deployment domain tags in the signed data. See [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf).
 - [`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
+- [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`INV-ID-1-B4FXJ4` (Key control is identity)](../../../../specification/protocol-model/identity.md#inv-id-1-b4fxj4)
 - [`REQ-DATA-3-ANVN8X` (Encoded and signed values bind every domain coordinate required by their owning…)](../../../../specification/protocol-model/data-types.md#req-data-3-anvn8x)
 

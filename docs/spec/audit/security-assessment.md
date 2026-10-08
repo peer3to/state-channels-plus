@@ -11,6 +11,15 @@ Root lifecycle changes retain internal endpoint composition and exact transport 
 
 The shared frame decoder keeps the size gate before parsing and response-first classification for dual-shaped input. Lobby policy callbacks run after the same malformed-input and reservation checks. Negotiation preserves raw nonce/challenge comparison and malformed-address failure. No authorization, punishment, timeout or signed-attempt release policy changes; implementation-only coercion helpers do not broaden trust. The review follow-up changes the bytes32 type assertion and import order without adding a trust-boundary branch.
 
+## Current Codex Security findings
+
+The [finding reassessment](./codex-security-triage.md) checks the 7 protocol findings of the
+supplied scan against current `dispute` source. Six remain confirmed by static evidence and the
+all-skipped milestone replacement is fixed. The scan's 5 developer-tooling findings are tracked in
+the tooling's own documentation. The [open finding entries](./open-findings.md#codex-security-reassessment)
+link the affected paths, counterevidence and proposed regression work. This does not complete the
+formal security review, establish runtime reproduction, or record engineer risk acceptance.
+
 ## Awaited RPC dispatch
 
 Router ingress awaits service.runRPC. Guards retain their existing response suppression and replay behavior. Shared RpcDispatch handles endpoint execution and response construction, with service-local policies and no exception wrapper or extra service-shape requirements. Error response construction remains separate from peer punishment: request endpoint errors return failures; synchronous one-way throws retain disconnect/blacklist behavior, and asynchronous one-way rejection retains disconnect-only behavior. Failed response sends have one attempt. Internal uncaught dispatch failures reach the root error handler from the port callback. Message callbacks remain independent, so a held invocation does not block reply or cancellation traffic.
@@ -276,7 +285,7 @@ on failure.
 The accepted residual is the unverified normal-Hyperswarm deduplication assumption. No new peer-supplied
 clock, target, matching policy, or post-match cancellation authority is introduced.
 
-LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
+LocalDiscovery retains replacement endpoints within the owning topic even during a previous dial; retries consult the latest advertisement. This does not make registry metadata identity proof or bypass blacklist, topic leave, cleanup, or handshake admission. LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
 metadata cannot promote a connection. One canonical active dial and capped backoff prevent a tight retry loop,
 and the existing blacklist prevents a rejected peer from being recreated. Pre-submission pending status closes
 the disposal window around potentially funded join work. Force-join escalation requires authoritative on-chain
@@ -306,7 +315,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still does not verify the posted block's author signature, so a crafted writer can kill a justified forced timeout and slash the honest forcer (its linkage to the dispute's latest state is now required; see the timeout refutation section below) ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -318,7 +327,13 @@ This is the recorded owner policy under [terminal channel leave](../specificatio
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
-retain their historical walk. See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+retain their historical pending walk, and the milestone-finality read is judged against the dispute's historic threshold:
+the chain's snapshot participants plus the joiners up to the dispute's inbound anchor, a set no adoption can change
+while its disputes can be killed (successor-fork updates only onto the latest undisputed fork, same-fork advances
+refused on a disputed fork, joins and top-ups refused on a disputed fork, and uploads admitted only when anchored
+exactly at the chain's inbound head), minus only the slashes the dispute lists
+([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the disputed-fork refusal after the
+evidence period ends waits for that window's settlement instead of rejecting ([`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq), resolved). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 
 The accepted-lease liability policy is retained. [Profile-loss recovery](../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)
@@ -347,11 +362,11 @@ Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF` (Slashing 
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
-Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
+Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only reduction from standing in for chain execution. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
 
-The retained sync design keeps each request's snapshot-update simulation complete independently
+The retained sync design keeps each request's reduction verification complete independently
 of concurrent local proof work. Local verification is not evidence of chain execution, so it
-cannot alone remove reduction calldata. Reusing verified work remains a non-blocking
+cannot alone skip a request's own reduction check. Reusing verified work remains a non-blocking
 [implementation performance question](../implementation/open-questions.md#oq-impl-sync-1-hjc60d);
 proof validation and blacklist liability are unchanged.
 
@@ -379,15 +394,15 @@ Root classes now pass directly to createRoot. One platform worker creator takes 
 
 ## Client-root ownership and initialization
 
-The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation returns the registered typed handle, and without an explicit parent it adds one hidden parent for that worker alone (see the parentless-worker section below). No raw bootstrap port is exposed by that handle.
 
-The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+The new creation cases exercise delayed standalone initialization, parentless worker creation and cleanup, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
 
 The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
 
 ## Application setup ownership correction
 
-The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parented and parentless workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
 
 ## Logger gossip follow-up
 
@@ -427,3 +442,253 @@ The engineer removed membership generations, pending-read invalidation and autom
 Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
 
 Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.
+
+## Gas-dependent verdicts — 2026-09-08
+
+A fraud-proof replay's verdict must not depend on how much gas the submitter attached. Until
+2026-09-08 it did: the stipend call in `stateTransition` received whatever the EVM had left when the
+transaction was under-funded, the transition ran out of gas, and the facets treated the failed call as
+an invalid transition. An honest block could be proven "fraudulent" by an under-funded proof, and the
+mirror, running with ethereumjs' default call gas, could make the same mistake locally. The closing
+change and its evidence are recorded in [implementation.md](./implementation.md#dispute-gas-estimation-and-the-transition-stipend--2026-09-08)
+and [`FIND-STIPEND-1-9YSNWB`](open-findings.md#find-stipend-1-9ysnwb).
+
+**Upfront funding — 2026-09-26 (engineer decision).** The 2026-09-08 rule judged a completed
+transition on its result whatever gas it was granted, and left one assumption pending acceptance: a
+transition's outcome must not depend on available gas through any path other than running out of
+it. That assumption does not hold in general — a transition can catch an inner out-of-gas and still
+succeed or fail with its own error — so the engineer rejected it and chose upfront funding instead
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). The machine now refuses before the transition runs unless it can grant the full
+`gasLimit`, so no outcome of an under-funded run exists to be judged; the manager publishes the gas
+the replay call chain needs (`getStateTransitionReplayGas`). The machine copies the call input and
+reads the budget before its gas check and then calls with only fixed opcodes in between, so a large
+input cannot shrink the stipend after the check passed. It deletes the previous transition's
+outbound messages before the input copy and the check (engineer decision, review 6 FO3): the caller
+pays for the deletion outside the budget, a sender's estimate covers it, and every transition writes
+its messages into empty slots, so leftover messages cannot raise a transition's cost inside its
+budget. History can still lower that cost (under EIP-2200 a slot that held data at the start of
+the transaction is cheaper to write again), which can only let a transition finish, never make an
+honest one fail. The count-reset version this replaced made the same transition cost about 2.3 ×
+more after long old payloads (932,855 against 399,861 gas). The node sends every
+fraud-proof replay with `gasLimit` = its estimate with the signer's 50% headroom plus the
+requirement (engineer decision 2026-09-27). An estimator that reports only the gas spent (the peer3
+hardhat fork used by the poker consumer) counts the gas the transition used, never the unused
+budget that must be free when the replay starts, and the work before the replay (proof checks,
+setting the machine's state) can exceed any fixed margin: on a poker dispute it was about 3.9M with a
+5.64M requirement, so about 9.5M was needed, while the larger of the estimate and the requirement ×
+1.3 gives 8.89M. The sum covers both parts. A searching estimator (geth, anvil, and the SDK's test
+node, hardhat 2.22 with EDR, where this was measured) already returns at least the requirement,
+because the refusal makes every lower gas fail, so there the sum declares more than needed. That
+excess never changes a verdict, but it is not free: it reserves block space and must fit the block
+gas limit (below). The integrator `try/catch` assumption is no longer needed.
+
+Accepted residual (cost and block fit, not correctness): every replay transaction declares more
+than the requirement, and with a searching estimator the estimate already contains the requirement,
+the signer's 50% headroom applies to it, and the requirement is added again, so the declared limit
+is at least 2.5 × the requirement. With poker's budgets it still fits a 30M block.
+Nothing caps the declared limit at the block gas limit; a replay whose declared limit exceeds it is
+refused by the node at submission, so that fraud stays unproven on-chain until the budget is lowered.
+Blocks are packed by declared limit, so each replay transaction also reserves that much block space. A submitter
+still cannot make an honest transition fail for lack of gas; the worst case of the residual is a
+fraud proof that cannot be sent, never a wrong verdict. The engineer confirmed this rule (review 5,
+FO1); the estimator models, the block-fit dependence on the consumer's budget, the missing cap and
+the missing send test against a searching 30M-block node are open together as
+[`FIND-GASEST-2-94YFZ6`](open-findings.md#find-gasest-2-94yfz6).
+
+## Local EVM call gas — 2026-09-26
+
+Local-first evaluation ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) runs dispute predicates on the auditor's own contract
+executor before the chain is asked, and a Byzantine disputer controls the proof those predicates
+verify. The earlier 1e9-gas mirror budget let such a proof spin the executor thread about 60 times
+longer than the chain would run it. The engineer replaced it: each local EVM call is funded with the
+larger of the ethereumjs default call gas (0xffffff, about 16.7M), the manager's dispute-execution
+budget, and twice the manager's replay requirement, all read once at host start (revised
+2026-09-27). The replay requirement funds the transition's stipend and the machine's fixed setup
+only; deleting the previous transition's outbound messages and copying the input come on top and
+cost at most about one more budget, so twice the requirement keeps a local transition from being
+refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
+dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
+estimate, and the local call gets no such addition. A local predicate whose work does not fit the
+granted gas fails locally; the error propagates without a chain fallback ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is failed local audit work, not a false verdict. A local state transition has no chain answer to fall back to. Until
+2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
+local call was under-funded, whose call frame ran out of gas outside the transition, or whose
+executor failed would build a fraud proof against an honest author, and could start a dispute on
+it. Now only a failure inside the EVM within the full budget is an invalid transition
+(`isInvalidStateTransitionError`); every other failure is thrown, the block ingest restores its
+state, and no fraud proof or dispute follows
+([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)). Residual: a node whose local environment
+keeps failing cannot judge that block and falls behind until it is fixed; the other peers judge it,
+so this is a liveness cost for that node, never a wrong slash. The floor can exceed a dispute transaction's budget, so a local call can do
+more work than one dispute transaction may. Accepted residual: the 16.7M floor. When the manager's budgets are smaller, a
+Byzantine dispute can make an auditor spend up to 16.7M gas of local work per evaluated predicate
+before the chain is asked. This is bounded, independent of the attacker, and the ethereumjs default
+that applied before the local-first change.
+
+## Client-side authenticity parity — 2026-09-26, decoding scope revised 2026-09-27
+
+Block author authenticity is decided in TypeScript under the signature carve-out of
+[`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) ([`FIND-AUTH-1-C1ZHBJ`](open-findings.md#find-auth-1-c1zhbj), resolved by engineer decision). The trust boundary is the
+signed envelope a Byzantine author controls. Before the parity fix the TypeScript recovery accepted
+compact and re-normalized signature encodings the contracts reject, which let an author place a block
+in local history that no on-chain proof could carry. Now every protocol signature recovery (author,
+confirmation, join, open, dispute) first applies the contracts' exact acceptance rule.
+Residual: correctness now depends on the parity itself; it is covered differentially against the
+contract (the signer-recovery and ECDSA acceptance cases in the verification layer) and must be
+re-checked whenever the OpenZeppelin ECDSA dependency changes.
+
+Block decoding is not at parity (engineer decision 2026-09-27: not in this change). The client
+decodes with `Codec` and the contracts with Solidity `abi.decode`; neither applies a canonical-encoding
+rule, and the contracts accept, for example, a trailing zero word, while `postBlockCalldata` stores
+any bytes. A Byzantine participant can therefore post, sign or relay an encoding that the chain
+accepts and peers decode differently or refuse. The sharpest known use: an author posts such bytes
+as calldata for its own slot and refutes an honest timeout dispute with `TimeoutCalldataPosted`,
+which can slash the honest forcer, although honest peers never accepted the block. This exposure is
+open, recorded as [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v); the planned resolution is identical encoding and decoding
+in the contracts and TypeScript, so both accept and reject the same inputs. The
+ecrecover precompile memo in the local EVM and the signer-recovery memo are pure caches of these
+functions and change no answer.
+
+## Timeout refutation linkage — 2026-09-27
+
+A `TimeoutCalldataPosted` dispute fraud proof is submitted by the participant the timeout names, and
+it replays a block that participant signed and posted. Until 2026-09-27 the replay started from
+whatever latest state snapshot and machine state the proof supplied, and the posted block did not
+have to follow the dispute's latest proved block. The blamed author could therefore build a block on
+a made-up pre-state (for example a balance it never had), post it in time, replay it successfully,
+and kill an honest timeout dispute; the kill slashes the honest disputer. The facet now requires,
+before the replay, that the snapshot is the one the latest proved block commits to (or the fork's
+genesis), that the machine state hashes to that snapshot's state hash, and that the posted block's
+`previousBlockHash` is the latest proved block (or the genesis snapshot)
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 7,
+[`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
+refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
+preflight runs the same predicate, so an honest node never submits an unlinked refutation.
+Residual: the posted block's author signature is still not verified
+([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)), and a non-canonical encoding of the
+posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-findings.md#find-decode-1-fd1v6v).
+The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
+refutation reverts with no verdict, and one funded with its cost plus the manager's replay
+requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+
+## One signature per signer per message — 2026-09-27
+
+[`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../specification/protocol-model/identity.md#req-id-5-gw1zey) makes a second, different signature value by one key over one message a
+local exclusion offense for every protocol-object kind. The check sits in the one off-chain
+recovery path, after the contracts' acceptance rule (see "Client-side authenticity parity" above):
+a re-encoding of an honest signature (v 0/1, v >= 35, 64-byte compact, high s) is refused before it
+reaches the check, and accepted signatures are compared in canonical 65-byte form, so a relayer
+cannot frame the signer. The double-signature consequence falls on the recovered signer, never on
+the relaying peer, and a node never excludes itself. Only a signer the
+node's membership view knows as eligible at detection time is excluded, the same rule block ingest
+applies; a report about an absent or slashed address is logged at debug level with its eligibility
+and dropped, so a peer cannot grow the unbounded blacklist with fresh keys (for example two join
+requests signed by one throwaway key with two nonces). No chain read is made for a report, so an
+attacker cannot trigger refreshes this way. Residual risk: a one-off double signature by a joiner
+this node has not yet seen goes unpunished; a signer that keeps producing new values is caught once
+the node knows it. The blacklisting warning keeps the full digest and both canonical signatures so
+each exclusion can be verified later, and a double signature under the node's own key is logged at
+error level. Alternate valid
+signatures in [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) still consume only their supplier's allowance; their signer is
+now also excluded.
+
+Residual risk: detection memory is per node, per thread and bounded, so a conflict spread across
+nodes, threads or beyond the bound goes unnoticed. The bound is cheap to exhaust: every fresh (message, signer)
+pair still takes a memo slot, including pairs from throwaway keys such as signed join requests, so
+about `SIGNER_RECOVERY_CACHE_MAX` such requests flush a real signer's first signature before it sends
+the conflicting one. A listener failure is logged and cannot fail the recovery that found it. Exclusion is local and is not slashing evidence.
+A participant running a random-nonce signer excludes itself from its honest peers whenever it
+re-signs; deterministic signing is a stated participant assumption. In inline mode several runtimes
+share one memo and all of them act on each report. Canonical-form enforcement on-chain is out of this
+change.
+
+## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
+
+[`REQ-RPC-7-9CBSHK` (Guard semantics)](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) now specifies host-only admission, implemented by the public SDK [LocalOnlyGuard](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md). Loopback
+self-delivery stays the only guard bypass; every remote call that reaches the guard is refused before
+execution, never deferred or replayed, and handed to the canonical disconnect owner with the blacklist
+policy. Punishment follows the proven identity: a registered profile with a proven address is
+blacklisted with a recorded verdict and all its live transports close; a registered profile still
+negotiating, with no proven address, is marked excluded in memory and gets no recorded verdict; a proven
+address without a profile gets a recorded verdict; a transport with neither only closes, with no verdict
+or ban. The disconnect owner marks nothing for it, not even the transport
+handle, because the profile registry blacklists a transport only through a profile attached to it. Residual risk: an unidentified sender can reconnect under a fresh
+transport key and probe again; each probe still reaches no endpoint. The guard suppresses the
+guard-failure response only for requests it rejected, so an earlier guard's declared rejection is
+unchanged and a remote probe learns only that its session closed. A benign misconfigured remote caller
+sees a disconnect, not a diagnostic.
+
+[`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) now gives custom RPC constructors and executor precompile factories an exact local owner
+reference. The reference stays in its realm and is never serialized, so one inline runtime's extension
+cannot create children under, or dispose, another runtime in the same realm; the multi-peer isolation
+case exercises this. Consumers can create parentless workers; each gets its own hidden parent that is
+never exposed, shared, or reused, and failure or disposal of one leaves the others usable. The main
+entry now exports the generic root bases and creation functions but no concrete SDK root, so a consumer
+of that entry cannot construct or look up an SDK host or executor to gain a parent. The published
+`./test-harness` subpath is the exception: for tests it exports `P2pRuntimeHostRoot` and
+`RootCreationControl`, whose observation hook sees every root created while it is active. A consumer
+that imports it runs in the same process as the SDK, so the residual risk is local only: that code
+could reach an SDK host it could already affect in-process, but no remote peer gains anything.
+
+Executor disposal now closes admission and waits for admitted work before children close. By engineer
+decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
+call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
+abandoned without a host error. By the engineer's later decision (option a after the second
+implementation review), every caller still waiting at the limit receives the disposal rejection, and the
+operation's later outcome is dropped: it may keep running and succeed, or fail against a closed child, but
+neither result reaches the caller or the host, so a caller never sees a result produced after the executor
+declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
+executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
+acceptance remain pending.
+
+## Multiple RPC endpoints — chain observation
+
+The runtime now reaches the chain through an ordered endpoint list
+([`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)). Each request uses
+the first connected endpoint and fails over when it drops; a transaction is never sent to two
+endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)). Every endpoint streams
+the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
+watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
+across streams; removed events are ignored and lagging deliveries below the watermark are dropped
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
+head or is abandoned, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold released at once, when its
+socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
+replaced, or on disposal. After a failed window the remaining windows are read through the first
+connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
+reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
+is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
+reopened endpoint's subscription never delivered. When the reopened endpoint answers its head request
+with an error, the request is retried on it with the backoff and nothing is read meanwhile; the
+catch-up never falls back to the first connected endpoint's own head. Endpoint URLs are
+logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
+the reopened endpoint's head, or the reopened endpoint keeps failing its head request, and the reopened
+socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
+block states are not pruned, every recovery query reads from the held block, and the reopened socket's
+live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay
+applied; a socket drop in the middle of one block's events can leave part of a block below the
+watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
+and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.

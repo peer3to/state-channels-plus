@@ -51,6 +51,8 @@ type DiscoverySession = {
     connectionKeys: Set<PeerConnectionKey>;
     pendingDials: Set<WebSocket>;
     retryTimers: Set<ReturnType<typeof setTimeout>>;
+    // Latest advertised endpoint for each peer in this exact topic session.
+    peerPorts: Map<ChecksumAddress, Port>;
     // When the last accepted socket from each dialer (checksum address) closed.
     inboundClosedAt: Map<ChecksumAddress, number>;
 };
@@ -814,6 +816,7 @@ export class LocalDiscoveryServer {
             connectionKeys: new Set(),
             pendingDials: new Set(),
             retryTimers: new Set(),
+            peerPorts: new Map(),
             inboundClosedAt: new Map()
         };
         sessions.set(rendezvousKey, session);
@@ -1044,6 +1047,10 @@ export class LocalDiscoveryServer {
             );
             if (!session || session.server !== myServer) return;
 
+            // A restart can announce a replacement while the old dial is still
+            // active. Retain it even when duplicate-dial admission skips it.
+            session.peerPorts.set(getChecksumAddress(peerAddress), peerPort);
+
             if (this.isPeerExcluded(p2pManager, peerAddress)) {
                 this.logger.debug("Announcement ignored (blacklisted)", {
                     ...logBase,
@@ -1155,9 +1162,12 @@ export class LocalDiscoveryServer {
         myPeerPort: Port
     ): void {
         const session = this.getDiscoverySession(p2pManager, rendezvousKey);
+        if (!session) return;
+        // Retry callbacks may have captured a port belonging to an old runtime.
+        peerPort =
+            session.peerPorts.get(getChecksumAddress(peerAddress)) ?? peerPort;
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
         const retryCount = this._peerRetryCount.get(connectionKey) || 0;
-        if (!session) return;
         const skipReason = this._cleanupRequested
             ? "cleanup-requested"
             : p2pManager.isDisposed
@@ -1304,6 +1314,11 @@ export class LocalDiscoveryServer {
                         p2pManager.stateManager.timeConfig.agreementTime * 1000
                     )
                     .then((completed) => {
+                        // Shutdown settles every pending handshake wait with
+                        // false before the P2P manager itself is disposed; that
+                        // is not a failed handshake, so nothing is retried.
+                        if (!completed && p2pManager.stateManager.isDisposed)
+                            return;
                         if (!completed) {
                             p2pManager.disconnectConnection(
                                 lt,

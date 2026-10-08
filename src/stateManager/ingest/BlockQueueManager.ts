@@ -14,6 +14,7 @@ import {
 import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
+    BlockCalldata,
     ChannelId,
     ForkId,
     Hash,
@@ -70,14 +71,18 @@ export default class BlockQueueManager {
             if (this.stateManager.isDisposed) return true;
             const strategy =
                 options.validationStrategy ||
-                this.stateManager.getActiveValidationStrategy();
+                this.stateManager.getActiveValidationStrategy(options);
 
-            const isAuthentic =
-                await this.stateManager.validationService.isBlockConfirmationAuthentic(
-                    blockConfirmation
-                );
+            // Decoded once: the authenticity check and everything after it
+            // share this block, its cached hash and its recovered signer.
+            const block = Block.tryFromBlockConfirmation(
+                blockConfirmation,
+                options.origin === BlockOrigin.NETWORK
+                    ? undefined
+                    : options.onChainTimestamp
+            );
 
-            if (!isAuthentic) {
+            if (!block?.isAuthentic) {
                 const validationResult =
                     await strategy.authenticateBlockFailed(blockConfirmation);
                 this.logger.warn(
@@ -95,13 +100,6 @@ export default class BlockQueueManager {
                     validationResult
                 );
             }
-
-            const block = Block.fromBlockConfirmation(
-                blockConfirmation,
-                options.origin === BlockOrigin.NETWORK
-                    ? undefined
-                    : options.onChainTimestamp
-            );
 
             if (!this.isBlockForThisChannel(block)) {
                 this.logger.warn("ingestBlockConfirmation - wrong channel", {
@@ -215,6 +213,19 @@ export default class BlockQueueManager {
         this.recoverySuppressedUntil.clear();
     }
 
+    /** Ingest a block posted as calldata; the chain, not a peer, supplied it. */
+    public async ingestPostedBlock(
+        blockCalldata: BlockCalldata
+    ): Promise<boolean> {
+        return this.ingestBlockConfirmation(
+            { signedBlock: blockCalldata.signedBlock, signatures: [] },
+            {
+                origin: BlockOrigin.CALLDATA,
+                onChainTimestamp: Number(blockCalldata.onChainTimestamp)
+            }
+        );
+    }
+
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
         const activeForkId = forkId ?? this.stateManager.forkId;
         // A scheduled forkId is not authority - a fork transition may have
@@ -315,7 +326,8 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
-                strategy ?? this.stateManager.getActiveValidationStrategy()
+                strategy ??
+                    this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }
@@ -435,7 +447,7 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             this.scheduleStoredBlockConfirmationMerge(
                 entry,
-                this.stateManager.getActiveValidationStrategy()
+                this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }
@@ -578,7 +590,7 @@ export default class BlockQueueManager {
         if (this.isBlockStored(entry.block)) {
             await this.handleStoredBlockConfirmationMerge(
                 entry,
-                this.stateManager.getActiveValidationStrategy()
+                this.stateManager.getActiveValidationStrategy(entry.block)
             );
             return;
         }
@@ -665,9 +677,10 @@ export default class BlockQueueManager {
     /**
      * A successful probe lands on the responder's latest fork, the only one
      * it proves, and replays that lineage's unfinalized blocks through the
-     * ingest, whose execution is deferred. A block the lineage carries is
-     * therefore stored or queued for execution by the replay; a block that is
-     * neither is junk. A block on any other fork is inconclusive and its
+     * ingest, whose execution is deferred. A block the lineage carries above
+     * the installed history is therefore stored or queued for execution by
+     * the replay; one that is neither is junk. A block on any other fork, or
+     * at a free height below the installed history, is inconclusive and its
      * source is kept.
      */
     private isBlockUnbackedByLineage(block: Block): boolean {
@@ -675,6 +688,14 @@ export default class BlockQueueManager {
         if (this.stateManager.storage.queues.getQueuedEntry(block.hash)) {
             return false;
         }
+        // a free height below the installed history: a compact proof does
+        // not store the blocks under its final point, so it is inconclusive
+        const blocks = this.stateManager.storage.blocks;
+        if (
+            block.height < blocks.getNextBlockHeight(block.forkId) &&
+            !blocks.getBlock(block.forkId, block.height)
+        )
+            return false;
         return block.forkId === this.stateManager.forkId;
     }
 

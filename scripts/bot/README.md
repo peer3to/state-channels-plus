@@ -69,3 +69,29 @@ do not invoke the model. Discovery and each pending journal RPC have a transport
 deadline. Time spent executing GitHub operations between those calls does not
 consume a model or journal deadline. GitHub freshness checks still run before
 existing-finding actions, and CI logs each action's start and completion.
+
+# Open security findings
+
+This finding comes from Codex Security scan
+`b16b8056-1a2e-47ad-b510-34ef96ce1d0b`, reassessed statically on 2026-09-30.
+It is confirmed from source but not reproduced at runtime, and not fixed.
+
+**Review clients can overwrite shared publication history** (medium; Codex
+`csf_bed946f1d1cab3ad7562ef4f`). A completed ordinary review delivery
+authorizes publication journal load and save without checking CI publication
+authority ([server.js:226-248](./server.js#L226-L248)). The journal is keyed
+only by repository and PR ([publication-store.js:13-18](./publication-store.js#L13-L18),
+[publication-store.js:56-81](./publication-store.js#L56-L81)), so an admitted
+client can read its digest and replace its states. This contradicts the
+CI-only publication boundary described above. Compare-and-swap stops stale
+writes, not unauthorized current writes. Live CI, head and thread checks still
+guard the final approval.
+
+- Fix: require a separate publication capability bound to the repository, PR,
+  head and CI run, and validate journal and receipt changes against
+  worker-owned results.
+- Regression: an ordinary local review client cannot change the CI
+  publication journal or receipts, and an authorized publisher's changes stay
+  bound to the reviewed result and exact PR head.
+- If every admitted client is meant to publish for every PR, document that
+  trust model instead.

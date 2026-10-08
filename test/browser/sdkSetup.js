@@ -27,6 +27,24 @@ const timeConfig = {
     evidenceTime: 60
 };
 
+function hardhatWallets() {
+    return [0, 1, 2, 3].map((index) =>
+        ethers.HDNodeWallet.fromPhrase(
+            DEFAULT_HARDHAT_MNEMONIC,
+            undefined,
+            `m/44'/60'/0'/0/${index}`
+        )
+    );
+}
+
+/** The two runtime wallets: the deployer joins the existing channel it opens. */
+function peerWallets(openExistingChannel) {
+    const [deployerWallet, peerAWallet, peerBWallet] = hardhatWallets();
+    return openExistingChannel
+        ? [deployerWallet, peerAWallet]
+        : [peerAWallet, peerBWallet];
+}
+
 /**
  * Deploy the full stack against the external hardhat node (reached through the
  * same-origin RPC proxy) and derive a shared channel id for discovery. The
@@ -35,15 +53,7 @@ const timeConfig = {
  */
 export async function deployStack(providerUrl, openExistingChannel) {
     const provider = new ethers.JsonRpcProvider(providerUrl);
-    const wallets = [0, 1, 2, 3].map((index) =>
-        ethers.HDNodeWallet.fromPhrase(
-            DEFAULT_HARDHAT_MNEMONIC,
-            undefined,
-            `m/44'/60'/0'/0/${index}`
-        )
-    );
-    const [deployerWallet, peerAWallet, peerBWallet, genesisPeerWallet] =
-        wallets;
+    const [deployerWallet, , , genesisPeerWallet] = hardhatWallets();
     const deployerSigner = new NonceManager(deployerWallet.connect(provider));
 
     const scmDeployment = await deployFullStack(deployerSigner, {
@@ -98,9 +108,7 @@ export async function deployStack(providerUrl, openExistingChannel) {
         provider,
         scmAddress: scmDeployment.address,
         channelId,
-        peerWallets: openExistingChannel
-            ? [deployerWallet, peerAWallet]
-            : [peerAWallet, peerBWallet],
+        peerWallets: peerWallets(openExistingChannel),
         openConfirmedChannel
     };
 }
@@ -218,13 +226,55 @@ export async function setupBrowserPeer(
     }
 }
 
+// One full-stack deployment per realm and node. Deploying dominates an SDK
+// setup (~12.7s of ~13s under the gate's interval mining), and no scenario
+// here depends on a fresh deployment: each only needs a manager to set a
+// runtime up against. Keyed by provider URL, so a realm that ever sees another
+// node deploys again. A worker realm whose runtime config carries the page's
+// scmAddress reuses that deployment, so a page and its workers deploy once.
+const sharedDeployments = new Map();
+
+function sharedDeployment(providerUrl) {
+    let deployment = sharedDeployments.get(providerUrl);
+    const scmAddress = globalThis.__SDK_RUNTIME__?.scmAddress;
+    if (!deployment && scmAddress) {
+        deployment = Promise.resolve({
+            scmAddress,
+            peerWallets: peerWallets(false)
+        });
+        sharedDeployments.set(providerUrl, deployment);
+    }
+    if (!deployment) {
+        deployment = deployStack(providerUrl, false).then((stack) => {
+            // Callers get their own provider; this one only served the deploy.
+            stack.provider.destroy();
+            return {
+                scmAddress: stack.scmAddress,
+                peerWallets: stack.peerWallets
+            };
+        });
+        // A failed deploy must not poison the realm for later scenarios.
+        deployment.catch(() => sharedDeployments.delete(providerUrl));
+        sharedDeployments.set(providerUrl, deployment);
+    }
+    return deployment;
+}
+
 export async function createBrowserSdkExecutor(options = {}) {
     const providerUrl = globalThis.__SDK_RUNTIME__?.providerUrl;
     if (!providerUrl)
         throw new Error("Browser SDK runtime provider was not configured");
-    const stack = await deployStack(providerUrl, false);
+    const deployment = await sharedDeployment(providerUrl);
+    // Each executor owns its provider and re-initialises the clock from it, so
+    // a scenario that shifts the clock cannot leak that shift into the next.
+    const stack = {
+        ...deployment,
+        provider: new ethers.JsonRpcProvider(providerUrl)
+    };
+    await Clock.init(stack.provider);
     let executor;
     let shiftedClock;
+    let clockAdjustmentSeconds;
     try {
         const instance = await setupBrowserPeer(
             stack.peerWallets[0],
@@ -252,6 +302,11 @@ export async function createBrowserSdkExecutor(options = {}) {
                                     Clock.getClockAdjustmentSeconds()
                             );
                             await Clock.init(shiftedClock);
+                            // The sync keeps any offset within one average
+                            // block time, so the adjustment the executor
+                            // receives can differ from the requested one.
+                            clockAdjustmentSeconds =
+                                Clock.getClockAdjustmentSeconds();
                         }
                         const NativeWorker = globalThis.Worker;
                         if (options.dependencies?.workerUrl) {
@@ -298,6 +353,8 @@ export async function createBrowserSdkExecutor(options = {}) {
         return {
             executor,
             instance,
+            scmAddress: stack.scmAddress,
+            clockAdjustmentSeconds,
             async dispose() {
                 try {
                     await instance.dispose();

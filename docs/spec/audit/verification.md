@@ -11,6 +11,10 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Discovery replacement and anchored-tail regression follow-up
+
+Runs 420 and 421 invalidate any claim that one previous green full run established stability. Cost mode repeated the anchored-tail timestamp rejection; FIFO exposed a replacement-endpoint announcement lost during an old dial, followed by a reduction failure. The new discovery component cases force both pending-handshake and already-authenticated interleavings and require a different transport after the old socket closes. Existing restarted-spectator E2E coverage remains the integration oracle. Anchor staging requires the publication receipt and mirror convergence before constructing/auditing the dispute. Publication overlaps the two unfinalized tail blocks; the offline peer keeps the published anchor at block 2. The two new endpoint regressions fail against the original adapter and pass after its repair. Full cost run 425 exposed two additional staging dependencies: runtime recreation idled participant authoring, and E47 populated transaction metadata after its late wait. Runtime restart now overlaps ordinary authoring, and transaction metadata is populated before the unchanged deadline. Focused run 426 passed both cases; full cost run 427 passed all 3,404 tasks including both browser gates and Forge, with no starvation or infrastructure retries. FIFO run 428 caught a separate previous-block-signature staging race: its current-writer query overlapped subscribed audit replay. Capturing block 2’s writer before opening the window preserves the signature oracle. Focused run 429 passed; full FIFO run 430 then passed all 3,404 tasks with all tiers and no starvation or infrastructure retries. Cost run 431 exposed a separate exact join-deadline race on the shared node; its extracted test now owns its chain, pauses only that chain’s interval mining, and retains equality and one-second-expiry checks. All six join-signature tests passed in focused run 432. Run 433 showed that anchor staging still needed publication to overlap authoring; retaining receipt-before-tail chronology left estimation/mining inside the writer window. All 19 anchor-boundary cases passed in focused run 434. On the same final source/test tree, cost run 435 passed all 3,405 tasks in 297.69 s and FIFO (`-w 6`) run 436 passed all 3,405 in 351.81 s. Both completed 3,379 Mocha tasks, 24 Forge contracts and two browser gates with zero starvation or infrastructure retries. Node/browser typechecks, import lint and compile passed. These runs establish current passing evidence, not a claim that intermittent failures are impossible. Engineer approvals and the existing repository coverage/review backlog remain unchanged.
+
 ## Runtime cleanup and context regressions
 
 The current verification includes a real delayed socket ready frame after manager disposal and rapid logger-context changes through main, SDK and executor roots. The latter asserts final identity and no echo to the sender. Domain cleanup cases inspect their retained inline endpoints after disposal; they do not use the disposed network for their assertions. The worker shutdown case checks repeated and concurrent cleanup through the harness surface. Exact assignments remain in the affected [logger](../verification/tests/test/utils/logging/LoggerService.test.ts.md), [discovery](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md), [EventBus](../verification/tests/test/stateManager/EventBus.test.ts.md) and [StateManager](../verification/tests/test/unit/StateManager.test.ts.md) reports. Repository-wide unmapped cases and duplicate assignments remain visible in the generated queues.
@@ -246,12 +250,106 @@ Root classes now pass directly to createRoot. One platform worker creator takes 
 
 ## Client-root ownership and initialization
 
-The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation returns the registered typed handle, and without an explicit parent it adds one hidden parent for that worker alone (see the parentless-worker section below). No raw bootstrap port is exposed by that handle.
 
-The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+The new creation cases exercise delayed standalone initialization, parentless worker creation and cleanup, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
 
 The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
 
 ## Application setup ownership correction
 
-The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parented and parentless workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Host-only guard, local owners, parentless workers, and executor drain — 2026-09-29
+
+The [LocalOnlyGuard unit report](../verification/tests/test/rpc/guards/LocalOnlyGuard.test.ts.md) and
+[E2E report](../verification/tests/test/e2e/E2E-LocalOnlyGuard.test.ts.md) map the
+[`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutations. By engineer decision after
+the second implementation review, the unit suite now runs on two real harness peers instead of
+substitute recorder transports and hardcoded identities. The negotiating state uses the real registered
+pre-handshake profile. The "neither profile nor proven address" and "proven address without profile"
+states unregister the real profile for one call through the harness stub pairs and restore it. The
+retired-transport call re-injects a captured real request frame on its closed connection. A record-only
+observation, patched only on the receiver's own transports, reads response attempts, response frames
+matched by request id and exact transport, `Failed to send RPC response`
+errors, and every disconnect decision with its origin (direct, response-failure path, or close
+bookkeeping), so the response-path oracles are now observed directly rather than inferred from caller
+outcomes. The E2E remote-request case now reads zero response attempts and settlement by closure, and a
+new control case shows that an earlier guard's rejection still reaches a real remote requester, which
+stays connected; it covers the new [`REQ-RPC-7-9CBSHK.T2.P13`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p13). The negotiating E2E case asserts no
+guard-failure response, no execution, settlement through the closed pre-handshake transport rather than
+by timeout, and no verdict against the sender's unproven claimed address, as the amended
+[`REQ-RPC-7-9CBSHK.T2.P4`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p4) states. Before proof the receiver only closes that transport and bars nothing.
+
+The shared no-response helper requires exactly one direct `BLACKLIST` decision per rejected delivery,
+so the single-delivery notification and earlier-passing-guard cases also establish the "one decision"
+oracles, and every [`REQ-RPC-7-9CBSHK.T2`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2) and [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8`](../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md#unit-test-local-only-guard-1-gk4gr8) permutation is assigned to one
+declaration. The [RootCreation report](../verification/tests/test/rpc/RootCreation.test.ts.md)
+drops the removed parentless-rejection case, maps the six parentless-worker cases and the inline-owner
+case, and repairs the shifted declaration lines. The [EvmFactory report](../verification/tests/test/evm/EvmFactory.test.ts.md)
+maps the owner-context and admission-drain cases and the existing bare-EVM composition case. The
+late-admission case now also sends a late deploy and a late simulation, and all three settle with the
+shutdown error without entering the EVM. Three new cases load a real precompile that answers, or fails,
+1.2 seconds after the drain limit. For a late success, a late failure, and a deploy and a simulation
+queued behind the late call, each reads that the caller settled with exactly `Contract executor shut down
+before the operation finished`. A record-only wrapper on the real executor root's
+`ContractExecutorService.admit`, restored in the same block, records each admitted operation's own
+settlement; the assertions run only after every admitted operation has itself finished, the admitted
+count is 1, 1 and 3, and no host executor error is recorded. They cover
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb)–[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) and [`REQ-RUNTIME-3-VQXW59.T1.P79`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p79)–[`REQ-RUNTIME-3-VQXW59.T1.P81`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p81),
+the stronger disposal-rejection contract the second review found unproven. The RootCreation report
+also maps the new crashed parentless worker case: its worker thread exits during a real call, the call
+rejects, the handle closes while the hidden parent is still live, and disposing the handle afterwards
+leaves that parent disposing with no connections
+([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v), [`REQ-RUNTIME-3-VQXW59.T1.P82`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p82)).
+
+The bounded executor drain ([`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym)) has unit and system evidence. `EvmFactory > abandons an admitted call
+stuck past the drain limit, closes the child, and reports no error` never releases the held reply, measures
+disposal against the exported limit, and reads the closed child, the rejected call, the call count, and an
+empty host error list. `RuntimeLifecycle > disposes a worker SDK while its worker executor call is in
+flight` passes again: worker SDK disposal completes with the executor call still held, the SDK worker exits,
+no host error is recorded, and a sibling keeps serving, so it now covers the worker-placement permutation
+[`REQ-RUNTIME-3-VQXW59.T1.P78`](../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p78); it does not measure the limit, which the unit case does. Starting a consumer's own
+`.ts` worker entry from another package's working directory is exercised only by consumer suites, not in
+this repository.
+
+The handshake-wait disposal fix has unit evidence for the service itself: `HandshakeCompletedGuard >
+settles a pending handshake wait and every later wait as not completed once the service is disposed`
+covers [`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m): its probe awaits the runtime RPC root's real
+`dispose()` shutdown hook with a pending wait, then waits again, and both waits return `false` long before
+their timeout. The indentation fix in that suite moved no declaration line. It does not read the order of negotiation and lobby cleanup or a logger error directly;
+immediate settlement is what keeps any wait timer from outliving the logger. The E2E-LocalOnlyGuard
+reconnect case no longer fails in cleanup, but cleanup success is not an asserted oracle and earns no
+credit.
+
+## Milestone-only proof update — current assessment
+
+The proof format now contains milestones only. Same-fork anchor clipping and explicit genesis
+semantics replace the old separate signed-tail model. Historical membership hops include all
+consumed JOINs and never subtract later slashes. Shared verification/replay tiers distinguish false
+proof results from fatal execution or RPC failures. Per-step invalidity, below-anchor,
+timeout-superseded and same-height final-conflict counters use the common predicates.
+
+Sync retains verified reconstruction data and the latest proved final full state. An older anchor
+state is not separately required once newer finality is established. Audit replay persists evidence
+without signing or advancing the active view. Inbound-head races reload, rebuild and retry on real
+progress; stopped progress or failed loading is fatal. Initial responders are selected from chain
+eligibility, and founder discovery and join observation/expiry handling have corresponding tests.
+
+Residual questions remain explicit in [specification questions](../specification/open-questions.md):
+loss of the sole higher commitment after admission closes, late-challenge recovery, stale or
+adoption-racing honest sync blacklists, admission gas/length caps and whole-data challenge cost.
+Per-step checking does not prove constant total gas. Other existing findings remain unchanged
+unless separately revalidated. Documentation and mappings remain pending engineer review; this
+assessment grants no human approval and does not claim the repository's baseline coverage queues
+are empty.
+
+## Milestone proof review regressions
+
+Focused real tests cover virtual finality from later signatures, the resulting on-chain conflict kill, audit evidence above a frozen view, both concurrent audit orders, chain/mirror anchor changes and sync across malformed skipped history. Force-join cases cover seating during a held membership read, a competing block trigger, successor-fork seating and a genuine expired evidence window. The fabricated window read was removed; its compound coverage claims were replaced by separate exact permutations. The omitted-data apply-handler comparison separates payload growth from an unrelated milestone walk. The documentation normalizer has a real CLI regression that restores prose definitions and remains byte-stable on a second run. The final canonical distributed gate passed all 3,306 runnable tasks after the source and test corrections. Failed earlier runs exposed stale test expectations and manually staged dispute-upload races; each was corrected and rerun. Existing skipped cases and repository-wide coverage queues remain separate from this evidence.
+
+The additional exact-height [proof-owner tests](../verification/tests/test/unit/AgreementManagerProofConstruction.test.ts.md) check join and exit points with later union votes, rejection after removing the sole required later confirmation, a join point above an audit observer's frozen view, and a later target requiring two overlapping hops. Every positive case uses the real canonical verifier and asserts the exact final height and unchanged active view. These cover the participant-change gap left by the unchanged-membership virtual-finality regression.
+
+The shared virtual-finality fixture holds unrelated subscribed calldata delivery while setting up proofs and connecting later auditors. Without that hold, normal fallback can deliver block 3 to its missing signer during spectator connection and change the scenario into direct finality at 3. The sequential and concurrent audit cases check the intended `[2,3]` milestone before auditing; both persistence orders retain their existing conflict and frozen-view oracles.
+
+The shared join-hop fixture uses the same subscription-delivery control for its deliberately missing votes. Its frozen-view cases wait for a real fallback event to be held and require both expected milestone runs before auditing. This keeps compact audit evidence tied to the intended intermediate final snapshot even while spectator setup crosses the calldata-posting delay.

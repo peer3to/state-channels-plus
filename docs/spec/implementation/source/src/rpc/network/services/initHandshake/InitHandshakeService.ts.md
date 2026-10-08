@@ -44,3 +44,4 @@ Initiator flow and finalization
 - [x] `UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P16` — a response timestamp exactly on the window bound is accepted
 - [x] `UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P17` — a round trip exactly equal to the agreement time is accepted
 - [x] `UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P18` — a valid response is acknowledged, the transport stays open, and no strike is recorded
+- [x] `UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19` — disposing the service settles a pending completion wait on a never-authenticated transport as not completed at once, far before its timeout, and a later wait on that transport settles as not completed at once

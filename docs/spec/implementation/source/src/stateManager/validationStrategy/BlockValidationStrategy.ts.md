@@ -36,7 +36,6 @@ Consequence profile
 - [ ] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P15` — blockForkIsDisputed hook
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P16` — blockIsNotNextAndIsInTheFuture hook
 - [ ] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P17` — blockIsNotLinkedAndIsNotFirstBlock hook
-- [ ] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P18` — prepareStateMachineForLeaderCheck hook
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P19` — objectiveInvalidTimestampDetected hook
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P20` — subjectiveInvalidTimestampDetected hook
 - [x] `UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P21` — a pending participant handling live double-sign fraud stores evidence, requests a dispute and stays pending

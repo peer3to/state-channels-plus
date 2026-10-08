@@ -26,6 +26,7 @@ Monitor lifecycle
 
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P1` — resets after each sample and stops the source on explicit stop
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P2` — can stop before the real sample source becomes ready
-- [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P3` — emits timing markers only when the running peak increases
+- [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P3` — emits real histogram timing markers only when the running peak increases
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P4` — warns when the real histogram source rejects an invalid resolution
 - [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P5` — a real main-thread sample carries the thread's CPU time and run-queue wait and the host's busy and steal share where the kernel exposes them, and none of them elsewhere
+- [x] `UNIT-TEST-NODE-LOGGER-32-B1JTBY.P6` — omits scripted samples from timing markers even when reporting is enabled, while preserving the watchdog throw
