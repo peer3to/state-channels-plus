@@ -1,7 +1,7 @@
-# test/utils/preferLocal.test.ts — Test Report
+# preferLocal.test.ts
 
-> **Test file:** [preferLocal.test.ts](../../../../../../test/utils/preferLocal.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [localDiamond.ts.md](../../../../implementation/source/src/utils/localDiamond.ts.md)
+Test file: [preferLocal.test.ts](../../../../../../test/utils/preferLocal.test.ts)
+Exercises: [localDiamond.ts.md](../../../../implementation/source/src/utils/localDiamond.ts.md)
 
 ## Overview
 
@@ -19,15 +19,13 @@ the EVM. They show that a real revert carries the marker through the signer and 
 non-revert failure does not. Which caller accepts which answer is out of scope (owned by the
 calling components' suites).
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                | Covers                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Unit: preferLocal > keeps an acceptable local answer without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L26) (line 26)                               | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P1`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                       |
-| [`Unit: preferLocal > asks the chain when the local answer would make the node act`](../../../../../../test/utils/preferLocal.test.ts#L41) (line 41)                            | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P2`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                       |
-| [`Unit: preferLocal > propagates a local EVM revert without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L56) (line 56)                                  | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P11`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                      |
-| [`Unit: preferLocal > propagates a local failure that is not a revert without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L78) (line 78)                | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P4`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6), [`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32`](../../../../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf) |
-| [`Unit: preferLocal > propagates the chain's rejection of a confirmation read`](../../../../../../test/utils/preferLocal.test.ts#L100) (line 100)                               | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P5`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                       |
-| [`Unit: preferLocal > propagates a real local contract call revert in the executor without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L116) (line 116) | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P12`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                      |
-| [`Unit: preferLocal > propagates a real local signer failure that is not a revert without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L164) (line 164)  | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P8`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                       |
-| [`Unit: preferLocal > propagates an acceptance-callback failure without asking the chain`](../../../../../../test/utils/preferLocal.test.ts#L195) (line 195)                    | [`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P10`](../../../../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)                                                                                                                                                      |
+- `keeps an acceptable local answer without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P1
+- `asks the chain when the local answer would make the node act`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P2
+- `propagates a local EVM revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P11
+- `propagates a local failure that is not a revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P4, UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32
+- `propagates the chain's rejection of a confirmation read`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P5
+- `propagates a real local contract call revert in the executor without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P12
+- `propagates a real local signer failure that is not a revert without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P8
+- `propagates an acceptance-callback failure without asking the chain`: UNIT-TEST-PREFER-LOCAL-1-XC95T6.P10

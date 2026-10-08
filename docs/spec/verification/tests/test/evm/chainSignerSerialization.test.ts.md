@@ -1,12 +1,7 @@
-# test/evm/chainSignerSerialization.test.ts — Test Report
+# chainSignerSerialization.test.ts
 
-> **Test file:** [test/evm/chainSignerSerialization.test.ts](../../../../../../test/evm/chainSignerSerialization.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [chainSignerSerialization.ts](../../../../implementation/source/src/rpc/internal/services/chainSigner/chainSignerSerialization.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/chainSignerSerialization.test.ts](../../../../../../test/evm/chainSignerSerialization.test.ts)
+Exercises: [chainSignerSerialization.ts](../../../../implementation/source/src/rpc/internal/services/chainSigner/chainSignerSerialization.ts.md)
 
 ## Overview
 
@@ -22,15 +17,13 @@ replacement hash; and a request carrying `customData` — which cannot cross the
 rejected with the documented error. The port transport itself and signing policy are out of
 scope; only the serialization boundary is pinned here.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                            | Covers                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [`chain signer serialization > preserves full transaction fields and byte message signatures through an inline SDK`](../../../../../../test/evm/chainSignerSerialization.test.ts#L16) (line 16) | —                                                                                                                         |
-| [`chain signer serialization > preserves full transaction fields and byte message signatures through an SDK worker`](../../../../../../test/evm/chainSignerSerialization.test.ts#L19) (line 19) | —                                                                                                                         |
-| [`chain signer serialization > round-trips a normalized transaction request`](../../../../../../test/evm/chainSignerSerialization.test.ts#L28) (line 28)                                        | [`REQ-RUN-6-MTBT2H.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6-mtbt2h) |
-| [`chain signer serialization > reconstructs a native provider-backed transaction response`](../../../../../../test/evm/chainSignerSerialization.test.ts#L62) (line 62)                          | —                                                                                                                         |
-| [`chain signer serialization > allows explicit client-side replacement detection`](../../../../../../test/evm/chainSignerSerialization.test.ts#L83) (line 83)                                   | —                                                                                                                         |
-| [`chain signer serialization > rejects fields that cannot cross the runtime port`](../../../../../../test/evm/chainSignerSerialization.test.ts#L87) (line 87)                                   | [`REQ-RUN-6-MTBT2H.T1.P4`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6-mtbt2h) |
-| [`chain signer serialization > adds gas headroom to estimates and limitless sends through an inline SDK`](../../../../../../test/evm/chainSignerSerialization.test.ts#L22) (line 22)            | [`REQ-SDK-ARCH-5-AAM7YK.T1.P4`](../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk.t1.p4)                     |
-| [`chain signer serialization > adds gas headroom to estimates and limitless sends through an SDK worker`](../../../../../../test/evm/chainSignerSerialization.test.ts#L25) (line 25)            | [`REQ-SDK-ARCH-5-AAM7YK.T1.P5`](../../../../specification/runtime/sdk.md#req-sdk-arch-5-aam7yk.t1.p5)                     |
+- `preserves full transaction fields and byte message signatures through an inline SDK`: none
+- `preserves full transaction fields and byte message signatures through an SDK worker`: none
+- `round-trips a normalized transaction request`: REQ-RUN-6-MTBT2H.T1.P1
+- `reconstructs a native provider-backed transaction response`: none
+- `allows explicit client-side replacement detection`: none
+- `rejects fields that cannot cross the runtime port`: REQ-RUN-6-MTBT2H.T1.P4
+- `adds gas headroom to estimates and limitless sends through an inline SDK`: REQ-SDK-ARCH-5-AAM7YK.T1.P4
+- `adds gas headroom to estimates and limitless sends through an SDK worker`: REQ-SDK-ARCH-5-AAM7YK.T1.P5

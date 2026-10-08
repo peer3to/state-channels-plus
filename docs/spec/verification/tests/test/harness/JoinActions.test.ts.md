@@ -1,12 +1,7 @@
-# test/harness/JoinActions.test.ts — Test Report
+# JoinActions.test.ts
 
-> **Test file:** [test/harness/JoinActions.test.ts](../../../../../../test/harness/JoinActions.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** the harness helper [test/harness/actions/JoinActions.ts](../../../../../../test/harness/actions/JoinActions.ts) (`addSpectatorAuthoring`); harness code has no source report.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/harness/JoinActions.test.ts](../../../../../../test/harness/JoinActions.test.ts)
+Exercises: the harness helper [test/harness/actions/JoinActions.ts](../../../../../../test/harness/actions/JoinActions.ts) (`addSpectatorAuthoring`); harness code has no source report.
 
 ## Overview
 
@@ -21,22 +16,15 @@ the minimum block count is authored even when the spectator syncs faster than th
 participants' sync suppressed leaves the spectator `OPENED` while the fork keeps moving. Oracles
 are the helper's result (`blocksAuthored`, `height`), peer status through the control port, and the
 error identity of rethrown failures. The helper is harness code, so no unit or integration test ID
-family exists for it and every row stays unassigned.
+family exists for it and every bullet stays `none`.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                  | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`JoinActions spectator spawn helper > rethrows a peer-creation failure unchanged and authors nothing after it`](../../../../../../test/harness/JoinActions.test.ts#L53) (line 53)                | —      |
-| [`JoinActions spectator spawn helper > rethrows a beforeConnect failure unchanged without dispatching the connection`](../../../../../../test/harness/JoinActions.test.ts#L72) (line 72)          | —      |
-| [`JoinActions spectator spawn helper > rethrows a connection-dispatch failure unchanged and reports no bound error`](../../../../../../test/harness/JoinActions.test.ts#L99) (line 99)            | —      |
-| [`JoinActions spectator spawn helper > keeps authoring while beforeConnect is pending and dispatches only after it releases`](../../../../../../test/harness/JoinActions.test.ts#L117) (line 117) | —      |
-| [`JoinActions spectator spawn helper > authors the minimum even when the spectator spawns and syncs fast`](../../../../../../test/harness/JoinActions.test.ts#L154) (line 154)                    | —      |
-| [`JoinActions spectator spawn helper > installs a beforeConnect stub before the first real sync request runs`](../../../../../../test/harness/JoinActions.test.ts#L173) (line 173)                | —      |
-| [`JoinActions spectator spawn helper > spawn-only keeps blocks flowing and leaves the spectator OPENED`](../../../../../../test/harness/JoinActions.test.ts#L199) (line 199)                      | —      |
-| [counts a slow authoring completion inside the next keep-alive window](../../../../../../test/harness/JoinActions.test.ts#L12) (line 12)                                                          | —      |
+- `rethrows a peer-creation failure unchanged and authors nothing after it`: none
+- `rethrows a beforeConnect failure unchanged without dispatching the connection`: none
+- `rethrows a connection-dispatch failure unchanged and reports no bound error`: none
+- `keeps authoring while beforeConnect is pending and dispatches only after it releases`: none
+- `authors the minimum even when the spectator spawns and syncs fast`: none
+- `installs a beforeConnect stub before the first real sync request runs`: none
+- `spawn-only keeps blocks flowing and leaves the spectator OPENED`: none
+- `counts a slow authoring completion inside the next keep-alive window`: none

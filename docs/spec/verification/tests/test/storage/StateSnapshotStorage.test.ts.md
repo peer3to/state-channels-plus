@@ -1,12 +1,7 @@
-# test/storage/StateSnapshotStorage.test.ts — Test Report
+# StateSnapshotStorage.test.ts
 
-> **Test file:** [test/storage/StateSnapshotStorage.test.ts](../../../../../../test/storage/StateSnapshotStorage.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateSnapshotStorage.ts](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/storage/StateSnapshotStorage.test.ts](../../../../../../test/storage/StateSnapshotStorage.test.ts)
+Exercises: [StateSnapshotStorage.ts](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md)
 
 ## Overview
 
@@ -18,22 +13,15 @@ snapshot never enters the genesis index. The atomized absent-key permutations ar
 index below; repeated stores and a conflicting genesis registration for a known fork id are not
 present, so the idempotent-repeat and conflict-refusal permutations stay unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`StateSnapshotStorage > CREATE - storeStateSnapshot() > Auto-computed hash > should store snapshot with computed hash`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L27) (line 27)                                    | [`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P1`](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2), [`INV-SNAPSTORE-1-DPHPJE.T1.P1`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje.t1.p1) |
-| [`StateSnapshotStorage > CREATE - storeStateSnapshot() > Auto-computed hash > should store genesis snapshot and auto-add to genesis mapping`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L37) (line 37)               | [`REQ-SNAPSTORE-1-AJW0HJ.T1.P1`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj.t1.p1), [`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P2`](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2) |
-| [`StateSnapshotStorage > CREATE - storeStateSnapshot() > Provided hash > should store snapshot with provided hash`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L58) (line 58)                                         | —                                                                                                                                                                                                                                                                                              |
-| [`StateSnapshotStorage > CREATE - storeStateSnapshot() > Provided hash > should store genesis snapshot with provided hash and auto-add to genesis mapping`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L71) (line 71) | —                                                                                                                                                                                                                                                                                              |
-| [`StateSnapshotStorage > READ operations > should get snapshot by hash`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L101) (line 101)                                                                                  | —                                                                                                                                                                                                                                                                                              |
-| [`StateSnapshotStorage > READ operations > should return undefined for non-existent snapshot hash`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L106) (line 106)                                                       | [`INV-SNAPSTORE-1-DPHPJE.T1.P3`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje.t1.p3), [`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P5`](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2) |
-| [`StateSnapshotStorage > READ operations > should get genesis snapshot by forkId`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L112) (line 112)                                                                        | —                                                                                                                                                                                                                                                                                              |
-| [`StateSnapshotStorage > READ operations > should return undefined for non-existent genesis forkId`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L121) (line 121)                                                      | [`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P6`](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2)                                                                                                                           |
-| [`StateSnapshotStorage > Genesis snapshot logic > should identify genesis snapshot correctly`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L129) (line 129)                                                            | —                                                                                                                                                                                                                                                                                              |
-| [`StateSnapshotStorage > Genesis snapshot logic > should not non-genesis snapshots in genesis mapping`](../../../../../../test/storage/StateSnapshotStorage.test.ts#L134) (line 134)                                                   | [`UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4`](../../../../implementation/source/src/storage/StateSnapshotStorage.ts.md#unit-test-state-snapshot-storage-1-51qze2)                                                                                                                           |
+- `should store snapshot with computed hash`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P1, INV-SNAPSTORE-1-DPHPJE.T1.P1
+- `should store genesis snapshot and auto-add to genesis mapping`: REQ-SNAPSTORE-1-AJW0HJ.T1.P1, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P2
+- `should store snapshot with provided hash`: none
+- `should store genesis snapshot with provided hash and auto-add to genesis mapping`: none
+- `should get snapshot by hash`: none
+- `should return undefined for non-existent snapshot hash`: INV-SNAPSTORE-1-DPHPJE.T1.P3, UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P5
+- `should get genesis snapshot by forkId`: none
+- `should return undefined for non-existent genesis forkId`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P6
+- `should identify genesis snapshot correctly`: none
+- `should not non-genesis snapshots in genesis mapping`: UNIT-TEST-STATE-SNAPSHOT-STORAGE-1-51QZE2.P4

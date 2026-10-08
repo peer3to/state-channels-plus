@@ -1,24 +1,21 @@
-# test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts — Test Report
+# LobbyMatchingValidation.test.ts
 
-> **Test file:** [LobbyMatchingValidation.test.ts](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts)  
-> **Status:** Authored — engineer verification pending.  
-> **Exercises:** [LobbyMatchingValidation.ts.md](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md)
+Test file: [LobbyMatchingValidation.test.ts](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts)
+Exercises: [LobbyMatchingValidation.ts.md](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md)
 
 ## Overview
 
 Invoke validateMatchTimeout directly; null/omitted and safe positive integers pass, zero/negative/fractional/unsafe/nonfinite values throw the exact existing message.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                          | Covers                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`LobbyMatchingValidation > accepts omitted timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L5) (line 5)            | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P1`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > accepts null timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L8) (line 8)               | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P2`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > accepts positive integer timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L11) (line 11) | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P3`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > accepts largest safe timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L14) (line 14)     | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P4`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects zero timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L19) (line 19)             | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P5`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects negative timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L24) (line 24)         | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P6`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects fractional timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L29) (line 29)       | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P7`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects unsafe timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L34) (line 34)           | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P8`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects infinite timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L39) (line 39)         | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P9`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r)  |
-| [`LobbyMatchingValidation > rejects NaN timeout`](../../../../../../../test/rpc/lobbyMatching/LobbyMatchingValidation.test.ts#L44) (line 44)              | [`UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P10`](../../../../../implementation/source/src/rpc/network/services/lobbyMatching/LobbyMatchingValidation.ts.md#unit-test-lobby-matching-validation-32-4xzx5r) |
+- `accepts omitted timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P1
+- `accepts null timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P2
+- `accepts positive integer timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P3
+- `accepts largest safe timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P4
+- `rejects zero timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P5
+- `rejects negative timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P6
+- `rejects fractional timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P7
+- `rejects unsafe timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P8
+- `rejects infinite timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P9
+- `rejects NaN timeout`: UNIT-TEST-LOBBY-MATCHING-VALIDATION-32-4XZX5R.P10

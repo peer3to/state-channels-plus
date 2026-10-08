@@ -1,11 +1,6 @@
-# test/e2e/E2E-MaliciousUpdateSnapshot.test.ts — Test Report
+# E2E-MaliciousUpdateSnapshot.test.ts
 
-> **Test file:** [test/e2e/E2E-MaliciousUpdateSnapshot.test.ts](../../../../../../test/e2e/E2E-MaliciousUpdateSnapshot.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-MaliciousUpdateSnapshot.test.ts](../../../../../../test/e2e/E2E-MaliciousUpdateSnapshot.test.ts)
 
 ## Overview
 
@@ -27,15 +22,8 @@ The two revert tests exercise only the beyond-cap side of their bounds, so bound
 permutations (exact cap, zero, maximum) stay unassigned.
 The balance-invariant case spawns its spectator spawn-only (`createSpectatorPeer`, abort-recording stub, `connectSpectator`): after the colluded snapshot the participants no longer agree with the chain, so no block may be authored during the spawn, and the stub is installed before the first sync request can run.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                             | Covers                                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Malicious updateSnapshot > colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits`](../../../../../../test/e2e/E2E-MaliciousUpdateSnapshot.test.ts#L21) (line 21)                                           | [`INV-MSG-4-6E5G7V.T1.P3`](../../../../specification/settlement/cross-layer-messages.md#inv-msg-4-6e5g7v.t1.p3), [`INV-LIF-5-ENQB91.T1.P3`](../../../../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p3) |
-| [`E2E: Malicious updateSnapshot > outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid`](../../../../../../test/e2e/E2E-MaliciousUpdateSnapshot.test.ts#L99) (line 99) | [`INV-MSG-3-PCR3KT.T1.P3`](../../../../specification/settlement/cross-layer-messages.md#inv-msg-3-pcr3kt.t1.p3)                                                                                                       |
-| [`E2E: Malicious updateSnapshot > colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant`](../../../../../../test/e2e/E2E-MaliciousUpdateSnapshot.test.ts#L182) (line 182)                | [`REQ-SYNC-2-TNT4F4.T1.P2`](../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4.t1.p2)                                                                                                  |
+- `colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits`: INV-MSG-4-6E5G7V.T1.P3, INV-LIF-5-ENQB91.T1.P3
+- `outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid`: INV-MSG-3-PCR3KT.T1.P3
+- `colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant`: REQ-SYNC-2-TNT4F4.T1.P2

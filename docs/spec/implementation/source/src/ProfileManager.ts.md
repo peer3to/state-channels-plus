@@ -59,5 +59,5 @@ Ban-handle and authenticated fallback lifecycle
 - Setup: Dispose a manager with an unauthenticated transport
 - Oracle: The transport closes and its profile is removed
 
-- [ ] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication
+- [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication
 - [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2` — A throwing transport does not prevent later unpromoted transports or Holepunch from closing; repeated manager disposal shares the first failure

@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts — Test Report
+# onChainSlashes.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts)
 
 ## Overview
 
@@ -24,15 +19,8 @@ the permutation atomization the slash-subset and stated-reason check failures, t
 families, their mirrored-predicate agreements, and the adversarial-input reduction case are
 single-scenario IDs covered below.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                             | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: dispute validation / disputeInputFields / onChainSlashes > dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset`](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts#L6) (line 6)            | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P12`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P7`](../../../../../../implementation/source/src/stateManager/dispute/DisputeFraudProofService.ts.md#unit-test-dispute-fraud-proof-service-1-zvpvc0), [`REQ-DISPUTE-PIPE-5-RZZB48.T1.P8`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t1.p8)                                                                                                             |
-| [`E2E: dispute validation / disputeInputFields / onChainSlashes > dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason`](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts#L47) (line 47) | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P20`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P13`](../../../../../../implementation/source/src/stateManager/dispute/DisputeFraudProofService.ts.md#unit-test-dispute-fraud-proof-service-1-zvpvc0), [`REQ-DISPUTE-PIPE-5-RZZB48.T1.P16`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t1.p16), [`REQ-DIS-1-XAJ1VA.T1.P5`](../../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va.t1.p5) |
-| [dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed](../../../../../../../../test/e2e/disputeValidation/disputeInputFields/onChainSlashes.test.ts#L104) (line 104)                                                      | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+- `dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P12, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P7, REQ-DISPUTE-PIPE-5-RZZB48.T1.P8
+- `dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P20, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P13, REQ-DISPUTE-PIPE-5-RZZB48.T1.P16, REQ-DIS-1-XAJ1VA.T1.P5
+- `dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed`: none

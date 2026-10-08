@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/notLatestState.test.ts — Test Report
+# notLatestState.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/notLatestState.test.ts](../../../../../../../test/e2e/disputeValidation/notLatestState.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/notLatestState.test.ts](../../../../../../../test/e2e/disputeValidation/notLatestState.test.ts)
 
 ## Overview
 
@@ -21,13 +16,6 @@ inspected. After the permutation atomization, the disputer-latest-state check fa
 family, and its mirrored-predicate agreement exist as single-scenario IDs, and this test covers
 them in full.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / notLatestState > dispute.input.stateProof truncated below disputer's last signed block → DisputeNotLatestState`](../../../../../../../test/e2e/disputeValidation/notLatestState.test.ts#L5) (line 5) | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P14`](../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P9`](../../../../../implementation/source/src/stateManager/dispute/DisputeFraudProofService.ts.md#unit-test-dispute-fraud-proof-service-1-zvpvc0), [`REQ-DISPUTE-PIPE-5-RZZB48.T1.P1`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48.t1.p1) |
+- `dispute.input.stateProof truncated below disputer's last signed block → DisputeNotLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P14, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P9, REQ-DISPUTE-PIPE-5-RZZB48.T1.P1

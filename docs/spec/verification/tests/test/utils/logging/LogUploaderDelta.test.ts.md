@@ -1,12 +1,7 @@
-# test/utils/logging/LogUploaderDelta.test.ts — Test Report
+# LogUploaderDelta.test.ts
 
-> **Test file:** [test/utils/logging/LogUploaderDelta.test.ts](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [LogUploader.ts](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/utils/logging/LogUploaderDelta.test.ts](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts)
+Exercises: [LogUploader.ts](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md)
 
 ## Overview
 
@@ -17,16 +12,14 @@ what was added; nothing new means no POST, and no jitter sleep either; a refused
 watermark so its entries ride along with the next; the body names the thread, identity and range;
 and an upload requested while one is in flight resolves only after its own POST.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                          | Covers                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`LogUploader delta uploads > an idle store resolves without paying the jitter`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L26) (line 26)                              | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P4`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                            |
-| [`LogUploader delta uploads > sends the whole store on the first upload`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L44) (line 44)                                     | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P1`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                            |
-| [`LogUploader delta uploads > sends only entries added since the last upload`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L58) (line 58)                                | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P2`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                            |
-| [`LogUploader delta uploads > does not POST when there is nothing new`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L73) (line 73)                                       | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P3`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k), [`REQ-LOG-3-T9FM2K.T1.P2`](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k.t1.p2) |
-| [`LogUploader delta uploads > re-sends the delta after a failed upload`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L86) (line 86)                                      | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P5`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k), [`REQ-LOG-5-ST6S0G.T1.P2`](../../../../../specification/runtime/log-collection.md#req-log-5-st6s0g.t1.p2) |
-| [`LogUploader delta uploads > files an upload under the identity current after the jitter`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L113) (line 113)                 | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P13`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                           |
-| [`LogUploader delta uploads > sends threadName and the sequence range`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L135) (line 135)                                     | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P6`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k), [`REQ-LOG-4-W5XR7Q.T1.P1`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q.t1.p1) |
-| [`LogUploader delta uploads > a flush requested during an in-flight upload resolves after the second POST`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L155) (line 155) | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P7`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                            |
-| [`LogUploader delta uploads > finishes an awaited local upload after its last logger is disposed`](../../../../../../../test/utils/logging/LogUploaderDelta.test.ts#L183) (line 183)          | [`UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P14`](../../../../../implementation/source/src/utils/logging/LogUploader.ts.md#unit-test-log-uploader-1-tbrv7k)                                                                                                           |
+- `an idle store resolves without paying the jitter`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P4
+- `sends the whole store on the first upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P1
+- `sends only entries added since the last upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P2
+- `does not POST when there is nothing new`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P3, REQ-LOG-3-T9FM2K.T1.P2
+- `re-sends the delta after a failed upload`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P5, REQ-LOG-5-ST6S0G.T1.P2
+- `files an upload under the identity current after the jitter`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P13
+- `sends threadName and the sequence range`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P6, REQ-LOG-4-W5XR7Q.T1.P1
+- `a flush requested during an in-flight upload resolves after the second POST`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P7
+- `finishes an awaited local upload after its last logger is disposed`: UNIT-TEST-LOG-UPLOADER-1-TBRV7K.P14

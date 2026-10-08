@@ -1,12 +1,7 @@
-# test/unit/EvmDiamondStateMachineReduction.test.ts — Test Report
+# EvmDiamondStateMachineReduction.test.ts
 
-> **Test file:** [test/unit/EvmDiamondStateMachineReduction.test.ts](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EvmDiamondStateMachine.ts](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/EvmDiamondStateMachineReduction.test.ts](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts)
+Exercises: [EvmDiamondStateMachine.ts](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
 
 ## Overview
 
@@ -24,17 +19,10 @@ name a fork with no dispute window return false and leave the window unreduced, 
 checks the disputes' window before the call. An inbound list with an extra fabricated successor
 throws `ErrorDisputeInboundMessageBlocksInvalid` and leaves the window unreduced.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                       | Covers                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Unit: EvmDiamondStateMachine reduceAndFinalizeLocally > expired unreduced window with its served inputs → true, the local window records the expected fork`](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts#L11) (line 11)                      | [`UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-3-g1kmvc) |
-| [`Unit: EvmDiamondStateMachine reduceAndFinalizeLocally > window already reduced to the expected fork → false, the local window keeps that fork`](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts#L21) (line 21)                                   | [`UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-3-g1kmvc) |
-| [`Unit: EvmDiamondStateMachine reduceAndFinalizeLocally > window already reduced to another fork than expected → throws the expectation mismatch, the local window keeps its fork`](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts#L32) (line 32) | [`UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-3-g1kmvc) |
-| [`Unit: EvmDiamondStateMachine reduceAndFinalizeLocally > disputes naming a fork without a dispute window → false, the local window stays unreduced`](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts#L48) (line 48)                               | [`UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P4`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-3-g1kmvc) |
-| [`Unit: EvmDiamondStateMachine reduceAndFinalizeLocally > inbound list with a fabricated successor → throws the inbound validation revert, the local window stays unreduced`](../../../../../../test/unit/EvmDiamondStateMachineReduction.test.ts#L57) (line 57)       | [`UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P5`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-3-g1kmvc) |
+- `expired unreduced window with its served inputs → true, the local window records the expected fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1
+- `window already reduced to the expected fork → false, the local window keeps that fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2
+- `window already reduced to another fork than expected → throws the expectation mismatch, the local window keeps its fork`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3
+- `disputes naming a fork without a dispute window → false, the local window stays unreduced`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P4
+- `inbound list with a fabricated successor → throws the inbound validation revert, the local window stays unreduced`: UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P5

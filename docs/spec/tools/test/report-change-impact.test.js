@@ -332,7 +332,7 @@ test("does not treat requirement impact as full test coverage", () =>
         );
         f.write(
             "docs/spec/verification/tests/test/partial.test.ts.md",
-            `# Partial evidence\n\n> **Test file:** [test](../../../../../test/partial.test.ts)\n\nPartial evidence for ${requirement}; no full permutation is assigned.\n`
+            `# Partial evidence\n\nTest file: [test](../../../../../test/partial.test.ts)\n\nPartial evidence for ${requirement}; no full permutation is assigned.\n`
         );
         const result = f.check();
         assertMapped(result, "test/partial.test.ts");
@@ -367,7 +367,7 @@ test("maps a renamed test through its surviving planned permutation", () =>
             `# Runtime\n\n| ID | Statement |\n| --- | --- |\n| ${requirement} | Preserves behavior |\n\n| Plan item | Expected result | Required permutations |\n| --- | --- | --- |\n| ${requirement}.T1 | Preserves behavior | ${requirement}.T1.P1 |\n`
         );
         f.write("test/old.test.ts", 'it("preserves behavior", () => {});\n');
-        const report = `# Test\n\n> **Test file:** [test](../../../../../test/old.test.ts)\n\n| Test | Covers |\n| --- | --- |\n| [preserves behavior](../../../../../test/old.test.ts#L1) (line 1) | ${requirement}.T1.P1 |\n`;
+        const report = `# old.test.ts\n\nTest file: [test](../../../../../test/old.test.ts)\n\n## Tests\n\n- \`preserves behavior\`: ${requirement}.T1.P1\n`;
         f.write("docs/spec/verification/tests/test/old.test.ts.md", report);
         f.commit();
         f.git("mv", "test/old.test.ts", "test/new.test.ts");
@@ -400,12 +400,9 @@ test("blocks a replacement whose requirement does not exist", () =>
 const other = "REQ-OTHER-1-000002";
 const specDocument = (...ids) =>
     `# Spec\n\n| ID | Statement |\n| --- | --- |\n${ids.map((id) => `| ${id} | Preserves behavior |\n`).join("")}\n| Plan item | Expected result | Required permutations |\n| --- | --- | --- |\n${ids.map((id) => `| ${id}.T1 | Preserves behavior | ${id}.T1.P1 |\n`).join("")}`;
-const testReport = (file, ...rows) =>
-    `# Test\n\n> **Test file:** [test](../../../../../test/${file})\n\n| Test | Covers |\n| --- | --- |\n${rows
-        .map(
-            ([line, covers]) =>
-                `| [case ${line}](../../../../../test/${file}#L${line}) (line ${line}) | ${covers} |\n`
-        )
+const testReport = (file, ...bullets) =>
+    `# ${file}\n\nTest file: [test](../../../../../test/${file})\n\n## Tests\n\n${bullets
+        .map(([line, covers]) => `- \`case ${line}\`: ${covers}\n`)
         .join("")}`;
 const noSpecReport = (source) => {
     const link = path.relative(
@@ -498,7 +495,7 @@ test("ignores the derived requirement status file", () =>
         );
         f.write(
             "docs/spec/verification/tests/test/b.test.ts.md",
-            testReport("b.test.ts", [1, "—"])
+            testReport("b.test.ts", [1, "none"])
         );
         f.commit();
         f.write(

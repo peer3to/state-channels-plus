@@ -1,12 +1,7 @@
-# test/utils/LoggerUtils.test.ts — Test Report
+# LoggerUtils.test.ts
 
-> **Test file:** [test/utils/LoggerUtils.test.ts](../../../../../../test/utils/LoggerUtils.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [LoggerUtils.ts](../../../../implementation/source/src/utils/LoggerUtils.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/utils/LoggerUtils.test.ts](../../../../../../test/utils/LoggerUtils.test.ts)
+Exercises: [LoggerUtils.ts](../../../../implementation/source/src/utils/LoggerUtils.ts.md)
 
 ## Overview
 
@@ -30,28 +25,21 @@ this helper runs on every block validation.
 
 One test calls `getBlockConfirmationStructMetadata` with block bytes that do not decode and asserts `undecodableBlock: true`, the original signature, and no block fields.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                             | Covers                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`LoggerUtils > marks block confirmation bytes that do not decode instead of throwing`](../../../../../../test/utils/LoggerUtils.test.ts#L40) (line 40)      | [`UNIT-TEST-LOGGER-UTILS-34-HNBMFQ.P1`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-34-hnbmfq)         |
-| [`LoggerUtils > builds contract-call metadata from encoded calldata`](../../../../../../test/utils/LoggerUtils.test.ts#L149) (line 149)                      | [`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P1`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-33-a11ybz)         |
-| [`LoggerUtils > names any calldata a peer can author without throwing`](../../../../../../test/utils/LoggerUtils.test.ts#L169) (line 169)                    | [`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P3`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-33-a11ybz)         |
-| [`LoggerUtils > names a selector the SDK contract surface declares`](../../../../../../test/utils/LoggerUtils.test.ts#L183) (line 183)                       | [`UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P2`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-33-a11ybz)         |
-| [`LoggerUtils > getCustomEvmErrorMetadata > names every revert arg from the error ABI`](../../../../../../test/utils/LoggerUtils.test.ts#L195) (line 195)    | —                                                                                                                                               |
-| [`LoggerUtils > getCustomEvmErrorMetadata > keeps numeric revert args as bigints`](../../../../../../test/utils/LoggerUtils.test.ts#L214) (line 214)         | —                                                                                                                                               |
-| [`LoggerUtils > getCustomEvmErrorMetadata > an error without args still reports its name`](../../../../../../test/utils/LoggerUtils.test.ts#L245) (line 245) | —                                                                                                                                               |
-| [`LoggerUtils > getCustomEvmErrorMetadata > no decoded custom error yields no metadata`](../../../../../../test/utils/LoggerUtils.test.ts#L256) (line 256)   | —                                                                                                                                               |
-| [`LoggerUtils > reports each message block's previousBlockHash`](../../../../../../test/utils/LoggerUtils.test.ts#L267) (line 267)                           | —                                                                                                                                               |
-| [`LoggerUtils > pairs the submitted snapshot head with the computed reduction target`](../../../../../../test/utils/LoggerUtils.test.ts#L281) (line 281)     | —                                                                                                                                               |
-| [`LoggerUtils > formats known and unknown numeric enum members without changing strings`](../../../../../../test/utils/LoggerUtils.test.ts#L58) (line 58)    | [`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-32-wmbbza)         |
-| [`LoggerUtils > logs objective time failure using captured time and previous timestamps`](../../../../../../test/utils/LoggerUtils.test.ts#L71) (line 71)    | [`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-32-wmbbza)         |
-| [`LoggerUtils > omits previous timestamp fields for subjective time failures`](../../../../../../test/utils/LoggerUtils.test.ts#L117) (line 117)             | [`UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-logger-utils-32-wmbbza)         |
-| [`LoggerUtils > names an RPC node by scheme and host, without credentials, path or query`](../../../../../../test/utils/LoggerUtils.test.ts#L10) (line 10)   | [`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P1`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-rpc-node-metadata-1-1wc176) |
-| [`LoggerUtils > names an unparseable RPC node URL without repeating it`](../../../../../../test/utils/LoggerUtils.test.ts#L23) (line 23)                     | [`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P2`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-rpc-node-metadata-1-1wc176) |
-| [`LoggerUtils > names every RPC node of a list by scheme and host`](../../../../../../test/utils/LoggerUtils.test.ts#L29) (line 29)                          | [`UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P3`](../../../../implementation/source/src/utils/LoggerUtils.ts.md#unit-test-rpc-node-metadata-1-1wc176) |
+- `marks block confirmation bytes that do not decode instead of throwing`: UNIT-TEST-LOGGER-UTILS-34-HNBMFQ.P1
+- `builds contract-call metadata from encoded calldata`: UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P1
+- `names any calldata a peer can author without throwing`: UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P3
+- `names a selector the SDK contract surface declares`: UNIT-TEST-LOGGER-UTILS-33-A11YBZ.P2
+- `names every revert arg from the error ABI`: none
+- `keeps numeric revert args as bigints`: none
+- `an error without args still reports its name`: none
+- `no decoded custom error yields no metadata`: none
+- `reports each message block's previousBlockHash`: none
+- `pairs the submitted snapshot head with the computed reduction target`: none
+- `formats known and unknown numeric enum members without changing strings`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P1
+- `logs objective time failure using captured time and previous timestamps`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P2
+- `omits previous timestamp fields for subjective time failures`: UNIT-TEST-LOGGER-UTILS-32-WMBBZA.P3
+- `names an RPC node by scheme and host, without credentials, path or query`: UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P1
+- `names an unparseable RPC node URL without repeating it`: UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P2
+- `names every RPC node of a list by scheme and host`: UNIT-TEST-RPC-NODE-METADATA-1-1WC176.P3

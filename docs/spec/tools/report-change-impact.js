@@ -28,7 +28,7 @@ const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
 const REQUIREMENT_ID_RE = new RegExp(`^${REQUIREMENT_PATTERN}$`);
 // A file report that implements no specified behavior says so in one line.
 const NO_SPECIFIED_BEHAVIOR_RE = /^No specified behavior:/m;
-// Derived by `yarn spec:ids:fix` and names every requirement; the Covers edit
+// Derived by `yarn spec:ids:fix` and names every requirement; the test-bullet edit
 // that changed it is in the same diff and seeds the right requirement.
 const REQUIREMENT_STATUS_PATH = path
     .relative(REPO_ROOT, REQUIREMENT_STATUS)

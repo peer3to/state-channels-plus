@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/invalidStateProofAuditing.test.ts — Test Report
+# invalidStateProofAuditing.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/invalidStateProofAuditing.test.ts](../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/invalidStateProofAuditing.test.ts](../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts)
 
 ## Overview
 
@@ -22,8 +17,6 @@ itself is assigned to the genesis-linkage sibling test, which additionally asser
 target stays unslashed; after the permutation atomization this test records the facet-level
 self-slash branch and the slash-then-reduce consumption invariant instead.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                                                        | Covers                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / invalidStateProofAuditing > [calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`](../../../../../../../test/e2e/disputeValidation/invalidStateProofAuditing.test.ts#L12) (line 12) | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7), [`INV-DVP-6-RFSBRQ.T1.P1`](../../../../../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-6-rfsbrq) |
+- `[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves`: UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P4, INV-DVP-6-RFSBRQ.T1.P1

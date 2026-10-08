@@ -1,11 +1,6 @@
-# test/e2e/E2E-StaleMembershipDispute.test.ts — Test Report
+# E2E-StaleMembershipDispute.test.ts
 
-> **Test file:** [test/e2e/E2E-StaleMembershipDispute.test.ts](../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-StaleMembershipDispute.test.ts](../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts)
 
 ## Overview
 
@@ -19,8 +14,6 @@ the kill transaction, independent of any later fork reduction. This pins the aud
 check to the resulting snapshot's coordinates instead of a naive membership lookup in a stale era.
 The removed-participant kill scenario is assigned below. Other predicate permutations belong to their owning test declarations.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                          | Covers                                                                                              |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [`E2E: stale-membership dispute > departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`](../../../../../../test/e2e/E2E-StaleMembershipDispute.test.ts#L11) (line 11) | [`REQ-DIS-3-C4KYSF.T1.P16`](../../../../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p16) |
+- `departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain`: REQ-DIS-3-C4KYSF.T1.P16

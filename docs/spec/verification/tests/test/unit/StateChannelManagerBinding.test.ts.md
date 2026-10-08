@@ -1,12 +1,7 @@
-# test/unit/StateChannelManagerBinding.test.ts — Test Report
+# StateChannelManagerBinding.test.ts
 
-> **Test file:** [test/unit/StateChannelManagerBinding.test.ts](../../../../../../test/unit/StateChannelManagerBinding.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [stateChannelManager.ts](../../../../implementation/source/src/utils/stateChannelManager.ts.md), [contractAbi.ts](../../../../implementation/source/src/utils/contractAbi.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/StateChannelManagerBinding.test.ts](../../../../../../test/unit/StateChannelManagerBinding.test.ts)
+Exercises: [stateChannelManager.ts](../../../../implementation/source/src/utils/stateChannelManager.ts.md), [contractAbi.ts](../../../../implementation/source/src/utils/contractAbi.ts.md)
 
 ## Overview
 
@@ -16,14 +11,12 @@ both proxy/facet errors after the same JSON round trip used by the runtime port.
 case proves consumer-only function, event, and error fragments survive while an SDK duplicate wins.
 The final case checks null-runner address binding.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                  | Covers                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`stateChannelManager binding > keeps functions and events exactly equal to the manager interface`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L23) (line 23) | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P1`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z), [`UNIT-TEST-CONTRACT-ABI-1-HW1A66.P1`](../../../../implementation/source/src/utils/contractAbi.ts.md#unit-test-contract-abi-1-hw1a66) |
-| [`stateChannelManager binding > includes the generated manager error union exactly once`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L36) (line 36)           | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P2`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z), [`UNIT-TEST-CONTRACT-ABI-1-HW1A66.P2`](../../../../implementation/source/src/utils/contractAbi.ts.md#unit-test-contract-abi-1-hw1a66) |
-| [`stateChannelManager binding > parses every custom error exposed by the old proxy artifact`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L43) (line 43)       | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P3`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                        |
-| [`stateChannelManager binding > parses a facet-only error with its arguments`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L59) (line 59)                      | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P4`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                        |
-| [`stateChannelManager binding > round-trips the complete ABI through the runtime JSON payload`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L71) (line 71)     | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P5`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                        |
-| [`stateChannelManager binding > merges consumer ABI extensions after the SDK manager ABI`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L98) (line 98)          | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P9`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                        |
-| [`stateChannelManager binding > connects a read-only binding when no runner is given`](../../../../../../test/unit/StateChannelManagerBinding.test.ts#L131) (line 131)            | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P6`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                        |
+- `keeps functions and events exactly equal to the manager interface`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P1, UNIT-TEST-CONTRACT-ABI-1-HW1A66.P1
+- `includes the generated manager error union exactly once`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P2, UNIT-TEST-CONTRACT-ABI-1-HW1A66.P2
+- `parses every custom error exposed by the old proxy artifact`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P3
+- `parses a facet-only error with its arguments`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P4
+- `round-trips the complete ABI through the runtime JSON payload`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P5
+- `merges consumer ABI extensions after the SDK manager ABI`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P9
+- `connects a read-only binding when no runner is given`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P6

@@ -1,12 +1,7 @@
-# test/evm/ContractExecutorCallGas.test.ts — Test Report
+# ContractExecutorCallGas.test.ts
 
-> **Test file:** [test/evm/ContractExecutorCallGas.test.ts](../../../../../../test/evm/ContractExecutorCallGas.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/ContractExecutorCallGas.test.ts](../../../../../../test/evm/ContractExecutorCallGas.test.ts)
+Exercises: [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 
 ## Overview
 
@@ -42,21 +37,14 @@ setup rejects with a `CALL_EXCEPTION` naming the replay-gas selector, that no ex
 requested from the recording `createContractExecutor`, that at least one runtime root was started,
 and that every started root was closed.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                  | Covers                                                                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ContractExecutor call gas > defaults to the EVM's call gas`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L18) (line 18)                                                                                          | [`UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P1`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-2-xtm118)                                                                                                                   |
-| [`ContractExecutor call gas > raises the call gas to the dispute-execution budget`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L24) (line 24)                                                                     | [`UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P2`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-2-xtm118)                                                                                                                   |
-| [`ContractExecutor call gas > raises the call gas to twice the replay gas`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L30) (line 30)                                                                             | [`UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P3`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-2-xtm118)                                                                                                                   |
-| [`ContractExecutor call gas > refuses a transition above the default call gas when not raised`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L36) (line 36)                                                         | [`UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P4`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-2-xtm118), [`REQ-MIRROR-4-H9C4YS.T1.P11`](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1.p11) |
-| [`ContractExecutor call gas > runs a transition above the default call gas when raised to its requirement`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L59) (line 59)                                             | [`UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P5`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-2-xtm118), [`REQ-MIRROR-4-H9C4YS.T1.P10`](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys.t1.p10) |
-| [`ContractExecutor call gas > an inline executor runs a transition whose replay requirement exceeds the default call gas`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L90) (line 90)                              | [`UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-33-w7ya4j)                                                                                                                   |
-| [`ContractExecutor call gas > a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L105) (line 105)                   | [`UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-33-w7ya4j)                                                                                                                   |
-| [`ContractExecutor call gas > a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L120) (line 120)           | [`UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-33-w7ya4j)                                                                                                                   |
-| [`ContractExecutor call gas > a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime`](../../../../../../test/evm/ContractExecutorCallGas.test.ts#L124) (line 124) | [`UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-33-w7ya4j)                                                                                                                   |
+- `defaults to the EVM's call gas`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P1
+- `raises the call gas to the dispute-execution budget`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P2
+- `raises the call gas to twice the replay gas`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P3
+- `refuses a transition above the default call gas when not raised`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P4, REQ-MIRROR-4-H9C4YS.T1.P11
+- `runs a transition above the default call gas when raised to its requirement`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P5, REQ-MIRROR-4-H9C4YS.T1.P10
+- `an inline executor runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P1
+- `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
+- `a rejected startup replay requirement read rejects readiness with no inline executor and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
+- `a rejected startup replay requirement read rejects readiness with no dedicated executor thread and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4

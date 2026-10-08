@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/futureBlock.test.ts — Test Report
+# futureBlock.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts)
 
 ## Overview
 
@@ -19,11 +14,9 @@ committed dispute references a higher block; `resolveDisputeWait` then settles t
 requiring the attacker's removal. A known teardown bug (#353, `onStateSnapshotUpdated: unknown
 snapshot while status=4`) is documented in the file; the test body itself passes. Even after the
 permutation atomization, no single-scenario ID matches this protocol-gap regression (honest peers
-refusing to fast-forward off a committed dispute's higher block), so the Covers column stays
-empty.
+refusing to fast-forward off a committed dispute's higher block), so its bullet stays
+`none`.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                                     | Covers                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts#L17) (line 17) | [`REQ-SP-10-JMVHTB.T7.P1`](../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb.t7.p1) |
+- `dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`: REQ-SP-10-JMVHTB.T7.P1

@@ -1,11 +1,6 @@
-# test/unit/DeploymentCache.test.ts — Test Report
+# DeploymentCache.test.ts
 
-> **Test file:** [test/unit/DeploymentCache.test.ts](../../../../../../test/unit/DeploymentCache.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/DeploymentCache.test.ts](../../../../../../test/unit/DeploymentCache.test.ts)
 
 ## Overview
 
@@ -22,16 +17,9 @@ counts, and the marker file's on-disk content. This is harness-only code with no
 source report under `docs/spec/implementation/source/`, so there is no Exercises target and
 no assignable test ID pool; protocol behavior is entirely out of scope.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                        | Covers |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`resolveOrDeployShared (component) > deploys once and serves every later caller from the marker`](../../../../../../test/unit/DeploymentCache.test.ts#L15) (line 15)                   | —      |
-| [`resolveOrDeployShared (component) > gives concurrent first callers a usable value each, then caches for the rest`](../../../../../../test/unit/DeploymentCache.test.ts#L40) (line 40) | —      |
-| [`resolveOrDeployShared (component) > redeploys when the stored value no longer validates`](../../../../../../test/unit/DeploymentCache.test.ts#L75) (line 75)                          | —      |
-| [`resolveOrDeployShared (component) > deploys directly when no cache dir is configured`](../../../../../../test/unit/DeploymentCache.test.ts#L100) (line 100)                           | —      |
+- `deploys once and serves every later caller from the marker`: none
+- `gives concurrent first callers a usable value each, then caches for the rest`: none
+- `redeploys when the stored value no longer validates`: none
+- `deploys directly when no cache dir is configured`: none
