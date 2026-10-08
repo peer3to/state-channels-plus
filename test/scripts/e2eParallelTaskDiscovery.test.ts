@@ -10,7 +10,11 @@ const { discoverTasks } =
             testDir: string,
             grep?: string,
             e2eDir?: string,
-            testPattern?: string
+            testPattern?: string,
+            options?: {
+                includeParallelScript?: boolean;
+                includeBrowser?: boolean;
+            }
         ) => {
             files: string[];
             tasks: Array<{
@@ -27,6 +31,81 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/taskWire.js");
 
 describe("parallel Mocha task discovery", function () {
+    it("reuses the discovery inventory for pruning and refreshes changed source", function () {
+        const {
+            readMochaTestInventory
+        } = require("../../scripts/e2e-parallel/shared/taskDiscovery.js");
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "discovery-inventory-")
+        );
+        const file = path.join(root, "cases.test.ts");
+        try {
+            fs.writeFileSync(
+                file,
+                'it("active", () => {}); it.skip("inactive", () => {});'
+            );
+            discoverTasks(root);
+            const first = readMochaTestInventory(file);
+            expect(readMochaTestInventory(file)).to.equal(first);
+            expect(
+                first.all.tests.map(
+                    (test: { fullTitle: string }) => test.fullTitle
+                )
+            ).to.deep.equal(["active", "inactive"]);
+            fs.writeFileSync(file, 'it("replacement", () => {});');
+            const next = readMochaTestInventory(file);
+            expect(next).not.to.equal(first);
+            expect(
+                next.all.tests.map(
+                    (test: { fullTitle: string }) => test.fullTitle
+                )
+            ).to.deep.equal(["replacement"]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("excludes optional runner and browser cases unless enabled", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "optional-tests-"));
+        try {
+            fs.writeFileSync(
+                path.join(root, "ordinary.test.ts"),
+                'it("ordinary", () => {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "e2eParallelExample.test.ts"),
+                'it("runner", () => {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "browser.test.ts"),
+                '// @distributed-requires: browser\nit("browser", () => {});'
+            );
+            const discover = (
+                includeParallelScript: boolean,
+                includeBrowser: boolean
+            ) =>
+                discoverTasks(root, undefined, undefined, undefined, {
+                    includeParallelScript,
+                    includeBrowser
+                })
+                    .tasks.map((task) => task.fullTitle)
+                    .sort();
+            expect(discover(false, false)).to.deep.equal(["ordinary"]);
+            expect(discover(true, false)).to.deep.equal(["ordinary", "runner"]);
+            expect(discover(false, true)).to.deep.equal([
+                "browser",
+                "ordinary"
+            ]);
+            expect(discover(true, true)).to.deep.equal([
+                "browser",
+                "ordinary",
+                "runner"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("round-trips task paths under the project and rejects escapes", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-wire-"));
         try {

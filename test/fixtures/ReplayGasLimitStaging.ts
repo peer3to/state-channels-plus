@@ -6,6 +6,7 @@ import type {
     RecordedReplayGasRead
 } from "./customRpc/harnessControl/services/stub/StubService";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import type { ForkId } from "@/types/types";
 import { Codec, Type, hash, sleep } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
@@ -17,14 +18,15 @@ export type EstimateScale = { numerator: number; denominator: number };
 /** Run `dispute()` on a peer's host for the active fork. */
 export async function disputeOnHost(
     h: MathPeerTestHarness,
-    peerIndex: number
+    peerIndex: number,
+    forkId: ForkId = h.activeForkId!
 ): Promise<void> {
     await h.execOnHost(
         h.getPeer(peerIndex),
         async (sm, args) => {
             await sm.disputeManager.dispute(args.forkId);
         },
-        { forkId: h.activeForkId! },
+        { forkId },
         { timeoutMs: h.event.hostExecTimeoutMs() }
     );
 }

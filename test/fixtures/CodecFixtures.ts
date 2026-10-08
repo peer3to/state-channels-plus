@@ -83,8 +83,7 @@ export const codecValues = {
     balance: () => ({ amount: 43n, data: factory.hexString(5) }),
     signedBlock: () => factory.signedBlock(),
     stateProof: () => ({
-        milestones: [{ blockConfirmations: [factory.blockConfirmation()] }],
-        signedBlocks: [factory.signedBlock()]
+        milestones: [{ blockConfirmations: [factory.blockConfirmation()] }]
     }),
     syncPayload: () => ({
         disputeWindows: [
@@ -136,7 +135,14 @@ export const codecValues = {
         latestStateMachineState: factory.hexString(4),
         inboundMessageBlocks: [factory.messageBlock()]
     }),
-    disputeInvalidStateProof: () => ({ auditingData: auditingData() }),
+    disputeInvalidStateProof: () => ({
+        milestoneIndex: 2n,
+        hasBlockIndex: true,
+        blockIndex: 1n,
+        auditingData: auditingData(),
+        previousStateSnapshot: snapshot(),
+        resultingStateSnapshot: snapshot()
+    }),
     disputeInvalidBalanceInvariantProof: () => ({
         latestStateSnapshot: snapshot(),
         latestStateMachineState: factory.hexString(4)
@@ -170,14 +176,14 @@ export const codecValues = {
             participant: factory.randomAddress(),
             encodedProof: factory.hexString(4)
         },
-        blockIndexInUnfinalizedPartOfStateProof: 2n
+        blockIndex: 2n
     }),
     invalidDisputeReasonProof: () => ({ latestStateSnapshot: snapshot() }),
     disputeInvalidBlockStructureProof: () => ({
-        blockIndexInUnfinalizedPartOfStateProof: 2n
+        blockIndex: 2n
     }),
     disputeBlockAuthorNotParticipantProof: () => ({
-        blockIndexInUnfinalizedPartOfStateProof: 2n,
+        blockIndex: 2n,
         previousBlock: factory.signedBlock(),
         previousStateSnapshot: snapshot(),
         resultingStateSnapshot: snapshot()

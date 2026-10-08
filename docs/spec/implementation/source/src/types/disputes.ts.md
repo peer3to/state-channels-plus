@@ -23,6 +23,8 @@ Client-side dispute-domain types (windows, verification records, reduction opera
 
 ## Key design decisions
 
+StateProofEthersType encodes milestones only. Per-step, below-anchor, timeout-superseded and final-conflict tuples match Solidity field order. ProofWalkInput carries the common walk input, while block-specific tuples carry original last-milestone blockIndex. These schemas add no independent validation. See [disputes.ts](../../../../../../src/types/disputes.ts#L22).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

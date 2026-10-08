@@ -90,6 +90,7 @@ export default class SnapshotAssemblyService {
             await this.createStateSnapshot(
                 hash(stateAfterInbound),
                 coordinates,
+                previousStateSnapshot,
                 timestamp,
                 outboundMessages,
                 inboundMessageBlocks,
@@ -147,6 +148,7 @@ export default class SnapshotAssemblyService {
     private async createStateSnapshot(
         stateMachineStateHash: Hash,
         coordinates: BlockCoordinates,
+        previousStateSnapshot: StateSnapshot,
         timestamp: Timestamp,
         outboundMessages: MessageStruct[],
         inboundMessageBlocks: MessageBlockStruct[],
@@ -155,8 +157,6 @@ export default class SnapshotAssemblyService {
         stateSnapshot: StateSnapshot;
         outboundMessageBlock?: MessageBlockStruct;
     }> {
-        const previousStateSnapshot =
-            this.getPreviousStateSnapshotOrThrow(coordinates);
         const previousSnapshotData = previousStateSnapshot.snapshotData;
         let latestInboundMessageBlockHash =
             previousSnapshotData.latestInboundMessageBlockHash;

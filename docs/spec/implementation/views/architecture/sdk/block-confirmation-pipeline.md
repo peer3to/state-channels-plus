@@ -53,8 +53,8 @@ directly:
    result disconnects and blacklists the sending peer. `senderAddress` feeds
    source attribution (§4).
 2. **Block-calldata chain events.**
-   [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L8) →
-   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L107) →
+   [`StateChannelEventListener`](../../../../../../src/StateChannelEventListener.ts#L17) →
+   [`EventSyncService.scheduleLog`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L96) →
    [`EventHandler.onBlockCalldataPosted`](../../../../../../src/eventHandlers/EventHandler.ts#L290):
    stores the calldata record (before the first await, so recovery re-reads
    observe it), mirrors the event into the `LocalDiamond`, fires
@@ -294,7 +294,7 @@ returns a `BlockValidationResult`; §9 gives the per-strategy actions.
 | 5   | Fork not disputed     | only when `strategy.enforcesLiveForkAndOrderingGates`                                                                                                                                                                                                                                                                                   | `blockForkIsDisputed`                                                                                                     |
 | 6   | Not in the future     | `height ≤ getNextBlockHeight(forkId)`; gated as #5                                                                                                                                                                                                                                                                                      | `blockIsNotNextAndIsInTheFuture`                                                                                          |
 | 7   | Linked                | height 0: `previousBlockHash == genesisSnapshot.hash`; else `previousBlockHash == storedBlock(height−1).hash`                                                                                                                                                                                                                           | `wrongGenesisDetected` (h=0) / `blockIsNotLinkedAndIsNotFirstBlock`                                                       |
-| 8   | Author is next leader | `strategy.prepareStateMachineForLeaderCheck` (live: no-op, VM already at predecessor; dispute replay: load previous snapshot's state first), then `getNextToWrite() == block.author`                                                                                                                                                    | `invalidStateTransitionDetected`                                                                                          |
+| 8   | Author is next leader | Ingest positions the VM at the explicit replay predecessor when supplied; validation then checks `getNextToWrite() == block.author`                                                                                                                                                                                                     | `invalidStateTransitionDetected`                                                                                          |
 | 9   | Time logic            | §6.1                                                                                                                                                                                                                                                                                                                                    | `objectiveInvalidTimestampDetected` / `subjectiveInvalidTimestampDetected`                                                |
 
 ### 6.1 Time validation
@@ -416,17 +416,13 @@ order:
    its escalation logic belongs to the dispute pipeline
    ([dispute-pipeline.md](./dispute-pipeline.md) §3.1).
 
-**Agreement tracking.** [`AgreementManager`](../../../../../../src/agreementManager/AgreementManager.ts#L20)
-interprets the stored data: `didEveryoneSignBlock` checks the block's signer
-set against its participant union; `getStateProof` builds milestones at each
-participant-set change point plus the latest height — a milestone collects
-consecutive block confirmations until the threshold set (previous milestone's
-participants ∪ the lowest block's resulting participants) is covered by the
-accumulated signers, which is exactly the **virtual-vote** rule: a signature on
-a later block counts for every ancestor
-([../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md)). When no milestone
-can be built, the proof falls back to the linked `signedBlocks` suffix from the
-last finality anchor.
+**Agreement tracking.** [AgreementManager](../../../source/src/agreementManager/AgreementManager.ts.md)
+constructs milestone-only proofs from the mirrored chain anchor. Intermediate membership hops
+use minimal forward support; backward search chooses the latest final point, preserving a separate
+overlapping last milestone when needed. The historical union includes previous/resulting members
+and every consumed JOIN. The last milestone holds the tail, including a genesis-linked unfinalized
+zero when no newer final point is available. Shared tiers and retained persistence belong to the
+same owner. Dispute replay carries an explicit predecessor and does not advance live state.
 
 ## 9. Validation strategies and result semantics
 

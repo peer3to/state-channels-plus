@@ -1,4 +1,22 @@
 const logging = require("./logging");
+const { MEASUREMENT_REASONS } = require("./constants");
+const { defaultCost } = require("./costCache");
+const { costBudgetShortfall } = require("./scheduling");
+const { requiresBrowser } = require("./taskRunners");
+
+// Browser-only tasks first, then longest predicted, then discovery order.
+function rankByCost(entries) {
+    const tier = (entry) => (requiresBrowser(entry.task) ? 0 : 1);
+    return entries.sort((a, b) => {
+        const durationOrder = b.task.cost.durationMs - a.task.cost.durationMs;
+        return tier(a) - tier(b) || durationOrder || a.seq - b.seq;
+    });
+}
+
+// No budget: the worker runs nothing, or is not cost-scheduled.
+function fitsCostBudget(task, costBudget) {
+    return !costBudget || costBudgetShortfall(task.cost, costBudget) === null;
+}
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -6,6 +24,53 @@ function reduceAttemptOutput(stdout = "", stderr = "") {
         oomCount: logging.countOomEvents(combined),
         starveCount: logging.countStarvation(combined),
         timing: logging.parseTimings(combined)
+    };
+}
+
+function resourceMeasurements(metadata) {
+    const fields = ["peakRssGb", "avgCores"];
+    const supplied = fields.filter((field) => Object.hasOwn(metadata, field));
+    const reason = metadata.measurementReason;
+    if (
+        (supplied.length && supplied.length !== fields.length) ||
+        supplied.some(
+            (field) =>
+                metadata[field] !== null &&
+                (!Number.isFinite(metadata[field]) || metadata[field] < 0)
+        ) ||
+        (reason !== undefined &&
+            reason !== null &&
+            !MEASUREMENT_REASONS.includes(reason))
+    ) {
+        throw new Error("Worker returned invalid resource measurements");
+    }
+    if (!supplied.length)
+        return {
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "legacy-measurements-unavailable"
+        };
+    return {
+        peakRssGb: metadata.peakRssGb,
+        avgCores: metadata.avgCores,
+        measurementReason:
+            reason ??
+            (fields.some((field) => metadata[field] === null)
+                ? "process-sampling-unavailable"
+                : null)
+    };
+}
+
+/**
+ * One attempt with its measurements normalized: a worker attempt carries them in
+ * `reduced`, a local one beside its raw output, whose event-loop peak exists
+ * only in the parsed timing.
+ */
+function costSample(attempt, parsed) {
+    return {
+        ...attempt,
+        ...resourceMeasurements(attempt.reduced ?? attempt),
+        peakElMs: parsed?.timing?.maxEventLoopDelayMs ?? attempt.peakElMs ?? 0
     };
 }
 
@@ -40,7 +105,7 @@ function validateReducedAttempt(reduced) {
     ) {
         throw new Error("Worker returned invalid attempt metadata");
     }
-    return reduced;
+    return { ...reduced, ...resourceMeasurements(reduced) };
 }
 
 function reduceAttempt(task, attempt) {
@@ -48,6 +113,10 @@ function reduceAttempt(task, attempt) {
     const { oomCount, starveCount, timing } = attempt.reduced
         ? validateReducedAttempt(attempt.reduced)
         : reduceAttemptOutput(attempt.stdout, attempt.stderr);
+    const usage = resourceMeasurements(attempt.reduced ?? attempt);
+    task.peakRssGb = usage.peakRssGb;
+    task.avgCores = usage.avgCores;
+    task.measurementReason = usage.measurementReason;
     task.oomCount = (task.oomCount || 0) + oomCount;
     task.starveCount = (task.starveCount || 0) + starveCount;
     task.startupMs = (task.startupMs || 0) + timing.startupMs;
@@ -89,9 +158,17 @@ class TaskCoordinator {
         this.unservableSince = null;
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
+        this.schedule = options.schedule ?? "fifo";
+        this.now = options.now ?? Date.now;
+        this.costCache = options.costCache;
         this.speculative = options.speculative === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
+        // Called when a cost worker is refused a task its budget cannot start.
+        this.onBudgetHold = options.onBudgetHold || (() => {});
+        // Worker id -> requests refused because no queued task fit its cost
+        // budget, by the reason the best-ranked task did not fit.
+        this.budgetHolds = new Map();
     }
 
     /**
@@ -105,15 +182,53 @@ class TaskCoordinator {
         else this.workers.set(workerId, { idle: false, canRun });
     }
 
-    requestTask(workerId) {
+    // lean: no capacity held for a large queued task; if run-metrics assignedAtMs shows the largest tests (starved retries included) assigned last, age the refused head: past its predicted duration, stop backfilling busy workers until one fits it
+    /**
+     * Under cost, a worker that runs something sends its free `costBudget`
+     * and is handed only a task that fits it, or nothing while none queued
+     * does. A task that fits no busy worker waits for one with that much free,
+     * or for an idle one, which takes the head of the queue whatever its cost.
+     */
+    requestTask(workerId, { costBudget } = {}) {
         this.registerWorker(workerId);
         const worker = this.workers.get(workerId);
-        const index = this.queue.findIndex((entry) =>
-            worker.canRun(entry.task)
-        );
+        let index;
+        if (this.schedule === "cost") {
+            // A queued task's cost changes only when its source file gains a
+            // sample, so re-resolve on the cache's revision, not per request.
+            for (const entry of this.queue) {
+                const revision = this.costCache?.revision(entry.task) ?? 0;
+                if (entry.task.cost && entry.costRevision === revision)
+                    continue;
+                entry.task.cost =
+                    this.costCache?.resolve(entry.task) ??
+                    entry.task.cost ??
+                    defaultCost();
+                entry.costRevision = revision;
+            }
+            const eligible = this.queue.filter((entry) =>
+                worker.canRun(entry.task)
+            );
+            const fitting = eligible.filter((entry) =>
+                fitsCostBudget(entry.task, costBudget)
+            );
+            if (eligible.length && !fitting.length) {
+                const blocked = rankByCost(eligible)[0];
+                this.recordBudgetHold(
+                    workerId,
+                    blocked,
+                    costBudgetShortfall(blocked.task.cost, costBudget)
+                );
+                return null;
+            }
+            const candidates = rankByCost(fitting);
+            index = candidates.length ? this.queue.indexOf(candidates[0]) : -1;
+        } else {
+            index = this.queue.findIndex((entry) => worker.canRun(entry.task));
+        }
         const queued =
             index === -1
-                ? this.speculativeTask(workerId)
+                ? this.speculativeTask(workerId, costBudget)
                 : this.queue.splice(index, 1)[0];
         if (!queued) {
             worker.idle = true;
@@ -124,15 +239,42 @@ class TaskCoordinator {
             ...queued,
             taskId: String(queued.seq),
             attemptId: String(this.nextAttemptId++),
+            assignedAt: this.now(),
             workerId
         };
+        // When the task first got a worker; run metrics report it.
+        queued.task.firstAssignedAt ??= assignment.assignedAt;
         this.replications.add(`${assignment.taskId}:${workerId}`);
         this.attemptedTaskIds.add(assignment.taskId);
         this.assignments.set(assignment.attemptId, assignment);
         return assignment;
     }
 
-    speculativeTask(workerId) {
+    recordBudgetHold(workerId, entry, reason) {
+        const holds = this.budgetHolds.get(workerId) ?? { cpu: 0, memory: 0 };
+        holds[reason]++;
+        this.budgetHolds.set(workerId, holds);
+        this.onBudgetHold({ workerId, seq: entry.seq, reason });
+    }
+
+    /**
+     * A worker's reported statistics with the coordinator's budget refusals
+     * added to its hold counts: both held a test back.
+     */
+    withBudgetHolds(workerId, stats) {
+        const holds = this.budgetHolds.get(workerId);
+        if (!holds || !stats?.holdCounts) return stats;
+        return {
+            ...stats,
+            holdCounts: {
+                ...stats.holdCounts,
+                cpu: stats.holdCounts.cpu + holds.cpu,
+                memory: stats.holdCounts.memory + holds.memory
+            }
+        };
+    }
+
+    speculativeTask(workerId, costBudget) {
         if (!this.speculative) return null;
         const active = [...this.assignments.values()];
         const workerTaskIds = new Set(
@@ -141,21 +283,46 @@ class TaskCoordinator {
                 .map((assignment) => assignment.taskId)
         );
         const canRun = this.workers.get(workerId)?.canRun || (() => true);
-        const candidate = active
-            .filter(
-                (assignment) =>
-                    canRun(assignment.task) &&
-                    !this.completedTaskIds.has(assignment.taskId) &&
-                    !workerTaskIds.has(assignment.taskId) &&
-                    !this.replications.has(`${assignment.taskId}:${workerId}`)
-            )
-            .sort((a, b) => b.seq - a.seq)[0];
+        const now = this.now();
+        const eligible = active.filter(
+            (assignment) =>
+                canRun(assignment.task) &&
+                fitsCostBudget(assignment.task, costBudget) &&
+                !this.completedTaskIds.has(assignment.taskId) &&
+                !workerTaskIds.has(assignment.taskId) &&
+                !this.replications.has(`${assignment.taskId}:${workerId}`)
+        );
+        const candidate = eligible.sort((a, b) => {
+            if (this.schedule !== "cost") return b.seq - a.seq;
+            const remainingA = a.task.cost.durationMs - (now - a.assignedAt);
+            const remainingB = b.task.cost.durationMs - (now - b.assignedAt);
+            const remainingOrder = remainingB - remainingA;
+            return remainingOrder || a.seq - b.seq;
+        })[0];
         return candidate
             ? { task: candidate.task, seq: candidate.seq, speculative: true }
             : null;
     }
 
     completeAttempt(workerId, attempt) {
+        const assignment =
+            this.assignments.get(String(attempt.attemptId)) ??
+            this.settledSpeculativeAssignments.get(String(attempt.attemptId));
+        const result = this.completeAttemptResult(workerId, attempt);
+        if (result.accepted && assignment) {
+            this.costCache?.record(
+                assignment.task,
+                costSample(attempt, result.parsed),
+                {
+                    disposition: result.disposition,
+                    starveCount: result.parsed?.starveCount ?? 0
+                }
+            );
+        }
+        return result;
+    }
+
+    completeAttemptResult(workerId, attempt) {
         const assignment = this.assignments.get(String(attempt.attemptId));
         if (!assignment || assignment.workerId !== workerId) {
             const settled = this.settledSpeculativeAssignments.get(
@@ -174,11 +341,12 @@ class TaskCoordinator {
         this.sumDurationMs += attempt.durationMs || 0;
         const parsed = reduceAttempt(assignment.task, attempt);
         // which worker each starved attempt ran on, in attempt order
-        if (parsed.starveCount > 0)
-            assignment.task.starvedOn = [
-                ...(assignment.task.starvedOn || []),
-                workerId
+        if (parsed.starveCount > 0) {
+            assignment.task.starvations = [
+                ...(assignment.task.starvations || []),
+                { server: workerId, at: new Date().toISOString() }
             ];
+        }
 
         if (attempt.cancelled) {
             attempt.failureReason = attempt.signal
@@ -358,6 +526,7 @@ class TaskCoordinator {
     }
 
     finalize(assignment, attempt, code, parsed) {
+        assignment.task.finalAttempt = costSample(attempt, parsed);
         this.completedTaskIds.add(assignment.taskId);
         for (const [attemptId, other] of this.assignments) {
             if (other.taskId === assignment.taskId) {
@@ -401,6 +570,7 @@ class TaskCoordinator {
         if (parsed.starveCount > 0) {
             return { accepted: false, reason: "redundant-starvation" };
         }
+        assignment.task.finalAttempt = costSample(attempt, parsed);
         this.failedTaskIds.add(assignment.taskId);
         this.failed.push(assignment.task);
         const result = {

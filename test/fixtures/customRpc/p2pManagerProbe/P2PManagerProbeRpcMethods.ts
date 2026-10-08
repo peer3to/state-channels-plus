@@ -36,7 +36,6 @@ import type {
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
-    HandshakeFailureProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
     ProfileDisconnectLifecycleProbe,
@@ -410,10 +409,14 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeHolepunchRejoinAfterLeave(duplicate);
     }
 
-    public probeHandshakeParticipantReadFailure(
-        address: string
-    ): Promise<HandshakeFailureProbe> {
-        return this.service.probeHandshakeParticipantReadFailure(address);
+    public async closeChainProvider(): Promise<boolean> {
+        await this.service.closeChainProvider();
+        return true;
+    }
+
+    public abortOnNextHandshake(): boolean {
+        this.service.abortOnNextHandshake();
+        return true;
     }
 
     public probeMissingHandshake(address: string): Promise<LateHandshakeProbe> {

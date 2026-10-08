@@ -6,6 +6,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {TimeoutCalldataPosted} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
+import {_getLatestBlock} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
 
 /// A committed timeout dispute on a channel's genesis fork, and the calldata the blamed
 /// participant posted for the block it was blamed for. Everything goes through the diamond's
@@ -70,9 +71,8 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
             _stageTimeoutCalldataPostedAfter(diamond, channelId, timedOutPk, disputerPk, noBlocks, base, transitionData);
     }
 
-    /// `_stageTimeoutCalldataPostedOn` with a dispute whose state proof is `stateProof`
-    /// (signed blocks only). The blamed height, and the posted block's height, is the next one
-    /// after those blocks.
+    /// `_stageTimeoutCalldataPostedOn` with a dispute whose state proof is `stateProof`. The
+    /// blamed height, and the posted block's height, is the next one after its latest block.
     function _stageTimeoutCalldataPostedAfter(
         StateChannelManagerInterface diamond,
         bytes32 channelId,
@@ -86,7 +86,7 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         postedBlock.transaction.header.channelId = channelId;
         postedBlock.transaction.header.forkId = base.latestStateSnapshot.forkId;
         postedBlock.transaction.header.participant = vm.addr(timedOutPk);
-        postedBlock.transaction.header.transactionCnt = stateProof.signedBlocks.length;
+        postedBlock.transaction.header.transactionCnt = _heightAfter(stateProof);
         postedBlock.transaction.header.timestamp = block.timestamp;
         postedBlock.transaction.body.data = transitionData;
         postedBlock.previousBlockHash = base.previousBlockHash;
@@ -133,7 +133,7 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
     }
 
     /// A dispute on `forkId` with `stateProof`, blaming `timedOut` for the height after the
-    /// proof's signed blocks, signed and uploaded by the disputer. Nothing is posted for that
+    /// proof's latest block, signed and uploaded by the disputer. Nothing is posted for that
     /// height yet, so the upload's race check passes.
     function _uploadTimeoutDispute(
         StateChannelManagerInterface diamond,
@@ -151,7 +151,7 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         dispute.input.lastInboundMessageBlockHeight = inboundHead.latestInboundMessageBlockHeight;
         dispute.input.timeout.participant = timedOut;
         dispute.input.stateProof = stateProof;
-        dispute.input.timeout.blockHeight = stateProof.signedBlocks.length;
+        dispute.input.timeout.blockHeight = _heightAfter(stateProof);
         dispute.input.timeout.minTimeStamp = block.timestamp;
 
         DisputeConfirmation memory confirmation;
@@ -159,6 +159,12 @@ abstract contract TimeoutCalldataPostedStaging is DiamondHarness {
         confirmation.signedDispute.signature = _sign(disputerPk, confirmation.signedDispute.encodedDispute);
         vm.prank(dispute.input.disputer);
         diamond.uploadDispute(confirmation);
+    }
+
+    /// The height after `stateProof`'s latest block (the last block of its last milestone); 0 for the empty proof.
+    function _heightAfter(StateProof memory stateProof) private pure returns (uint256) {
+        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(stateProof);
+        return hasBlock ? latestBlock.transaction.header.transactionCnt + 1 : 0;
     }
 
     /// The snapshot the proof recomputes after a fully funded replay of `transaction` on

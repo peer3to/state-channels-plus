@@ -534,15 +534,16 @@ contract FraudProofFacetTest is TimeoutCalldataPostedStaging {
         PostedBlockBase memory genesisBase = _openHonestChannel();
         (SignedBlock memory firstBlock,) = _honestBlock(AUTHOR_PK, genesisBase, 0);
         StateProof memory stateProof;
-        stateProof.signedBlocks = new SignedBlock[](1);
-        stateProof.signedBlocks[0] = firstBlock;
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock = firstBlock;
         dispute = _uploadTimeoutDispute(
             diamond, HONEST_CHANNEL_ID, genesisBase.latestStateSnapshot.forkId, stateProof, vm.addr(PEER_PK), PEER_PK
         );
 
         DisputeInvalidBlockInStateProofApplyFraudProof memory nested;
         nested.fraudProof = _invalidTransitionProof(firstBlock, "", forgedSnapshot, forgedState);
-        nested.blockIndexInUnfinalizedPartOfStateProof = 0;
+        nested.blockIndex = 0;
         proofs = new DisputeFraudProof[](1);
         proofs[0] = DisputeFraudProof({
             proofType: DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,

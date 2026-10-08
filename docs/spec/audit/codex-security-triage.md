@@ -6,7 +6,7 @@
 
 ## Result and handoff
 
-**Of the 12 findings, 7 concern the protocol and are assessed here: 5 confirmed and 2 not actionable because their exact paths are fixed.** Among the five confirmed findings, the original scan ratings are four high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
 
 The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
 
@@ -25,19 +25,19 @@ The applicable SECURITY.md resolver returned no policy for the affected director
 | ------------------- | -------------- | ----------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `milestone-skip`    | not_actionable | high              | —          | [Skipped milestones allow unsigned channel snapshot replacement](#milestone-skip)                                                                                 |
 | `zero-verdict`      | confirmed      | high              | 1          | [A zero proof target lets outsiders kill honest disputes](#zero-verdict) · [`FIND-SECURITY-1-6SAJ4E`](open-findings.md#find-security-1-6saj4e)                    |
-| `unbound-snapshot`  | not_actionable | high              | —          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
+| `unbound-snapshot`  | fixed          | high              | —          | [Unlinked previous-state input can falsely slash an honest signer](#unbound-snapshot) · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v)       |
 | `pruned-inbound`    | confirmed      | high              | 3          | [Pruned genuine inbound history can falsely slash honest authors](#pruned-inbound) · [`FIND-SECURITY-3-REDPJW`](open-findings.md#find-security-3-redpjw)          |
-| `open-deadline`     | confirmed      | medium            | 6          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
-| `sync-inbound`      | confirmed      | high              | 5          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
+| `open-deadline`     | fixed          | medium            | —          | [Expired opening signatures still authorize channel creation](#open-deadline) · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz)               |
+| `sync-inbound`      | fixed          | high              | —          | [Peer sync can make an honest node sign fabricated inbound data](#sync-inbound) · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)             |
 | `sync-genesis-time` | confirmed      | high              | 4          | [Peer sync can replace genesis time and induce a slashable first block](#sync-genesis-time) · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj) |
 
 Ranks are unique within the confirmed queue and follow the class that each item's Boundary paragraph names:
 
-- **Unauthenticated on-chain paths (ranks 1 and 3):** any chain account can use them.
-- **Peer-assisted signing paths (ranks 4–5):** the attacker must be the sync responder that the victim selected.
-- **On-chain path that needs participant-issued credentials (rank 6):** only a counterparty that holds every participant's opening signatures can use it, and its original severity is medium.
+- **Unauthenticated on-chain paths (ranks 1 and 3; rank 2 is fixed):** any chain account can use them.
+- **Peer-assisted signing paths (rank 4; rank 5 is fixed):** the attacker must be the sync responder that the victim selected.
+- **On-chain path that needs participant-issued credentials (rank 6, now fixed):** only a counterparty that holds every participant's opening signatures could use it, and its original severity is medium.
 
-The fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
+Fixed items have no rank. All 7 protocol inputs are retained here, including the fixed claims.
 
 <a id="milestone-skip"></a>
 
@@ -49,7 +49,7 @@ Source identity: `csf_8a972993ab889a6f4a696895`; rule `milestone-skip`; occurren
 
 **Current evidence and path.** The exact all-skipped replacement is fixed. StateProofFacet now requires the final claimed snapshot to equal the trusted threshold. updateStateSnapshotSameFork separately requires a newer snapshot, so the old bypass cannot satisfy both checks. Empty proofs cannot bypass the nonempty-snapshot and matching-length checks.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol:404–411](../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L404-L411); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:54–75](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L75); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–192](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L192); [test/unit/SpectateService.test.ts:636–697](../../../test/unit/SpectateService.test.ts#L636-L697).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol:404–411](../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L404-L411); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:54–75](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L75); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–192](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L192); [test/unit/SpectateService.test.ts:631–691](../../../test/unit/SpectateService.test.ts#L631-L691).
 
 **Boundary:** any chain account, with no credential, through the routed `updateStateSnapshotSameFork` entrypoint. Ranking class: unauthenticated on-chain path; it has no rank because the path is fixed.
 
@@ -90,7 +90,7 @@ Planned permutation, with no mapped test yet: [`REQ-DIS-3-C4KYSF.T1.P22`](../spe
 
 ## 3. Unlinked previous-state input can falsely slash an honest signer
 
-**Verdict:** `not_actionable` · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-2-J3J60V`](open-findings.md#find-security-2-j3j60v).
 
 Source identity: `csf_dc2174473e0ce47f18083689`; rule `unbound-snapshot`; occurrence `occ_a309c1b71540c059223ff617`.
 
@@ -141,79 +141,92 @@ Planned permutation, with no mapped test yet: [`INV-ENFFP-1-BGVZN4.T1.P14`](../s
 
 ## 5. Expired opening signatures still authorize channel creation
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** medium · **confirmed rank:** 6 · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** medium · [`FIND-SECURITY-4-02DYWZ`](open-findings.md#find-security-4-02dywz).
+
+**Fix status:** resolved in tree; engineer review pending.
 
 Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrence `occ_3ddb6fa24937a6e8e0ab73a6`.
 
-**Current evidence and path.** The proxy opening path is unchanged: it verifies participant signatures and passes deadlineTimestamp to the consumer deposit path without checking expiry. The SDK clears the attempt after the signed window. A negotiating peer can retain signatures and later open using the bundled consumer behavior.
+**Evidence and path.** The proxy opening path verified participant signatures and passed deadlineTimestamp to the consumer deposit path without checking expiry. The SDK cleared the attempt after the signed window. A negotiating peer could retain signatures and later open using the bundled consumer behavior.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:218–238](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L218-L238); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–718](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L718); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–719](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L719); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
 
-**Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials.
+**Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials; it has no rank because the path is fixed.
 
-**Counterevidence and limits.** An application consumer may enforce the deadline itself. Bundled asset methods are placeholders, so this report claims expired channel authorization, not asset theft.
+**Counterevidence and limits.** An application consumer may enforce the deadline itself. Bundled asset methods are placeholders, so this report claimed expired channel authorization, not asset theft.
 
-**Proof gaps.** Static only; check the real deployed consumer before assigning asset impact.
+**Proof gaps.** None left for the claim: the direct after-deadline test and the E2E retained-signature test below fail without the fix. The real deployed consumer's asset impact was never assessed and is no longer reachable through a late open.
 
-**Fix handoff (proposed, not implemented):** Enforce `OpenChannel.deadlineTimestamp` in `open` before deposits or state changes, consistently with the direct join deadline check. Preserve the preconditions and limits above. Required regression work:
+**Fix (implemented):** the engineer decided on 2026-10-04 that `open` rejects expired terms on chain ([`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../specification/open-questions.md#oq-spec-open-1-12rh7a), now resolved). `open` requires `deadlineTimestamp >= block.timestamp` right after the zero-id and already-open checks, before the balance reset, the signature check and any deposit, and otherwise reverts with the new `RaceConditionOpenChannelExpired(deadline, currentTimestamp)`. The boundary is the join facet's: valid up to and including the deadline. The proxy stays under EIP-170. The SDK decodes the new error from the generated error ABI; the open path classifies only `RaceConditionChannelAlreadyOpen`, so no SDK handling changed. Regression work:
 
-- Test direct open before, at and after deadline.
-- Submit retained opening signatures after SDK expiry and verify the contract rejects them.
+- Direct open before, at and after the deadline.
+- Retained opening signatures submitted after SDK expiry are rejected by the contract.
 
-No requirement states that `open` must reject expired terms, so these cases have no planned permutation yet. [`OQ-SPEC-OPEN-1-12RH7A` (On-chain enforcement of the opening deadline)](../specification/open-questions.md#oq-spec-open-1-12rh7a) asks the engineer for that rule. The requirement and its permutations follow the decision.
+Follow-on hardening: with `open` now reverting after the deadline, a lower peer could propose a deadline a few seconds ahead and make the higher peer pay for a submission certain to revert, with no strike. The engineer decided on 2026-10-05 that the higher peer rejects a deadline less than 30 seconds after its current time as an invalid deadline and excludes the proposer before signing or submitting ([`OQ-SPEC-OPEN-2-YQTTTB` (Minimum remaining window for an opening proposal)](../specification/open-questions.md#oq-spec-open-2-yqtttb), resolved). Mapped permutation: [`INV-NEG-1-6FW90P.T1.P11`](../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p.t1.p11) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)). The retained-signature E2E lowers that minimum on the higher peer for its one six-second proposal.
 
-**Owners:** [admission and funds](../specification/enforcement/admission-and-funds.md), [lifecycle](../specification/settlement/lifecycle.md), [proxy source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md). Keep the real consumer's deadline behavior explicit.
+An honest submission sent before the deadline can still be mined after it. `open` then reverts with `RaceConditionOpenChannelExpired`, and the ordinary failed-receipt path closes the peer with no strike and retries. Mapped permutation: [`REQ-NEG-4-ZQ0985.T1.P19`](../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985.t1.p19) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)).
+
+Mapped permutations: [`REQ-ENFADM-4-2NN96F.T1.P1`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1), [`REQ-ENFADM-4-2NN96F.T1.P2`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p2) and [`REQ-ENFADM-4-2NN96F.T1.P3`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3) ([proxy open test report](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)), and [`REQ-ENFADM-4-2NN96F.T1.P4`](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p4) ([lobby E2E report](../verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md)).
+
+**Owners:** [admission and funds](../specification/enforcement/admission-and-funds.md), [lifecycle](../specification/settlement/lifecycle.md), [proxy source report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md). A real consumer's own deadline behavior is no longer load-bearing for this path.
 
 <a id="sync-inbound"></a>
 
 ## 6. Peer sync can make an honest node sign fabricated inbound data
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 5 · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
+**Verdict:** `confirmed`, now fixed · **Confidence:** high · **Original severity:** high · [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx).
+
+**Fix status:** resolved, with one residual limit outside the inbound claim: [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf).
 
 Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence `occ_482d7e145268e00610d5142b`.
 
-**Current evidence and path.** The new linked-window check excludes unrelated windows and does not persist the already-adopted prefix. It still skips reduction-input validation for a chain-final window that starts at the current chain fork and has not yet been adopted. persistSyncPayload stores that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor can become the local inbound tip and be signed during block production.
+**Evidence and path.** The linked-window check excluded unrelated windows and did not persist the already-adopted prefix. It still skipped reduction-input validation for a chain-final window that started at the current chain fork and had not yet been adopted. persistSyncPayload stored that remaining window's inboundMessageBlocksAppliedInReduce unconditionally. A fabricated successor could become the local inbound tip and be signed during block production.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:241–329](../../../src/rpc/network/services/spectate/SpectateService.ts#L241-L329); [src/rpc/network/services/spectate/SpectateService.ts:488–501](../../../src/rpc/network/services/spectate/SpectateService.ts#L488-L501); [src/rpc/network/services/spectate/SpectateService.ts:967–978](../../../src/rpc/network/services/spectate/SpectateService.ts#L967-L978); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
+**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:266–391](../../../src/rpc/network/services/spectate/SpectateService.ts#L266-L391); [src/rpc/network/services/spectate/SpectateService.ts:555–579](../../../src/rpc/network/services/spectate/SpectateService.ts#L555-L579); [src/rpc/network/services/spectate/SpectateService.ts:1039–1056](../../../src/rpc/network/services/spectate/SpectateService.ts#L1039-L1056); [src/storage/MessageBlockStorage.ts:36–57](../../../src/storage/MessageBlockStorage.ts#L36-L57); [src/stateManager/block/BlockProductionService.ts:57–108](../../../src/stateManager/block/BlockProductionService.ts#L57-L108).
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
+**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint was crossed; the victim's node accepted and persisted the payload. Ranking class: peer-assisted signing path; it has no rank because the path is fixed.
 
-**Counterevidence and limits.** Already-adopted prefix windows are now omitted. Nonfinal windows execute reduction. The surviving attack needs a finalized-but-unadopted window, a lagging signing participant, and a fabricated successor that passes chain-shape/balance checks.
+**Counterevidence and limits.** Already-adopted prefix windows were omitted. Nonfinal windows executed reduction. The attack needed a finalized-but-unadopted window, a lagging signing participant, and a fabricated successor that passed chain-shape/balance checks. The first fix keyed the drop on the finality read alone, which left two interleavings open: a reduction landing on chain between the finality read and the window fetch, and a window that a concurrent sync had already reduced in the shared local EVM. In both, the local `reduceAndFinalize` returned early without checking the list, and the list was persisted. The current rule closes both. Residual limit, out of scope here: such a window still persists the responder's unchecked `disputeConfirmations` and `latestStateSnapshot`, tracked as [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf).
 
-**Proof gaps.** Static only; runtime regression must exercise the finalized-but-unadopted branch, not the now-excluded prefix.
+**Related lineage hole (fixed in the same change).** The local `reduceAndFinalize` picks its window from the first dispute's channel and fork and returns early, unchecked, when that window does not exist. A responder could serve an unreduced window whose disputes name a fork with no window; the call then committed nothing and reported false, and the sync advanced to the responder's claimed successor fork with no check. The damage was to fork lineage, not inbound storage. Sync now rejects the payload as a dispute window mismatch unless every dispute names this channel and the window's fork. A dispute naming another fork ([`INV-SYNC-1-XCQZ28.T1.P15`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p15)) and one naming the window's fork under another channel ([`INV-SYNC-1-XCQZ28.T1.P16`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p16)) are each rejected.
 
-**Fix handoff (proposed, not implemented):** Do not persist unused peer-provided reduction inputs from finalized windows. Reconstruct authoritative chain data or validate each object before it enters trusted inbound storage. Preserve the preconditions and limits above. Required regression work:
+**Proof gaps.** None left for the inbound claim: the unit regressions for both interleavings and for the chain-final window fail without the fix, and the E2E regressions show the synced participant signs a block without the injected successor. The residual limit above is unproven either way.
 
-- Change only a finalized window's ignored inbound list and assert no trusted head changes.
-- Verify a syncing participant never signs the injected successor.
+**Fix (implemented):** engineer decisions (2026-10-04, refined 2026-10-05): persist a window's `inboundMessageBlocksAppliedInReduce` only when this sync's own local `reduceAndFinalize` call executed the reduction, so it validated them. The signal is the call's own result: the local diamond emits `DisputeReducedResultCommitted` only when that call commits the reduction, and an early return for an already reduced window emits nothing. persistSyncPayload skips every reduction input of a window final on chain at the finality read (`chainFinalForkIds`), and stores an inbound list only for a window in this sync's `selfReducedForkIds`. So it stores no list for a window reduced on chain between that read and the window fetch, or for one a concurrent sync already reduced in the local EVM. The peer-provided list therefore never enters trusted inbound storage unchecked. The rejected alternative validated the list against the chain's inbound hash chain. The node still gets the genuine inbound blocks of such a window from the `InboundMessagesProcessed` chain events and the event-sync log recovery for missing inbound runs. Block production never walks below the snapshot's inbound head while inbound storage lags it. No contract changed. The regression work covered:
 
-Planned permutation, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11). It is a regression obligation, not evidence of a passing test. The fix change maps the exact test.
+- Changing only a finalized window's ignored inbound list leaves the trusted inbound head unchanged and stores none of the listed blocks.
+- The same holds when the reduction lands on chain after the finality read and before the window fetch.
+- A window a concurrent sync already reduced locally stores only that sync's genuine blocks, never the forged successor.
+- A syncing participant authors and signs a block on the reduced fork, never stores the injected successor, and its block does not carry it, both when its inbound chain event is replayed and when its subscribed log is lost and chain-log recovery delivers the genuine block. The lost-log case checks only the end state: the recovery can run before the sync.
+- A window this sync reduces itself with a fabricated successor in its list makes the local reduction revert, so the sync is rejected and nothing is stored.
+
+Mapped permutations: [`INV-SYNC-1-XCQZ28.T1.P11`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p11) and [`INV-SYNC-1-XCQZ28.T1.P14`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p14) ([E2E-Spectate report](../verification/tests/test/e2e/E2E-Spectate.test.ts.md)). The storage-only case, both interleavings, and the locally reduced positive case are component permutations in the [SpectateService unit report](../verification/tests/test/unit/SpectateService.test.ts.md).
 
 **Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The tip-promotion component also relates to [`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-nk2xbf); this report preserves the distinct end-to-end sync-to-signing claim.
 
 <a id="sync-genesis-time"></a>
 
-## 7. Peer sync can replace genesis time and induce a slashable first block
+## 7. Supplied genesis timestamp and downstream use
 
-**Verdict:** `confirmed` · **Confidence:** high · **Original severity:** high · **confirmed rank:** 4 · [`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
-
+**Current assessment:** open; impact requires recheck with the trusted-start walk.
+Original finding: confirmed, high severity, rank 4;
+[`FIND-SECURITY-6-884TAJ`](open-findings.md#find-security-6-884taj).
 Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occurrence `occ_0c51cce0dbb06ddacb658c01`.
 
-**Current evidence and path.** The new isSameForkRegression check does not close the timestamp-only case. UtilityFacet.isSnapshotNewer returns true for two different height-zero snapshots when the current one is genesis. Time-blind genesis validation and an empty milestone proof then pass; persistence stores the altered genesis. First-block production hashes that snapshot, while WrongGenesis compares the full on-chain genesis hash.
+The trusted walk now selects canonical final state. The prior `isSameForkRegression` helper is
+removed and cannot support a current exploit argument. The payload's supplied genesis snapshot
+is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1058).
+Trace every downstream consumer before deciding whether a timestamp-only mutation can affect
+first-block production or another trusted state path. This review does not establish full resolution.
 
-**Locations:** [src/rpc/network/services/spectate/SpectateService.ts:332–366](../../../src/rpc/network/services/spectate/SpectateService.ts#L332-L366); [src/rpc/network/services/spectate/SpectateService.ts:1079–1095](../../../src/rpc/network/services/spectate/SpectateService.ts#L1079-L1095); [contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol:268–284](../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L268-L284); [src/rpc/network/services/spectate/SpectateService.ts:979–988](../../../src/rpc/network/services/spectate/SpectateService.ts#L979-L988); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:296–301](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L296-L301).
+Remaining verification covers same-fork empty proofs before block zero and reduced-genesis
+canonical time, with the relevant stored snapshot and first-block commitment observed. If an
+unauthenticated timestamp can reach a trusted consumer, its binding to chain or reduction history
+still needs correction. No new behavior is selected here.
 
-**Boundary:** an authenticated peer that the victim selected as its sync responder, through the spectate sync payload. No Solidity entrypoint is crossed; the victim's node accepts and persists the payload. Ranking class: peer-assisted signing path.
-
-**Counterevidence and limits.** An advanced chain snapshot or already-stored block zero blocks the simple case. The victim must sync before its first block, with otherwise correct genesis data. The old report's multicall explanation is obsolete: that helper was removed.
-
-**Proof gaps.** Static only; test a timestamp-only mutation against the new regression helper.
-
-**Fix handoff (proposed, not implemented):** Bind the full genesis snapshot, including timestamp, to authoritative chain state or authenticated reduction history before persistence. Preserve the preconditions and limits above. Required regression work:
-
-- Reject same-fork genesis sync with only timestamp changed.
-- Cover empty proofs before block zero and reduced-genesis canonical timestamp.
-
-Planned permutations, with no mapped test yet: [`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12) and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13). They are regression obligations, not evidence of passing tests. The fix change maps the exact tests.
-
-**Owners:** [synchronization requirements and planned tests](../specification/peer-communication/synchronization.md), [SpectateService source report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md), [current sync test mapping](../verification/tests/test/unit/SpectateService.test.ts.md). The new regression helper is not a full genesis authentication check.
+Tracked regressions:
+[`INV-SYNC-1-XCQZ28.T1.P12`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p12)
+and [`INV-SYNC-1-XCQZ28.T1.P13`](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28.t1.p13).
+These are obligations, not passing-test claims. Owners are the
+[SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md)
+and [synchronization](../specification/peer-communication/synchronization.md).

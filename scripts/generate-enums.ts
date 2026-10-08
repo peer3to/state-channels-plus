@@ -2,6 +2,8 @@ import * as fs from "fs";
 import * as path from "path";
 import { parse, visit } from "@solidity-parser/parser";
 
+const { writeFileIfChanged } = require("./write-if-changed");
+
 interface EnumDef {
     name: string;
     values: string[];
@@ -97,7 +99,7 @@ function main() {
 
     const generatedCode = `// Auto-generated from Solidity contracts. Do not edit manually.\n\n${tsEnums.join("\n\n")}\n\n${helperFunctions}\n`;
 
-    fs.writeFileSync(outputFile, generatedCode);
+    writeFileIfChanged(outputFile, generatedCode);
 }
 
 main();

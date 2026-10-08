@@ -706,8 +706,9 @@ contract AStateMachineStipendTest is TimeoutCalldataPostedStaging {
         assertTrue(keccak256(nonCanonical) != keccak256(abi.encode(latestBlock)), "the signed bytes differ");
 
         StateProof memory stateProof;
-        stateProof.signedBlocks = new SignedBlock[](1);
-        stateProof.signedBlocks[0] =
+        stateProof.milestones = new MilestoneProof[](1);
+        stateProof.milestones[0].blockConfirmations = new BlockConfirmation[](1);
+        stateProof.milestones[0].blockConfirmations[0].signedBlock =
             SignedBlock({encodedBlock: nonCanonical, signature: _sign(DISPUTER_PK, nonCanonical)});
 
         DisputeFraudProof[] memory proofs;

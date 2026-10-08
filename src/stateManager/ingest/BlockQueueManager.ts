@@ -677,9 +677,10 @@ export default class BlockQueueManager {
     /**
      * A successful probe lands on the responder's latest fork, the only one
      * it proves, and replays that lineage's unfinalized blocks through the
-     * ingest, whose execution is deferred. A block the lineage carries is
-     * therefore stored or queued for execution by the replay; a block that is
-     * neither is junk. A block on any other fork is inconclusive and its
+     * ingest, whose execution is deferred. A block the lineage carries above
+     * the installed history is therefore stored or queued for execution by
+     * the replay; one that is neither is junk. A block on any other fork, or
+     * at a free height below the installed history, is inconclusive and its
      * source is kept.
      */
     private isBlockUnbackedByLineage(block: Block): boolean {
@@ -687,6 +688,14 @@ export default class BlockQueueManager {
         if (this.stateManager.storage.queues.getQueuedEntry(block.hash)) {
             return false;
         }
+        // a free height below the installed history: a compact proof does
+        // not store the blocks under its final point, so it is inconclusive
+        const blocks = this.stateManager.storage.blocks;
+        if (
+            block.height < blocks.getNextBlockHeight(block.forkId) &&
+            !blocks.getBlock(block.forkId, block.height)
+        )
+            return false;
         return block.forkId === this.stateManager.forkId;
     }
 

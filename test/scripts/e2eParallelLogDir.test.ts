@@ -345,7 +345,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
         const original = console.log;
         const originalArgv = process.argv;
         console.log = (line: string) => lines.push(line);
-        process.argv = ["node", "runner"];
+        process.argv = ["node", "runner", "--test-parallel-script"];
         try {
             await main({
                 dryRun: true,

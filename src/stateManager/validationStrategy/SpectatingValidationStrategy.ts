@@ -3,7 +3,6 @@ import AValidationStrategy, {
 } from "./AValidationStrategy";
 import type BlockValidationStrategy from "./BlockValidationStrategy";
 import type BlockQueueManager from "../ingest/BlockQueueManager";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
@@ -218,6 +217,12 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Discard the entry without aborting an observer or retrying the fork.
         return BlockValidationResult.NOT_READY;
     }
+    public async blockIsBelowInstalledHistory(
+        _entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult> {
+        return BlockValidationResult.NOT_READY;
+    }
+
     public async blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
@@ -232,13 +237,6 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // Malformed linkage, not a provable fraud proof - drop the sender
         this.p2pManager.disconnectAndBlacklistPeers(getSourcePeers(entry));
         return BlockValidationResult.DISCONNECT;
-    }
-    public async prepareStateMachineForLeaderCheck(
-        _entry: QueuedBlockEntry,
-        _diamondStateMachine: ADiamondStateMachine
-    ): Promise<void> {
-        // Spectate sync applies blocks in order, so the state machine already
-        // holds the predecessor state - no repositioning is needed.
     }
     public async objectiveInvalidTimestampDetected(
         _block: Block

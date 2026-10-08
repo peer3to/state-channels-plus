@@ -431,6 +431,7 @@ function markPrepared(cache, manifest) {
 }
 
 module.exports = {
+    PREPARATION_VERSION,
     EnvironmentCache,
     deriveEnvironmentKey,
     directoryBytes,

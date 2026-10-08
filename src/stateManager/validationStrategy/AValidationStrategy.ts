@@ -1,4 +1,3 @@
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block, StateSnapshot } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
@@ -19,12 +18,12 @@ export default abstract class AValidationStrategy {
 
     /**
      * Whether this pipeline enforces the live fork/ordering gates - the
-     * disputed-fork check and the not-in-the-future check. Live gossip,
+     * disputed-fork, future-block and missing-old-block checks. Live gossip,
      * spectate, and calldata pipelines validate in-order blocks and enforce
-     * both. Dispute replay audits a fixed proof out of live order on an
-     * already-disputed fork, so it enforces neither (and never pays for the
+     * all three. Dispute replay audits a fixed proof out of live order on an
+     * already-disputed fork, so it skips these gates (and never pays for the
      * disputed-fork lookup). When false, `blockForkIsDisputed` and
-     * `blockIsNotNextAndIsInTheFuture` are never called.
+     * `blockIsNotNextAndIsInTheFuture` and `blockIsBelowInstalledHistory` are never called.
      */
     public abstract get enforcesLiveForkAndOrderingGates(): boolean;
 
@@ -107,6 +106,10 @@ export default abstract class AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
+    public abstract blockIsBelowInstalledHistory(
+        entry: QueuedBlockEntry
+    ): Promise<BlockValidationResult>;
+
     public abstract blockIsNotNextAndIsInTheFuture(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
@@ -114,17 +117,6 @@ export default abstract class AValidationStrategy {
     public abstract blockIsNotLinkedAndIsNotFirstBlock(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
-
-    /**
-     * Position the state machine before the next-leader check. Live pipelines
-     * already hold the block's predecessor state (blocks execute in order), so
-     * this is a no-op; dispute replay walks a proof out of live order and must
-     * load the block's previous-snapshot state first.
-     */
-    public abstract prepareStateMachineForLeaderCheck(
-        entry: QueuedBlockEntry,
-        diamondStateMachine: ADiamondStateMachine
-    ): Promise<void>;
 
     public abstract objectiveInvalidTimestampDetected(
         block: Block

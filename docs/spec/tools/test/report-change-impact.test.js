@@ -396,3 +396,50 @@ test("blocks a replacement whose requirement does not exist", () =>
         );
         assert.equal(f.check().status, 1);
     }));
+
+test("accepts an explicit reason for removed test support without an old marker", () =>
+    fixture((f) => {
+        f.write("test/fixtures/old.ts", "export {};\n");
+        f.commit();
+        f.remove("test/fixtures/old.ts");
+        f.write(
+            "docs/spec/deleted-test-support.json",
+            JSON.stringify({
+                "test/fixtures/old.ts":
+                    "Removed unused support, no executable tests."
+            })
+        );
+        const result = f.check();
+        assert.equal(result.status, 0, result.stderr + result.stdout);
+        f.commit();
+        const committed = f.check("--base", "HEAD~1");
+        assert.equal(committed.status, 0, committed.stderr + committed.stdout);
+    }));
+
+test("a removal exclusion cannot hide changed live support", () =>
+    fixture((f) => {
+        f.write("test/fixtures/live.ts", "export {};\n");
+        f.write(
+            "docs/spec/deleted-test-support.json",
+            JSON.stringify({
+                "test/fixtures/live.ts": "Not a removal."
+            })
+        );
+        const result = f.check();
+        assert.equal(result.status, 1, result.stderr + result.stdout);
+        assert.match(result.stdout, /Unmapped changed files/);
+    }));
+
+test("a removal exclusion cannot hide a deleted test file", () =>
+    fixture((f) => {
+        f.write("test/old.test.ts", 'it("behavior", () => {});\n');
+        f.commit();
+        f.remove("test/old.test.ts");
+        f.write(
+            "docs/spec/deleted-test-support.json",
+            JSON.stringify({
+                "test/old.test.ts": "Must retain real coverage accounting."
+            })
+        );
+        assert.equal(f.check().status, 1);
+    }));

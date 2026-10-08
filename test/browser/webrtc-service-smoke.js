@@ -107,10 +107,14 @@ async function runWebRTCWorkerBridgeSmoke(options = {}) {
     };
     try {
         // The actual SDK in the application worker owns the client side; the
-        // main SDK owns the broker and its transferred bridge port.
+        // main SDK owns the broker and its transferred bridge port. The worker
+        // reuses this realm's deployment instead of deploying its own stack.
         worker.postMessage({
             type: "start",
-            runtime: globalThis.__SDK_RUNTIME__,
+            runtime: {
+                ...globalThis.__SDK_RUNTIME__,
+                scmAddress: sdk.scmAddress
+            },
             disposeIndex: options.disposeIndex
         });
         // Each real SDK setup gets its own readiness boundary before channel negotiation.

@@ -322,12 +322,27 @@ function main() {
         directReasons
     );
 
+    // A removed support file cannot receive an inline ignore in this revision.
+    // Keep its explicit reason on the selected side; never apply it to live files.
+    const removedSupportPath = path.join(
+        graph.roots.spec,
+        "deleted-test-support.json"
+    );
+    const removedSupport = fs.existsSync(removedSupportPath)
+        ? JSON.parse(fs.readFileSync(removedSupportPath, "utf8"))
+        : {};
+
     for (const testPath of change.removedTests) {
         const content = git(graph.roots.repo, [
             "show",
             `${change.oldSide}:${testPath}`
         ]);
-        if (ignoreDisposition(testPath, content).ignored) {
+        const removalReason = removedSupport[testPath];
+        const excludedSupport =
+            !/(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/.test(testPath) &&
+            typeof removalReason === "string" &&
+            removalReason.trim().length > 0;
+        if (ignoreDisposition(testPath, content).ignored || excludedSupport) {
             accountedFiles.add(testPath);
             continue;
         }

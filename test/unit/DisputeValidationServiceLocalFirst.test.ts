@@ -2,6 +2,7 @@ import Block from "@/models/Block";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
 import { hash as randomHash } from "@test/factory";
+import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
 import {
     stageMirrorMissingConsumedTopUp,
     stageStaleGenesisDispute,
@@ -15,8 +16,9 @@ import { expect } from "chai";
 // of the chain. Each case observes the auditor's local and chain reads
 // record-only; the reads still reach the real contracts.
 describe("Unit: DisputeValidationService local-first reads", function () {
-    // pure: the local diamond computes exactly what the chain would, so the
-    // check never reads the chain, for either answer
+    // a mismatch is judged only on challenge-eligible blocks, which the
+    // anchor decides: a local "no mismatch" is kept, a local "mismatch" is
+    // confirmed on-chain
     describe("hasStateProofHeaderMismatch", function () {
         it("matching header -> local only, no chain read, true, no proof", async function () {
             const h = TestSession.getHarness();
@@ -36,10 +38,14 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.reads).to.equal(0);
         });
 
-        it("milestones[-1].blockConfirmations[-1] header.forkId = random -> local only, no chain read, false + DisputeStateProofHeaderMismatch", async function () {
+        it("milestones[-1].blockConfirmations[-1] header.forkId = random -> one chain read, false + DisputeStateProofHeaderMismatch", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 3);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            // no block is final while peer 2 is away: the proof is one
+            // genesis-linked run from block 0, so its last block is eligible
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            expect(dispute.postedAuditingData).to.equal(true);
             await h.tamper.mismatchLastMilestoneHeader(dispute, {
                 forkId: randomHash()
             });
@@ -48,7 +54,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
                 "hasStateProofHeaderMismatch"
             );
 
-            const run = await h.dispute.auditDispute(1, dispute);
+            const run = await h.dispute.auditDispute(1, dispute, auditingData);
 
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
@@ -56,11 +62,11 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             );
             const { local, chain } = await reads.observation();
             expect(local.answers).to.deep.equal([true]);
-            expect(chain.reads).to.equal(0);
+            expect(chain.answers).to.deep.equal([true]);
         });
     });
 
-    describe("isLastMilestoneFinalByEveryone", function () {
+    describe("isAuditingDataOmissionAllowed", function () {
         it("local final -> kept without a chain read, true, no proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
@@ -68,7 +74,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(dispute.postedAuditingData).to.equal(false);
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
 
             const run = await h.dispute.auditDispute(1, dispute);
@@ -88,7 +94,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             dispute.postedAuditingData = false;
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
 
             const run = await h.dispute.auditDispute(1, dispute);
@@ -110,13 +116,13 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             dispute.postedAuditingData = false;
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
             // the chain view lags the mirror: it has not seen the join, so
             // the pre-join participants who signed the milestone are everyone
             await h.mirror.serveChainReadsBefore(
                 1,
-                "isLastMilestoneFinalByEveryone",
+                "isAuditingDataOmissionAllowed",
                 "InboundMessagesProcessed"
             );
 
@@ -131,32 +137,33 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             );
         });
 
-        it("local revert -> the chain answers instead, false + DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
+        it("local revert -> the audit throws it, no chain read, no proof", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             dispute.postedAuditingData = false;
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
             await h.mirror.failNextLocalRead(
                 1,
-                "isLastMilestoneFinalByEveryone",
+                "isAuditingDataOmissionAllowed",
                 "revert"
             );
 
             const run = await h.dispute.auditDispute(1, dispute);
 
+            expect(run.outcome).to.equal("threw");
+            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
+                "Local EVM execution failed"
+            );
+            expect(run.disputeFraudProofCount).to.equal(0);
             const { local, chain } = await reads.observation();
             expect(local.answers).to.deep.equal([]);
             expect(local.failures).to.have.length(1);
             expect(local.failures[0]).to.contain("Local EVM execution failed");
-            expect(chain.answers).to.deep.equal([false]);
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
-            );
+            expect(chain.reads).to.equal(0);
         });
 
         it("local executor failure (not a revert) -> the audit throws it, no chain read, no proof", async function () {
@@ -166,11 +173,11 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             dispute.postedAuditingData = false;
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
             await h.mirror.failNextLocalRead(
                 1,
-                "isLastMilestoneFinalByEveryone",
+                "isAuditingDataOmissionAllowed",
                 "transport"
             );
 
@@ -196,11 +203,11 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             dispute.postedAuditingData = false;
             const reads = await h.mirror.observe(
                 1,
-                "isLastMilestoneFinalByEveryone"
+                "isAuditingDataOmissionAllowed"
             );
             await h.mirror.failNextChainRead(
                 1,
-                "isLastMilestoneFinalByEveryone",
+                "isAuditingDataOmissionAllowed",
                 "transport"
             );
 
@@ -250,7 +257,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.answers).to.deep.equal([false]);
         });
 
-        it("local revert -> the chain answers correct instead, true, no proof", async function () {
+        it("local revert -> the audit throws it, no chain read, no proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
@@ -263,38 +270,35 @@ describe("Unit: DisputeValidationService local-first reads", function () {
 
             const run = await h.dispute.auditDispute(1, dispute);
 
+            expect(run.outcome).to.equal("threw");
+            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
+                "Local EVM execution failed"
+            );
+            expect(run.disputeFraudProofCount).to.equal(0);
             const { local, chain } = await reads.observation();
             expect(local.failures).to.have.length(1);
             expect(local.failures[0]).to.contain("Local EVM execution failed");
-            expect(chain.answers).to.deep.equal([true]);
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
+            expect(chain.reads).to.equal(0);
         });
 
-        it("stale genesis dispute, chain view before the snapshot post: local incorrect, chain correct -> one chain read, the chain answer wins, no DisputeInvalidStateProof, DisputeNotLatestState later", async function () {
+        it("stale genesis dispute after a same-fork snapshot post -> false + DisputeStateProofBelowOnChainAnchor, no isCorrectLatestState read", async function () {
             const h = TestSession.getHarness();
             const { dispute } = await stageStaleGenesisDispute(h);
             expect(dispute.postedAuditingData).to.equal(false);
             const reads = await h.mirror.observe(1, "isCorrectLatestState");
-            await h.mirror.serveChainReadsBefore(
-                1,
-                "isCorrectLatestState",
-                "StateSnapshotUpdated"
-            );
 
             const run = await h.dispute.auditDispute(1, dispute);
 
-            const { local, chain } = await reads.observation();
-            expect(local.answers).to.deep.equal([false]);
-            expect(chain.answers).to.deep.equal([true]);
-            // the chain's "correct" wins: no DisputeInvalidStateProof. The
-            // audit goes on, and the later latest-state check kills the stale
-            // dispute for what it is
+            // the chain's anchor is above the genesis claim: the below-anchor
+            // counter kills it before the latest-state check runs
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.disputeFraudProofCount).to.equal(1);
             expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeNotLatestState
+                DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor
             );
+            const { local, chain } = await reads.observation();
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.equal(0);
         });
 
         it("local executor failure (not a revert) -> the audit throws it, no chain read, no proof", async function () {
@@ -362,36 +366,43 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.reads).to.equal(0);
         });
 
-        it("forged totalDeposits: local invalid, chain invalid -> one chain read, false + DisputeInvalidBalanceInvariant", async function () {
+        it("forged totalDeposits, audited by a pending auditor without a final block at the forged head: local invalid, chain invalid -> one chain read, false + DisputeInvalidBalanceInvariant", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
-            const forged = await h.tamper.buildForgedSnapshot(2, (ctx) => ({
-                snapshotData: {
-                    ...ctx.originalSnapshotData,
-                    totalDeposits: {
-                        ...ctx.originalSnapshotData.totalDeposits,
-                        amount:
-                            BigInt(
-                                ctx.originalSnapshotData.totalDeposits.amount
-                            ) + 1n
+            // the colluders' head is one the auditor never finalized
+            const { auditorIndex } = await stageBlindPendingAuditor(
+                h,
+                [0, 1, 2]
+            );
+            const forged = await h.tamper.buildForgedSnapshot(
+                2,
+                (ctx) => ({
+                    snapshotData: {
+                        ...ctx.originalSnapshotData,
+                        totalDeposits: {
+                            ...ctx.originalSnapshotData.totalDeposits,
+                            amount:
+                                BigInt(
+                                    ctx.originalSnapshotData.totalDeposits
+                                        .amount
+                                ) + 1n
+                        }
                     }
-                }
-            }));
+                }),
+                { withoutSignerIndices: [auditorIndex] }
+            );
             // forged head block + forged snapshot committed by the dispute
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(2);
-            const proof = dispute.input.stateProof;
-            if (proof.signedBlocks.length > 0) {
-                proof.signedBlocks[proof.signedBlocks.length - 1] =
-                    forged.forgedBlock.signedBlock;
-            } else {
-                const milestone = proof.milestones.at(-1)!;
-                milestone.blockConfirmations[0] =
-                    forged.forgedBlock.blockConfirmationStruct;
-                auditingData.milestoneSnapshots[
-                    auditingData.milestoneSnapshots.length - 1
-                ] = forged.forgedSnapshot.toStruct();
-            }
+            // premise: the head is final, so it is the last milestone's
+            // only block and no replayed tail meets the forged block
+            const milestone = dispute.input.stateProof.milestones.at(-1)!;
+            expect(milestone.blockConfirmations).to.have.length(1);
+            milestone.blockConfirmations[0] =
+                forged.forgedBlock.blockConfirmationStruct;
+            auditingData.milestoneSnapshots[
+                auditingData.milestoneSnapshots.length - 1
+            ] = forged.forgedSnapshot.toStruct();
             auditingData.latestStateSnapshot = forged.forgedSnapshot.toStruct();
             dispute.input.latestStateSnapshotHash = forged.forgedSnapshot.hash;
             dispute.input.disputeAuditingDataHash = hash(
@@ -399,11 +410,15 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             );
             dispute.postedAuditingData = true;
             const reads = await h.mirror.observe(
-                0,
+                auditorIndex,
                 "verifyBalanceInvariantCheckSnapshot"
             );
 
-            const run = await h.dispute.auditDispute(0, dispute, auditingData);
+            const run = await h.dispute.auditDispute(
+                auditorIndex,
+                dispute,
+                auditingData
+            );
 
             expect(run).to.include({ outcome: "returned", isValid: false });
             expect(run.storedProof?.disputeFraudProofType).to.equal(
@@ -434,7 +449,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
-        it("local revert -> the chain answers valid instead, true, no proof", async function () {
+        it("local revert -> the audit throws it, no chain read, no proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
@@ -450,12 +465,15 @@ describe("Unit: DisputeValidationService local-first reads", function () {
 
             const run = await h.dispute.auditDispute(1, dispute);
 
+            expect(run.outcome).to.equal("threw");
+            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
+                "Local EVM execution failed"
+            );
+            expect(run.disputeFraudProofCount).to.equal(0);
             const { local, chain } = await reads.observation();
             expect(local.failures).to.have.length(1);
             expect(local.failures[0]).to.contain("Local EVM execution failed");
-            expect(chain.answers).to.deep.equal([true]);
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
+            expect(chain.reads).to.equal(0);
         });
 
         it("local executor failure (not a revert) -> the audit throws it, no chain read, no proof", async function () {
@@ -507,166 +525,6 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.failureCodes).to.not.include("CALL_EXCEPTION");
             expect(run.outcome).to.equal("threw");
             expect(run.disputeFraudProofCount).to.equal(0);
-        });
-    });
-
-    // postedAuditingData disputes; only the chain's revert rejects the proof
-    describe("verifyStateProof", function () {
-        it("local valid -> kept without a chain read, true, no proof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            expect(dispute.postedAuditingData).to.equal(true);
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
-            const { local, chain } = await reads.observation();
-            expect(local.answers).to.deep.equal([true]);
-            expect(chain.reads).to.equal(0);
-        });
-
-        it("auditingData.latestStateSnapshot.timestamp += 1: local invalid, chain invalid -> one chain read, false + DisputeInvalidStateProof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            dispute.input.requireExistingDisputeWindow = true;
-            auditingData.latestStateSnapshot.timestamp =
-                Number(auditingData.latestStateSnapshot.timestamp) + 1;
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeInvalidStateProof
-            );
-            const { local, chain } = await reads.observation();
-            expect(local.answers).to.deep.equal([false]);
-            expect(chain.answers).to.deep.equal([false]);
-        });
-
-        it("stale genesis dispute with posted auditing data, chain view before the snapshot post: local invalid, chain valid -> one chain read, the chain answer wins, no DisputeInvalidStateProof, DisputeNotLatestState later", async function () {
-            const h = TestSession.getHarness();
-            const { dispute, auditingData } = await stageStaleGenesisDispute(h);
-            dispute.postedAuditingData = true;
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-            await h.mirror.serveChainReadsBefore(
-                1,
-                "verifyStateProof",
-                "StateSnapshotUpdated"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { local, chain } = await reads.observation();
-            expect(local.answers).to.deep.equal([false]);
-            expect(chain.answers).to.deep.equal([true]);
-            // the chain's "correct" wins: no DisputeInvalidStateProof. The
-            // audit goes on, and the later latest-state check kills the stale
-            // dispute for what it is
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.disputeFraudProofCount).to.equal(1);
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeNotLatestState
-            );
-        });
-
-        it("local revert, chain valid -> the chain answer is used, true, no proof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-            await h.mirror.failNextLocalRead(1, "verifyStateProof", "revert");
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { local, chain } = await reads.observation();
-            expect(local.failures[0]).to.contain("Local EVM execution failed");
-            expect(chain.answers).to.deep.equal([true]);
-            expect(run).to.include({ outcome: "returned", isValid: true });
-            expect(run.disputeFraudProofCount).to.equal(0);
-        });
-
-        it("local revert, chain revert (CALL_EXCEPTION) -> an invalid proof, false + DisputeInvalidStateProof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-            await h.mirror.failNextLocalRead(1, "verifyStateProof", "revert");
-            await h.mirror.failNextChainRead(1, "verifyStateProof", "revert");
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { chain } = await reads.observation();
-            expect(chain.failureCodes).to.deep.equal(["CALL_EXCEPTION"]);
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeInvalidStateProof
-            );
-        });
-
-        it("local invalid, chain RPC refuses the connection -> the audit throws it, no proof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            dispute.input.requireExistingDisputeWindow = true;
-            auditingData.latestStateSnapshot.timestamp =
-                Number(auditingData.latestStateSnapshot.timestamp) + 1;
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-            await h.mirror.failNextChainRead(
-                1,
-                "verifyStateProof",
-                "transport"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            const { local, chain } = await reads.observation();
-            expect(local.answers).to.deep.equal([false]);
-            expect(chain.failures).to.have.length(1);
-            expect(chain.failureCodes).to.not.include("CALL_EXCEPTION");
-            expect(run.outcome).to.equal("threw");
-            expect(run.disputeFraudProofCount).to.equal(0);
-        });
-
-        it("local executor failure (not a revert) -> the audit throws it, no chain read, no proof", async function () {
-            const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath();
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            expect(dispute.postedAuditingData).to.equal(true);
-            const reads = await h.mirror.observe(1, "verifyStateProof");
-            await h.mirror.failNextLocalRead(
-                1,
-                "verifyStateProof",
-                "transport"
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute, auditingData);
-
-            expect(run.outcome).to.equal("threw");
-            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
-                "Malformed RPC request"
-            );
-            expect(run.disputeFraudProofCount).to.equal(0);
-            const { local, chain } = await reads.observation();
-            expect(local.failures).to.have.length(1);
-            expect(local.failures[0]).to.not.contain(
-                "Local EVM execution failed"
-            );
-            expect(chain.reads).to.equal(0);
         });
     });
 
@@ -773,7 +631,7 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.reads).to.equal(0);
         });
 
-        it("local revert, chain valid -> the chain answer is used, false + TimeoutCalldataPosted", async function () {
+        it("local revert -> the audit throws it, no chain read, no proof", async function () {
             const h = TestSession.getHarness();
             const { dispute } = await stageTimeoutCalldataPostedDispute(h);
             dispute.input.timeout.isForced = true;
@@ -789,13 +647,15 @@ describe("Unit: DisputeValidationService local-first reads", function () {
 
             const run = await h.dispute.auditDispute(1, dispute);
 
-            const { local, chain } = await reads.observation();
-            expect(local.failures[0]).to.contain("Local EVM execution failed");
-            expect(chain.answers).to.deep.equal([true]);
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.TimeoutCalldataPosted
+            expect(run.outcome).to.equal("threw");
+            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
+                "Local EVM execution failed"
             );
+            expect(run.disputeFraudProofCount).to.equal(0);
+            const { local, chain } = await reads.observation();
+            expect(local.failures).to.have.length(1);
+            expect(local.failures[0]).to.contain("Local EVM execution failed");
+            expect(chain.reads).to.equal(0);
         });
 
         it("local executor failure (not a revert) -> the audit throws it, no chain read, no proof", async function () {

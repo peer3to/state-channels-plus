@@ -98,7 +98,7 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.deployOn(this.evm, data);
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -114,7 +114,7 @@ export default class ContractExecutor extends AContractExecutor {
         try {
             return await this.executeCallOn(this.evm, data, contractAddress);
         } finally {
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
     }
 
@@ -139,10 +139,22 @@ export default class ContractExecutor extends AContractExecutor {
                 await evm.journal.revert();
             }
         } finally {
-            // A burst of serialized simulations must yield to timers and I/O
-            // instead of draining the whole queue through microtasks.
-            this.mutex.unlock({ scheduleNextAsMacroTask: true });
+            this.release();
         }
+    }
+
+    /**
+     * Frees the executor on the next timer turn, never in the current one.
+     * A burst of requests reaches this worker as queued port messages, and
+     * the port drains them in one event-loop callback. A call runs to its end
+     * in microtasks, so with an immediate release each queued request found
+     * the mutex free and ran in that same callback: a dispute audit burst
+     * (about 30 calls) then blocks the loop for its whole sum. Holding the
+     * mutex until a later timer turn queues those requests, and each one
+     * starts in its own loop iteration.
+     */
+    private release(): void {
+        setTimeout(() => this.mutex.unlock(), 0);
     }
 
     private deployOn(evm: EVM, data: Bytes): Promise<ContractExecutionResult> {

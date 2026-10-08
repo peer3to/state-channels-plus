@@ -28,8 +28,10 @@ describe("E2E: dispute validation / futureBlock", function () {
 
         const forkId = h.activeForkId!;
 
-        // Suppress peer 3's outbound block broadcast
+        // Suppress peer 3's outbound block broadcast; it must not time out
+        // the next writer, whose block it never receives
         await h.byzantine.stubBroadcast(3);
+        await h.rpcStub.suppressTimeoutCheck(3);
         h.contextApi.markMaliciousPeer({ maliciousPeerIndex: 3 });
 
         await h.transition.peerWrite({ peer: 3, waitForPeers: [3] });
@@ -59,10 +61,18 @@ describe("E2E: dispute validation / futureBlock", function () {
         h.event.resetEventSpies();
 
         // Peer 3 files a self-removal dispute. the lastest block in the state proof is block 3.
+        // The self-removal is set before construction, so the dispute's
+        // output hash covers it.
+        await h.control(h.getPeer(3)).dispute.setForceExit(true).request();
         await h.tamper.postTamperedDispute(3, (dispute) => {
-            dispute.input.timeout.participant = ethers.ZeroAddress;
-            dispute.input.onChainSlashes = [];
-            dispute.input.selfRemoval = true;
+            if (
+                dispute.input.timeout.participant !== ethers.ZeroAddress ||
+                dispute.input.onChainSlashes.length !== 0 ||
+                !dispute.input.selfRemoval
+            )
+                throw new Error(
+                    "expected a self-removal dispute without a timeout or slashes"
+                );
         });
 
         // confirm the latest block in the state proof is block 3

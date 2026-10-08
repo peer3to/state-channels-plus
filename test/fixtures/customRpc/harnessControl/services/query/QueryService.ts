@@ -5,6 +5,7 @@ import QueryRpcMethods, {
 } from "./QueryRpcMethods";
 import type { GasUsageRow } from "@/evm/gasUsage/GasUsageTable";
 import Block from "@/models/Block";
+import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -74,6 +75,7 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         blockHeight?: BlockHeight
     ): Promise<StateProofVerification | null> {
         const sm = this.sm;
+        const agreementManager = sm.agreementManager;
         const genesis =
             this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId);
         if (!genesis) return null;
@@ -81,74 +83,51 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         const height =
             blockHeight ??
             Math.max(0, this.storage.blocks.getNextBlockHeight(forkId) - 1);
-        const proof = await sm.agreementManager.tryGetStateProof(
-            forkId,
-            height
-        );
-        if (!proof) return null;
+        const built = await agreementManager.buildStateProof(forkId, height);
+        const proof = built.stateProof;
 
-        let verified = false;
+        const chainWalk = await agreementManager.walkFromChainAnchor(
+            forkId,
+            proof,
+            built.evidence
+        );
         let isFinal: boolean | null = null;
         let onChainFinalizedSnapshotHash: string | null = null;
         if (proof.milestones.length > 0) {
-            const milestoneSnapshots = proof.milestones.map((m) =>
-                sm.agreementManager.getSnapshotFromMilestone(m)!.toStruct()
-            );
-            verified =
-                await sm.stateChannelManagerContract.verifyMilestones.staticCall(
-                    forkId,
-                    proof.milestones,
-                    milestoneSnapshots,
-                    genesis.toStruct()
-                );
-
             const { isFinal: milestoneIsFinal, finalizedSnapshotHash } =
                 await sm.stateChannelManagerContract.isMilestoneFinal.staticCall(
                     forkId,
-                    genesis.snapshotData,
+                    built.startSnapshot.snapshotData,
                     proof.milestones[0]
                 );
             isFinal = milestoneIsFinal;
             onChainFinalizedSnapshotHash = String(finalizedSnapshotHash);
-        } else if (proof.signedBlocks.length > 0) {
-            verified =
-                await sm.stateChannelManagerContract.areSignedBlocksLinkedAndVerified.staticCall(
-                    proof.signedBlocks
-                );
         }
 
-        const milestoneConfirmationHeights = proof.milestones.map((milestone) =>
-            milestone.blockConfirmations.map((c) =>
-                Number(Block.fromBlockConfirmation(c).height)
-            )
-        );
-
-        const milestoneSnapshotHashes = proof.milestones.map((m) =>
-            String(sm.agreementManager.getSnapshotFromMilestone(m)!.hash)
-        );
-
         const latestBlock =
-            sm.agreementManager.getLatestBlockFromStateProof(proof);
+            agreementManager.getLatestBlockFromStateProof(proof);
         return {
             blockHeight: Number(height),
             milestoneCount: proof.milestones.length,
-            signedBlockCount: proof.signedBlocks.length,
             latestProofHeight: latestBlock ? Number(latestBlock.height) : null,
-            milestoneConfirmationHeights,
-            milestoneSnapshotHashes,
-            verified,
+            milestoneConfirmationHeights: proof.milestones.map((milestone) =>
+                milestone.blockConfirmations.map((confirmation) =>
+                    Number(Block.fromBlockConfirmation(confirmation).height)
+                )
+            ),
+            milestoneSnapshotHashes: built.evidence.milestoneSnapshots.map(
+                (snapshot) => String(StateSnapshot.from(snapshot).hash)
+            ),
+            verified: chainWalk.valid,
+            chainReplayBlockIndex: chainWalk.replayBlockIndex,
             isFinal,
             onChainFinalizedSnapshotHash,
             latestSnapshotHash: String(
-                sm.agreementManager.getLatestSnapshotFromStateProof(
-                    proof,
-                    forkId
-                ).hash
-            ),
-            finalizedSnapshotHash: String(
-                sm.agreementManager.getLatestFinalizedSnapshot(proof, forkId)
+                agreementManager.getLatestSnapshotFromStateProof(proof, forkId)
                     .hash
             ),
+            finalizedSnapshotHash: String(built.finalizedSnapshot.hash),
+            startSnapshotHash: String(built.startSnapshot.hash),
             genesisSnapshotHash: String(genesis.hash)
         };
     }

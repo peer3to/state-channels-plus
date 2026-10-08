@@ -3,6 +3,7 @@ import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
+import { disputeOnHost } from "@test/fixtures/ReplayGasLimitStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -10,9 +11,13 @@ describe("E2E: stale-membership dispute", function () {
     it("departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain", async function () {
         const h = TestSession.getHarness();
 
-        // peer 2 will leave; 0/1/3 stay as the honest disputers
+        // peer 2 will leave; 0/1/3 retain the membership history for auditing.
         await h.lifecycle.timeoutSetup(4, 0);
         await h.assert.sync.peersInSyncWait();
+        // This case targets membership validation, not participant-timeout races.
+        await Promise.all(
+            h.peers.map((peer) => h.rpcStub.suppressTimeoutCheck(peer.index))
+        );
         const forkId = h.activeForkId!;
 
         // advance while everyone is still a member -> the head snapshot lists the
@@ -33,9 +38,9 @@ describe("E2E: stale-membership dispute", function () {
             .query.getParticipants()
             .request();
         expect(
-            preLeaveParticipants.map((p) => p.toLowerCase()),
+            preLeaveParticipants,
             "stale snapshot era must still list the leaver"
-        ).to.include(h.getPeer(2).address.toLowerCase());
+        ).to.include(h.getPeer(2).address);
 
         // peer 2 leaves, then advance so the current previous snapshot excludes it
         const leaverIndex = await h.transition.participantLeaveDetached({
@@ -50,9 +55,9 @@ describe("E2E: stale-membership dispute", function () {
             .query.getParticipants()
             .request();
         expect(
-            participants.map((p) => p.toLowerCase()),
+            participants,
             "leaver should be out of the current participant set"
-        ).to.not.include(leaver.address.toLowerCase());
+        ).to.not.include(leaver.address);
 
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
@@ -64,9 +69,7 @@ describe("E2E: stale-membership dispute", function () {
             3,
             async (dispute, sm, args) => {
                 const d = sm.p2pManager.localRpc.dispute;
-                // the leave finalized everything into milestones; append the
-                // attack block to the unfinalized tail of the last milestone.
-                d.expectMilestonesOnlyStateProof(dispute.input.stateProof);
+                // append the attack block to the tail of the last milestone.
                 const confirmations =
                     dispute.input.stateProof.milestones.at(
                         -1
@@ -96,6 +99,10 @@ describe("E2E: stale-membership dispute", function () {
                         return block;
                     }
                 );
+                // the proof's latest block is the dispute's latest state, so
+                // the state proof stays valid and only the author check fails
+                dispute.input.latestStateSnapshotHash =
+                    args.staleSnapshotHash as string;
             },
             {
                 args: {
@@ -105,7 +112,10 @@ describe("E2E: stale-membership dispute", function () {
             }
         );
 
-        await h.byzantine.submitDoubleSignBlock(0);
+        // Open only the malicious dispute. A double-sign trigger also opens an
+        // unrelated honest dispute and consumes the shared audit/kill window.
+        await h.control(h.getPeer(3)).dispute.setForceExit(true).request();
+        await disputeOnHost(h, 3, forkId);
         await h.assert.dispute.initiatedWait({
             peersIndices: [3],
             initiatedWithAuditingData: false
@@ -147,7 +157,7 @@ describe("E2E: stale-membership dispute", function () {
         // _killDispute slashes the disputer on-chain in the same tx that emits
         // DisputeKilled -> peer 3 (the malicious disputer) is on-chain slashed.
         // deterministic proof the malicious dispute died on-chain, independent of
-        // the double-sign fork reduction.
+        // any later fork reduction.
         await h.assert.dispute.slashedOnChain(h.getPeer(3).address);
     });
 });

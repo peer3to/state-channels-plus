@@ -1,14 +1,18 @@
 import Clock from "@/Clock";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 describe("E2E: dispute validation / stateProof / milestone block content integrity", function () {
     describe("stateProof.milestones[-1].blockConfirmations[-1].header.transactionCnt", function () {
-        it("transactionCnt += 5 → DisputeInvalidBlockStructure", async function () {
+        // The dispute omits its auditing data, and the broken last block makes
+        // the last milestone no longer final by everyone. The data check runs
+        // before any block check, so it decides the counter.
+        it("transactionCnt += 5 without auditing data → DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
             const h = TestSession.getHarness();
-            // Auditing and submitting the structural fraud proof must fit
+            // Auditing and submitting the fraud proof must fit
             // inside the staging's kill period even when the shared chain
             // mines transactions from several peers between those two steps.
             await h.scenario.preDisputeSetup({ peerCount: 5 });
@@ -63,7 +67,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             ).to.not.have.length(0);
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure
+                    DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
             });
 
             for (const peer of h.getHonestPeers()) {
@@ -76,13 +80,73 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 ).to.be.undefined;
             }
 
-            // This test verifies the dispute's malformed block structure. It
+            // This test verifies the counter for the malformed dispute. It
             // deliberately does not assert which later dispute applies the
             // underlying block fraud proof or which participants are slashed.
             await h.dispute.resolveDisputeWait({
                 forkId: disputedForkId,
                 assertMaliciousRemoved: false
             });
+        });
+    });
+
+    // preDisputeSetupDisconnectedPeer: peer 2 never signs, so the proof is one
+    // unfinalized genesis block-0 milestone and the dispute posts its data.
+    describe("stateProof.milestones[-1].blockConfirmations[-1].messageBlocks", function () {
+        it("messageBlocks injected with forged inbound message → DisputeInvalidBlockInStateProofApplyFraudProof", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            const forkId = h.activeForkId!;
+
+            await h.tamper.stubConstructDispute(
+                3,
+                async (dispute, sm, args) => {
+                    const svc = sm.p2pManager.localRpc.dispute;
+                    await svc.expectUnfinalizedStateProof(
+                        dispute.input.forkId as ForkId,
+                        dispute.input.stateProof
+                    );
+                    await svc.rewriteLastMilestoneSignedBlockInDispute(
+                        dispute,
+                        (bs) => ({
+                            ...bs,
+                            messageBlocks: [
+                                {
+                                    previousBlockHash: svc.zeroHash,
+                                    blockHeight: 1n,
+                                    messages: [
+                                        {
+                                            messageType: svc.randomHash(),
+                                            participant:
+                                                args.messageParticipant as string,
+                                            balance: { amount: 1n, data: "0x" },
+                                            data: svc.randomHash()
+                                        }
+                                    ],
+                                    totalBalance: { amount: 1n, data: "0x" },
+                                    timestamp: BigInt(svc.nowSeconds())
+                                }
+                            ]
+                        })
+                    );
+                },
+                { args: { messageParticipant: h.getPeer(1).address } }
+            );
+
+            // peer 1 double signs
+            await h.byzantine.submitDoubleSignBlock(1);
+
+            await h.assert.dispute.initiatedWait({
+                peersIndices: [3],
+                initiatedWithAuditingData: true
+            });
+
+            await h.event.waitForPeers("onDisputeKilled", [0], 1);
+            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+                disputeFraudProofType:
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 

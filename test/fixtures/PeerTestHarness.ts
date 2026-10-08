@@ -4,6 +4,7 @@ import testConfig from "../peer3.test.config";
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
+import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import {
@@ -116,6 +117,8 @@ export class PeerTestHarness<
     public provider!: ethers.WebSocketProvider;
     private ownNode?: { stop: () => void };
     private ownDiscovery?: { stop: () => void };
+    /** Peer index -> the RPC node proxies its runtime connects through. */
+    private readonly rpcNodeProxies = new Map<number, RpcNodeProxy[]>();
 
     /**
      * Test context for cross-block state sharing
@@ -297,7 +300,9 @@ export class PeerTestHarness<
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
             customRpcManifest: options?.customRpcManifest,
-            executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer
+            executorCallGasLimitByPeer: options?.executorCallGasLimitByPeer,
+            rpcNodeProxiesByPeer: options?.rpcNodeProxiesByPeer,
+            rpcNodeProxiesCutAtStart: options?.rpcNodeProxiesCutAtStart
         };
         if (
             !this.options.timeConfig?.agreementTime ||
@@ -780,16 +785,26 @@ export class PeerTestHarness<
         // The executor factory is reachable only in an inline host, so a peer
         // with its own call gas always runs inline.
         const inline = !useWorker || executorCallGasLimit !== undefined;
+        const rpcNodeProxies = await this.startRpcNodeProxies(index);
         const setupOptions = {
             peerId: index,
             peerLogger: peerLogger,
             customPrecompiles: this.options.customPrecompiles!,
             customRpcManifest: this.resolveHarnessRpcManifest(),
             signerSecret,
-            config:
-                executorCallGasLimit === undefined
-                    ? this.harnessConfig
-                    : { ...this.harnessConfig, RUN_SDK_IN_THREAD: false },
+            config: {
+                ...this.harnessConfig,
+                ...(executorCallGasLimit === undefined
+                    ? {}
+                    : { RUN_SDK_IN_THREAD: false }),
+                ...(rpcNodeProxies.length > 0
+                    ? {
+                          PROVIDER_URLS: rpcNodeProxies.map(
+                              (proxy) => proxy.url
+                          )
+                      }
+                    : {})
+            },
             handlerExecutionContext: inline
                 ? new PeerIdentityExecutionContext(address)
                 : undefined
@@ -845,6 +860,23 @@ export class PeerTestHarness<
         // order regardless of which createPeer resolves first.
         this.peers[index] = peer;
         this.logger.debug(`Peer ${index} created successfully`);
+    }
+
+    /** Start the proxies `rpcNodeProxiesByPeer` asks for in front of the test node. */
+    private async startRpcNodeProxies(index: number): Promise<RpcNodeProxy[]> {
+        const count = this.options.rpcNodeProxiesByPeer?.[index] ?? 0;
+        const nodeUrl = this.harnessConfig.PROVIDER_URL;
+        if (count === 0) return [];
+        if (!nodeUrl)
+            throw new Error("RPC node proxies need the test node URL");
+        const proxies = await Promise.all(
+            Array.from({ length: count }, () => RpcNodeProxy.start(nodeUrl))
+        );
+        for (const position of this.options.rpcNodeProxiesCutAtStart?.[index] ??
+            [])
+            proxies[position].cut();
+        this.rpcNodeProxies.set(index, proxies);
+        return proxies;
     }
 
     /**
@@ -958,6 +990,14 @@ export class PeerTestHarness<
         // Cleanup discovery server and peer servers
         await LocalDiscoveryServer.cleanup();
 
+        // The peers are gone, so their RPC node proxies can close.
+        await Promise.all(
+            [...this.rpcNodeProxies.values()]
+                .flat()
+                .map((proxy) => proxy.close())
+        );
+        this.rpcNodeProxies.clear();
+
         // Drop the provider's pollers; stop the node/discovery we started (if any).
         await this.provider?.destroy();
         this.ownNode?.stop();
@@ -966,6 +1006,30 @@ export class PeerTestHarness<
         this.ownDiscovery = undefined;
 
         this.logger.dispose();
+    }
+
+    /**
+     * Mine `count` blocks with ordinary self-transfers from this slot's
+     * deployer account, one block each: a chain that advances without
+     * channel events and without any node-wide test RPC.
+     */
+    async produceBlocks(count: number): Promise<void> {
+        const deployer = this.signerFor(slotDeployerIndex());
+        for (let block = 0; block < count; block++) {
+            await (
+                await deployer.sendTransaction({
+                    to: deployer.address,
+                    value: 0n
+                })
+            ).wait();
+        }
+    }
+
+    /** The RPC node proxies of a peer set up with `rpcNodeProxiesByPeer`, in PROVIDER_URLS order. */
+    getRpcNodeProxies(index: number): readonly RpcNodeProxy[] {
+        const proxies = this.rpcNodeProxies.get(index);
+        if (!proxies) throw new Error(`Peer ${index} has no RPC node proxies`);
+        return proxies;
     }
 
     getPeer(index: number): TestPeer<TCustomRpc, TStateMachine> {

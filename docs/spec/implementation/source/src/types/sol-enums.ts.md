@@ -23,6 +23,8 @@ TypeScript mirrors of Solidity enums (proof types, message types) — kept in lo
 
 ## Key design decisions
 
+DisputeFraudProofType includes the appended below-anchor, timeout-superseded and final-conflict values. Their numeric meanings remain aligned with Solidity; ordinary fraud and dispute fraud remain separate enum domains. See [sol-enums.ts](../../../../../../src/types/sol-enums.ts#L29).
+
 1. **Enum drift is a protocol bug**, so the mirrors live in one file with the contract names.
 
 ## Inputs, outputs, state, and side effects

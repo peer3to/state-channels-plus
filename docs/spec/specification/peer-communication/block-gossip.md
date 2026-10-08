@@ -85,8 +85,8 @@ sender's own violation.
 When both caches miss, refresh authoritative chain membership and recheck eligibility. If the sender
 is still absent, await ordinary sync for the block's channel, fork and minimum height. After it returns,
 recheck cached eligibility regardless of the sync result and blacklist a sender that is not eligible. Then end the request. Do not queue or merge the triggering copy after sync. Verified history is applied by the
-existing sync pipeline; its existing failure path disconnects and blacklists a failing peer. Its busy
-behavior also remains unchanged. A failed chain read leaves the cached sets unchanged; a sender still absent follows the same ordinary sync path.
+existing sync pipeline. Its caller waits for applicable in-flight work. Sync distinguishes invalid
+payloads from request availability failures under the synchronization rules. A failed chain read leaves the cached sets unchanged; a sender still absent follows the same ordinary sync path.
 There is no separate candidate registry, admission timer, retry window or post-sync processing of the triggering copy.
 
 Publish cache replacements atomically after verified state application or commit. Do not publish failed,

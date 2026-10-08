@@ -3,10 +3,12 @@ import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
-// Own-dispute construction asks the local diamond whether the head milestone
-// is final by everyone. Posting the auditing data is never wrong, so a local
-// "not final" is kept; leaving it out is slashable, so a local "final" is
-// confirmed on-chain. Reads are observed record-only on the constructing peer.
+// Own-dispute construction asks the local diamond whether the auditing data
+// may be omitted (the last milestone holds the anchor or is final by
+// everyone). Posting the auditing data is never wrong, so a local "must post"
+// is kept; leaving it out is slashable, so a local "may omit" is confirmed
+// on-chain. A thrown read is fatal: no tier answers instead. Reads are
+// observed record-only on the constructing peer.
 describe("Unit: DisputeManager.constructDispute local-first finality", function () {
     it("local not final -> kept without a chain read, the auditing data is posted", async function () {
         const h = TestSession.getHarness();
@@ -14,7 +16,7 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         await h.scenario.preDisputeSetupCalldataPath();
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
 
         const { dispute, auditingData } =
@@ -34,7 +36,7 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         await h.lifecycle.start(3, 3);
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
 
         const { dispute } = await h.dispute.fetchConstructedDispute(0);
@@ -50,7 +52,7 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         await stageMirrorMissingJoin(h, 0);
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
 
         const { dispute, auditingData } =
@@ -65,26 +67,30 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         );
     });
 
-    it("local revert -> the chain answers final instead, the auditing data is left out", async function () {
+    it("local revert -> construction throws it, no chain read", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
         await h.mirror.failNextLocalRead(
             0,
-            "isLastMilestoneFinalByEveryone",
+            "isAuditingDataOmissionAllowed",
             "revert"
         );
 
-        const { dispute } = await h.dispute.fetchConstructedDispute(0);
+        const failure = await h.dispute.fetchConstructedDispute(0).then(
+            () => null,
+            (error: unknown) =>
+                error instanceof Error ? error.message : String(error)
+        );
 
         const { local, chain } = await reads.observation();
         expect(local.failures).to.have.length(1);
         expect(local.failures[0]).to.contain("Local EVM execution failed");
-        expect(chain.answers).to.deep.equal([true]);
-        expect(dispute.postedAuditingData).to.equal(false);
+        expect(failure).to.contain("Local EVM execution failed");
+        expect(chain.reads).to.equal(0);
     });
 
     it("local executor failure (not a revert) -> construction throws it, no chain read", async function () {
@@ -92,11 +98,11 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         await h.lifecycle.start(3, 3);
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
         await h.mirror.failNextLocalRead(
             0,
-            "isLastMilestoneFinalByEveryone",
+            "isAuditingDataOmissionAllowed",
             "transport"
         );
 
@@ -116,11 +122,11 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         await h.lifecycle.start(3, 3);
         const reads = await h.mirror.observe(
             0,
-            "isLastMilestoneFinalByEveryone"
+            "isAuditingDataOmissionAllowed"
         );
         await h.mirror.failNextChainRead(
             0,
-            "isLastMilestoneFinalByEveryone",
+            "isAuditingDataOmissionAllowed",
             "transport"
         );
 

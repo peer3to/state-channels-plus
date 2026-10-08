@@ -72,7 +72,7 @@ describe("E2E: Participant Lifecycle", function () {
                             lastInboundMessageBlockHeight:
                                 snapshot.snapshotData
                                     .latestInboundMessageBlockHeight,
-                            stateProof: { milestones: [], signedBlocks: [] },
+                            stateProof: { milestones: [] },
                             onChainSlashes: [args.leaver],
                             disputeAuditingDataHash: ethers.ZeroHash,
                             disputer: args.leaver,

@@ -1,5 +1,6 @@
 import { EVIDENCE_COMPARISON_FAULT_MESSAGE } from "@test/fixtures/customRpc/harnessControl/services/stub/node/EvidenceComparisonRecorder";
 import {
+    EVIDENCE_UPLOAD_FAILURE_MESSAGE,
     stageEvidenceAuditsOfDisputeRace,
     stageEvidenceComparisonReplacedAfterKill,
     stageEvidenceUploadRetry,
@@ -10,6 +11,9 @@ import {
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+
+const MISSING_INBOUND_RUN_MESSAGE =
+    "the inbound run is unavailable after event recovery";
 
 // After a dispute passes its audit, a node that has not disputed the fork
 // asks DisputeManager.shouldAddOwnEvidence, which compares its own evidence
@@ -62,22 +66,30 @@ describe("Unit: EventHandler evidence comparison", function () {
         });
     });
 
-    it("a comparison ended by partial own auditing data is not kept: the next audit compares again", async function () {
+    it("a comparison ended by missing own auditing data is not kept: the next audit compares again", async function () {
         const h = TestSession.getHarness();
         const { auditorIndex, first, recorder } =
             await stageSequentialEvidenceAudits(h, "unrecoverableInboundRun");
 
         expect(first).to.have.length(1);
+        // missing own data throws: there is no partial auditing data
         expect(first[0]).to.include({
             outcome: "rejected",
-            errorName: "PartialAuditingDataError"
+            errorName: "Error"
         });
         const comparisons = await recorder.comparisons();
         expect(
             comparisons.map((comparison) => comparison.outcome)
         ).to.deep.equal(["rejected", "resolved"]);
-        // partial data is no answer, not a failure: both audits completed
-        await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 2);
+        // the failed comparison failed its audit; the retried one completed
+        await h.event.waitForPeers("onDisputeCommitted", [auditorIndex], 1);
+        await TestSession.expectFirstDetachedError({
+            includes: MISSING_INBOUND_RUN_MESSAGE,
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: MISSING_INBOUND_RUN_MESSAGE
+        });
     });
 
     it("concurrent audits share one in-flight comparison: while the first is held the second audit starts no construction, and both get its answer", async function () {
@@ -117,13 +129,27 @@ describe("Unit: EventHandler evidence comparison", function () {
 
     it("a positive comparison whose upload fails is kept: the next audit retries the upload without comparing again", async function () {
         const h = TestSession.getHarness();
-        const { auditorIndex, firstUploads, auditorUploads, recorder } =
-            await stageEvidenceUploadRetry(h);
+        const {
+            auditorIndex,
+            firstUploads,
+            auditorUploads,
+            secondUpload,
+            recorder
+        } = await stageEvidenceUploadRetry(h);
         const auditor = h.getPeer(auditorIndex);
 
-        // the first audit found more evidence; its upload was lost
+        // the first audit found more evidence; its upload failed, which is
+        // fatal to that audit
         expect(firstUploads).to.have.length(1);
         expect(firstUploads[0]).to.include({ waited: false, revert: null });
+        await TestSession.expectFirstDetachedError({
+            includes: EVIDENCE_UPLOAD_FAILURE_MESSAGE,
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+
+        // the second dispute lands only after the first audit failed
+        await secondUpload.waitUntilHeld();
+        await secondUpload.release();
 
         // the second audit reuses the answer and uploads again, for real
         await waitFor(async () => {
@@ -143,8 +169,9 @@ describe("Unit: EventHandler evidence comparison", function () {
             true,
             true
         ]);
-        // the lost upload was contained: no audit failed
-        await TestSession.settleDetached();
+        await TestSession.settleDetached({
+            expectedErrorIncludes: EVIDENCE_UPLOAD_FAILURE_MESSAGE
+        });
     });
 
     it("a comparison dropped by a kill cannot erase its replacement when it settles later", async function () {

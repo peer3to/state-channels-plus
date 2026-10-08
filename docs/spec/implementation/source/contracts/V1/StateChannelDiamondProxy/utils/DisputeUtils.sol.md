@@ -25,6 +25,8 @@ and the positional committed-set matching `areDisputesCommitted`.
 
 ## Key design decisions
 
+The latest signed block comes only from the last confirmation of the last milestone; an empty proof or empty final milestone has no block. Header mismatch is owned by DisputeFraudProofFacet because its target eligibility depends on the chain anchor. Removed signed-tail extraction helpers have no replacement array; replay uses walk positions. See [DisputeUtils.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L31).
+
 1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
 2. **Every period predicate returns its deadline alongside the verdict:**
    `_isEvidencePeriodExpired`, `_isKillPeriodExpired` and `_isReduceChallengePeriodExpired` all

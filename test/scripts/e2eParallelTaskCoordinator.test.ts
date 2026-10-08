@@ -1,8 +1,14 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
+const { CostCache } = require("../../scripts/e2e-parallel/shared/costCache.js");
 const {
-    TaskCoordinator
+    TaskCoordinator,
+    reduceAttemptOutput,
+    validateReducedAttempt
 } = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
 function task(label: string): {
@@ -18,6 +24,531 @@ function task(label: string): {
 }
 
 describe("distributed task coordinator", function () {
+    it("breaks equal tier and duration ties by discovery order", function () {
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("general"),
+                    cost: {
+                        durationMs: 100000,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("required-first"),
+                    requires: ["browser"],
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("browser-second"),
+                    runner: "browser",
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost" }
+        );
+        expect(coordinator.requestTask("worker").task.label).to.equal(
+            "required-first"
+        );
+        expect(coordinator.requestTask("worker").task.label).to.equal(
+            "browser-second"
+        );
+        expect(coordinator.requestTask("worker").task.label).to.equal(
+            "general"
+        );
+        const equal = new TaskCoordinator(
+            [
+                {
+                    ...task("one"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("two"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost" }
+        );
+        expect(equal.requestTask("worker").task.label).to.equal("one");
+        expect(equal.requestTask("worker").task.label).to.equal("two");
+    });
+
+    it("re-ranks queued cost tasks when a sibling finishes", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-rerank-"));
+        const inFile = (label: string, file: string) => ({
+            ...task(label),
+            runner: "hardhat",
+            fullTitle: label,
+            args: ["test", "--no-compile", file]
+        });
+        try {
+            const other = inFile("other", "test/unit/b.test.ts");
+            const seed = new CostCache({ projectRoot: root });
+            seed.record(
+                other,
+                { code: 0, durationMs: 4000 },
+                { disposition: "complete", server: "seed", starveCount: 0 }
+            );
+            seed.commit();
+            const coordinator = new TaskCoordinator(
+                [
+                    inFile("a1", "test/unit/a.test.ts"),
+                    inFile("a2", "test/unit/a.test.ts"),
+                    other
+                ],
+                {
+                    schedule: "cost",
+                    costCache: new CostCache({ projectRoot: root })
+                }
+            );
+            // Cold 5 s beats the cached 4 s.
+            const first = coordinator.requestTask("worker");
+            expect(first.task.label).to.equal("a1");
+            coordinator.completeAttempt("worker", {
+                attemptId: first.attemptId,
+                code: 0,
+                durationMs: 1000
+            });
+            // a2 now takes its sibling's 1 s.
+            expect(coordinator.requestTask("worker").task.label).to.equal(
+                "other"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("re-resolves a starved cost retry at its inflated cost", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-starved-"));
+        let clock = 0;
+        try {
+            const coordinator = new TaskCoordinator(
+                [
+                    {
+                        ...task("starves"),
+                        runner: "hardhat",
+                        fullTitle: "starves",
+                        args: ["test", "--no-compile", "test/unit/a.test.ts"]
+                    }
+                ],
+                {
+                    schedule: "cost",
+                    costCache: new CostCache({ projectRoot: root }),
+                    now: () => ++clock
+                }
+            );
+            const first = coordinator.requestTask("worker");
+            expect(first.task.cost.known).to.equal(false);
+            expect(
+                coordinator.completeAttempt("worker", {
+                    attemptId: first.attemptId,
+                    code: 0,
+                    durationMs: 1000,
+                    stdout: "",
+                    stderr: "",
+                    reduced: {
+                        ...reduceAttemptOutput(),
+                        starveCount: 1,
+                        peakRssGb: 1,
+                        avgCores: 2
+                    }
+                }).disposition
+            ).to.equal("retry-starvation");
+            const retry = coordinator.requestTask("worker");
+            expect(retry.task.cost).to.deep.equal({
+                durationMs: 1000,
+                cores: 3,
+                rssGb: 1.5,
+                known: true
+            });
+            // Run metrics keep the first assignment, not the retry's.
+            expect(retry.assignedAt).to.be.greaterThan(first.assignedAt);
+            expect(retry.task.firstAssignedAt).to.equal(first.assignedAt);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("leaves the cost cache alone when a redundant speculative copy succeeds", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "cost-redundant-"));
+        try {
+            const cache = new CostCache({ projectRoot: root });
+            const only = {
+                ...task("only"),
+                runner: "hardhat",
+                fullTitle: "only",
+                args: ["test", "--no-compile", "test/unit/a.test.ts"]
+            };
+            const coordinator = new TaskCoordinator([only], {
+                speculative: true,
+                costCache: cache
+            });
+            const first = coordinator.requestTask("a");
+            const copy = coordinator.requestTask("b");
+            const result = (attemptId: string, durationMs: number) => ({
+                attemptId,
+                code: 0,
+                durationMs,
+                stdout: "",
+                stderr: ""
+            });
+            coordinator.completeAttempt("a", result(first.attemptId, 100));
+            expect(
+                coordinator.completeAttempt("b", result(copy.attemptId, 999))
+                    .accepted
+            ).to.equal(false);
+            expect(cache.resolve(only).durationMs).to.equal(100);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps a task's first assignment when a speculative copy is handed out", function () {
+        let clock = 0;
+        const only = task("only");
+        const coordinator = new TaskCoordinator([only], {
+            speculative: true,
+            now: () => ++clock
+        });
+        const first = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+        expect(copy.speculative).to.equal(true);
+        expect(copy.assignedAt).to.be.greaterThan(first.assignedAt);
+        expect(only).to.have.property("firstAssignedAt", first.assignedAt);
+    });
+
+    it("hands a busy cost worker the best task its budget fits and the long one to a worker with room", function () {
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("long"),
+                    cost: { durationMs: 1000, cores: 2, rssGb: 1 }
+                },
+                {
+                    ...task("short"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.5,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost" }
+        );
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 1, rssGb: 4 }
+            }).task.label
+        ).to.equal("short");
+        expect(coordinator.requestTask("idle").task.label).to.equal("long");
+    });
+
+    it("refuses a busy cost worker while nothing queued fits and counts the hold", function () {
+        const holds: Array<{ workerId: string; seq: number; reason: string }> =
+            [];
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("big"),
+                    cost: { durationMs: 100, cores: 2, rssGb: 1 }
+                }
+            ],
+            {
+                schedule: "cost",
+                onBudgetHold: (hold: {
+                    workerId: string;
+                    seq: number;
+                    reason: string;
+                }) => holds.push(hold)
+            }
+        );
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 1, rssGb: 4 }
+            })
+        ).to.equal(null);
+        expect(
+            coordinator.requestTask("busy", {
+                costBudget: { cores: 4, rssGb: 0.5 }
+            })
+        ).to.equal(null);
+        expect(holds).to.deep.equal([
+            { workerId: "busy", seq: 1, reason: "cpu" },
+            { workerId: "busy", seq: 1, reason: "memory" }
+        ]);
+        // A refused worker is busy, not idle.
+        expect(coordinator.workers.get("busy").idle).to.equal(false);
+        expect(
+            coordinator.withBudgetHolds("busy", {
+                holdCounts: { cap: 1, memory: 1, cpu: 2 }
+            }).holdCounts
+        ).to.deep.equal({ cap: 1, memory: 2, cpu: 3 });
+        expect(
+            coordinator.withBudgetHolds("other", { holdCounts: { cap: 1 } })
+        ).to.deep.equal({ holdCounts: { cap: 1 } });
+        expect(coordinator.requestTask("idle").task.label).to.equal("big");
+    });
+
+    it("gives a busy cost worker a speculative copy only when it fits its budget", function () {
+        const make = () =>
+            new TaskCoordinator(
+                [
+                    {
+                        ...task("only"),
+                        cost: {
+                            durationMs: 100,
+                            cores: 2,
+                            rssGb: 1
+                        }
+                    }
+                ],
+                { schedule: "cost", speculative: true, now: () => 0 }
+            );
+        const tight = make();
+        tight.requestTask("first");
+        expect(
+            tight.requestTask("busy", { costBudget: { cores: 1, rssGb: 4 } })
+        ).to.equal(null);
+        const roomy = make();
+        roomy.requestTask("first");
+        expect(
+            roomy.requestTask("busy", { costBudget: { cores: 3, rssGb: 4 } })
+                .speculative
+        ).to.equal(true);
+    });
+
+    it("retains canRun filtering during cost priority retries", function () {
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("browser"),
+                    runner: "browser",
+                    cost: {
+                        durationMs: 1000,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("short"),
+                    cost: {
+                        durationMs: 10,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("long"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost" }
+        );
+        coordinator.registerWorker("old", {
+            canRun: (entry: { runner?: string }) => entry.runner !== "browser"
+        });
+        const first = coordinator.requestTask("old");
+        expect(first.task.label).to.equal("long");
+        expect(
+            coordinator.completeAttempt("old", {
+                attemptId: first.attemptId,
+                code: 1,
+                durationMs: 1,
+                infrastructureFailure: "worker lost"
+            }).disposition
+        ).to.equal("retry-infrastructure");
+        const retry = coordinator.requestTask("old");
+        expect(retry.task.label).to.equal("long");
+        coordinator.completeAttempt("old", {
+            attemptId: retry.attemptId,
+            code: 0,
+            durationMs: 1
+        });
+        expect(coordinator.requestTask("old").task.label).to.equal("short");
+        expect(coordinator.requestTask("old")).to.equal(null);
+        expect(coordinator.requestTask("new").task.label).to.equal("browser");
+    });
+
+    it("ranks speculative copies by remaining duration and discovery ties", function () {
+        let now = 0;
+        const coordinator = new TaskCoordinator(
+            [
+                {
+                    ...task("short"),
+                    cost: {
+                        durationMs: 5000,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("long"),
+                    cost: {
+                        durationMs: 10000,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost", speculative: true, now: () => now }
+        );
+        const long = coordinator.requestTask("one");
+        expect(long.task.label).to.equal("long");
+        expect(long.assignedAt).to.equal(0);
+        now = 9000;
+        const short = coordinator.requestTask("two");
+        expect(short.assignedAt).to.equal(9000);
+        now = 9100;
+        expect(coordinator.requestTask("three").task.label).to.equal("short");
+        expect(coordinator.requestTask("three").task.label).to.equal("long");
+        expect(coordinator.requestTask("three")).to.equal(null);
+        const tied = new TaskCoordinator(
+            [
+                {
+                    ...task("first"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                },
+                {
+                    ...task("second"),
+                    cost: {
+                        durationMs: 100,
+                        cores: 0.3,
+                        rssGb: 0.5
+                    }
+                }
+            ],
+            { schedule: "cost", speculative: true, now: () => now }
+        );
+        tied.requestTask("one");
+        tied.requestTask("two");
+        expect(tied.requestTask("three").task.label).to.equal("first");
+    });
+
+    it("copies local and reduced CPU measurements into task records", function () {
+        const tasks = [task("local"), task("reduced"), task("unavailable")];
+        const coordinator = new TaskCoordinator(tasks);
+        const local = coordinator.requestTask("local");
+        coordinator.completeAttempt("local", {
+            attemptId: local.attemptId,
+            code: 0,
+            durationMs: 10,
+            peakRssGb: 0.5,
+            avgCores: 0.75,
+            measurementReason: null
+        });
+        expect(local.task).to.include({
+            peakRssGb: 0.5,
+            avgCores: 0.75,
+            measurementReason: null
+        });
+        expect(local.task.finalAttempt.avgCores).to.equal(0.75);
+        const remote = coordinator.requestTask("remote");
+        coordinator.completeAttempt("remote", {
+            attemptId: remote.attemptId,
+            code: 0,
+            durationMs: 20,
+            peakRssGb: 9,
+            avgCores: 9,
+            reduced: {
+                ...reduceAttemptOutput(),
+                peakRssGb: 0.25,
+                avgCores: 0.125
+            }
+        });
+        expect(remote.task).to.include({
+            peakRssGb: 0.25,
+            avgCores: 0.125,
+            measurementReason: null
+        });
+        const unavailable = coordinator.requestTask("remote");
+        coordinator.completeAttempt("remote", {
+            attemptId: unavailable.attemptId,
+            code: 0,
+            peakRssGb: 9,
+            avgCores: 9,
+            reduced: {
+                ...reduceAttemptOutput(),
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: null
+            }
+        });
+        expect(unavailable.task).to.include({
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "process-sampling-unavailable"
+        });
+    });
+
+    it("rejects malformed reduced resource measurements", function () {
+        const metadata = reduceAttemptOutput();
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: -1, avgCores: 0 })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: 0, avgCores: NaN })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: Infinity,
+                avgCores: 0
+            })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: "1", avgCores: 0 })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({ ...metadata, peakRssGb: null })
+        ).to.throw("resource measurements");
+        expect(() =>
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: null,
+                avgCores: null,
+                measurementReason: "unknown"
+            })
+        ).to.throw("resource measurements");
+        expect(validateReducedAttempt(metadata)).to.include({
+            peakRssGb: null,
+            avgCores: null,
+            measurementReason: "legacy-measurements-unavailable"
+        });
+        expect(
+            validateReducedAttempt({
+                ...metadata,
+                peakRssGb: null,
+                avgCores: 0,
+                measurementReason: null
+            })
+        ).to.include({ measurementReason: "process-sampling-unavailable" });
+    });
+
     it("uses worker-reduced metadata when successful output is not uploaded", function () {
         const firstTask = task("starved");
         const coordinator = new TaskCoordinator([firstTask]);

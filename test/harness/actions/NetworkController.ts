@@ -82,6 +82,20 @@ export class NetworkController<
         peerIndices: number[],
         options?: ConnectToChannelOptions
     ): Promise<void> {
+        await this.clearPeerIsolation(peerIndices);
+        await this.connectPeers(peerIndices, options);
+    }
+
+    /** Resume transport discovery without starting another channel lifecycle. */
+    async restorePeerDiscovery(peerIndices: number[]): Promise<void> {
+        await this.clearPeerIsolation(peerIndices);
+        await this.joinSelectedKey(
+            peerIndices,
+            this.harness.channelId!.toString()
+        );
+    }
+
+    private async clearPeerIsolation(peerIndices: number[]): Promise<void> {
         const peers = this.harness.getFilteredPeers(peerIndices);
         // Isolation can stop discovery's retry loop. Restart this observation
         // explicitly; joining an already observed topic is idempotent.
@@ -111,7 +125,6 @@ export class NetworkController<
                     ])
             )
         );
-        await this.connectPeers(peerIndices, options);
     }
 
     async joinLobby(peerIndices: number[], rendezvousTopic: string) {
