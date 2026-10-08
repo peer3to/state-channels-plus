@@ -713,7 +713,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         StateSnapshot memory previousSnapshot,
         StateSnapshot memory resultingSnapshot
     ) internal view returns (bool isFault, bool snapshotMismatch) {
-        if (milestoneIndex >= input.stateProof.milestones.length) return (false, false);
+        if (milestoneIndex >= input.stateProof.milestones.length) {
+            return (false, false);
+        }
         WalkCursor memory cursor;
         ProofWalkResult memory result;
         // the walk's start belongs to its first step

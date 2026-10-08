@@ -25,7 +25,8 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // A successful batch means every committed proof was eligible and applied.
             require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
-            if (slashedParticipant == proofs[i].participant) {
+            // zero is the invalid verdict -> never a kill target
+            if (slashedParticipant != address(0) && slashedParticipant == proofs[i].participant) {
                 _delegatecall(
                     disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
                 );

@@ -29,10 +29,23 @@ import {
     RaceConditionOnChainSlashes
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
+import {_delegatecall} from "../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol";
 import {
     DisputeBlockAuthorNotParticipant,
+    DisputeConflictsWithFinalState,
+    DisputeInboundAnchorBehindLatestState,
+    DisputeInvalidBalanceInvariant,
+    DisputeInvalidBlockInStateProofApplyFraudProof,
     DisputeInvalidBlockStructure,
-    TimeoutCalldataPosted
+    DisputeInvalidOutputState,
+    DisputeInvalidStateProof,
+    DisputeNotLatestState,
+    InvalidDisputeReason,
+    TimeoutCalldataPosted,
+    TimeoutParticipantNotNext,
+    TimeoutSupersededByFinalState,
+    TimeoutThreshold,
+    TimeoutTooEarly
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
@@ -46,6 +59,14 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         disputeVerificationFacetAddress = address(this);
         stateProofFacetAddress = address(new StateProofFacet());
         utilityFacetAddress = address(new UtilityFacet());
+    }
+
+    /// routes StateProofFacet self-calls (`isMilestoneFinal`) like the proxy fallback does
+    fallback() external {
+        bytes memory result = _delegatecall(stateProofFacetAddress, msg.data);
+        assembly ("memory-safe") {
+            return(add(result, 32), mload(result))
+        }
     }
 
     function seedDispute(Dispute memory dispute, uint256 lastEvidenceSubmissionTimestamp) external {
@@ -668,6 +689,78 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
     }
 
+    function test_applyDisputeFraudProofs_validNonzeroVerdict_killsDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyInvalidDispute(keccak256("valid-verdict"), address(0xA1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 0);
+        address[] memory slashed =
+            harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP);
+        assertEq(slashed.length, 1);
+        assertEq(slashed[0], dispute.input.disputer);
+    }
+
+    // an outsider names target zero on an invalid proof -> the handler's zero
+    // verdict must not count as a match against an honest dispute
+    function test_applyDisputeFraudProofs_zeroTargetOnHonestDispute_doesNotKill() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory dispute = _structurallyValidDispute(keccak256("zero-target"), address(0xA1));
+        // the block-structure proof must fail on this dispute -> handler verdict is zero
+        assertFalse(diamond.isInvalidBlockStructureInStateProof(dispute.input.stateProof, 1));
+        vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+        harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+        DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+        proofs[0] = _structuralProof(dispute);
+        proofs[0].participant = address(0);
+        vm.prank(address(0xBEEF));
+        harness.applyDisputeFraudProofs(proofs);
+
+        assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
+        assertEq(harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length, 0);
+    }
+
+    // every family with a well-formed failing payload: a zero target never kills an honest
+    // dispute or records a slash; the slash-subset family reverts by design
+    function test_applyDisputeFraudProofs_zeroTargetEveryFamily_neverKills() public {
+        for (uint8 i = 0; i <= uint8(type(DisputeFraudProofType).max); i++) {
+            DisputeFraudProofType proofType = DisputeFraudProofType(i);
+            DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+            Dispute memory dispute = _structurallyValidDispute(keccak256(abi.encode("zero-target", i)), address(0xA1));
+            vm.warp(KILL_PERIOD_BASE_TIMESTAMP);
+            harness.seedDispute(dispute, KILL_PERIOD_BASE_TIMESTAMP);
+
+            DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
+            proofs[0].dispute = dispute;
+            proofs[0].proofType = proofType;
+            proofs[0].encodedProof = _defaultDisputeFraudPayload(proofType, dispute);
+            proofs[0].participant = address(0);
+            if (proofType == DisputeFraudProofType.DisputeOnChainSlashesNotSubset) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        RaceConditionOnChainSlashes.selector, CHANNEL_ID, new address[](0), new address[](0)
+                    )
+                );
+            }
+            vm.prank(address(0xBEEF));
+            harness.applyDisputeFraudProofs(proofs);
+
+            assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1, "dispute stays committed");
+            assertEq(
+                harness.getOnChainSlashedParticipantsUpToTimestamp(CHANNEL_ID, KILL_PERIOD_BASE_TIMESTAMP).length,
+                0,
+                "nobody slashed"
+            );
+        }
+    }
+
     function test_killDispute_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-kill"), address(0xA1));
@@ -953,8 +1046,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
     }
 
-    /// a one-milestone dispute whose second block is unsigned, so the structure proof at (0, 1) holds
-    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+    /// a one-milestone dispute of two linked, signed blocks, so the structure proof at (0, 1) fails
+    function _structurallyValidDispute(bytes32 forkId, address disputer)
         internal
         pure
         returns (Dispute memory dispute)
@@ -968,7 +1061,91 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         dispute.input.stateProof.milestones[0].blockConfirmations[0].signedBlock = first;
         dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock =
             _makeSignedBlock(1, CHANNEL_ID, forkId, 1, 2, keccak256(first.encodedBlock));
+    }
+
+    /// a one-milestone dispute whose second block is unsigned, so the structure proof at (0, 1) holds
+    function _structurallyInvalidDispute(bytes32 forkId, address disputer)
+        internal
+        pure
+        returns (Dispute memory dispute)
+    {
+        dispute = _structurallyValidDispute(forkId, disputer);
         dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock.signature = hex"00";
+    }
+
+    // a well-formed payload per family, default fields -> fails against an honest dispute
+    function _defaultDisputeFraudPayload(DisputeFraudProofType proofType, Dispute memory dispute)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        SignedBlock memory disputedBlock = dispute.input.stateProof.milestones[0].blockConfirmations[1].signedBlock;
+        if (proofType == DisputeFraudProofType.DisputeNotLatestState) {
+            // the disputed block itself -> not newer
+            return abi.encode(
+                DisputeNotLatestState({encodedBlock: disputedBlock.encodedBlock, signature: disputedBlock.signature})
+            );
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidOutputState) {
+            DisputeInvalidOutputState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidStateProof) {
+            DisputeInvalidStateProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBalanceInvariant) {
+            DisputeInvalidBalanceInvariant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutThreshold) {
+            TimeoutThreshold memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutCalldataPosted) {
+            TimeoutCalldataPosted memory payload;
+            payload.postedBlock = disputedBlock;
+            payload.previousBlockcalldata = disputedBlock;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutParticipantNotNext) {
+            TimeoutParticipantNotNext memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutTooEarly) {
+            TimeoutTooEarly memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof) {
+            DisputeInvalidBlockInStateProofApplyFraudProof memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.InvalidDisputeReason) {
+            InvalidDisputeReason memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInboundAnchorBehindLatestState) {
+            DisputeInboundAnchorBehindLatestState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeInvalidBlockStructure) {
+            DisputeInvalidBlockStructure memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
+            DisputeBlockAuthorNotParticipant memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.TimeoutSupersededByFinalState) {
+            TimeoutSupersededByFinalState memory payload;
+            return abi.encode(payload);
+        }
+        if (proofType == DisputeFraudProofType.DisputeConflictsWithFinalState) {
+            DisputeConflictsWithFinalState memory payload;
+            return abi.encode(payload);
+        }
+        // the remaining families carry a single unused bool
+        return abi.encode(false);
     }
 
     function _structuralProof(Dispute memory dispute) internal pure returns (DisputeFraudProof memory proof) {
