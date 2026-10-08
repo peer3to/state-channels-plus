@@ -1,11 +1,6 @@
-# test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts — Test Report
+# E2E-InvalidTransitionPredecessorProof.test.ts
 
-> **Test file:** [test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts)
 
 ## Overview
 
@@ -27,16 +22,9 @@ inbound blocks from the outsider, whose author stays slashable, must slash nobod
 from a non-author participant must slash only that submitter, because the leaver is no longer
 slashable.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                     | Covers                                                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: invalid-transition proof predecessor binding and replay > outsider forging the predecessor of an honest first and later block slashes nobody`](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts#L12) (line 12)                        | [`INV-ENFFP-1-BGVZN4.T1.P12`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p12), [`INV-ENFFP-1-BGVZN4.T1.P13`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p13) |
-| [`E2E: invalid-transition proof predecessor binding and replay > participant forging the predecessor of an honest later block slashes only the submitter`](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts#L18) (line 18)                   | —                                                                                                                                                                                                                                  |
-| [`E2E: invalid-transition proof predecessor binding and replay > genuine predecessor proofs against honest first and later blocks slash only a participant submitter`](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts#L24) (line 24)       | [`INV-ENFFP-1-BGVZN4.T1.P16`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p16)                                                                                                                   |
-| [`E2E: invalid-transition proof predecessor binding and replay > genuine predecessor proofs against client-built blocks with inbound and outbound messages slash no signer`](../../../../../../test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts#L30) (line 30) | [`INV-ENFFP-1-BGVZN4.T1.P17`](../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4.t1.p17)                                                                                                                   |
+- `outsider forging the predecessor of an honest first and later block slashes nobody`: INV-ENFFP-1-BGVZN4.T1.P12, INV-ENFFP-1-BGVZN4.T1.P13
+- `participant forging the predecessor of an honest later block slashes only the submitter`: none
+- `genuine predecessor proofs against honest first and later blocks slash only a participant submitter`: INV-ENFFP-1-BGVZN4.T1.P16
+- `genuine predecessor proofs against client-built blocks with inbound and outbound messages slash no signer`: INV-ENFFP-1-BGVZN4.T1.P17

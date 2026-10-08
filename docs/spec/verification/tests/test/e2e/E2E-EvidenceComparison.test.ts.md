@@ -1,7 +1,7 @@
-# test/e2e/E2E-EvidenceComparison.test.ts — Test Report
+# E2E-EvidenceComparison.test.ts
 
-> **Test file:** [E2E-EvidenceComparison.test.ts](../../../../../../test/e2e/E2E-EvidenceComparison.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [DisputeManager.ts.md](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md)
+Test file: [E2E-EvidenceComparison.test.ts](../../../../../../test/e2e/E2E-EvidenceComparison.test.ts)
+Exercises: [DisputeManager.ts.md](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md)
 
 ## Overview
 
@@ -21,8 +21,6 @@ and peer 0 observes the auditor's own `DisputeCommitted` with `selfRemoval` set.
 invalidation (`EventHandler.onDisputeKilled` calls `DisputeManager.forgetEvidenceComparison`) the
 cached negative answer would suppress that upload.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: evidence comparison after a dispute kill > a killed dispute drops the cached comparison: the next audit compares again and the non-disputer uploads its added evidence`](../../../../../../test/e2e/E2E-EvidenceComparison.test.ts#L9) (line 9) | [`UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P6`](../../../../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-7-q63jzm), [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P8`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p8) |
+- `a killed dispute drops the cached comparison: the next audit compares again and the non-disputer uploads its added evidence`: UNIT-TEST-DISPUTE-MANAGER-7-Q63JZM.P6, REQ-DISPUTE-PIPE-6-6FZB9M.T1.P8

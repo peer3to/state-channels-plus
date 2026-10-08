@@ -1,22 +1,19 @@
-# test/utils/errorMessage.test.ts — Test Report
+# errorMessage.test.ts
 
-> **Test file:** [errorMessage.test.ts](../../../../../../test/utils/errorMessage.test.ts)  
-> **Status:** Authored — engineer verification pending.  
-> **Exercises:** [errorMessage.ts.md](../../../../implementation/source/src/utils/errorMessage.ts.md)
+Test file: [errorMessage.test.ts](../../../../../../test/utils/errorMessage.test.ts)
+Exercises: [errorMessage.ts.md](../../../../implementation/source/src/utils/errorMessage.ts.md)
 
 ## Overview
 
 Call the leaf helper with Error and non-Error inputs; compare exact message or String conversion, including empty strings and custom conversion.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                              | Covers                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`errorMessage > formats Error`](../../../../../../test/utils/errorMessage.test.ts#L5) (line 5)               | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P1`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats empty Error`](../../../../../../test/utils/errorMessage.test.ts#L8) (line 8)         | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P2`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats string`](../../../../../../test/utils/errorMessage.test.ts#L11) (line 11)            | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P3`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats null`](../../../../../../test/utils/errorMessage.test.ts#L14) (line 14)              | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P4`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats undefined`](../../../../../../test/utils/errorMessage.test.ts#L17) (line 17)         | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P5`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats number`](../../../../../../test/utils/errorMessage.test.ts#L20) (line 20)            | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P6`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats symbol`](../../../../../../test/utils/errorMessage.test.ts#L23) (line 23)            | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P7`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
-| [`errorMessage > formats custom conversion`](../../../../../../test/utils/errorMessage.test.ts#L26) (line 26) | [`UNIT-TEST-ERROR-MESSAGE-32-X678KX.P8`](../../../../implementation/source/src/utils/errorMessage.ts.md#unit-test-error-message-32-x678kx) |
+- `formats Error`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P1
+- `formats empty Error`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P2
+- `formats string`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P3
+- `formats null`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P4
+- `formats undefined`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P5
+- `formats number`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P6
+- `formats symbol`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P7
+- `formats custom conversion`: UNIT-TEST-ERROR-MESSAGE-32-X678KX.P8

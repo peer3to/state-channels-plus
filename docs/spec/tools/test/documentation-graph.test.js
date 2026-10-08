@@ -46,7 +46,7 @@ function fixture(run) {
         write("test/graph.test.ts", 'it("case 1", () => {});\n');
         write(
             "docs/spec/verification/tests/test/graph.test.ts.md",
-            `# Test\n\n> **Test file:** [test](../../../../../test/graph.test.ts)\n\n| Test | Covers |\n| --- | --- |\n| [case 1](../../../../../test/graph.test.ts#L1) (line 1) | ${family}.P1, ${requirement}.T1.P1 |\n`
+            `# graph.test.ts\n\nTest file: [test](../../../../../test/graph.test.ts)\n\n## Tests\n\n- \`case 1\`: ${family}.P1, ${requirement}.T1.P1\n`
         );
         const fix = spawnSync(
             process.execPath,

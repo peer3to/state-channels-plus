@@ -1,38 +1,31 @@
-# test/evm/ContractExecutor.test.ts — Test Report
+# ContractExecutor.test.ts
 
-> **Test file:** [test/evm/ContractExecutor.test.ts](../../../../../../test/evm/ContractExecutor.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/ContractExecutor.test.ts](../../../../../../test/evm/ContractExecutor.test.ts)
+Exercises: [ContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md)
 
 ## Overview
 
 Covers inline execution, dedicated Node workers, supplied and runtime clocks, constructor time, simulation rollback, and the factory before Clock initialization.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                                             | Covers                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`ContractExecutor > should successfully execute a call to get a value`](../../../../../../test/evm/ContractExecutor.test.ts#L71) (line 71)                                                      | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should successfully execute a call to set a value`](../../../../../../test/evm/ContractExecutor.test.ts#L88) (line 88)                                                      | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should successfully set state using bytes`](../../../../../../test/evm/ContractExecutor.test.ts#L115) (line 115)                                                            | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should return RPC-style logs`](../../../../../../test/evm/ContractExecutor.test.ts#L147) (line 147)                                                                         | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should simulate a mutating call without persisting it`](../../../../../../test/evm/ContractExecutor.test.ts#L176) (line 176)                                                | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should not expand the underlying EVM DB on simulated mutating calls`](../../../../../../test/evm/ContractExecutor.test.ts#L205) (line 205)                                  | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should expand the underlying EVM DB on canonical mutating calls`](../../../../../../test/evm/ContractExecutor.test.ts#L220) (line 220)                                      | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should make simulations wait while a canonical call holds the mutex`](../../../../../../test/evm/ContractExecutor.test.ts#L235) (line 235)                                  | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should simulate from the committed state after a canonical call releases`](../../../../../../test/evm/ContractExecutor.test.ts#L287) (line 287)                             | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should serialize detached simulations`](../../../../../../test/evm/ContractExecutor.test.ts#L350) (line 350)                                                                | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should serialize many detached canonical increments and simulations without corrupting state`](../../../../../../test/evm/ContractExecutor.test.ts#L388) (line 388)         | [`REQ-RUNTIME-2-KBXKTG.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-2-kbxktg.t1.p1)                                                                                                        |
-| [`ContractExecutor > should serialize canonical detached calls before entering evm.runCall`](../../../../../../test/evm/ContractExecutor.test.ts#L467) (line 467)                                | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should throw an error for invalid function calls`](../../../../../../test/evm/ContractExecutor.test.ts#L516) (line 516)                                                     | —                                                                                                                                                                                                                |
-| [`ContractExecutor > should properly decode Solidity revert errors`](../../../../../../test/evm/ContractExecutor.test.ts#L532) (line 532)                                                        | —                                                                                                                                                                                                                |
-| [`ContractExecutor > ambient block time > a bare executor stamps exactly its clock source's value`](../../../../../../test/evm/ContractExecutor.test.ts#L562) (line 562)                         | [`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P1`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-1-jhg6kj)                                              |
-| [`ContractExecutor > ambient block time > the runtime inline executor observes the adjusted Clock and advances`](../../../../../../test/evm/ContractExecutor.test.ts#L575) (line 575)            | [`REQ-TIME-5-S9NQXK.T1.P1`](../../../../specification/protocol-model/time.md#req-time-5-s9nqxk.t1.p1)                                                                                                            |
-| [`ContractExecutor > ambient block time > the runtime dedicated executor observes the adjusted Clock and advances`](../../../../../../test/evm/ContractExecutor.test.ts#L579) (line 579)         | [`REQ-TIME-5-S9NQXK.T1.P2`](../../../../specification/protocol-model/time.md#req-time-5-s9nqxk.t1.p2), [`REQ-RUNTIME-6-6F4SSM.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm.t1.p1) |
-| [`ContractExecutor > ambient block time > deployment records the supplied timestamp in constructor storage`](../../../../../../test/evm/ContractExecutor.test.ts#L583) (line 583)                | [`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P2`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-1-jhg6kj)                                              |
-| [`ContractExecutor > ambient block time > simulation observes the supplied timestamp without persisting its storage write`](../../../../../../test/evm/ContractExecutor.test.ts#L601) (line 601) | [`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P3`](../../../../implementation/source/src/evm/contractExecutor/ContractExecutor.ts.md#unit-test-contract-executor-1-jhg6kj)                                              |
-| [`SDK executor live Clock > reads a changed shared Clock after inline executor construction`](../../../../../../test/evm/ContractExecutor.test.ts#L629) (line 629)                               | —                                                                                                                                                                                                                |
+- `should successfully execute a call to get a value`: none
+- `should successfully execute a call to set a value`: none
+- `should successfully set state using bytes`: none
+- `should return RPC-style logs`: none
+- `should simulate a mutating call without persisting it`: none
+- `should not expand the underlying EVM DB on simulated mutating calls`: none
+- `should expand the underlying EVM DB on canonical mutating calls`: none
+- `should make simulations wait while a canonical call holds the mutex`: none
+- `should simulate from the committed state after a canonical call releases`: none
+- `should serialize detached simulations`: none
+- `should serialize many detached canonical increments and simulations without corrupting state`: REQ-RUNTIME-2-KBXKTG.T1.P1
+- `should serialize canonical detached calls before entering evm.runCall`: none
+- `should throw an error for invalid function calls`: none
+- `should properly decode Solidity revert errors`: none
+- `a bare executor stamps exactly its clock source's value`: UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P1
+- `the runtime inline executor observes the adjusted Clock and advances`: REQ-TIME-5-S9NQXK.T1.P1
+- `the runtime dedicated executor observes the adjusted Clock and advances`: REQ-TIME-5-S9NQXK.T1.P2, REQ-RUNTIME-6-6F4SSM.T1.P1
+- `deployment records the supplied timestamp in constructor storage`: UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P2
+- `simulation observes the supplied timestamp without persisting its storage write`: UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P3
+- `reads a changed shared Clock after inline executor construction`: none

@@ -1,7 +1,7 @@
-# Storage.test.ts — Test Report
+# Storage.test.ts
 
-> **Test file:** [test/storage/Storage.test.ts](../../../../../../test/storage/Storage.test.ts) > **Status:** Authored; engineer verification pending.
-> **Exercises:** [Storage.ts](../../../../implementation/source/src/storage/Storage.ts.md)
+Test file: [test/storage/Storage.test.ts](../../../../../../test/storage/Storage.test.ts)
+Exercises: [Storage.ts](../../../../implementation/source/src/storage/Storage.ts.md)
 
 ## Overview
 
@@ -15,20 +15,18 @@ are assigned below; the facade permutations for derived reads this suite never c
 (previous-snapshot, participant unions, previous block-or-snapshot, relevant timestamps) and for
 mutations of other returned object kinds stay unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                  | Covers                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Storage > getStateSnapshot > should return genesis state snapshot when height < 0`](../../../../../../test/storage/Storage.test.ts#L68) (line 68)                               | [`REQ-SNAPSTORE-2-Q7E6TQ.T1.P3`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq.t1.p3)                                                                                                                                          |
-| [`Storage > getStateSnapshot > should return genesis state snapshot when height is any negative number`](../../../../../../test/storage/Storage.test.ts#L82) (line 82)            | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P3`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                           |
-| [`Storage > getStateSnapshot > should return state snapshot from block when height >= 0`](../../../../../../test/storage/Storage.test.ts#L97) (line 97)                           | [`REQ-SNAPSTORE-2-Q7E6TQ.T1.P1`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq.t1.p1), [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P1`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1) |
-| [`Storage > getStateSnapshot > genesis snapshot doesn't exist`](../../../../../../test/storage/Storage.test.ts#L109) (line 109)                                                   | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P12`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage > getStateSnapshot > block confirmation doesn't exist`](../../../../../../test/storage/Storage.test.ts#L121) (line 121)                                                 | [`REQ-SNAPSTORE-2-Q7E6TQ.T1.P2`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq.t1.p2), [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P2`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1) |
-| [`Storage > getStateSnapshot > correct block height, wrong forkId`](../../../../../../test/storage/Storage.test.ts#L130) (line 130)                                               | —                                                                                                                                                                                                                                                                 |
-| [`Storage > getStateSnapshot > modifying retrieved snapshot doesn't affect stored snapshot`](../../../../../../test/storage/Storage.test.ts#L141) (line 141)                      | [`UNIT-TEST-STORAGE-FACADE-2-KRDP9Q.P1`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-2-krdp9q)                                                                                                                           |
-| [`Storage participant union > stored lookup equals direct computation with the same snapshots`](../../../../../../test/storage/Storage.test.ts#L170) (line 170)                   | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P16`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage participant union > unions overlapping snapshots and canonicalizes addresses without storing a result`](../../../../../../test/storage/Storage.test.ts#L210) (line 210) | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P17`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage participant union > preserves both sides of disjoint membership changes`](../../../../../../test/storage/Storage.test.ts#L240) (line 240)                               | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P18`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage participant union > accepts an absent previous snapshot`](../../../../../../test/storage/Storage.test.ts#L259) (line 259)                                               | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P19`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage participant union > accepts an absent resulting snapshot`](../../../../../../test/storage/Storage.test.ts#L275) (line 275)                                              | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P20`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
-| [`Storage participant union > returns an empty union for absent or empty snapshots`](../../../../../../test/storage/Storage.test.ts#L288) (line 288)                              | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P21`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                          |
+- `should return genesis state snapshot when height < 0`: REQ-SNAPSTORE-2-Q7E6TQ.T1.P3
+- `should return genesis state snapshot when height is any negative number`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P3
+- `should return state snapshot from block when height >= 0`: REQ-SNAPSTORE-2-Q7E6TQ.T1.P1, UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P1
+- `genesis snapshot doesn't exist`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P12
+- `block confirmation doesn't exist`: REQ-SNAPSTORE-2-Q7E6TQ.T1.P2, UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P2
+- `correct block height, wrong forkId`: none
+- `modifying retrieved snapshot doesn't affect stored snapshot`: UNIT-TEST-STORAGE-FACADE-2-KRDP9Q.P1
+- `stored lookup equals direct computation with the same snapshots`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P16
+- `unions overlapping snapshots and canonicalizes addresses without storing a result`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P17
+- `preserves both sides of disjoint membership changes`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P18
+- `accepts an absent previous snapshot`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P19
+- `accepts an absent resulting snapshot`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P20
+- `returns an empty union for absent or empty snapshots`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P21

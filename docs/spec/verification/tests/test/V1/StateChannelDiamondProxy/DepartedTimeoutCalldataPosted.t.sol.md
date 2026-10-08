@@ -1,17 +1,15 @@
-# DepartedTimeoutCalldataPosted.t.sol — Test report
+# DepartedTimeoutCalldataPosted.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol) > **Status:** Authored; engineer verification pending.
+Test file: [test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol)
 
 ## Overview
 
 Exercises calldata evidence against a timeout issued by a departed peer and checks the contract result.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                | Covers                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_U126_qualifyingPostedBlockKillsTheDepartedSubmittersTimeout`](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol#L146) (line 146) | [`REQ-FP-7-4DD0D7.T4.P4`](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t4.p4), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P171`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7) |
-| [`test_U126_postedBlockAfterTheTimeoutWindowDoesNotKill`](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol#L166) (line 166)            | [`REQ-FP-7-4DD0D7.T4.P5`](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t4.p5), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P172`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7) |
-| [`test_U126_postedBlockOfAnotherAuthorDoesNotKill`](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol#L175) (line 175)                  | [`REQ-FP-7-4DD0D7.T4.P6`](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t4.p6), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P173`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7) |
-| [`test_U126_postedBlockAtAnotherHeightDoesNotKill`](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol#L188) (line 188)                  | [`REQ-FP-7-4DD0D7.T4.P7`](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t4.p7), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P174`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7) |
-| [`test_U126_postedBlockWithFailingTransitionDoesNotKill`](../../../../../../../test/V1/StateChannelDiamondProxy/DepartedTimeoutCalldataPosted.t.sol#L203) (line 203)            | [`REQ-FP-7-4DD0D7.T4.P8`](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t4.p8), [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P175`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7) |
+- `test_U126_qualifyingPostedBlockKillsTheDepartedSubmittersTimeout`: REQ-FP-7-4DD0D7.T4.P4, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P171
+- `test_U126_postedBlockAfterTheTimeoutWindowDoesNotKill`: REQ-FP-7-4DD0D7.T4.P5, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P172
+- `test_U126_postedBlockOfAnotherAuthorDoesNotKill`: REQ-FP-7-4DD0D7.T4.P6, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P173
+- `test_U126_postedBlockAtAnotherHeightDoesNotKill`: REQ-FP-7-4DD0D7.T4.P7, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P174
+- `test_U126_postedBlockWithFailingTransitionDoesNotKill`: REQ-FP-7-4DD0D7.T4.P8, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P175

@@ -1,30 +1,28 @@
-# test/rpc/RpcDispatch.test.ts — Test Report
+# RpcDispatch.test.ts
 
-> **Test file:** [test/rpc/RpcDispatch.test.ts](../../../../../../test/rpc/RpcDispatch.test.ts) > **Status:** Authored — engineer verification pending.
+Test file: [test/rpc/RpcDispatch.test.ts](../../../../../../test/rpc/RpcDispatch.test.ts)
 
 ## Overview
 
 The suite exercises actual SDK-owned components and connections. Each declaration checks its named outcome through the production implementation; shared setup and fault controls live in fixtures.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                              | Covers                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| [`RpcDispatch > invokes an own endpoint`](../../../../../../test/rpc/RpcDispatch.test.ts#L12) (line 12)                                           | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P1`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > invokes an inherited endpoint`](../../../../../../test/rpc/RpcDispatch.test.ts#L19) (line 19)                                     | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P2`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects a getter shadow without executing it`](../../../../../../test/rpc/RpcDispatch.test.ts#L26) (line 26)                      | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P3`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects a non-function shadow`](../../../../../../test/rpc/RpcDispatch.test.ts#L29) (line 29)                                     | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P4`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects a missing service`](../../../../../../test/rpc/RpcDispatch.test.ts#L32) (line 32)                                         | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P5`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects a missing method`](../../../../../../test/rpc/RpcDispatch.test.ts#L35) (line 35)                                          | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P6`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects a constructor`](../../../../../../test/rpc/RpcDispatch.test.ts#L38) (line 38)                                             | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P7`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects an Object base method`](../../../../../../test/rpc/RpcDispatch.test.ts#L41) (line 41)                                     | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P8`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > rejects service helpers`](../../../../../../test/rpc/RpcDispatch.test.ts#L44) (line 44)                                           | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P9`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)      |
-| [`RpcDispatch > invokes the captured callable`](../../../../../../test/rpc/RpcDispatch.test.ts#L47) (line 47)                                     | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P10`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > preserves positional and optional arguments`](../../../../../../test/rpc/RpcDispatch.test.ts#L55) (line 55)                       | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P11`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > supports empty arguments and undefined results`](../../../../../../test/rpc/RpcDispatch.test.ts#L63) (line 63)                    | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P12`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > returns sync endpoint errors`](../../../../../../test/rpc/RpcDispatch.test.ts#L70) (line 70)                                      | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P13`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > returns async endpoint errors`](../../../../../../test/rpc/RpcDispatch.test.ts#L73) (line 73)                                     | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P14`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > acknowledges void only after the endpoint completes`](../../../../../../test/rpc/RpcDispatch.test.ts#L76) (line 76)               | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P15`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > sends without a response or pending entry`](../../../../../../test/rpc/RpcDispatch.test.ts#L95) (line 95)                         | [`UNIT-TEST-RPC-DISPATCH-1-5WY71T.P16`](../../../../implementation/source/src/rpc/RpcDispatch.ts.md#unit-test-rpc-dispatch-1-5wy71t)     |
-| [`RpcDispatch > awaits request dispatch while another RPC releases the endpoint`](../../../../../../test/rpc/RpcDispatch.test.ts#L107) (line 107) | [`UNIT-TEST-ARPC-ROUTER-1-459EX2.P26`](../../../../implementation/source/src/rpc/router/ARpcRouter.ts.md#unit-test-arpc-router-1-459ex2) |
-| [`RpcDispatch > awaits send dispatch without blocking another incoming RPC`](../../../../../../test/rpc/RpcDispatch.test.ts#L110) (line 110)      | [`UNIT-TEST-ARPC-ROUTER-1-459EX2.P27`](../../../../implementation/source/src/rpc/router/ARpcRouter.ts.md#unit-test-arpc-router-1-459ex2) |
+- `invokes an own endpoint`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P1
+- `invokes an inherited endpoint`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P2
+- `rejects a getter shadow without executing it`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P3
+- `rejects a non-function shadow`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P4
+- `rejects a missing service`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P5
+- `rejects a missing method`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P6
+- `rejects a constructor`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P7
+- `rejects an Object base method`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P8
+- `rejects service helpers`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P9
+- `invokes the captured callable`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P10
+- `preserves positional and optional arguments`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P11
+- `supports empty arguments and undefined results`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P12
+- `returns sync endpoint errors`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P13
+- `returns async endpoint errors`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P14
+- `acknowledges void only after the endpoint completes`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P15
+- `sends without a response or pending entry`: UNIT-TEST-RPC-DISPATCH-1-5WY71T.P16
+- `awaits request dispatch while another RPC releases the endpoint`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P26
+- `awaits send dispatch without blocking another incoming RPC`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P27

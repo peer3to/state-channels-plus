@@ -1,11 +1,6 @@
-# test/e2e/E2E-SpectatorStateProofPersistence.test.ts — Test Report
+# E2E-SpectatorStateProofPersistence.test.ts
 
-> **Test file:** [test/e2e/E2E-SpectatorStateProofPersistence.test.ts](../../../../../../test/e2e/E2E-SpectatorStateProofPersistence.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-SpectatorStateProofPersistence.test.ts](../../../../../../test/e2e/E2E-SpectatorStateProofPersistence.test.ts)
 
 ## Overview
 
@@ -25,13 +20,6 @@ Both spectator spawns run through the shared `addSpectatorAuthoring` helper: the
 least the scripted blocks and keep the writer slot alive until the spectator is synced, so the next leave never
 follows an idle window.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                          | Covers                                                                                                                                                                                                                           |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: Join/Leave Sequence > join/leave sequence and fork resolution`](../../../../../../test/e2e/E2E-SpectatorStateProofPersistence.test.ts#L8) (line 8) | [`REQ-MSG-9-BFN9P5.T1.P4`](../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5.t1.p4), [`INV-SPC-4-WVXS19.T1.P10`](../../../../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-4-wvxs19) |
+- `join/leave sequence and fork resolution`: REQ-MSG-9-BFN9P5.T1.P4, INV-SPC-4-WVXS19.T1.P10

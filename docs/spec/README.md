@@ -57,7 +57,7 @@ Knowledge flows only from left to right:
   flows. It may cite the specification, but not concrete test evidence.
 - **Verification** is authored after tests exist. One report per test file inspects the actual test
   bodies, classifies each declaration (unit/integration/system/end-to-end), and judges whether it
-  proves its assigned permutations. It owns all exact test-declaration links and records good,
+  proves its assigned permutations. It owns all exact test-declaration mappings and records good,
   partial, misleading/adjacent, and missing evidence.
 
 Follow the IDs — via the generated traceability views — for the full picture of any behavior. A later layer may refine or expose a gap in an
@@ -68,7 +68,8 @@ for example [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immut
 same readable ordinal. Planned tests and permutations inherit that namespace (`.T1`, `.T1.P1`),
 so the hierarchy remains short and readable. Allocate roots with
 `yarn spec:id:new REQ-X-10`; do not hand-author the suffix. The defining occurrence is plain
-inline code with a stable anchor, while every other concrete occurrence links to that definition.
+inline code with a stable anchor, while every other concrete occurrence links to that definition;
+IDs in `verification/tests/` reports stay bare, and `yarn spec:ids:fix` strips links there.
 `yarn spec:ids:fix` normalizes authored links and `yarn spec:ids:check` verifies the complete tree.
 
 Supporting infrastructure:
@@ -268,7 +269,7 @@ by agents.
 4. **Never decide open questions.** When intended behavior is ambiguous, raise the layer-owned
    `OQ-*` and stop at the documented divergence (`Contradicts` rows, three-way
    adherence/contradictions/missing sections) instead of normalizing either side.
-5. **Keep traceability real.** IDs are linked to their definition anchors; a test counts only as an
+5. **Keep traceability real.** IDs are linked to their definition anchors (bare in test reports); a test counts only as an
    exact inspected declaration mapped to the permutation it proves; path equality is never
    evidence.
 
@@ -291,7 +292,7 @@ For a design, implementation, contract, or test change affecting specified behav
 2. update or raise the neutral specification decision before choosing behavior;
 3. update the implementation subject's overview, design, source reports, unit/integration plans, and
    conformance rows;
-4. inspect real test bodies and update the affected test reports' Covers assignments honestly;
+4. inspect real test bodies and update the affected test reports' test bullets honestly;
 5. run affected tests, `yarn spec:refresh`, and inspect all generated gaps;
 6. reset or allow fingerprints to invalidate affected approvals; and
 7. audit the complete path and obtain explicit engineer approval before acceptance.

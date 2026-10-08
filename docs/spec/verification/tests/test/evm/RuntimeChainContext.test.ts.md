@@ -1,12 +1,7 @@
-# test/evm/RuntimeChainContext.test.ts — Test Report
+# RuntimeChainContext.test.ts
 
-> **Test file:** [test/evm/RuntimeChainContext.test.ts](../../../../../../test/evm/RuntimeChainContext.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [RuntimeChainContext.ts](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/RuntimeChainContext.test.ts](../../../../../../test/evm/RuntimeChainContext.test.ts)
+Exercises: [RuntimeChainContext.ts](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
 
 ## Overview
 
@@ -14,20 +9,18 @@ The suite checks provider URL conversion and the client boundary through [real S
 
 Provider cleanup also covers no subscriptions, an active block subscription and repeated destruction through the standard provider API.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L19) (line 19)               | —                                                                                                                                                                                                                                                                                       |
-| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L34) (line 34)                             | —                                                                                                                                                                                                                                                                                       |
-| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../test/evm/RuntimeChainContext.test.ts#L117) (line 117)        | [`REQ-RUNTIME-3-VQXW59.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p1), [`INV-RUN-3-1AKG2E.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3-1akg2e)                                                    |
-| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L121) (line 121)                                    | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z)                                                                                                                                    |
-| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L125) (line 125)    | —                                                                                                                                                                                                                                                                                       |
-| [RuntimeChainContext > destroys its provider without subscriptions and permits repeated cleanup](../../../../../../test/evm/RuntimeChainContext.test.ts#L13) (line 13)     | [`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-cleanup-1-3h7pt8)                                                                                                                |
-| [RuntimeChainContext > destroys its provider with a block subscription and permits repeated cleanup](../../../../../../test/evm/RuntimeChainContext.test.ts#L16) (line 16) | [`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P4`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-cleanup-1-3h7pt8)                                                                                                                |
-| [`RuntimeChainContext > uses PROVIDER_URL alone when PROVIDER_URLS is unset`](../../../../../../test/evm/RuntimeChainContext.test.ts#L40) (line 40)                        | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P1`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw), [`REQ-CHAINOBS-1-5JTHY8.T1.P1`](../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8.t1.p1) |
-| [`RuntimeChainContext > uses PROVIDER_URL alone when PROVIDER_URLS is empty`](../../../../../../test/evm/RuntimeChainContext.test.ts#L46) (line 46)                        | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P2`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw), [`REQ-CHAINOBS-1-5JTHY8.T1.P2`](../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8.t1.p2) |
-| [`RuntimeChainContext > lists PROVIDER_URLS in priority order in place of PROVIDER_URL`](../../../../../../test/evm/RuntimeChainContext.test.ts#L55) (line 55)             | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P3`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw), [`REQ-CHAINOBS-1-5JTHY8.T1.P3`](../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8.t1.p3) |
-| [`RuntimeChainContext > rejects a PROVIDER_URLS entry that is not WebSocket-compatible`](../../../../../../test/evm/RuntimeChainContext.test.ts#L70) (line 70)             | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P4`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw), [`REQ-CHAINOBS-1-5JTHY8.T1.P4`](../../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8.t1.p4) |
-| [`RuntimeChainContext > rejects an endpoint with a fragment, naming it by scheme and host only`](../../../../../../test/evm/RuntimeChainContext.test.ts#L79) (line 79)     | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P8`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw)                                                                                                                      |
-| [`RuntimeChainContext > rejects an endpoint with an out-of-range port without its secret`](../../../../../../test/evm/RuntimeChainContext.test.ts#L98) (line 98)           | [`UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P9`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-urls-1-vrhevw)                                                                                                                      |
+- `accepts WebSocket URLs and optimistically converts HTTP URLs`: none
+- `rejects non-WebSocket-compatible provider URLs`: none
+- `destroys the host provider and reports the original startup error`: REQ-RUNTIME-3-VQXW59.T1.P1, INV-RUN-3-1AKG2E.T1.P1
+- `lets the host own the quiesce timeout`: UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10
+- `lets an uncancellable P2P signer mutation outlive the request timeout`: none
+- `destroys its provider without subscriptions and permits repeated cleanup`: UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3
+- `destroys its provider with a block subscription and permits repeated cleanup`: UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P4
+- `uses PROVIDER_URL alone when PROVIDER_URLS is unset`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P1, REQ-CHAINOBS-1-5JTHY8.T1.P1
+- `uses PROVIDER_URL alone when PROVIDER_URLS is empty`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P2, REQ-CHAINOBS-1-5JTHY8.T1.P2
+- `lists PROVIDER_URLS in priority order in place of PROVIDER_URL`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P3, REQ-CHAINOBS-1-5JTHY8.T1.P3
+- `rejects a PROVIDER_URLS entry that is not WebSocket-compatible`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P4, REQ-CHAINOBS-1-5JTHY8.T1.P4
+- `rejects an endpoint with a fragment, naming it by scheme and host only`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P8
+- `rejects an endpoint with an out-of-range port without its secret`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P9

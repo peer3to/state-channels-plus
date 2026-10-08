@@ -1,12 +1,7 @@
-# test/transport/ATransport.test.ts — Test Report
+# ATransport.test.ts
 
-> **Test file:** [test/transport/ATransport.test.ts](../../../../../../test/transport/ATransport.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ATransport.ts](../../../../implementation/source/src/transport/ATransport.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/transport/ATransport.test.ts](../../../../../../test/transport/ATransport.test.ts)
+Exercises: [ATransport.ts](../../../../implementation/source/src/transport/ATransport.ts.md)
 
 ## Overview
 
@@ -19,13 +14,11 @@ synchronous failure propagation. The probe records only the concrete `_send`/`_c
 forwards connection removal through the real `P2PManager`; it does not recreate transport logic.
 Cross-module structural recognition remains in `CrossModuleValues.test.ts`.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                       | Covers                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`NetworkTransport > converts string and Buffer frames and preserves conversion errors`](../../../../../../test/transport/ATransport.test.ts#L13) (line 13)                | [`UNIT-TEST-ATRANSPORT-32-QF87JK.P1`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-32-qf87jk)                                                                                                                                                                                                                                                                                       |
-| [`NetworkTransport > compares peer identities across address boundaries and transport replacement`](../../../../../../test/transport/ATransport.test.ts#L27) (line 27)     | [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P1`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r), [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P2`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r), [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P4`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r) |
-| [`NetworkTransport > serializes RPC calls and responses before delegating to the concrete sender`](../../../../../../test/transport/ATransport.test.ts#L51) (line 51)      | [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P3`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r), [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P7`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r)                                                                                                                                             |
-| [`NetworkTransport > closes an unexpected disconnection once and emits its lifecycle event once`](../../../../../../test/transport/ATransport.test.ts#L75) (line 75)       | [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P8`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r), [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P10`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r)                                                                                                                                            |
-| [`NetworkTransport > closes an expected disconnection without emitting an unexpected-disconnect event`](../../../../../../test/transport/ATransport.test.ts#L97) (line 97) | [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P9`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r)                                                                                                                                                                                                                                                                                         |
-| [`NetworkTransport > propagates serialization and concrete-send failures`](../../../../../../test/transport/ATransport.test.ts#L119) (line 119)                            | [`UNIT-TEST-ATRANSPORT-1-7DGX9R.P11`](../../../../implementation/source/src/transport/NetworkTransport.ts.md#unit-test-atransport-1-7dgx9r)                                                                                                                                                                                                                                                                                        |
+- `converts string and Buffer frames and preserves conversion errors`: UNIT-TEST-ATRANSPORT-32-QF87JK.P1
+- `compares peer identities across address boundaries and transport replacement`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P1, UNIT-TEST-ATRANSPORT-1-7DGX9R.P2, UNIT-TEST-ATRANSPORT-1-7DGX9R.P4
+- `serializes RPC calls and responses before delegating to the concrete sender`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P3, UNIT-TEST-ATRANSPORT-1-7DGX9R.P7
+- `closes an unexpected disconnection once and emits its lifecycle event once`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P8, UNIT-TEST-ATRANSPORT-1-7DGX9R.P10
+- `closes an expected disconnection without emitting an unexpected-disconnect event`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P9
+- `propagates serialization and concrete-send failures`: UNIT-TEST-ATRANSPORT-1-7DGX9R.P11

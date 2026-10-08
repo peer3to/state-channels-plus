@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol — Test Report
+# StateChannelManagerProxyMulticall.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol)
+Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 
 ## Overview
 
@@ -22,13 +17,11 @@ returns the same result as `multicall`, opens the channel and emits no failure e
 already-open channel returns one empty result and emits `MulticallLastCallFailed` with the
 `RaceConditionChannelAlreadyOpen` data, and the whole call does not revert.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                    | Covers                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`test_multicallBestEffortLast_lastCallReverts_keepsEarlierEffectsAndEmitsRevertData`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L24) (line 24) | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P1`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
-| [`test_multicallBestEffortLast_earlierCallReverts_revertsWhole`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L38) (line 38)                       | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P2`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
-| [`test_multicallBestEffortLast_allCallsSucceed_matchesMulticall`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L51) (line 51)                      | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P3`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
-| [`test_multicallBestEffortLast_emptyList_returnsNoResultsAndEmitsNothing`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L72) (line 72)             | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P4`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
-| [`test_multicallBestEffortLast_soleCallSucceeds_returnsItsResultAndEmitsNothing`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L80) (line 80)      | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P5`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
-| [`test_multicallBestEffortLast_soleCallReverts_returnsEmptyResultAndEmitsRevertData`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyMulticall.t.sol#L97) (line 97)  | [`UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P6`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-4-4h4ffy) |
+- `test_multicallBestEffortLast_lastCallReverts_keepsEarlierEffectsAndEmitsRevertData`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P1
+- `test_multicallBestEffortLast_earlierCallReverts_revertsWhole`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P2
+- `test_multicallBestEffortLast_allCallsSucceed_matchesMulticall`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P3
+- `test_multicallBestEffortLast_emptyList_returnsNoResultsAndEmitsNothing`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P4
+- `test_multicallBestEffortLast_soleCallSucceeds_returnsItsResultAndEmitsNothing`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P5
+- `test_multicallBestEffortLast_soleCallReverts_returnsEmptyResultAndEmitsRevertData`: UNIT-TEST-MANAGER-PROXY-4-4H4FFY.P6

@@ -1,12 +1,7 @@
-# test/e2e/E2E-ReductionManager.test.ts — Test Report
+# E2E-ReductionManager.test.ts
 
-> **Test file:** [test/e2e/E2E-ReductionManager.test.ts](../../../../../../test/e2e/E2E-ReductionManager.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ReductionManager.ts](../../../../implementation/source/src/stateManager/reduction/ReductionManager.ts.md), [ReductionExecutor.ts](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-ReductionManager.test.ts](../../../../../../test/e2e/E2E-ReductionManager.test.ts)
+Exercises: [ReductionManager.ts](../../../../implementation/source/src/stateManager/reduction/ReductionManager.ts.md), [ReductionExecutor.ts](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md)
 
 ## Overview
 
@@ -25,17 +20,10 @@ commitments, event spies, and quiesced host errors. Real concurrent multi-reduce
 for the races), so those permutations stay unassigned.
 The empty-dispute-window case runs with `evidenceTime: 6` (owner-approved harness evidence floor, plan 30 item 7): the automatic kill and replacement evidence must both land inside one evidence period, which the three-second floor could not hold under gate load.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                            | Covers                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: ReductionManager > ordinary reduction submission outcomes > RaceConditionDisputeAlreadyReduced completes the installed reduction as success`](../../../../../../test/e2e/E2E-ReductionManager.test.ts#L30) (line 30) | [`REQ-DISPUTE-PIPE-4-3YVDSA.T1.P2`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p2)                                            |
-| [`E2E: ReductionManager > ordinary reduction submission outcomes > RaceConditionBlockHeightTooOld completes the installed reduction as success`](../../../../../../test/e2e/E2E-ReductionManager.test.ts#L47) (line 47)     | [`REQ-DISPUTE-PIPE-4-3YVDSA.T1.P5`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p5)                                            |
-| [`E2E: ReductionManager > ordinary reduction submission outcomes > RaceConditionReductionExpectationDoesntMatch aborts and rejects the operation`](../../../../../../test/e2e/E2E-ReductionManager.test.ts#L64) (line 64)   | [`INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P4`](../../../../implementation/views/architecture/sdk/dispute-pipeline.md#integration-test-dispute-pipe-1-bptfy9)              |
-| [`E2E: ReductionManager > an empty dispute set posts replacement evidence and resumes the same reduction`](../../../../../../test/e2e/E2E-ReductionManager.test.ts#L183) (line 183)                                         | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P3`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37) |
-| [`E2E: ReductionManager > dispute-window recovery defeated → the reduction defers, the peer is not evicted`](../../../../../../test/e2e/E2E-ReductionManager.test.ts#L89) (line 89)                                         | —                                                                                                                                                                        |
+- `RaceConditionDisputeAlreadyReduced completes the installed reduction as success`: REQ-DISPUTE-PIPE-4-3YVDSA.T1.P2
+- `RaceConditionBlockHeightTooOld completes the installed reduction as success`: REQ-DISPUTE-PIPE-4-3YVDSA.T1.P5
+- `RaceConditionReductionExpectationDoesntMatch aborts and rejects the operation`: INTEGRATION-TEST-DISPUTE-PIPE-1-BPTFY9.P4
+- `an empty dispute set posts replacement evidence and resumes the same reduction`: UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P3
+- `dispute-window recovery defeated → the reduction defers, the peer is not evicted`: none

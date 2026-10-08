@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts — Test Report
+# invalidStateProofGenesisLinkage.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts](../../../../../../../test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts](../../../../../../../test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts)
 
 ## Overview
 
@@ -21,8 +16,6 @@ disputer must not appear in it, and the byzantine submitter must. Dispute resolu
 are out of scope — the test ends at the slash assertions. The other permutations of the same plan
 item (declared-vs-proven mismatch, mirror preflight) are separate scenarios and stay unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                                                                | Covers                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / DisputeInvalidStateProof genesis linkage > unlinked genesisStateSnapshotData against a valid genesis dispute → submitter slashed, honest disputer survives`](../../../../../../../test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts#L13) (line 13) | [`REQ-ENFFP-1-BREACW.T1.P1`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw.t1.p1) |
+- `unlinked genesisStateSnapshotData against a valid genesis dispute → submitter slashed, honest disputer survives`: REQ-ENFFP-1-BREACW.T1.P1

@@ -1,6 +1,6 @@
 # Requirement test status
 
-> Written by `yarn spec:ids:fix` from the Covers cells under `tests/`; never edit. A merge conflict here is resolved by rerunning it.
+> Written by `yarn spec:ids:fix` from the test bullets under `tests/`; never edit. A merge conflict here is resolved by rerunning it.
 
 [`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../specification/peer-communication/handshake.md#inv-auth-1-j0prya)
 Specification cases tested: 1/4. Untested: T1.P2, T1.P3, T1.P4.

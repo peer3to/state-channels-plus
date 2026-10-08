@@ -1,11 +1,6 @@
-# test/harness/testTimeConfig.test.ts — Test Report
+# testTimeConfig.test.ts
 
-> **Test file:** [test/harness/testTimeConfig.test.ts](../../../../../../test/harness/testTimeConfig.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/harness/testTimeConfig.test.ts](../../../../../../test/harness/testTimeConfig.test.ts)
 
 ## Overview
 
@@ -21,15 +16,8 @@ values, pinning the timing contract that E2E suites rely on when waiting for pro
 Because this is harness support with no implementation source report, no test IDs from the pool
 apply to it.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                    | Covers |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`test time config > resolves the minimum-safe baseline`](../../../../../../test/harness/testTimeConfig.test.ts#L11) (line 11)                      | —      |
-| [`test time config > applies partial overrides without mutating the baseline`](../../../../../../test/harness/testTimeConfig.test.ts#L20) (line 20) | —      |
-| [`test time config > includes first-block grace only at height zero`](../../../../../../test/harness/testTimeConfig.test.ts#L28) (line 28)          | —      |
+- `resolves the minimum-safe baseline`: none
+- `applies partial overrides without mutating the baseline`: none
+- `includes first-block grace only at height zero`: none

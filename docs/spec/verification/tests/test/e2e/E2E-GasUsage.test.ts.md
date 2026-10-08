@@ -1,12 +1,7 @@
-# test/e2e/E2E-GasUsage.test.ts — Test Report
+# E2E-GasUsage.test.ts
 
-> **Test file:** [test/e2e/E2E-GasUsage.test.ts](../../../../../../test/e2e/E2E-GasUsage.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [GasUsageRecorder.ts](../../../../implementation/source/src/evm/gasUsage/GasUsageRecorder.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/E2E-GasUsage.test.ts](../../../../../../test/e2e/E2E-GasUsage.test.ts)
+Exercises: [GasUsageRecorder.ts](../../../../implementation/source/src/evm/gasUsage/GasUsageRecorder.ts.md)
 
 ## Overview
 
@@ -26,13 +21,6 @@ harness control RPC reads the same peer's table and must answer exactly the same
 readers settle through the recorder's one owner. Aggregation arithmetic and selector naming are
 covered by the component suites.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                  | Covers                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`E2E: Gas Usage > records the block calldata a peer posted on chain and nothing it never called`](../../../../../../test/e2e/E2E-GasUsage.test.ts#L15) (line 15) | [`REQ-SDK-ARCH-6-8DE4ER.T1.P7`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p7) |
+- `records the block calldata a peer posted on chain and nothing it never called`: REQ-SDK-ARCH-6-8DE4ER.T1.P7

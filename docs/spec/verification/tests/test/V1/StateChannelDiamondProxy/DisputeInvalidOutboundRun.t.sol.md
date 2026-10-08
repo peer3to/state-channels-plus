@@ -1,12 +1,7 @@
-# DisputeInvalidOutboundRun.t.sol — Test report
+# DisputeInvalidOutboundRun.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol) > **Status:** Authored; engineer verification pending.
-> **Exercises:** [StateProofFacet](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol)
+Exercises: [StateProofFacet](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
 
 ## Overview
 
@@ -23,28 +18,21 @@ returns invalid (with both blocks above the anchor) without a revert, and the ge
 committed data whose latest state is not the dispute's are rejected as no evidence. The oracles are the
 commitment count and both slash records.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_outboundRun_runFromTheAnchorToTheLatestHeadIsValid`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L120) (line 120)               | [`REQ-DIS-12-AXY60R.T1.P1`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p1)                                                                                                                                                                                         |
-| [`test_outboundRun_runBuiltAtAnOlderAnchorStaysValidAfterTheAnchorMoves`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L127) (line 127) | [`REQ-DIS-12-AXY60R.T1.P2`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p2)                                                                                                                                                                                         |
-| [`test_outboundRun_anchorOnAnOlderForkIsAStartAcrossTheForkGenesis`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L138) (line 138)      | [`REQ-DIS-12-AXY60R.T1.P3`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p3)                                                                                                                                                                                         |
-| [`test_outboundRun_emptyRunIsValidWhenTheAnchorHoldsTheLatestHead`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L147) (line 147)       | [`REQ-DIS-12-AXY60R.T1.P4`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p4)                                                                                                                                                                                         |
-| [`test_outboundRun_runBelowAnAnchorAtTheLatestHeadIsCutOff`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L154) (line 154)              | [`REQ-DIS-12-AXY60R.T1.P5`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p5)                                                                                                                                                                                         |
-| [`test_outboundRun_emptyRunIsValidWhenTheAnchorIsAboveTheLatestHead`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L161) (line 161)     | [`REQ-DIS-12-AXY60R.T1.P6`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p6)                                                                                                                                                                                         |
-| [`test_outboundRun_missingBlockAboveTheAnchorKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L171) (line 171)                      | [`REQ-DIS-12-AXY60R.T1.P7`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p7)                                                                                                                                                                                         |
-| [`test_outboundRun_emptyRunBelowTheLatestHeadKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L180) (line 180)                      | [`REQ-DIS-12-AXY60R.T1.P8`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p8)                                                                                                                                                                                         |
-| [`test_outboundRun_forgedBlockKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L187) (line 187)                                     | [`REQ-DIS-12-AXY60R.T1.P9`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p9)                                                                                                                                                                                         |
-| [`test_outboundRun_forgedLinkKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L195) (line 195)                                      | [`REQ-DIS-12-AXY60R.T1.P10`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p10)                                                                                                                                                                                       |
-| [`test_outboundRun_extraBlockAboveTheLatestHeadKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L203) (line 203)                    | [`REQ-DIS-12-AXY60R.T1.P19`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p19)                                                                                                                                                                                       |
-| [`test_outboundRun_overflowingBalanceKills`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L218) (line 218)                              | [`REQ-DIS-12-AXY60R.T1.P20`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p20), [`UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md#unit-test-state-proof-facet-1-jsb4sr) |
-| [`test_outboundRun_overflowingBalanceIsInvalidNotARevert`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L226) (line 226)                | [`UNIT-TEST-UTILITY-FACET-1-ER4P0V.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md#unit-test-utility-facet-1-er4p0v)                                                                                                                      |
-| [`test_outboundRun_dataOtherThanTheCommittedDataIsNoEvidence`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L242) (line 242)            | [`REQ-DIS-12-AXY60R.T1.P11`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p11)                                                                                                                                                                                       |
-| [`test_outboundRun_omittedDataIsNoEvidence`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L250) (line 250)                              | [`REQ-DIS-12-AXY60R.T1.P12`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p12)                                                                                                                                                                                       |
-| [`test_outboundRun_postedLatestStateOtherThanTheDisputesIsNoEvidence`](../../../../../../../test/V1/StateChannelDiamondProxy/DisputeInvalidOutboundRun.t.sol#L264) (line 264)    | [`REQ-DIS-12-AXY60R.T1.P13`](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p13)                                                                                                                                                                                       |
+- `test_outboundRun_runFromTheAnchorToTheLatestHeadIsValid`: REQ-DIS-12-AXY60R.T1.P1
+- `test_outboundRun_runBuiltAtAnOlderAnchorStaysValidAfterTheAnchorMoves`: REQ-DIS-12-AXY60R.T1.P2
+- `test_outboundRun_anchorOnAnOlderForkIsAStartAcrossTheForkGenesis`: REQ-DIS-12-AXY60R.T1.P3
+- `test_outboundRun_emptyRunIsValidWhenTheAnchorHoldsTheLatestHead`: REQ-DIS-12-AXY60R.T1.P4
+- `test_outboundRun_runBelowAnAnchorAtTheLatestHeadIsCutOff`: REQ-DIS-12-AXY60R.T1.P5
+- `test_outboundRun_emptyRunIsValidWhenTheAnchorIsAboveTheLatestHead`: REQ-DIS-12-AXY60R.T1.P6
+- `test_outboundRun_missingBlockAboveTheAnchorKills`: REQ-DIS-12-AXY60R.T1.P7
+- `test_outboundRun_emptyRunBelowTheLatestHeadKills`: REQ-DIS-12-AXY60R.T1.P8
+- `test_outboundRun_forgedBlockKills`: REQ-DIS-12-AXY60R.T1.P9
+- `test_outboundRun_forgedLinkKills`: REQ-DIS-12-AXY60R.T1.P10
+- `test_outboundRun_extraBlockAboveTheLatestHeadKills`: REQ-DIS-12-AXY60R.T1.P19
+- `test_outboundRun_overflowingBalanceKills`: REQ-DIS-12-AXY60R.T1.P20, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84
+- `test_outboundRun_overflowingBalanceIsInvalidNotARevert`: UNIT-TEST-UTILITY-FACET-1-ER4P0V.P12
+- `test_outboundRun_dataOtherThanTheCommittedDataIsNoEvidence`: REQ-DIS-12-AXY60R.T1.P11
+- `test_outboundRun_omittedDataIsNoEvidence`: REQ-DIS-12-AXY60R.T1.P12
+- `test_outboundRun_postedLatestStateOtherThanTheDisputesIsNoEvidence`: REQ-DIS-12-AXY60R.T1.P13

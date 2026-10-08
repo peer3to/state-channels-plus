@@ -1,12 +1,7 @@
-# test/unit/DisputeValidationServiceOutboundRun.test.ts — Test Report
+# DisputeValidationServiceOutboundRun.test.ts
 
-> **Test file:** [test/unit/DisputeValidationServiceOutboundRun.test.ts](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [DisputeValidationService](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/unit/DisputeValidationServiceOutboundRun.test.ts](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts)
+Exercises: [DisputeValidationService](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
 
 ## Overview
 
@@ -31,17 +26,10 @@ probe answers invalid for an honest run while the anchor stays put: the audit th
 the invalid-outbound-run counter from the anchor it was judged on", stores nothing and the probe saw one
 call.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                                                                                                                                                                                    | Covers                                                                                                                                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Unit: DisputeValidationService outbound run > auditingData.outboundMessageBlocks = [] while the latest outbound head is above the chain anchor, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts#L14) (line 14)                                                                                                                   | [`REQ-DIS-12-AXY60R.T1.P14`](../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p14)                                                                                           |
-| [`Unit: DisputeValidationService outbound run > auditingData.outboundMessageBlocks[0].messages[0].balance.amount += 1, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts#L23) (line 23)                                                                                                                                              | [`REQ-DIS-12-AXY60R.T1.P15`](../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p15)                                                                                           |
-| [`Unit: DisputeValidationService outbound run > the posted run also carries the chain anchor's own outbound block (built while the anchor was lower) and the auditor holds neither block -> true; only the block above the anchor is stored, and the stored anchor-to-latest range is the run the chain's snapshot update accepts`](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts#L48) (line 48)                          | [`REQ-DIS-12-AXY60R.T1.P16`](../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p16)                                                                                           |
-| [`Unit: DisputeValidationService outbound run > the chain anchor advances to the second exit between the audit's anchor read and its counter check, and the posted run is the empty run built from that exit -> the chain refuses the counter, the audit judges again from the new anchor and returns true with no counter and nothing to store above it`](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts#L126) (line 126) | [`REQ-DIS-12-AXY60R.T1.P18`](../../../../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p18)                                                                                           |
-| [`Unit: DisputeValidationService outbound run > the local verdict calls the honest posted run invalid while the chain anchor stays put -> the chain refuses the counter from the anchor it was judged on: the audit throws, stores no counter, and does not judge again`](../../../../../../test/unit/DisputeValidationServiceOutboundRun.test.ts#L163) (line 163)                                                                                  | [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133`](../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) |
+- `auditingData.outboundMessageBlocks = [] while the latest outbound head is above the chain anchor, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`: REQ-DIS-12-AXY60R.T1.P14
+- `auditingData.outboundMessageBlocks[0].messages[0].balance.amount += 1, committed by the dispute -> false + DisputeInvalidOutboundRun, which the chain accepts`: REQ-DIS-12-AXY60R.T1.P15
+- `the posted run also carries the chain anchor's own outbound block (built while the anchor was lower) and the auditor holds neither block -> true; only the block above the anchor is stored, and the stored anchor-to-latest range is the run the chain's snapshot update accepts`: REQ-DIS-12-AXY60R.T1.P16
+- `the chain anchor advances to the second exit between the audit's anchor read and its counter check, and the posted run is the empty run built from that exit -> the chain refuses the counter, the audit judges again from the new anchor and returns true with no counter and nothing to store above it`: REQ-DIS-12-AXY60R.T1.P18
+- `the local verdict calls the honest posted run invalid while the chain anchor stays put -> the chain refuses the counter from the anchor it was judged on: the audit throws, stores no counter, and does not judge again`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P133

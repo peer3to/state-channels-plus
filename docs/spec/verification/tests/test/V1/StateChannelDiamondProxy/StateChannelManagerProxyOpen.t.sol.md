@@ -1,12 +1,7 @@
-# test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol — Test Report
+# StateChannelManagerProxyOpen.t.sol
 
-> **Test file:** [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol)
+Exercises: [StateChannelManagerProxy.sol](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
 
 ## Overview
 
@@ -59,23 +54,16 @@ deadline check.
 The duplicate-participant, successful-join-count and deadline gates are exercised here. The other `open()`
 gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md), and the
-[`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length and zero-address gaps
+`DEF-1-92NTAG` length and zero-address gaps
 remain open there.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L33) (line 33)                              | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71)                                                                                                                                                                                                                                                             |
-| [`test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L51) (line 51) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71)                                                                                                                                                                                                                                                             |
-| [`test_open_participantsAboveMaximum_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L84) (line 84)                           | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71)                                                                                                                                                                                                                                                             |
-| [`test_open_participantsAtMaximum_passesTheBoundCheck`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L100) (line 100)                | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71)                                                                                                                                                                                                                                                             |
-| [`test_open_beforeDeadline_opensChannel`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L114) (line 114)                              | [`REQ-ENFADM-4-2NN96F.T1.P1`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p1)                                                                                                                                                                                                                                                                                                                          |
-| [`test_open_atDeadline_opensChannel`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L123) (line 123)                                  | [`REQ-ENFADM-4-2NN96F.T1.P2`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p2), [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71), [`REQ-CON-11-VDGJYA.T1.P27`](../../../../../implementation/views/architecture/contracts/manager-and-facets.md#req-con-11-vdgjya) |
-| [`test_open_afterDeadline_revertsWithOpenChannelExpired`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L133) (line 133)              | [`REQ-ENFADM-4-2NN96F.T1.P3`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f.t1.p3), [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71), [`REQ-CON-11-VDGJYA.T1.P28`](../../../../../implementation/views/architecture/contracts/manager-and-facets.md#req-con-11-vdgjya) |
-| [`test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L145) (line 145)   | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71)                                                                                                                                                                                                                                                             |
+- `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
+- `test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13
+- `test_open_participantsAboveMaximum_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16
+- `test_open_participantsAtMaximum_passesTheBoundCheck`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P17
+- `test_open_beforeDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P1
+- `test_open_atDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P2, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18, REQ-CON-11-VDGJYA.T1.P27
+- `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19, REQ-CON-11-VDGJYA.T1.P28
+- `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20

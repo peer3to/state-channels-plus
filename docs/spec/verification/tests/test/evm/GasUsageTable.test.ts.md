@@ -1,12 +1,7 @@
-# test/evm/GasUsageTable.test.ts — Test Report
+# GasUsageTable.test.ts
 
-> **Test file:** [test/evm/GasUsageTable.test.ts](../../../../../../test/evm/GasUsageTable.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [GasUsageTable.ts](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/GasUsageTable.test.ts](../../../../../../test/evm/GasUsageTable.test.ts)
+Exercises: [GasUsageTable.ts](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md)
 
 ## Overview
 
@@ -26,20 +21,13 @@ total past `Number.MAX_SAFE_INTEGER` stays exact through `JSON.stringify`, which
 selectors, and exposing the table belong to the recorder, the logger helpers, and the runtime
 suites.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                             | Covers                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`GasUsageTable > reports no rows before a transaction is recorded`](../../../../../../test/evm/GasUsageTable.test.ts#L19) (line 19)                         | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P1`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > reports one mined transaction as its own totals`](../../../../../../test/evm/GasUsageTable.test.ts#L25) (line 25)                          | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P2`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > aggregates repeated calls of one function into count, total, min and max`](../../../../../../test/evm/GasUsageTable.test.ts#L51) (line 51) | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P3`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > keeps the gas of a reverted transaction out of the success bounds`](../../../../../../test/evm/GasUsageTable.test.ts#L72) (line 72)        | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P4`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > reports a function that only ever reverted with empty success fields`](../../../../../../test/evm/GasUsageTable.test.ts#L103) (line 103)   | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P8`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > keeps the same selector on two contracts in separate rows`](../../../../../../test/evm/GasUsageTable.test.ts#L126) (line 126)              | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P5`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > orders rows by contract address and then by function name`](../../../../../../test/evm/GasUsageTable.test.ts#L156) (line 156)              | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P6`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
-| [`GasUsageTable > keeps a gas total that exceeds the safe integer range exact`](../../../../../../test/evm/GasUsageTable.test.ts#L192) (line 192)            | [`UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P7`](../../../../implementation/source/src/evm/gasUsage/GasUsageTable.ts.md#unit-test-gas-usage-table-1-jx3hrb) |
+- `reports no rows before a transaction is recorded`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P1
+- `reports one mined transaction as its own totals`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P2
+- `aggregates repeated calls of one function into count, total, min and max`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P3
+- `keeps the gas of a reverted transaction out of the success bounds`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P4
+- `reports a function that only ever reverted with empty success fields`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P8
+- `keeps the same selector on two contracts in separate rows`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P5
+- `orders rows by contract address and then by function name`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P6
+- `keeps a gas total that exceeds the safe integer range exact`: UNIT-TEST-GAS-USAGE-TABLE-1-JX3HRB.P7

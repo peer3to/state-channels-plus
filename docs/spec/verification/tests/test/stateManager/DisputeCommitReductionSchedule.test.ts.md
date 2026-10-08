@@ -1,12 +1,7 @@
-# test/stateManager/DisputeCommitReductionSchedule.test.ts — Test Report
+# DisputeCommitReductionSchedule.test.ts
 
-> **Test file:** [test/stateManager/DisputeCommitReductionSchedule.test.ts](../../../../../../test/stateManager/DisputeCommitReductionSchedule.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/stateManager/DisputeCommitReductionSchedule.test.ts](../../../../../../test/stateManager/DisputeCommitReductionSchedule.test.ts)
+Exercises: [EventHandler.ts](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md)
 
 ## Overview
 
@@ -22,13 +17,6 @@ schedules unconditionally) and the fork change every honest peer reaches through
 Without the fix the early return into the skipped upload leaves the window without a scheduled
 reduction and the bounded wait times out.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                           | Covers                                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Dispute commit reduction schedule > a commit whose evidence-improvement upload is skipped as already initiated still schedules the reduction`](../../../../../../test/stateManager/DisputeCommitReductionSchedule.test.ts#L15) (line 15) | [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P5`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p5), [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P11`](../../../../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w) |
+- `a commit whose evidence-improvement upload is skipped as already initiated still schedules the reduction`: REQ-DISPUTE-PIPE-6-6FZB9M.T1.P5, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P11
