@@ -590,6 +590,10 @@ test("declarations that share a full selector fail check with a rename hint", ()
 test("a Solidity test and a package script entrypoint are named like any declaration", () =>
     fixture((f) => {
         f.write(
+            testReport,
+            testsReport(bullet(1, "none"), bullet(2, "none"), bullet(3, "none"))
+        );
+        f.write(
             "test/fix.t.sol",
             "contract T {\n    function testOne() public {}\n}\n"
         );
