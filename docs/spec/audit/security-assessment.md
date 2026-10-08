@@ -14,8 +14,10 @@ The shared frame decoder keeps the size gate before parsing and response-first c
 ## Current Codex Security findings
 
 The [finding reassessment](./codex-security-triage.md) checks the 7 protocol findings of the
-supplied scan against current `dispute` source. Five remain confirmed by static evidence; the
-all-skipped milestone replacement and the unlinked previous-snapshot slash are fixed. The scan's 5 developer-tooling findings are tracked in
+supplied scan against current `dispute` source. Two remain confirmed by static evidence: `pruned-inbound`
+and `sync-genesis-time`. The all-skipped milestone replacement was already fixed; the zero-target
+dispute kill, the unlinked previous-snapshot slash, the expired opening signatures and the sync
+inbound data findings are fixed since. The scan's 5 developer-tooling findings are tracked in
 the tooling's own documentation. The [open finding entries](./open-findings.md#codex-security-reassessment)
 link the affected paths, counterevidence and proposed regression work. This does not complete the
 formal security review, establish runtime reproduction, or record engineer risk acceptance.

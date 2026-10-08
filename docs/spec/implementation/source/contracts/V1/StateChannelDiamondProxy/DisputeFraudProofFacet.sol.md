@@ -119,8 +119,6 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-None demonstrated.
-
 - **The timeout replay rebuilds a snapshot clients never sign**
   ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
   The `TimeoutCalldataPosted` replay numbers the posted block's snapshot

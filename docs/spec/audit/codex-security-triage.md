@@ -6,7 +6,7 @@
 
 ## Result and handoff
 
-**Of the 12 findings, 7 concern the protocol and are assessed here: 6 confirmed and 1 not actionable because its exact path is fixed.** Among the six confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately. One confirmed finding, `zero-verdict`, has since been fixed.
+**Of the 12 findings, 7 concern the protocol and are assessed here: 2 confirmed, 4 fixed and 1 not actionable because its exact path was already fixed.** The assessment confirmed six; `zero-verdict`, `unbound-snapshot`, `open-deadline` and `sync-inbound` have since been fixed, and `pruned-inbound` and `sync-genesis-time` remain confirmed. Among the six originally confirmed findings, the original scan ratings are five high and one medium. Ratings are retained for continuity; queue rank orders exploitability separately.
 
 The other 5 findings concern developer tooling. By engineer decision (2026-09-30), tooling findings are tracked in the tooling's own documentation, not in this specification's audit register:
 
