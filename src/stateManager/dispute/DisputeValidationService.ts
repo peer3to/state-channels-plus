@@ -108,21 +108,12 @@ export default class DisputeValidationService {
               );
         if (!(await this.isLatestStateCommitted(dispute, evidence, data)))
             return this.rejectStateProof(dispute, evidence, data);
-        const outboundRun = data
-            ? await this.verifyOutboundRun(dispute, data)
-            : [];
-        if (!outboundRun) return false;
 
         // a conflict with this peer's final history needs no replay state
         if (await this.tryCreateConflictsWithFinalStateProof(dispute))
             return false;
 
-        const walk = await this.verifyAndReplay(
-            dispute,
-            evidence,
-            outboundRun,
-            data
-        );
+        const walk = await this.verifyAndReplay(dispute, evidence, data);
         if (!walk) return false;
 
         if (await this.tryCreateOnChainSlashesNotSubsetProof(dispute))
@@ -233,14 +224,15 @@ export default class DisputeValidationService {
 
     /**
      * Walks the proof and replays the last milestone's unfinalized tail tier
-     * by tier. The first tier whose walk and replay both succeed is accepted
-     * and its verified material persisted. A failure at a lower tier falls
-     * through; at the chain tier it stores the counter (false).
+     * by tier. The first tier whose walk and replay both succeed is accepted:
+     * the latest state is then proved, so its posted outbound run is judged
+     * (`verifyOutboundRun`) and the verified material persisted. A failure at
+     * a lower tier falls through; at the chain tier it stores the counter
+     * (false).
      */
     private async verifyAndReplay(
         dispute: DisputeStruct,
         evidence: StateProofEvidence,
-        outboundRun: MessageBlockStruct[],
         data?: DisputeAuditingDataStruct
     ): Promise<ProofTierWalk | false> {
         const { forkId, stateProof } = dispute.input;
@@ -265,6 +257,12 @@ export default class DisputeValidationService {
                 isChain
             );
             if (outcome === ReplayOutcome.Valid) {
+                // a forged latest state never reaches this check: the walk or
+                // the replay already stored its counter
+                const outboundRun = data
+                    ? await this.verifyOutboundRun(dispute, data)
+                    : [];
+                if (!outboundRun) return false;
                 // audits of one window run concurrently: a final block another
                 // audit verified after this audit's conflict check can be
                 // stored now, so a conflicting proof is judged again
@@ -285,12 +283,7 @@ export default class DisputeValidationService {
             if (outcome === ReplayOutcome.AnchorMoved)
                 return (await this.tryCreateBelowOnChainAnchorProof(dispute))
                     ? false
-                    : this.verifyAndReplay(
-                          dispute,
-                          evidence,
-                          outboundRun,
-                          data
-                      );
+                    : this.verifyAndReplay(dispute, evidence, data);
             if (isChain) return false;
         }
         throw new Error("Dispute audit: the chain tier did not answer");
@@ -555,8 +548,9 @@ export default class DisputeValidationService {
 
     /**
      * The posted outbound run above the chain's anchor, verified up to the
-     * dispute's latest state (`verifyOutboundRunAboveAnchor`): the part this
-     * peer persists for a later snapshot post and its withdrawals. A run that
+     * dispute's latest state, which the walk and the replay proved
+     * (`verifyOutboundRunAboveAnchor`): the part this peer persists for a
+     * later snapshot post and its withdrawals. A run that
      * does not verify stores `DisputeInvalidOutboundRun` once the chain
      * accepts it (undefined). The anchor is read from the chain; a counter the
      * chain refuses means the anchor moved after that read, so the run is

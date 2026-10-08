@@ -7,7 +7,8 @@ import {
 import {
     assertConflictBeforeSyncCommit,
     assertConflictWhileHoldingBase,
-    assertDisposalDuringSyncInstall
+    assertDisposalDuringSyncInstall,
+    assertThrowDuringSyncCommit
 } from "@test/fixtures/SyncInstallStaging";
 import { stageSpectatorBehindUnfinalizedTail } from "@test/fixtures/SyncReplayBaseStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -130,6 +131,10 @@ describe("Unit: SpectateService replay base", function () {
 
         it("runtime stops while the install is held → nothing installed, no verdict on the responder", async function () {
             await assertDisposalDuringSyncInstall(TestSession.getHarness());
+        });
+
+        it("the install's commit callback throws after the VM write → VM restored to the pre-install state, fork unchanged, the sync rejects with that error and no verdict on the responder", async function () {
+            await assertThrowDuringSyncCommit(TestSession.getHarness());
         });
     });
 });

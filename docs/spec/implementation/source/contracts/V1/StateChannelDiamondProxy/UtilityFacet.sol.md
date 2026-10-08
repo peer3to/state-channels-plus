@@ -12,6 +12,7 @@
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
   Partial: The client and contract decoders may accept or reject different encodings ([`FIND-DECODE-1-FD1V6V`](../../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
 
@@ -34,6 +35,7 @@ Threshold and shape predicates
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P10` — `retrieveSignerAddresses` on an empty signature list returns an empty signer set
 - [ ] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P11` — `tryDecodeBlock` decodes a non-canonical encoding (the canonical bytes plus one trailing zero word) to the same block as the canonical encoding
 - [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P12` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, for a linked run whose forged message balance overflows the withdrawal sum, and valid for the same run with the genuine block
+- [x] `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P13` — `verifyOutboundRunAboveAnchor` returns invalid, without a revert, when the upper snapshot's outbound head points to an overflowing block right above the anchor, and returns that block as the part above the anchor
 
 ## UNIT-TEST-UTILITY-FACET-2-89EC3Q
 

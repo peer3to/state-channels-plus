@@ -25,6 +25,8 @@ error ErrorOutboundMessageBlocksInvalid(
     uint256 lowerLatestOutboundMessageBlockHeight,
     uint256 outboundMessageBlockCount
 );
+// `addBalance` ran out of gas while summing an outbound run: no verdict, the caller must fund the call.
+error ErrorOutboundBalanceSumOutOfGas();
 error ErrorOutboundMessageBalanceMismatch(address participant, uint256 expectedAmount, uint256 actualAmount);
 error ErrorInboundMessageBlockAlreadyPersisted(bytes32 channelId, bytes32 blockHash);
 error ErrorSnapshotsNotProvided();

@@ -32,3 +32,4 @@ Canonical snapshot application
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P13` — successful same-fork snapshot replacement publishes its participant set atomically
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P14` — failed snapshot inspection restores the VM without publishing eligibility
 - [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15` — failed chain membership inspection restores VM state without publishing storage, fork or eligibility
+- [x] `UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18` — a sync install whose commit callback throws after the VM write restores the VM to the pre-install state, keeps the fork and stored state, and rethrows the error

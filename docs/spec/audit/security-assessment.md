@@ -603,18 +603,24 @@ A refusal from an unchanged anchor throws. Both paths have unit cases in
 `DisputeValidationServiceOutboundRun`, so
 [`REQ-DIS-12-AXY60R.T1.P18`](../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p18) is a kept,
 tested permutation (engineer decision 2026-10-08).
-The verifier checks the hash chain, the end height and the end hash before it sums balances
-([StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L401-L416)),
-so a forged balance that overflows the state machine's `addBalance` makes the run invalid instead
-of a revert: the audit and the on-chain counter both return false, and `DisputeInvalidOutboundRun`
-kills the dispute. Forge cases in `DisputeInvalidOutboundRun.t.sol` (extra block above the latest
-head, overflowing balance kills, overflowing balance is invalid and not a revert) and the E2E
-`MaxUint256`-balance case in `test/e2e/disputeValidation/outboundRun.test.ts` cover this.
-Residual: omitted auditing data posts no run, so an auditor of an omitted-data dispute relies on
-its own history or tail replay for those blocks. Residual: blocks that the upper head authenticates
-and whose balances overflow still revert; that needs a signed upper state that contains them.
-`DisputeFraudProofFacet` is 24,272 bytes deployed in the "hardhat paris" build profile, 304 bytes of
-headroom under the EIP-170 limit of 24,576.
+The verifier checks the hash chain, the end height and the end hash before it sums balances, and
+the sum is total: each `addBalance` call is in a `try`/`catch`
+([StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol)).
+A balance that cannot be added makes the run invalid instead of a revert on every path (audit,
+on-chain counter, snapshot post, sync), also when the latest state's outbound head points to the
+overflowing block. Before the replay that head is backed only by the author of the proof's last
+block, so a single Byzantine author could otherwise make every honest audit throw. An out-of-gas in
+the sum reverts `ErrorOutboundBalanceSumOutOfGas` and gives no verdict; this assumes `addBalance`
+fails within bounded gas on a balance it cannot add. The auditor also judges the run only after its
+replay proved the latest state, so a forged latest state is killed as an invalid state proof first.
+Forge cases in `DisputeInvalidOutboundRun.t.sol` (extra block above the latest head, overflowing
+balance kills, overflowing balance is invalid and not a revert, a latest head at an overflowing
+block is invalid and kills, a snapshot post with that head rejects the run, out-of-gas is no
+verdict) and the E2E cases in `test/e2e/disputeValidation/outboundRun.test.ts` (`MaxUint256`
+balance; forged latest state whose head is that block) cover this. Residual: omitted auditing data
+posts no run, so an auditor of an omitted-data dispute relies on its own history or tail replay for
+those blocks. `DisputeFraudProofFacet` is 24,289 bytes deployed in the "hardhat paris" build
+profile, 287 bytes of headroom under the EIP-170 limit of 24,576.
 
 ## One signature per signer per message — 2026-09-27
 

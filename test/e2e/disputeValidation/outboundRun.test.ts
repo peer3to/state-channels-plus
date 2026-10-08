@@ -1,6 +1,7 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     eventPipelineOutcome,
+    overflowingLatestHead,
     postForgedOutboundRunDispute
 } from "@test/fixtures/DisputeAuditStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
@@ -71,6 +72,34 @@ describe("E2E: dispute validation / outbound run", function () {
             honestPeerIndices: [auditorIndex]
         });
         // no audit of the forged run failed: every dispute event settled
+        for (const index of remaining) {
+            await h.rpcStub.waitUntilDisputeMutexIdle(index);
+            expect(
+                await eventPipelineOutcome(h, index),
+                `peer ${index}'s event pipeline`
+            ).to.deep.equal({ failedBlocks: 0, isDisposed: false });
+        }
+        await heldPost.release();
+    });
+
+    it("the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> the replay rejects the forged latest state before the outbound run is judged: a DisputeInvalidBlockInStateProofApplyFraudProof kill is accepted by the chain and no event pipeline fails", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, remaining, auditorIndex, disputer, heldPost } =
+            await postForgedOutboundRunDispute(h, overflowingLatestHead(h));
+
+        const kill = await readDisputeKill(h, disputer);
+        expect(remaining.map((index) => h.getPeer(index).address)).to.include(
+            kill.killer
+        );
+        expect(kill.appliedProofTypes).to.deep.equal([
+            DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+        ]);
+
+        await h.dispute.resolveDisputeWait({
+            forkId,
+            honestPeerIndices: [auditorIndex]
+        });
+        // no audit of the forged latest state failed: every dispute event settled
         for (const index of remaining) {
             await h.rpcStub.waitUntilDisputeMutexIdle(index);
             expect(

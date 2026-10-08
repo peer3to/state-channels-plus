@@ -413,7 +413,11 @@ describe("E2E: Multiple RPC nodes", function () {
         const h = TestSession.getHarness();
         const proxied = 2;
         await h.lifecycle.start(3, 0, {
-            rpcNodeProxiesByPeer: { [proxied]: 1 }
+            rpcNodeProxiesByPeer: { [proxied]: 1 },
+            // the failing retries and the two backoff windows keep the channel
+            // idle past the default first-block timeout, whose dispute would
+            // reject the later top-up
+            timeConfig: { chainFallbackTime: IDLE_CHANNEL_FALLBACK_TIME }
         });
         const [proxy] = h.getRpcNodeProxies(proxied);
         const validation = () => h.control(h.getPeer(proxied)).validation;

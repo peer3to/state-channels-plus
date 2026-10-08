@@ -13,7 +13,6 @@
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
-  Partial: `peekNextToWrite` does not restore the live state when its temporary `getNextToWrite` query throws ([`FIND-STATE-1-0K7XMY`](../../../../audit/open-findings.md#find-state-1-0k7xmy)).
 - [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
 - [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
 - [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
@@ -114,17 +113,16 @@ Get/set state
 
 ## UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW
 
-Temporary next-writer query
+Simulated next-writer query
 
-- Setup: Call `peekNextToWrite(encodedState)` on a machine holding a different live state, once succeeding, once with the temporary `setState` failing and once with `getNextToWrite` failing.
-- Oracle: After every call `getState` equals the live state from before it; `peekNextToWrite` restores live state only on the success path (no `finally`), so the `getNextToWrite`-failure case leaves the peeked state in place.
+- Setup: Call `peekNextToWrite(encodedState)` on a machine that holds a different live state: once with a `getNextToWriteOf` that succeeds, once with one that reverts, and once while a replay holds the state mutex with its predecessor state installed.
+- Oracle: `peekNextToWrite` sends one `getNextToWriteOf` simulated call and no `setState`; after each call `getState` equals the live state from before it; a revert throws `StateMachineInterface.peekNextToWrite: …`; under a held state mutex the call settles without the mutex and returns the next writer of the given state, not of the installed one.
 - Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — Live state is restored after success
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P2` — the selector-failure case currently exposes the missing `finally`
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P3` — live state is restored after temporary-set failure
-- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P4` — live state is restored after selector failure
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — the live state is unchanged after a successful call
+- [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P4` — the live state is unchanged after a reverted `getNextToWriteOf`, and the call throws with operation context
+- [x] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5` — while a replay holds the state mutex with another state installed, the call settles without the mutex and returns the next writer of the given state
 
 ## UNIT-TEST-SM-EVM-ADAPTER-6-QATHFT
 

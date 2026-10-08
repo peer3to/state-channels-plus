@@ -14,7 +14,10 @@ height, fork, status) equals the state before the sync and the stored block stay
 Without the conflict the held install commits and the sync reaches the tip with no blacklist. A requester
 that already holds the base, with its stored base block replaced by a conflicting one, aborts before any
 install (the install entry is recorded as never called) and keeps its state. A runtime stopped while the
-install is held returns false, keeps its state and does not blacklist the responder.
+install is held returns false, keeps its state and does not blacklist the responder. When the install's
+commit callback throws after the VM write, the VM is written back to the pre-install state, the install
+state equals the state before the sync, the sync rejects with that same error and the responder is not
+blacklisted.
 
 ## Tests
 
@@ -24,3 +27,4 @@ install is held returns false, keeps its state and does not blacklist the respon
 - `no conflict between staging and commit → the held install commits and the sync reaches the tip`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P106
 - `requester holds the base and a stored block conflicts with the served history → aborted, local state kept`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P107
 - `runtime stops while the install is held → nothing installed, no verdict on the responder`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P101
+- `the install's commit callback throws after the VM write → VM restored to the pre-install state, fork unchanged, the sync rejects with that error and no verdict on the responder`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P18

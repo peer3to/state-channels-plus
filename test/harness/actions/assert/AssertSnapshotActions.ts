@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared snapshot assertions exercised by the mapped test declarations that call them
 import { StateSnapshot } from "@/models";
 import { ForkId } from "@/types";
 import { Codec, DetachedPromises, Type } from "@/utils";

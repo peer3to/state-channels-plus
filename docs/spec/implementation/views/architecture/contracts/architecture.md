@@ -201,19 +201,19 @@ sizes from the Hardhat artifacts, build profile hardhat paris (`solc 0.8.34`, op
 
 | Contract                   | Deployed bytes | vs. 24,576 budget                                       |
 | -------------------------- | -------------: | ------------------------------------------------------- |
-| `DisputeFraudProofFacet`   |         24,272 | under — 304 bytes of headroom (the tightest)            |
+| `DisputeFraudProofFacet`   |         24,289 | under — 287 bytes of headroom (the tightest)            |
 | `DisputeVerificationFacet` |         19,228 | under — 5,348 headroom                                  |
-| `StateProofFacet`          |         17,886 | under — 6,690 headroom                                  |
-| `UtilityFacet`             |         15,205 | under — 9,371 headroom                                  |
-| `StateSnapshotFacet`       |         13,581 | under                                                   |
-| `StateChannelManagerProxy` |         13,119 | under — 11,457 headroom                                 |
-| `FraudProofFacet`          |         12,819 | under                                                   |
+| `StateProofFacet`          |         17,931 | under — 6,645 headroom                                  |
+| `UtilityFacet`             |         15,250 | under — 9,326 headroom                                  |
+| `StateSnapshotFacet`       |         13,626 | under                                                   |
+| `StateChannelManagerProxy` |         13,155 | under — 11,421 headroom                                 |
+| `FraudProofFacet`          |         12,853 | under                                                   |
 | `DisputeManagerFacet`      |          9,630 | under                                                   |
 | `JoinChannelFacet`         |          7,748 | under                                                   |
-| `LocalDiamond` (test-only) |         31,761 | over — acceptable only because it never targets mainnet |
+| `LocalDiamond` (test-only) |         32,137 | over — acceptable only because it never targets mainnet |
 
-Initcode is clear of EIP-3860: the proxy's creation bytecode is 30,106 bytes (runtime 13,119) and
-`DisputeFraudProofFacet`'s is 24,299 bytes. `LocalDiamond`'s is 48,070 bytes before constructor
+Initcode is clear of EIP-3860: the proxy's creation bytecode is 30,142 bytes (runtime 13,155) and
+`DisputeFraudProofFacet`'s is 24,316 bytes. `LocalDiamond`'s is 48,446 bytes before constructor
 arguments, close to the 49,152 limit; it is deployed only to the local EVM.
 
 The map is chosen for constant lookup cost, scalable routing, and future upgradeability. The
@@ -224,13 +224,13 @@ a routing-comparison benchmark.
 What keeps the sizes where they are, observed in source:
 
 - The proxy carries no forwarder bodies and no view wrappers — one constructor-populated selector
-  map plus the seven functions it declares itself (§2). Its runtime is 13,119 bytes.
+  map plus the seven functions it declares itself (§2). Its runtime is 13,155 bytes.
 - `StateChannelCommon` compiles to 58 bytes standalone: it declares no `public` members at all, so
   its `internal` bodies are inlined only into the facets that actually call them rather than
   duplicated into every facet's ABI (the placement rule in
   [AGENTS.md](../../../../../../AGENTS.md)).
 - `UtilityFacet` carries the ~28 proxy-storage views on top of its stateless helpers, which is why
-  it is the fourth-largest deployable at 15,205 bytes.
+  it is the fourth-largest deployable at 15,250 bytes.
 - The two facets nearest the ceiling, `DisputeFraudProofFacet` and `DisputeVerificationFacet`, are
   large because each hosts a whole proof family in one contract.
 - `StateProofFacet`, `DisputeVerificationFacet`, and `LocalDiamond` import `hardhat/console.sol`
@@ -246,9 +246,9 @@ What keeps the sizes where they are, observed in source:
 Every contract intended for mainnet deployment (the proxy, all facets, and any
 integrator consumer facet or state machine) MUST have deployed bytecode ≤ 24,576 bytes and
 initcode ≤ 49,152 bytes. `Current:` satisfied — every production deployable fits (table above);
-the largest, `DisputeFraudProofFacet`, has 304 bytes of headroom, so further growth in the
+the largest, `DisputeFraudProofFacet`, has 287 bytes of headroom, so further growth in the
 dispute-fraud-proof family is the first thing that will break the budget again. `LocalDiamond`
-(31,761) is over and stays over; it is test-only and never targets mainnet. Both implementation
+(32,137) is over and stays over; it is test-only and never targets mainnet. Both implementation
 requirements refine
 [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e).
 
@@ -297,7 +297,7 @@ Future Work.
    through that slot). A migration must be able to keep reading an old namespace while introducing
    a new one, so upgrades can read, migrate, and safely coexist with prior layouts.
 3. **Size headroom on the dispute facets.** [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7)
-   holds, but `DisputeFraudProofFacet` (24,272) and `DisputeVerificationFacet` (19,228) carry the
+   holds, but `DisputeFraudProofFacet` (24,289) and `DisputeVerificationFacet` (19,228) carry the
    least room. Splitting those two along their proof families is the remaining size work; the other
    deployables have no size pressure.
 

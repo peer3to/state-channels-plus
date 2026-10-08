@@ -3,6 +3,13 @@ pragma solidity ^0.8.8;
 import {StateProofStaging} from "../harness/StateProofStaging.sol";
 import {DisputeInvalidOutboundRun} from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
+import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol";
+import {
+    ErrorOutboundBalanceSumOutOfGas,
+    ErrorOutboundMessageBlocksInvalid
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
 import {MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/DisputeTypes.sol";
@@ -17,8 +24,32 @@ import "../../../contracts/V1/types/ProofTypes.sol";
 
 /// UtilityFacet with a real state machine, so a run's balances reach checked `addBalance` arithmetic
 contract OutboundRunVerifier is UtilityFacet {
+    constructor(AStateMachine stateMachine) {
+        stateMachineImplementation = stateMachine;
+    }
+}
+
+/// a stand-in state machine whose `addBalance` never returns: every call runs out of gas
+contract GasBurningAddBalance {
+    function addBalance(Balance memory, Balance memory) external pure returns (Balance memory) {
+        while (true) {}
+        revert();
+    }
+}
+
+/// StateSnapshotFacet with a real state machine, reaching the snapshot post's outbound-run check at its own entry
+contract OutboundSnapshotPostHarness is StateSnapshotFacet {
     constructor() {
         stateMachineImplementation = new MathStateMachine(3_000_000, 32);
+    }
+
+    function updateStateSnapshot(
+        bytes32 channelId,
+        StateSnapshot memory currentOnChainSnapshot,
+        StateSnapshot memory newSnapshot,
+        MessageBlock[] memory outboundMessageBlocks
+    ) external {
+        _updateStateSnapshot(channelId, currentOnChainSnapshot, newSnapshot, outboundMessageBlocks, false);
     }
 }
 
@@ -80,7 +111,14 @@ contract DisputeInvalidOutboundRunTest is StateProofStaging {
         private
         returns (Dispute memory dispute, DisputeAuditingData memory auditingData)
     {
-        StateSnapshot memory latest = _latest();
+        return _committedDisputeTo(_latest(), run);
+    }
+
+    /// A's committed posted dispute over blocks 5..8, the last committing `latest`, posting `run`
+    function _committedDisputeTo(StateSnapshot memory latest, MessageBlock[] memory run)
+        private
+        returns (Dispute memory dispute, DisputeAuditingData memory auditingData)
+    {
         MilestoneProof memory milestone = _run(5, 4, keccak256("block 4"), _signers(ALICE_KEY));
         _commitAt(milestone, 3, keccak256(abi.encode(latest)), _signers(ALICE_KEY));
         (dispute, auditingData) =
@@ -224,7 +262,7 @@ contract DisputeInvalidOutboundRunTest is StateProofStaging {
     }
 
     function test_outboundRun_overflowingBalanceIsInvalidNotARevert() public {
-        OutboundRunVerifier verifier = new OutboundRunVerifier();
+        OutboundRunVerifier verifier = new OutboundRunVerifier(new MathStateMachine(3_000_000, 32));
         StateSnapshot memory anchor = _withOutbound(_snapshot(5, genesisData.participants), first, 1, 10);
         (bool isValid, MessageBlock[] memory aboveAnchor) = verifier.verifyOutboundRunAboveAnchor(
             _run2(_overflowingSecond(), third), anchor.snapshotData, _latest().snapshotData
@@ -235,6 +273,57 @@ contract DisputeInvalidOutboundRunTest is StateProofStaging {
         (isValid,) =
             verifier.verifyOutboundRunAboveAnchor(_run2(second, third), anchor.snapshotData, _latest().snapshotData);
         assertTrue(isValid);
+    }
+
+    /// a latest state at block 8 signed only by its author, whose outbound head is `_overflowingSecond()` right above
+    /// the anchor's head: links, height and endpoint pass, so the balance reaches `addBalance`
+    function _forgedLatest() private view returns (StateSnapshot memory) {
+        return _withOutbound(_snapshot(8, genesisData.participants), _overflowingSecond(), 2, 30);
+    }
+
+    function _overflowingRun() private view returns (MessageBlock[] memory run) {
+        run = new MessageBlock[](1);
+        run[0] = _overflowingSecond();
+    }
+
+    function test_outboundRun_latestHeadAtAnOverflowingBlockIsInvalidNotARevert() public {
+        OutboundRunVerifier verifier = new OutboundRunVerifier(new MathStateMachine(3_000_000, 32));
+        StateSnapshot memory anchor = _withOutbound(_snapshot(5, genesisData.participants), first, 1, 10);
+        (bool isValid, MessageBlock[] memory aboveAnchor) =
+            verifier.verifyOutboundRunAboveAnchor(_overflowingRun(), anchor.snapshotData, _forgedLatest().snapshotData);
+        assertFalse(isValid);
+        assertEq(aboveAnchor.length, 1);
+    }
+
+    function test_outboundRun_latestHeadAtAnOverflowingBlockKills() public {
+        _seedOutboundAnchor(5, first, 1, 10);
+        (Dispute memory dispute, DisputeAuditingData memory auditingData) =
+            _committedDisputeTo(_forgedLatest(), _overflowingRun());
+        assertTrue(
+            StateProofFacet(address(harness)).isDisputeOutboundRunInvalid(
+                dispute, DisputeInvalidOutboundRun({auditingData: auditingData})
+            )
+        );
+        _allege(dispute, auditingData);
+        _assertKilled(dispute);
+    }
+
+    function test_outboundRun_snapshotPostWithAnOverflowingHeadRejectsTheRun() public {
+        OutboundSnapshotPostHarness facet = new OutboundSnapshotPostHarness();
+        StateSnapshot memory anchor = _withOutbound(_snapshot(5, genesisData.participants), first, 1, 10);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorOutboundMessageBlocksInvalid.selector, keccak256(abi.encode(first)), 1, 1)
+        );
+        facet.updateStateSnapshot(CHANNEL, anchor, _forgedLatest(), _overflowingRun());
+    }
+
+    function test_outboundRun_outOfGasInTheSumIsNoVerdict() public {
+        OutboundRunVerifier verifier = new OutboundRunVerifier(AStateMachine(address(new GasBurningAddBalance())));
+        StateSnapshot memory anchor = _withOutbound(_snapshot(5, genesisData.participants), first, 1, 10);
+        vm.expectRevert(ErrorOutboundBalanceSumOutOfGas.selector);
+        verifier.verifyOutboundRunAboveAnchor{gas: 1_000_000}(
+            _run2(second, third), anchor.snapshotData, _latest().snapshotData
+        );
     }
 
     // ==================== no evidence: the allegation fails ====================

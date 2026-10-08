@@ -224,3 +224,60 @@ export async function assertDisposalDuringSyncInstall(
     }
     await host.dispose();
 }
+
+/**
+ * The spectator's install runs its commit callback after the VM write, and
+ * the callback throws. The VM is restored to the pre-install state, the fork
+ * and the stored state are unchanged, and the sync rejects with that error
+ * with no verdict on the responder.
+ */
+export async function assertThrowDuringSyncCommit(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { forkId, spectator, responder, tip } =
+        await stageSpectatorBehindUnfinalizedTail(h, {
+            finalBlocksWhileCutOff: 1,
+            inline: true
+        });
+    const { host, sm, query } = runtimeEndpointFor(spectator.p2pInstance);
+    const state = async () => ({
+        vmState: await sm.diamondStateMachine.getState(),
+        stateHash: query.getLatestStateMachineStateHash(forkId),
+        latestHeight: query.getLatestBlockHeight(forkId),
+        forkId: sm.forkId
+    });
+    const before = await state();
+    const application = sm.stateApplicationService;
+    const install = application.unsafeSetLatestState;
+    const vm = sm.diamondStateMachine;
+    const setState = vm.setState;
+    const vmWrites: string[] = [];
+    const failure = new Error("sync commit callback failed");
+    vm.setState = (serializedState) => {
+        vmWrites.push(String(serializedState));
+        return setState.call(vm, serializedState);
+    };
+    application.unsafeSetLatestState = (snapshot, encodedState, outbound) =>
+        install.call(application, snapshot, encodedState, outbound, () => {
+            throw failure;
+        });
+    try {
+        const error = await sm.p2pManager.localRpc.spectateService
+            .sync(responder.address, sm.channelId, forkId, tip)
+            .then(
+                () => undefined,
+                (thrown: unknown) => thrown
+            );
+        expect(error).to.equal(failure);
+    } finally {
+        application.unsafeSetLatestState = install;
+        vm.setState = setState;
+    }
+    // premise - the install wrote the served base before the callback threw
+    expect(vmWrites).to.have.length(2);
+    expect(vmWrites[0]).to.not.equal(before.vmState);
+    expect(vmWrites[1]).to.equal(before.vmState);
+    expect(await state()).to.deep.equal(before);
+    expect(sm.p2pManager.isBlacklisted(responder.address)).to.equal(false);
+    await host.dispose();
+}

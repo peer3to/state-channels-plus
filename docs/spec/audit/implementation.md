@@ -830,14 +830,22 @@ the timeout target, which inverts [`INV-DIS-7-9GGZSD` (In a fork whose reduction
 
 **The outbound verifier checks links before balances.** `_verifyOutboundMessageBlocks` walks the
 hash chain (predecessor, height + 1), then checks the end height and end hash against the upper
-snapshot, and only then sums balances through the state machine's `addBalance`
-([StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L401-L424)).
-A forged balance in an unauthenticated run gives false, not a revert, for every caller: the
-auditor's `verifyOutboundRunAboveAnchor`, the on-chain counter `isDisputeOutboundRunInvalid` and the
-snapshot post
-([StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)).
-Residual: blocks that the upper head authenticates and whose balances overflow still revert; that
-needs a signed upper state that contains them.
+snapshot, and only then sums balances through the state machine's `addBalance`, each call in a
+`try`/`catch` (`_verifyOutboundMessageBlocks` in
+[StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol)).
+A sum that cannot be computed returns false on every path: the auditor's
+`verifyOutboundRunAboveAnchor`, the on-chain counter `isDisputeOutboundRunInvalid`, the snapshot post
+(`ErrorOutboundMessageBlocksInvalid`) and the sync check. This holds also when the upper head
+authenticates the overflowing block, which a latest state signed only by its author can do. An
+out-of-gas in `addBalance` (the caller keeps at most 1/64 of its gas) reverts
+`ErrorOutboundBalanceSumOutOfGas`: no verdict, so a caller-chosen low gas limit never judges an honest
+run invalid. The verdict assumes `addBalance` fails within bounded gas on a balance it cannot add.
+The auditor judges the run only after its replay proved the latest state
+(`verifyAndReplay` in
+[DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts)), so a
+forged latest state is countered as an invalid state proof first
+([StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md),
+[DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
 
 **A reasonless upload refusal is classified by the estimate.** When the mined best-effort multicall
 reports a last-call refusal with no reason (bare `0x`, or the proxy's `Delegatecall failed`),

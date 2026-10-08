@@ -570,7 +570,7 @@ Specification cases tested: 5/20. Untested: T1.P2, T1.P3, T1.P4, T1.P6, T1.P7, T
 Specification cases tested: 6/6.
 
 [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../specification/disputes/disputes.md#req-dis-12-axy60r)
-Specification cases tested: 21/21.
+Specification cases tested: 24/24.
 
 [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)
 Specification cases tested: 3/8. Untested: T1.P1, T1.P2, T1.P3, T1.P7, T1.P8.

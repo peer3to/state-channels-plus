@@ -105,6 +105,8 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P74` — A changed shared block in the second overlapping run breaks the proof even when its supplied snapshot matches that changed block
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P75` — A hop consuming a JOIN while the joiner is absent from both endpoint sets fails without that joiner signature, with authenticated snapshot evidence
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P76` — A hop consuming a JOIN while the joiner is absent from both endpoint sets verifies with that joiner signature and finalizes its snapshot
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P77` — `_verifyOutboundMessageBlocks` returns false, without a revert, for a linked run whose upper head points to a block whose balance `addBalance` cannot add
+- [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P78` — `_verifyOutboundMessageBlocks` reverts `ErrorOutboundBalanceSumOutOfGas` when `addBalance` runs out of gas, so it returns no verdict
 
 ## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
 

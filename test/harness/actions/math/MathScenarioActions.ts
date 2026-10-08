@@ -377,7 +377,7 @@ export class MathScenarioActions extends ScenarioActions {
      * `reduction-*` timer held so nothing reduces until a test says so:
      * preDisputeSetup, hold the timers, one invalid state transition by the
      * malicious peer, the committed dispute, `afterDispute` while the
-     * evidence period is still open, then the evidence period.
+     * evidence period is still open, then the evidence and kill periods.
      */
     async stageReducibleDisputedFork(options?: {
         configOverrides?: HarnessOptions["configOverrides"];
@@ -411,17 +411,33 @@ export class MathScenarioActions extends ScenarioActions {
         });
         await options?.afterDispute?.();
         // The evidence period counts from the dispute window's creation, not
-        // from when every peer observed the dispute: the reduction genesis
-        // carries that time, and the successor's first writer must still be
-        // inside its window once a test releases the reductions.
+        // from when every peer observed the dispute. Wait it out so no more
+        // evidence can land.
         const windowCreatedAt = Number(
             await this.harness.channelManager.getDisputeWindowCreationTimestamp(
                 this.harness.channelId,
                 sourceForkId
             )
         );
+        const settlementMarginSeconds = 2;
         await this.harness.event.waitUntilTimestamp(
-            windowCreatedAt + this.harness.event.evidencePeriodWaitMs(2) / 1000
+            windowCreatedAt +
+                this.harness.event.evidencePeriodWaitMs(
+                    settlementMarginSeconds
+                ) /
+                    1000
+        );
+        // A peer outside `disputingPeerIndices` can commit late in the
+        // evidence period and move the kill period end. The reduction genesis
+        // carries that end, and the successor's first writer must still be
+        // inside its window once a test releases the reductions.
+        const { killPeriodEnd } =
+            await this.harness.channelManager.isKillPeriodExpired(
+                this.harness.channelId,
+                sourceForkId
+            );
+        await this.harness.event.waitUntilTimestamp(
+            Number(killPeriodEnd) + settlementMarginSeconds
         );
         return { sourceForkId };
     }

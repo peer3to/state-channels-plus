@@ -43,7 +43,7 @@ import type {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
-import { ZeroAddress } from "ethers";
+import { MaxUint256, ZeroAddress } from "ethers";
 
 /**
  * Height of `peerIndex`'s latest locally finalized state (the first audit
@@ -778,7 +778,10 @@ export async function stageOutboundDispute(
  */
 export async function postForgedOutboundRunDispute(
     h: MathPeerTestHarness,
-    forge: (auditingData: DisputeAuditingDataStruct) => void
+    forge: (
+        auditingData: DisputeAuditingDataStruct,
+        dispute: DisputeStruct
+    ) => void | Promise<void>
 ) {
     const { forkId, remaining, heldPost } = await stageOutboundAroundAnchor(h, {
         finalBlocks: 2
@@ -792,10 +795,10 @@ export async function postForgedOutboundRunDispute(
         .request();
     await h.tamper.postTamperedDispute(
         disputerIndex,
-        (dispute, _, auditingData) => {
+        async (dispute, _, auditingData) => {
             if (!auditingData) throw new Error("auditing data missing");
             expect(auditingData.outboundMessageBlocks).to.have.length(1);
-            forge(auditingData);
+            await forge(auditingData, dispute);
             dispute.postedAuditingData = true;
             dispute.input.disputeAuditingDataHash = hash(
                 Codec.encode(auditingData, Type.DisputeAuditingData)
@@ -813,6 +816,67 @@ export async function postForgedOutboundRunDispute(
         h.event.protocolEventTimeoutMs()
     );
     return { forkId, remaining, auditorIndex, disputer, heldPost };
+}
+
+/**
+ * A `postForgedOutboundRunDispute` forge: the disputer signs a new last block
+ * on top of its head that commits a forged latest snapshot. That snapshot's
+ * outbound head is the posted block above the anchor with its first message
+ * balance set to MaxUint256, so the links and the height hold while the sum
+ * with the anchor's withdrawals overflows. The block is authentic and linked:
+ * only the replay can reject the forged latest state.
+ */
+export function overflowingLatestHead(h: MathPeerTestHarness) {
+    return async (
+        auditingData: DisputeAuditingDataStruct,
+        dispute: DisputeStruct
+    ): Promise<void> => {
+        const [block] = auditingData.outboundMessageBlocks;
+        const overflowing = {
+            ...block,
+            messages: block.messages.map((message, index) =>
+                index === 0
+                    ? {
+                          ...message,
+                          balance: { ...message.balance, amount: MaxUint256 }
+                      }
+                    : message
+            )
+        };
+        const latest = auditingData.latestStateSnapshot;
+        const forged = StateSnapshot.from({
+            ...latest,
+            snapshotData: {
+                ...latest.snapshotData,
+                latestOutboundMessageBlockHash: hash(
+                    Codec.encode(overflowing, Type.MessageBlock)
+                )
+            }
+        });
+        const milestone = dispute.input.stateProof.milestones.at(-1)!;
+        const head = Block.fromBlockConfirmation(
+            milestone.blockConfirmations.at(-1)!
+        );
+        const disputer = h.peers.find(
+            (peer) => peer.address === dispute.input.disputer
+        );
+        if (!disputer) throw new Error("No harness peer is the disputer");
+        const encoded = await buildAndEncodeBlock(disputer.signer, {
+            header: {
+                channelId: h.channelId,
+                forkId: head.forkId,
+                transactionCnt: head.height + 1
+            },
+            previousBlockHash: head.hash,
+            stateSnapshotHash: forged.hash
+        });
+        milestone.blockConfirmations.push(
+            Codec.decode(encoded, Type.BlockConfirmation)
+        );
+        auditingData.outboundMessageBlocks = [overflowing];
+        auditingData.latestStateSnapshot = forged.toStruct();
+        dispute.input.latestStateSnapshotHash = forged.hash;
+    };
 }
 
 /**

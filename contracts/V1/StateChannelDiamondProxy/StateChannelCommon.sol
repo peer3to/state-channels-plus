@@ -389,7 +389,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     /// The run links `lowerSnapshot`'s outbound head to `upperSnapshot`'s and its balances sum to the upper total. The
     /// links, heights and endpoint are checked first, so balances reach the state machine's arithmetic only when the
-    /// upper head authenticates them; a forged balance gives false, never a revert.
+    /// upper head authenticates them. The upper head can still be forged (a snapshot signed only by its author), so a
+    /// forged or unaddable balance gives false, never a revert. An out-of-gas in `addBalance` is not a verdict: EIP-150
+    /// leaves the caller at most 1/64 of the gas it had, and that case reverts with `ErrorOutboundBalanceSumOutOfGas`,
+    /// so an under-funded call cannot judge an honest run invalid. This assumes `addBalance` fails fast (a bounded-gas
+    /// revert) on an unaddable balance.
     function _verifyOutboundMessageBlocks(
         MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory lowerSnapshot,
@@ -418,8 +422,14 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
-                totalOutbound =
-                    stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance);
+                uint256 gasBefore = gasleft();
+                try stateMachineImplementation.addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance)
+                returns (Balance memory sum) {
+                    totalOutbound = sum;
+                } catch {
+                    if (gasleft() <= gasBefore / 64) revert ErrorOutboundBalanceSumOutOfGas();
+                    return false;
+                }
             }
         }
         return keccak256(abi.encode(totalOutbound)) == keccak256(abi.encode(upperSnapshot.totalWithdrawals));

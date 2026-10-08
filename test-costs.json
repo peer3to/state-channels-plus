@@ -3997,6 +3997,12 @@
       "peakRssGb": 1.068,
       "measurementReason": null
     },
+    "hardhat|test/e2e/disputeValidation/outboundRun.test.ts|E2E: dispute validation / outbound run the disputer signs a last block above its head that commits a forged latest snapshot whose outbound head is an overflowing block (message balance MaxUint256) right above the chain anchor -> the replay rejects the forged latest state before the outbound run is judged: a DisputeInvalidBlockInStateProofApplyFraudProof kill is accepted by the chain and no event pipeline fails": {
+      "durationMs": 23653,
+      "avgCores": 0.689,
+      "peakRssGb": 0.888,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/disputeValidation/outputState.test.ts|E2E: dispute validation / outputState dispute.outputSnapshotDataHash = random → DisputeInvalidOutputState": {
       "durationMs": 28443,
       "avgCores": 0.745,
@@ -18587,6 +18593,12 @@
       "durationMs": 6460,
       "avgCores": 0.882,
       "peakRssGb": 0.63,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateServiceReplayBase.test.ts|Unit: SpectateService replay base staged install the install's commit callback throws after the VM write → VM restored to the pre-install state, fork unchanged, the sync rejects with that error and no verdict on the responder": {
+      "durationMs": 9737,
+      "avgCores": 0.786,
+      "peakRssGb": 0.518,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateSyncProofStart.test.ts|Unit: SpectateService sync proof verification order RR1: sync persists only the checked region when the chain anchor advances across malformed skipped history": {

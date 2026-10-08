@@ -360,8 +360,8 @@ uncommitted (already-killed) disputes, requires the kill period open, dispatches
 [ProofTypes.sol](../../../../../../contracts/V1/types/ProofTypes.sol#L79)). A valid proof kills the dispute
 and slashes its disputer (`killDispute` → `DisputeKilled`); an invalid proof slashes the submitter.
 Also exposes `validateTimeoutCalldataPostedProof` and the helper predicates routed to it (§2.2).
-At 24,272 deployed bytes (hardhat paris build profile) it is the largest deployable and the one closest to the EIP-170 ceiling —
-304 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
+At 24,289 deployed bytes (hardhat paris build profile) it is the largest deployable and the one closest to the EIP-170 ceiling —
+287 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
 
 ### 4.8 `UtilityFacet`
 

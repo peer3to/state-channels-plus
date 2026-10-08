@@ -46,7 +46,8 @@ export default class StateApplicationService {
      * status with no await in between, so no task sees the new history under
      * the old fork.
      * When `persistHistory` stores nothing (false) the VM is restored and
-     * nothing is committed (false).
+     * nothing is committed (false). When it throws the VM is restored and
+     * the error is rethrown.
      */
     public async unsafeSetLatestState(
         stateSnapshot: StateSnapshotStruct,
@@ -56,10 +57,17 @@ export default class StateApplicationService {
     ): Promise<boolean> {
         const sm = this.stateManager;
         const prepared = await this.prepare(encodedState);
-        if (!persistHistory()) {
-            await sm.diamondStateMachine.setState(
-                prepared.previousEncodedState
-            );
+        const restore = () =>
+            sm.diamondStateMachine.setState(prepared.previousEncodedState);
+        let isPersisted: boolean;
+        try {
+            isPersisted = persistHistory();
+        } catch (error) {
+            await restore();
+            throw error;
+        }
+        if (!isPersisted) {
+            await restore();
             return false;
         }
         const previousForkId = sm.forkId;
