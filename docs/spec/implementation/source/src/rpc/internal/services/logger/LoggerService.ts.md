@@ -10,7 +10,7 @@
 - [`REQ-LOG-2-N6BJ3D` (The caller receives its local upload outcome)](../../../../../../../specification/runtime/log-collection.md#req-log-2-n6bj3d)
 - [`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)
 - [`REQ-LOG-8-B7VN3J` (Works wherever the runtime works)](../../../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j)
-- [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own)](../../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
+- [`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)
 
 ## UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0
 

@@ -384,4 +384,4 @@ _Non-normative._
 - [`REQ-JCS-2-WMQGWC`](join-channel.md#req-jcs-2-wmqgwc)
   Missing: Not implemented (code TODO; [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4))
 - [`REQ-JCS-3-C371C5`](join-channel.md#req-jcs-3-c371c5)
-  Partial: penalty-free error today ([./README.md](./README.md) §8); no rate limit
+  Partial: `signJoinRequest` answers an invalid participant signature with a penalty-free error and bounds no per-peer chain-read cost ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)).

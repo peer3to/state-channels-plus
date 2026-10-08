@@ -7,7 +7,7 @@
 ## Requirements
 
 - [`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)
-- [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
+- [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 
 ## UNIT-TEST-FORCE-JOIN-STORAGE-1-E2PCWN
 

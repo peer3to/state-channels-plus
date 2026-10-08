@@ -45,13 +45,13 @@ behavior, follow `docs/spec/AGENTS.md` in the same pass. Identify affected
 requirements, planned tests, the file reports' requirement bullets and case lists,
 test traceability, individual test declarations, questions, findings, and audit
 approvals. Planned tests preserve the owning requirement ID, for example
-`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers, rerun related evidence, and
-preserve the forward-only subject chain: neutral `specification/A`, concrete
-`implementation/A`, then evidence-owning `verification/A`. Verification has
-only its overview and the specification/implementation traceability matrices;
-exact test links and coverage judgments belong in those rows. Regenerate all
-six inverse reports with `yarn spec:refresh` (the command never authors the
-maintained subject documents). Before a commit run
+`INV-DA-1.T1`; exact tests map to permutation IDs such as `INV-DA-1.T1.P1`. Update all affected layers and
+rerun related evidence. The layers link through stable IDs, not paths.
+Verification holds one report per test file plus the tool-written
+`verification/requirements.md`; tested status is derived, never typed.
+`yarn spec:refresh` regenerates the five reports under `generated/` (it never
+authors the maintained documents). The full rules live in
+`docs/spec/AGENTS.md`. Before a commit run
 `yarn spec:impact` and `yarn spec:impact --staged`; during PR review run
 `yarn spec:impact --base <merge-base-ref>` and semantically recheck every
 reported path. PR reviews report specification drift,

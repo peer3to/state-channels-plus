@@ -74,3 +74,10 @@ test("a hand-typed Covered line does not change a bullet's status", () => {
         ["Linked", "report.md"]
     ]);
 });
+
+test("a requirement bullet under a narrative heading is not a claim", () => {
+    const text = `# View\n\n## Canonical ownership\n\n- ${link(prose)}\n  Partial: narrative note.\n\n## Gaps\n\n- ${link(gap)}\n`;
+    const result = claims({ "view.md": text });
+    assert.equal(result.has(prose), false);
+    assert.deepEqual(result.get(gap), [["Linked", "view.md"]]);
+});

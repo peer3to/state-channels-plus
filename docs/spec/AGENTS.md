@@ -113,10 +113,11 @@ nor the specification says:
 
 A sentence that restates the code does not belong in this layer: no responsibility summaries,
 design decisions, input/output lists, assumptions, or related-file lists. Do not link source line
-anchors (`#L…`); name the function in backticks. Design views keep narrative prose, diagrams, and
-their `INTEGRATION-TEST-*` families; a view-local requirement is a `### <ID> — <subject>` heading
-with its statement and cases; a divergence no single file owns is a bullet in the view's
-`## Gaps` section, in the file-report bullet shape. Cross-subsystem and E2E cases belong to
+anchors (`#L…`); name the function in backticks. Design and know-how belong in the
+specification; a design view holds only its `INTEGRATION-TEST-*` families and a `## Gaps` section
+(a divergence no single file owns, in the file-report bullet shape). The narrative, diagrams and
+view-local requirements still in the views are legacy, pending a move into the specification:
+add no new design prose or requirements to a view, and do not grow the legacy content. Cross-subsystem and E2E cases belong to
 verification. If a requirement is integrator-owned or cannot be enforced generically, say so in
 the divergence line.
 

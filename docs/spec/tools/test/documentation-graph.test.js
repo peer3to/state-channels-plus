@@ -97,3 +97,27 @@ test("checkboxes do not change a review hash and the status file is never queued
         assert.match(queue.stdout, /graph\.test\.ts\.md/);
         assert.doesNotMatch(queue.stdout, /requirements\.md/);
     }));
+
+test("a reworded link label changes no hash; case text does", () =>
+    fixture((f) => {
+        const file = path.join(f.repo, report);
+        const before = fingerprints(f);
+        const hash = contentHash(file);
+        const linked = f.read(report);
+        assert.match(linked, new RegExp(`\\[\`${requirement}\``));
+        f.write(
+            report,
+            linked.replace(
+                new RegExp(`\\[\`${requirement}\`(?: \\([^)]*\\))?\\]`),
+                `[\`${requirement}\` (Reworded subject)]`
+            )
+        );
+        assert.equal(contentHash(file), hash);
+        assert.deepEqual([...fingerprints(f)], [...before]);
+        f.write(
+            report,
+            f.read(report).replace("first case", "first case, reworded")
+        );
+        assert.notEqual(contentHash(file), hash);
+        assert.notDeepEqual([...fingerprints(f)], [...before]);
+    }));

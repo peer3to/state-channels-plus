@@ -12,7 +12,7 @@
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
 - [`INV-DIS-5-J1QZ92` (The reduced result is independent of the order in which valid dispute inputs…)](../../../../../../specification/disputes/disputes.md#inv-dis-5-j1qz92)
   Missing: Order-sensitivity of the positional match is documented but unresolved; engineer decision pending. See [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx).
-- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 
 ## UNIT-TEST-DISPUTE-UTILS-1-30FXAM
 

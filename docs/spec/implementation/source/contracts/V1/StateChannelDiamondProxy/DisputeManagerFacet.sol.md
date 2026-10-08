@@ -12,9 +12,9 @@
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
-- [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
+- [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
-- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
+- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 
 ## UNIT-TEST-DISPUTE-WINDOW-ADMISSION-1-B7XWZB
 

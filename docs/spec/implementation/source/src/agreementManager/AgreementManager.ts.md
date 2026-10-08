@@ -6,18 +6,18 @@
 
 ## Requirements
 
-- [`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the)](../../../../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
-- [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final)](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
-- [`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required)](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
-- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the)](../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+- [`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the…)](../../../../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
+- [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
+- [`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required final membership hops to the…)](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
+- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
 - [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
-- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
-- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-- [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
+- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
+- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
+- [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
-- [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+- [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 

@@ -10,9 +10,9 @@
 - [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
 - [`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)
 - [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)
-  Partial: The constructor does not verify that code-bearing targets implement the expected module semantics.
+  Partial: the constructor rejects only a codeless route target in `_registerRoute`; an incompatible code-bearing module is accepted ([`FIND-DEPLOY-1-T2XFRK`](../../../../../audit/open-findings.md#find-deploy-1-t2xfrk)).
 - [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1)
-  Partial: An unowned selector is not rejected — it is delegatecalled into the integrator's consumer facet in this contract's storage, so "MUST NOT affect channel state" is the integrator's obligation, not enforced here.
+  Partial: `_facetForSelector` sends every unregistered selector to the consumer facet by delegatecall, so keeping unowned operations off channel state is integrator-owned and not enforced ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
 - [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
@@ -20,11 +20,9 @@
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
-  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
 - [`REQ-SM-4-Z32M0W` (Ordering/encoding/round-trip defined explicitly)](../../../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w)
-  Partial: No channel-level encoding/version guard proves that an existing channel cannot be pointed at incompatible logic or encoding.
 - [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../../../../../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
-- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 - [`REQ-TIME-3-MT1MMF` (Window values and skew bound are explicit configuration trade-offs)](../../../../../specification/protocol-model/time.md#req-time-3-mt1mmf)
 - [`INV-DA-1-TS7HX2` (A posted block-calldata commitment MUST be immutable for its key and binding)](../../../../../specification/security/data-availability.md#inv-da-1-ts7hx2)
 
@@ -123,6 +121,8 @@ Funded replay or no verdict
 
 Replay execution
 
+- Setup: Call `executeStateTransition(channelId, encodedState, tx)` from the diamond itself (`onlySelf`) with a pre-state and a transaction the configured `stateMachineImplementation` accepts, leaving zero, one or many outbound messages.
+- Oracle: It returns `(true, state, messages)` where `state` and the ordered `messages` equal a direct `setState` plus `stateTransition` on the same implementation.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -132,6 +132,8 @@ Replay execution
 
 Replay failure
 
+- Setup: Call `executeStateTransition` with a transition that reverts with a reason, one that reverts bare (surfacing as "AStateMachine - Call failed - result length 0"), and a machine frame that runs out of gas with empty returndata.
+- Oracle: A transition revert returns `success == false`, the restored pre-state bytes and no outbound messages; empty returndata reverts with `ErrorStateTransitionFrameOutOfGas` and an `ErrorInsufficientGasForStateTransition` refusal is re-raised, so no verdict is returned.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -143,7 +145,9 @@ Replay failure
 
 State restoration
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `executeStateTransition` with a valid `encodedState`, with truncated bytes and with a differently shaped encoding, then again with a valid state.
+- Oracle: A valid state is restored through `stateMachineImplementation.setState`, so the result matches a direct run from those bytes; a malformed or incompatible encoding reverts in `setState`, and the next valid call returns the same result as on a fresh machine.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-MANAGER-PROXY-3-XKZ0BK.P1` — Valid encodings restore exactly
@@ -154,6 +158,8 @@ State restoration
 
 Forwarded interface semantics
 
+- Setup: Compare `executeStateTransition` outputs with direct `setState`, `stateTransition` and `getState` calls on `stateMachineImplementation` for the same inputs and for different `channelId` values.
+- Oracle: The proxy returns the implementation's success flag, state bytes and `Message[]` unchanged, and `channelId` does not affect the result because every channel shares one implementation.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 

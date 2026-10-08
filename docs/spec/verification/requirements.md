@@ -11,11 +11,26 @@ Specification cases tested: 1/5. Untested: T1.P2, T1.P3, T1.P4, T1.P5.
 [`INV-AUTH-3-0QP5E9` (Objective facts only)](../specification/peer-communication/handshake.md#inv-auth-3-0qp5e9)
 Specification cases tested: 0/2.
 
+[`INV-BCP-1-H2H41X` (Validation and execution under the state mutex)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-1-h2h41x)
+Specification cases tested: none planned.
+
 [`INV-BCP-2-BVPQF4` (Failed validation restores the VM)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-2-bvpqf4)
 Specification cases tested: 1/1.
 
+[`INV-BCP-3-GTHAHV` (In-order execution, future blocks parked)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-3-gthahv)
+Specification cases tested: none planned.
+
+[`INV-BCP-4-16TP2N` (Monotone, attributed queue merging)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-4-16tp2n)
+Specification cases tested: none planned.
+
+[`INV-BCP-5-NGASJJ` (Persist before gossip)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-5-ngasjj)
+Specification cases tested: none planned.
+
 [`INV-BCP-6-1E943Z` (A fraud proof is stored before every live dispute)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-6-1e943z)
 Specification cases tested: 2/2.
+
+[`INV-BCP-7-ZDZ5WB` (Subjective lateness never slashes)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#inv-bcp-7-zdz5wb)
+Specification cases tested: none planned.
 
 [`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)
 Specification cases tested: 4/4.
@@ -25,6 +40,15 @@ Specification cases tested: 3/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 
 [`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)
 Specification cases tested: 8/8.
+
+[`INV-CON-3-QSMFC7` (One storage layout for proxy and facets)](../implementation/views/architecture/contracts/architecture.md#inv-con-3-qsmfc7)
+Specification cases tested: none planned.
+
+[`INV-CON-5-T1B2EG` (State encoding round-trips exactly)](../implementation/views/architecture/contracts/state-machine-base.md#inv-con-5-t1b2eg)
+Specification cases tested: none planned.
+
+[`INV-CON-12-MXRTGG` (Withdrawals never exceed resolved deposits)](../implementation/views/architecture/contracts/manager-and-facets.md#inv-con-12-mxrtgg)
+Specification cases tested: none planned.
 
 [`INV-CONFIG-1-0FJ2HX` (Deterministic effective configuration)](../specification/runtime/configuration.md#inv-config-1-0fj2hx)
 Specification cases tested: 0/8.
@@ -50,11 +74,17 @@ Specification cases tested: 0/19.
 [`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)
 Specification cases tested: 0/6.
 
+[`INV-DVP-1-A6BYJR` (Per-fork dispute idempotence with rollback)](../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-1-a6byjr)
+Specification cases tested: none planned.
+
 [`INV-DVP-2-Q13TVQ` (Kill decisions use canonical predicates)](../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-2-q13tvq)
 Specification cases tested: 1/1.
 
 [`INV-DVP-3-ZMF1HA` (Invalid audit stores exactly one fraud proof)](../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-3-zmf1ha)
 Specification cases tested: 1/1.
+
+[`INV-DVP-4-Z530JD` (Deterministic, order-independent reduction)](../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-4-z530jd)
+Specification cases tested: none planned.
 
 [`INV-DVP-5-NAJRB0` (Every dispute path installs a successor fork)](../implementation/views/architecture/sdk/dispute-pipeline.md#inv-dvp-5-najrb0)
 Specification cases tested: 1/1.
@@ -80,7 +110,7 @@ Specification cases tested: 0/3.
 [`INV-ENFSNAP-1-9VZ2HE` (Single monotone snapshot)](../specification/enforcement/snapshot-adoption.md#inv-enfsnap-1-9vz2he)
 Specification cases tested: 14/19. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
 
-[`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the)](../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
+[`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
 Specification cases tested: 2/13. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
 [`INV-FIN-8-G6V1M1` (Valid transitions that lacked finality when a dispute began are not reverted)](../specification/protocol-model/finality.md#inv-fin-8-g6v1m1)
@@ -104,6 +134,15 @@ Specification cases tested: 0/8.
 [`INV-HSK-1-R44CN1` (Address bound only after mutual verification)](../implementation/views/architecture/sdk/rpc/handshake.md#inv-hsk-1-r44cn1)
 Specification cases tested: 1/1.
 
+[`INV-HSK-2-XCP7A2` (Domain-tagged handshake signing)](../implementation/views/architecture/sdk/rpc/handshake.md#inv-hsk-2-xcp7a2)
+Specification cases tested: none planned.
+
+[`INV-HSK-3-Z4WBJG` (Malformed requests rejected before signing)](../implementation/views/architecture/sdk/rpc/handshake.md#inv-hsk-3-z4wbjg)
+Specification cases tested: none planned.
+
+[`INV-HSK-4-FDM91W` (Ack challenge hash is diagnostic only)](../implementation/views/architecture/sdk/rpc/handshake.md#inv-hsk-4-fdm91w)
+Specification cases tested: none planned.
+
 [`INV-HSK-5-3E60DY` (One agreementTime skew window)](../implementation/views/architecture/sdk/rpc/handshake.md#inv-hsk-5-3e60dy)
 Specification cases tested: 4/4.
 
@@ -113,8 +152,29 @@ Specification cases tested: 0/7.
 [`INV-IFD-1-HBJR2P` (One recorded acknowledgment per peer and fork)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#inv-ifd-1-hbjr2p)
 Specification cases tested: 1/1.
 
+[`INV-IFD-2-6N9G29` (Acknowledge only a verified disputed fork)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#inv-ifd-2-6n9g29)
+Specification cases tested: none planned.
+
 [`INV-IFD-3-DZ83BB` (One outgoing round per fork)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#inv-ifd-3-dz83bb)
 Specification cases tested: 1/1.
+
+[`INV-IFD-4-5J5W3T` (Acknowledgments keyed by EVM address)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#inv-ifd-4-5j5w3t)
+Specification cases tested: none planned.
+
+[`INV-JCS-1-SRJKVK` (Signer, participant and transport peer agree)](../implementation/views/architecture/sdk/rpc/join-channel.md#inv-jcs-1-srjkvk)
+Specification cases tested: none planned.
+
+[`INV-JCS-2-95QM5S` (Joins pinned to the responder's snapshot)](../implementation/views/architecture/sdk/rpc/join-channel.md#inv-jcs-2-95qm5s)
+Specification cases tested: none planned.
+
+[`INV-JCS-3-XJ8KGX` (Collected signatures recover to the addressee)](../implementation/views/architecture/sdk/rpc/join-channel.md#inv-jcs-3-xj8kgx)
+Specification cases tested: none planned.
+
+[`INV-JCS-4-1FJ7CH` (Collect only for the local identity)](../implementation/views/architecture/sdk/rpc/join-channel.md#inv-jcs-4-1fj7ch)
+Specification cases tested: none planned.
+
+[`INV-JCS-5-16V4VG` (Stateless join service)](../implementation/views/architecture/sdk/rpc/join-channel.md#inv-jcs-5-16v4vg)
+Specification cases tested: none planned.
 
 [`INV-JOINSIG-1-JX5EC4` (Identity triple-binding)](../specification/peer-communication/join-authorization.md#inv-joinsig-1-jx5ec4)
 Specification cases tested: 4/4.
@@ -131,7 +191,7 @@ Specification cases tested: 4/6. Untested: T1.P5, T1.P6.
 [`INV-LOG-2-C7KZ9M` (Collections never wait on one another)](../specification/runtime/log-collection.md#inv-log-2-c7kz9m)
 Specification cases tested: 11/14. Untested: T1.P2, T1.P3, T1.P4.
 
-[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
+[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 Specification cases tested: 7/8. Untested: T1.P6.
 
 [`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
@@ -161,11 +221,44 @@ Specification cases tested: 3/11. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T
 [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 Specification cases tested: 3/6. Untested: T1.P2, T1.P4, T1.P5.
 
+[`INV-RUN-1-JM2D9F` (Ports parallelize, the state mutex serializes)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-1-jm2d9f)
+Specification cases tested: none planned.
+
+[`INV-RUN-2-AF430Q` (One-to-one channels and single port ownership)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-2-af430q)
+Specification cases tested: none planned.
+
 [`INV-RUN-3-1AKG2E` (Host construction failure closes the port)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3-1akg2e)
 Specification cases tested: 1/1.
 
+[`INV-RUN-4-4M27AP` (Key and nonce never cross a boundary)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-4-4m27ap)
+Specification cases tested: none planned.
+
+[`INV-RUN-5-ATVKZ4` (Harness control runs in the host realm)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-5-atvkz4)
+Specification cases tested: none planned.
+
+[`INV-RUN-6-YKK493` (Per-peer harness stub state)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-6-ykk493)
+Specification cases tested: none planned.
+
 [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../specification/runtime/execution.md#inv-runtime-1-akrhak)
 Specification cases tested: 6/9. Untested: T1.P2, T1.P4, T1.P5.
+
+[`INV-SDK-1-DE9YED` (All app-runtime interaction crosses the port)](../implementation/views/architecture/sdk/architecture.md#inv-sdk-1-de9yed)
+Specification cases tested: none planned.
+
+[`INV-SDK-2-NH0YGE` (Host-owned signing key and nonce)](../implementation/views/architecture/sdk/architecture.md#inv-sdk-2-nh0yge)
+Specification cases tested: none planned.
+
+[`INV-SDK-3-87WK8P` (Dedicated state machine for dispute replay)](../implementation/views/architecture/sdk/architecture.md#inv-sdk-3-87wk8p)
+Specification cases tested: none planned.
+
+[`INV-SDK-4-15BVJQ` (No conflicting overwrite of a stored block)](../implementation/views/architecture/sdk/components.md#inv-sdk-4-15bvjq)
+Specification cases tested: none planned.
+
+[`INV-SDK-5-XXZCPZ` (Event watermark never passes incomplete work)](../implementation/views/architecture/sdk/components.md#inv-sdk-5-xxzcpz)
+Specification cases tested: none planned.
+
+[`INV-SDK-6-CCG31H` (Identity-keyed blacklisting)](../implementation/views/architecture/sdk/components.md#inv-sdk-6-ccg31h)
+Specification cases tested: none planned.
 
 [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](../specification/runtime/sdk.md#inv-sdk-arch-1-knax7f)
 Specification cases tested: 0/4.
@@ -179,17 +272,35 @@ Specification cases tested: 0/7.
 [`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)
 Specification cases tested: 3/4. Untested: T1.P2.
 
-[`INV-SP-6-GNW74H` (A non-final tail remains accountable through)](../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
+[`INV-SP-6-GNW74H` (A non-final tail remains accountable through non-equivocating signatures)](../specification/disputes/state-proofs.md#inv-sp-6-gnw74h)
 Specification cases tested: 0/19.
 
 [`INV-SPC-1-ZV8QM5` (Payload validated against own chain reads)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-1-zv8qm5)
 Specification cases tested: 4/4.
+
+[`INV-SPC-2-RPHNJ5` (Payload verified against own request)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-2-rphnj5)
+Specification cases tested: none planned.
 
 [`INV-SPC-3-EP3TPG` (One in-flight sync per peer)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-3-ep3tpg)
 Specification cases tested: 1/1.
 
 [`INV-SPC-4-WVXS19` (Fail-closed spectating)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-4-wvxs19)
 Specification cases tested: 5/5.
+
+[`INV-SPC-5-RHB7TK` (Adopted snapshot satisfies the balance invariant)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-5-rhb7tk)
+Specification cases tested: none planned.
+
+[`INV-SPC-6-2NE2RA` (Sync sends no on-chain transaction)](../implementation/views/architecture/sdk/rpc/spectate.md#inv-spc-6-2ne2ra)
+Specification cases tested: none planned.
+
+[`INV-STS-1-8R3GC1` (No inline state mutation on gossip)](../implementation/views/architecture/sdk/rpc/state-transition.md#inv-sts-1-8r3gc1)
+Specification cases tested: none planned.
+
+[`INV-STS-2-D88T1S` (Confirmations carry the verified sender)](../implementation/views/architecture/sdk/rpc/state-transition.md#inv-sts-2-d88t1s)
+Specification cases tested: none planned.
+
+[`INV-STS-3-GMDEY8` (False ingest verdict disconnects and blacklists)](../implementation/views/architecture/sdk/rpc/state-transition.md#inv-sts-3-gmdey8)
+Specification cases tested: none planned.
 
 [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
 Specification cases tested: 9/17. Untested: T1.P1, T1.P3, T1.P4, T1.P5, T1.P6, T1.P12, T1.P13, T1.P17.
@@ -214,6 +325,18 @@ Specification cases tested: 0/6.
 
 [`INV-UPG-1-KW2A02` (Best-effort with no protocol effect)](../specification/peer-communication/transport-upgrade.md#inv-upg-1-kw2a02)
 Specification cases tested: 0/3.
+
+[`INV-WRTC-1-FZ9RBH` (Connections keyed by the authenticated sender)](../implementation/views/architecture/sdk/rpc/webrtc-setup.md#inv-wrtc-1-fz9rbh)
+Specification cases tested: none planned.
+
+[`INV-WRTC-2-691KC5` (One-way, guarded signaling methods)](../implementation/views/architecture/sdk/rpc/webrtc-setup.md#inv-wrtc-2-691kc5)
+Specification cases tested: none planned.
+
+[`INV-WRTC-3-9GBJGJ` (Signaling handlers contain their failures)](../implementation/views/architecture/sdk/rpc/webrtc-setup.md#inv-wrtc-3-9gbjgj)
+Specification cases tested: none planned.
+
+[`INV-WRTC-4-Z0MAZF` (One offerer per upgrade)](../implementation/views/architecture/sdk/rpc/webrtc-setup.md#inv-wrtc-4-z0mazf)
+Specification cases tested: none planned.
 
 [`REQ-AUTH-1-RF901K` (Validate before signing)](../specification/peer-communication/handshake.md#req-auth-1-rf901k)
 Specification cases tested: 0/5.
@@ -250,6 +373,9 @@ Specification cases tested: 1/1.
 
 [`REQ-BCP-2-1K3HN9` (Canonical predicate for the timestamp rule)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#req-bcp-2-1k3hn9)
 Specification cases tested: 0/3.
+
+[`REQ-BCP-3-1GCEH9` (Intake and merge never take the transition mutex)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#req-bcp-3-1gceh9)
+Specification cases tested: none planned.
 
 [`REQ-BCP-4-MS5VVZ` (Total-order state application)](../implementation/views/architecture/sdk/block-confirmation-pipeline.md#req-bcp-4-ms5vvz)
 Specification cases tested: 1/1.
@@ -329,8 +455,35 @@ Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.
 [`REQ-CON-2-CBVFV9` (Build fails on a size-budget violation)](../implementation/views/architecture/contracts/architecture.md#req-con-2-cbvfv9)
 Specification cases tested: 8/8.
 
+[`REQ-CON-4-H4YDV5` (onlySelf functions reject external callers)](../implementation/views/architecture/contracts/architecture.md#req-con-4-h4ydv5)
+Specification cases tested: none planned.
+
+[`REQ-CON-6-35XMJA` (Transitions use only the injected context)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-6-35xmja)
+Specification cases tested: none planned.
+
+[`REQ-CON-7-DXVW98` (Turn authorization is protocol-enforced)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-7-dxvw98)
+Specification cases tested: none planned.
+
+[`REQ-CON-8-PGHK0W` (Balance subtraction rejects underflow)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-8-pghk0w)
+Specification cases tested: none planned.
+
+[`REQ-CON-9-1AJC5B` (Canonical state serialization)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-9-1ajc5b)
+Specification cases tested: none planned.
+
+[`REQ-CON-10-CN3FCD` (Join admits or tops up a participant)](../implementation/views/architecture/contracts/state-machine-base.md#req-con-10-cn3fcd)
+Specification cases tested: none planned.
+
 [`REQ-CON-11-VDGJYA` (Channel open validation)](../implementation/views/architecture/contracts/manager-and-facets.md#req-con-11-vdgjya)
 Specification cases tested: 2/2.
+
+[`REQ-CON-13-C7ACX2` (Append-only, author-bound calldata commitments)](../implementation/views/architecture/contracts/manager-and-facets.md#req-con-13-c7acx2)
+Specification cases tested: none planned.
+
+[`REQ-CON-14-MBV0SV` (Participant-gated, throttled dispute uploads)](../implementation/views/architecture/contracts/manager-and-facets.md#req-con-14-mbv0sv)
+Specification cases tested: none planned.
+
+[`REQ-CON-15-6M91QC` (Fraudulent disputes are killed in the kill period)](../implementation/views/architecture/contracts/manager-and-facets.md#req-con-15-6m91qc)
+Specification cases tested: none planned.
 
 [`REQ-CONFIG-1-PDHA8T` (Explicit precedence)](../specification/runtime/configuration.md#req-config-1-pdha8t)
 Specification cases tested: 0/6.
@@ -365,7 +518,7 @@ Specification cases tested: 1/6. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.
 [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../specification/security/data-availability.md#req-da-2-kyz70m)
 Specification cases tested: 0/6.
 
-[`REQ-DA-3-G6TJ90` (This griefing exposure is a deliberate version-one limitation and MUST be stated)](../specification/security/data-availability.md#req-da-3-g6tj90)
+[`REQ-DA-3-G6TJ90` (This griefing exposure is a deliberate version-one limitation and MUST be…)](../specification/security/data-availability.md#req-da-3-g6tj90)
 Specification cases tested: 0/5.
 
 [`REQ-DA-4-1B0MF4` (Any change to the DA design MUST be evaluated against)](../specification/security/data-availability.md#req-da-4-1b0mf4)
@@ -461,6 +614,12 @@ Specification cases tested: 6/6.
 [`REQ-DVP-1-MQJTYR` (Timeout submission respects race guards)](../implementation/views/architecture/sdk/dispute-pipeline.md#req-dvp-1-mqjtyr)
 Specification cases tested: 2/2.
 
+[`REQ-DVP-2-RG8QR3` (Reducer reads event-synchronized windows)](../implementation/views/architecture/sdk/dispute-pipeline.md#req-dvp-2-rg8qr3)
+Specification cases tested: none planned.
+
+[`REQ-DVP-3-CFFAW1` (Incorrect reductions are challenged in time)](../implementation/views/architecture/sdk/dispute-pipeline.md#req-dvp-3-cffaw1)
+Specification cases tested: none planned.
+
 [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
 Specification cases tested: 6/7. Untested: T1.P2.
 
@@ -512,13 +671,13 @@ Specification cases tested: 5/5.
 [`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)
 Specification cases tested: 10/10.
 
-[`REQ-FIN-1-SP669G` (Participants MUST NOT be required to wait for explicit threshold finality before)](../specification/protocol-model/finality.md#req-fin-1-sp669g)
+[`REQ-FIN-1-SP669G` (Participants MUST NOT be required to wait for explicit threshold finality…)](../specification/protocol-model/finality.md#req-fin-1-sp669g)
 Specification cases tested: 0/8.
 
-[`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the)](../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
+[`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the…)](../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
 Specification cases tested: 0/14.
 
-[`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored)](../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+[`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 Specification cases tested: 0/8.
 
 [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../specification/protocol-model/finality.md#req-fin-5-dh29vz)
@@ -569,6 +728,9 @@ Specification cases tested: 26/26.
 [`REQ-HSK-1-Y9JQS3` (Unguarded endpoints tolerate adversarial input)](../implementation/views/architecture/sdk/rpc/handshake.md#req-hsk-1-y9jqs3)
 Specification cases tested: 3/3.
 
+[`REQ-HSK-2-MDNH4N` (Domain-separated signing for unauthenticated callers)](../implementation/views/architecture/sdk/rpc/handshake.md#req-hsk-2-mdnh4n)
+Specification cases tested: none planned.
+
 [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../specification/protocol-model/identity.md#req-id-1-3q2kb9)
 Specification cases tested: 0/9.
 
@@ -583,6 +745,15 @@ Specification cases tested: 0/7.
 
 [`REQ-ID-5-GW1ZEY` (One signature per signer per message)](../specification/protocol-model/identity.md#req-id-5-gw1zey)
 Specification cases tested: 19/19.
+
+[`REQ-IFD-1-X2VCJW` (Request acknowledgment once per fork)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#req-ifd-1-x2vcjw)
+Specification cases tested: none planned.
+
+[`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#req-ifd-2-13862z)
+Specification cases tested: none planned.
+
+[`REQ-IFD-3-QXNCN9` (Non-acknowledging peers are disconnected)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#req-ifd-3-qxncn9)
+Specification cases tested: none planned.
 
 [`REQ-IFD-4-26FWYZ` (Acknowledgments gate dead-fork punishment)](../implementation/views/architecture/sdk/rpc/is-fork-disputed.md#req-ifd-4-26fwyz)
 Specification cases tested: 1/1.
@@ -614,6 +785,15 @@ Specification cases tested: 0/4.
 [`REQ-IX-9-AV56NR` (Storage fidelity)](../specification/interactions.md#req-ix-9-av56nr)
 Specification cases tested: 0/6.
 
+[`REQ-JCS-1-DDRPA8` (Full validation before signing a join)](../implementation/views/architecture/sdk/rpc/join-channel.md#req-jcs-1-ddrpa8)
+Specification cases tested: none planned.
+
+[`REQ-JCS-2-WMQGWC` (Explicit consent gates admission)](../implementation/views/architecture/sdk/rpc/join-channel.md#req-jcs-2-wmqgwc)
+Specification cases tested: none planned.
+
+[`REQ-JCS-3-C371C5` (Decided join failure outcomes)](../implementation/views/architecture/sdk/rpc/join-channel.md#req-jcs-3-c371c5)
+Specification cases tested: none planned.
+
 [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
 Specification cases tested: 3/4. Untested: T1.P4.
 
@@ -632,13 +812,13 @@ Specification cases tested: 1/16. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T
 [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
 Specification cases tested: 0/8.
 
-[`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical)](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
+[`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
 Specification cases tested: 0/12.
 
-[`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+[`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 Specification cases tested: 0/6.
 
-[`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+[`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 Specification cases tested: 0/6.
 
 [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
@@ -701,7 +881,7 @@ Specification cases tested: 4/6. Untested: T1.P2, T1.P6.
 [`REQ-LOG-9-V6SMAC` (An application report records its reason)](../specification/runtime/log-collection.md#req-log-9-v6smac)
 Specification cases tested: 0/4.
 
-[`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
+[`REQ-LOG-10-69CTN1` (A thread that is ending waits only for its own logs)](../specification/runtime/log-collection.md#req-log-10-69ctn1)
 Specification cases tested: 0/3.
 
 [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
@@ -812,11 +992,47 @@ Specification cases tested: 0/3.
 [`REQ-RUN-1-FSV0SH` (Serialized messages over paired ports)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-1-fsv0sh)
 Specification cases tested: 1/1.
 
+[`REQ-RUN-2-GBCZ5B` (No shared mutable memory across contexts)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-2-gbcz5b)
+Specification cases tested: none planned.
+
+[`REQ-RUN-3-60N6VR` (State owned by the receiving component)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-3-60n6vr)
+Specification cases tested: none planned.
+
+[`REQ-RUN-4-NK15QS` (Explicit cross-boundary rules before a move)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-4-nk15qs)
+Specification cases tested: none planned.
+
+[`REQ-RUN-5-DC7M8E` (Client-local request correlation)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-5-dc7m8e)
+Specification cases tested: none planned.
+
 [`REQ-RUN-6-MTBT2H` (Structured-clone limits on boundary values)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6-mtbt2h)
 Specification cases tested: 4/4.
 
+[`REQ-RUN-7-XV1FDR` (Workers as a client performance strategy)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-7-xv1fdr)
+Specification cases tested: none planned.
+
 [`REQ-RUN-8-A4B4SA` (Harness control is a custom-RPC root)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-8-a4b4sa)
 Specification cases tested: 1/1.
+
+[`REQ-RUN-9-7ZWAGJ` (Serializable harness-control projections)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-9-7zwagj)
+Specification cases tested: none planned.
+
+[`REQ-RUN-10-FSD184` (Harness control unreachable by network peers)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-10-fsd184)
+Specification cases tested: none planned.
+
+[`REQ-RUN-11-5YYV48` (Isolated concurrent peers and test processes)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-11-5yyv48)
+Specification cases tested: none planned.
+
+[`REQ-RUN-12-AYGVM7` (Stated inline-worker equivalence criterion)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-12-aygvm7)
+Specification cases tested: none planned.
+
+[`REQ-RUN-13-27YE2T` (Worker boundaries are the defaults)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-13-27ye2t)
+Specification cases tested: none planned.
+
+[`REQ-RUN-14-YAHYR4` (Six participants on a mid-range mobile browser)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-14-yahyr4)
+Specification cases tested: none planned.
+
+[`REQ-RUN-15-8CBVKB` (Inline and worker equivalence)](../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-15-8cbvkb)
+Specification cases tested: none planned.
 
 [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../specification/runtime/execution.md#req-runtime-1-rsm6mz)
 Specification cases tested: 0/7.
@@ -839,6 +1055,15 @@ Specification cases tested: 2/2.
 [`REQ-SDK-1-JKC9W7` (The runtime owns its signer)](../implementation/views/architecture/sdk/architecture.md#req-sdk-1-jkc9w7)
 Specification cases tested: 1/1.
 
+[`REQ-SDK-2-M2PGDM` (At least one honest RPC endpoint)](../implementation/views/architecture/sdk/architecture.md#req-sdk-2-m2pgdm)
+Specification cases tested: none planned.
+
+[`REQ-SDK-3-91XMZR` (Domain-tagged handshake signatures)](../implementation/views/architecture/sdk/components.md#req-sdk-3-91xmzr)
+Specification cases tested: none planned.
+
+[`REQ-SDK-4-1JDCHM` (Only the addressed peer settles an RPC request)](../implementation/views/architecture/sdk/components.md#req-sdk-4-1jdchm)
+Specification cases tested: none planned.
+
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 Specification cases tested: 0/6.
 
@@ -856,6 +1081,21 @@ Specification cases tested: 6/6.
 
 [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 Specification cases tested: 8/10. Untested: T1.P1, T1.P5.
+
+[`REQ-SEC-1-SNS1GA` (Before this specification is finalized, a dedicated security review of the full…)](../audit/security-assessment.md#req-sec-1-sns1ga)
+Specification cases tested: none planned.
+
+[`REQ-SEC-2-XPGSC3` (The review MUST cover, at minimum, every surface below)](../audit/security-assessment.md#req-sec-2-xpgsc3)
+Specification cases tested: none planned.
+
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](../audit/security-assessment.md#req-sec-3-nppjn5)
+Specification cases tested: none planned.
+
+[`REQ-SEC-4-VF81QD` (For every identified gap, the review MUST classify the required response as…)](../audit/security-assessment.md#req-sec-4-vf81qd)
+Specification cases tested: none planned.
+
+[`REQ-SEC-5-1JPJ3C` (Before the P2P security model can be declared complete, a rate-limiting design…)](../audit/security-assessment.md#req-sec-5-1jpj3c)
+Specification cases tested: none planned.
 
 [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 Specification cases tested: 0/21.
@@ -896,35 +1136,44 @@ Specification cases tested: 1/3. Untested: T1.P2, T1.P3.
 [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
 Specification cases tested: 4/6. Untested: T1.P4, T1.P5.
 
-[`REQ-SP-1-9YABY1` (A milestone normally proves its first block final)](../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
+[`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
 Specification cases tested: 18/25. Untested: T1.P1, T1.P2, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8.
 
-[`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required)](../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
+[`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required final membership hops to the…)](../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
 Specification cases tested: 0/8.
 
-[`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the)](../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+[`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
 Specification cases tested: 22/35. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
-[`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+[`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
 Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
-[`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the)](../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
+[`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
 Specification cases tested: 0/12.
 
-[`REQ-SP-7-70EMAT` (In the retained region, verification checks)](../specification/disputes/state-proofs.md#req-sp-7-70emat)
+[`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../specification/disputes/state-proofs.md#req-sp-7-70emat)
 Specification cases tested: 26/40. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
-[`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
+[`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 Specification cases tested: 32/32.
 
-[`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
+[`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 Specification cases tested: 79/79.
 
-[`REQ-SP-10-JMVHTB` (After successful synchronization, persist the)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
+[`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 Specification cases tested: 45/45.
 
 [`REQ-SPC-1-H10R5K` (Prove at least the requested height)](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k)
 Specification cases tested: 5/5.
+
+[`REQ-SPC-2-45C3CT` (Availability failures are not Byzantine)](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-2-45c3ct)
+Specification cases tested: none planned.
+
+[`REQ-SPC-3-AZBKR1` (No permanent blacklist for can't-prove-yet)](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-3-azbkr1)
+Specification cases tested: none planned.
+
+[`REQ-SPC-4-G5XXB2` (Resource-bounded proof serving)](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-4-g5xxb2)
+Specification cases tested: none planned.
 
 [`REQ-STOR-1-D4XE73` (Complete durable set)](../specification/storage/durability.md#req-stor-1-d4xe73)
 Specification cases tested: 0/4.
@@ -943,6 +1192,12 @@ Specification cases tested: 0/6.
 
 [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../specification/storage/durability.md#req-stor-6-skp0km)
 Specification cases tested: 0/6.
+
+[`REQ-STS-1-15EQRF` (Ingest owns all payload judgment)](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf)
+Specification cases tested: none planned.
+
+[`REQ-STS-2-XNG7BN` (Keep-connection verdict handling)](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-2-xng7bn)
+Specification cases tested: none planned.
 
 [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 Specification cases tested: 15/19. Untested: T1.P2, T1.P4, T1.P7, T1.P16.
@@ -995,16 +1250,16 @@ Specification cases tested: 0/5.
 [`REQ-TOSTORE-2-WX7VMH` (Drop a refused candidate by identity)](../specification/storage/calldata-and-timeouts.md#req-tostore-2-wx7vmh)
 Specification cases tested: 4/4.
 
-[`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../specification/security/trust-model.md#req-trust-1-k5ps99)
+[`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../specification/security/trust-model.md#req-trust-1-k5ps99)
 Specification cases tested: 0/7.
 
 [`REQ-TRUST-2-X8GCZ7` (A client MUST have at least one available, honest RPC connection through which…)](../specification/security/trust-model.md#req-trust-2-x8gcz7)
 Specification cases tested: 0/7.
 
-[`REQ-TRUST-3-3YWEZR` (The protocol assumes at least one non-Byzantine participant in each)](../specification/security/trust-model.md#req-trust-3-3ywezr)
+[`REQ-TRUST-3-3YWEZR` (The protocol assumes at least one non-Byzantine participant in each channel)](../specification/security/trust-model.md#req-trust-3-3ywezr)
 Specification cases tested: 0/12.
 
-[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate)](../specification/security/trust-model.md#req-trust-4-kw24nf)
+[`REQ-TRUST-4-KW24NF` (Version one REQUIRES a watchtower or equivalent continuously available delegate…)](../specification/security/trust-model.md#req-trust-4-kw24nf)
 Specification cases tested: 0/19.
 
 [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../specification/security/trust-model.md#req-trust-5-ndvrw8)
@@ -1030,3 +1285,6 @@ Specification cases tested: 8/8.
 
 [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd)
 Specification cases tested: 6/6.
+
+[`REQ-WRTC-1-B12MMP` (Untrusted signaling payloads)](../implementation/views/architecture/sdk/rpc/webrtc-setup.md#req-wrtc-1-b12mmp)
+Specification cases tested: none planned.

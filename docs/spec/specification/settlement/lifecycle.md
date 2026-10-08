@@ -261,7 +261,7 @@ Targeted connection follows [`REQ-TJOIN-1-5VGR1F` (Independent public options)](
 [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6), and
 [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
 Submitted first joins use the local pending protection in
-[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
 
 **[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
 

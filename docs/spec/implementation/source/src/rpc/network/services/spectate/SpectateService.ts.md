@@ -22,7 +22,7 @@
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
-- [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
+- [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT

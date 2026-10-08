@@ -21,7 +21,7 @@ this layer records only what neither the code nor the specification says.
 | Location | Holds |
 | --- | --- |
 | `source/` | One report per production file under `src/` and `contracts/`, mirroring the repository layout with the source extension retained (`source/src/storage/QueueStorage.ts.md`). |
-| [views/](./views/) | Cross-directory design views: narrative accounts of flows that span several source directories, their `INTEGRATION-TEST-*` families, and view-local requirements. Each names its specification owner. |
+| [views/](./views/) | Cross-directory views: `INTEGRATION-TEST-*` families and `Gaps` for flows that span several source directories (legacy narrative pending a move into the specification). Each names its specification owner. |
 | [open-questions.md](./open-questions.md) | Implementation-owned open decisions: mechanism, conformance, and platform choices. |
 
 ## File reports
@@ -71,10 +71,11 @@ the case IDs.
 
 ## Design views
 
-Views keep narrative prose, diagrams, and `Future Work`. A view-local requirement is a
-`### <REQ-or-INV-ID> — <subject>` heading followed by its statement and its case bullets
-(`<ID>.T<n>.P<n>`). A divergence that no single file owns is a bullet in the view's `## Gaps`
-section, in the same shape as a file report's requirement bullet.
+A view holds its `INTEGRATION-TEST-*` families and a `## Gaps` section: a divergence that no
+single file owns is a bullet there, in the same shape as a file report's requirement bullet.
+Design and know-how belong in the specification. The narrative prose, diagrams, `Future Work` and
+view-local requirements (`### <REQ-or-INV-ID> — <subject>` headings) still in the views are legacy
+awaiting a move into the specification; add no new design content or requirements to a view.
 
 ## Tested status
 

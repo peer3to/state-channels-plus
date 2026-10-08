@@ -9,7 +9,6 @@
 - [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 - [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
 - [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
-  Partial: This file contributes only its own close; it verifies no ingress stage.
 - [`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)
 - [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
 - [`REQ-LOBBY-7-BXQ1QA` (Symmetric timeout consequence)](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa)

@@ -217,6 +217,6 @@ Admission uses the existing sync(peer, channel, fork, minimumHeight, timeout) ca
 ## Gaps
 
 - [`REQ-SPC-3-AZBKR1`](spectate.md#req-spc-3-azbkr1)
-  Missing: Current code blacklists (§4.2)
+  Missing: `onSpectateRequest` blacklists the requester whenever `generateSyncPayload` cannot prove the target, including an honest can't-prove-yet request ([`DEF-10-199C7F`](../../../../../audit/open-findings.md#def-10-199c7f)).
 - [`REQ-SPC-4-G5XXB2`](spectate.md#req-spc-4-g5xxb2)
-  Missing: One-in-flight only; no rate limit
+  Missing: `onSpectateRequest` applies no per-peer rate or cost limit to `generateSyncPayload` ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)).

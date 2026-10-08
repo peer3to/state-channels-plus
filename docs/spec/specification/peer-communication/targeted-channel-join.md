@@ -104,7 +104,7 @@ asynchronous boundary that may send it. It remains protected from synced-state a
 receipt is pending. Only a failure that proves no commitment exists restores `SYNCED`; uncertain outcomes
 preserve pending protection and reconcile from authoritative chain state. Force-join escalation waits for
 authoritative on-chain membership and a usable dispute window. Both bounds begin at observation of the joiner's own on-chain JOIN, never at transaction submission. The time bound arms immediately for (current participant count + 1) full author-timeout windows at the submitted next height, so a table producing no blocks cannot hold the join forever. The height bound waits one agreementTime after observation and starts at the first subsequently committed block; it triggers after participant count + 1 further heights. A locally pending but unobserved join has neither bound running. The canonical cross-flow invariant is
-[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](join-authorization.md#inv-membership-pending-1-2h1t75).
+[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](join-authorization.md#inv-membership-pending-1-2h1t75).
 
 **<a id="req-tjoin-1-5vgr1f"></a>`REQ-TJOIN-1-5VGR1F` — Independent public options.** Opening permission,
 membership intent, full balance, and unmatched timeout are independent. Balance alone has no effect, and

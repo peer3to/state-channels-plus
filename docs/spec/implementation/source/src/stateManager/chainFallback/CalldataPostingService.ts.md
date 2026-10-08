@@ -7,7 +7,6 @@
 ## Requirements
 
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../../specification/security/data-availability.md#req-da-1-nvv85z)
-  Missing: No author-side check for extra time granted before posting calldata (code TODO); posts may be needlessly early, never late.
 
 ## UNIT-TEST-CALLDATA-POSTING-SERVICE-1-P42419
 

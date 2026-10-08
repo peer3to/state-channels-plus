@@ -261,7 +261,7 @@ _Non-normative._
   stream commitments) and map each to its policing proof or validation, so coverage gaps surface
   mechanically instead of by inspection.
 - Reputation-independent peer scoring for rate-limit tuning (must stay outside enforcement per
-  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../specification/security/trust-model.md#req-trust-1-k5ps99)).
+  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../specification/security/trust-model.md#req-trust-1-k5ps99)).
 
 ## Traceability
 

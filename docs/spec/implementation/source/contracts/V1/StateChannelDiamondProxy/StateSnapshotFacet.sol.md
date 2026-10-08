@@ -21,7 +21,7 @@
 - [`REQ-LIF-2-Z3Z9Y3` (Exactly two paths lead to a state that can update the on-chain snapshot and…)](../../../../../specification/settlement/lifecycle.md#req-lif-2-z3z9y3)
 - [`INV-LIF-5-ENQB91` (Settlement conserves value)](../../../../../specification/settlement/lifecycle.md#inv-lif-5-enqb91)
 - [`REQ-MSG-8-N1ECJ5` (Exits MUST be withdrawable only through snapshot advance)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-8-n1ecj5)
-- [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
+- [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
 
 ## UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB
 

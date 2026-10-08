@@ -7,7 +7,6 @@
 ## Requirements
 
 - [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
-  Partial: Runtime correctness remains owned by the contracts.
 
 ## UNIT-TEST-MANAGER-BINDING-1-WB503Z
 

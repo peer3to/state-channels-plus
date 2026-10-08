@@ -140,7 +140,7 @@ against plans of that grain. 3790 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**
-Whole components have empty `Component test obligations` tables, so their tests have nothing to
+Whole components define no `UNIT-TEST-*` families, so their tests have nothing to
 claim: most of `test/models/` (Block.test.ts alone holds 44 declarations against ~6 defined
 permutations), `test/utils/` helpers (HolepunchRelay, LogUploader, LoggerUtils,
 SignatureCollectionMap), `test/evm/` infrastructure (EvmFactory, HostNonceManager, jumpdest cache,
@@ -205,7 +205,7 @@ membership boundary, timeout/cancellation, explicit retry, failure phase, handof
 Runtime-port cases cover structured-clone options, dedicated cancellation routing, input validation, and
 Boolean propagation. Matcher, negotiation, P2P, membership, state-application, block, harness-session, and
 browser reports map their component boundaries. Participant-lifecycle evidence covers both pending-join fault
-interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
 
 RO5 is enforced as test architecture: a full connect fixture reaches a real terminal outcome and explicitly
 settles detached work; an intermediate probe never launches the reusable full flow; teardown only reports a

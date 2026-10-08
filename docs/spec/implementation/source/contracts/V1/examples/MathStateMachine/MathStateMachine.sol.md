@@ -6,19 +6,14 @@
 
 ## Requirements
 
-- [`REQ-SM-1-Y72CKX` (Author = _tx.header.participant, time = _tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
-  Partial: No static or runtime policy rejects an application that reads prohibited ambient context or `_tx.body`.
+- [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`REQ-SM-11-VVP01C` (Application-defined participant insertion)](../../../../../../specification/protocol-model/state-machines.md#req-sm-11-vvp01c)
-- [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
-  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
-  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
 - [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
-  Partial: Checked amount arithmetic implemented; custom aggregation pending — No static rule or reusable suite prevents integrator `unchecked` arithmetic or invalid custom-data aggregation.
-- [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
-  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - [`REQ-FIN-6-YZWJX2` (Recommended leader-election policy is round-robin as a function of channel state)](../../../../../../specification/protocol-model/finality.md#req-fin-6-yzwjx2)
 
 ## UNIT-TEST-MATH-INSERTION-1-29TPFK
@@ -57,7 +52,9 @@ Public component behavior
 
 Transitions and context
 
-- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = _tx.header.participant, time = _tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Setup: Restore a `MathState` with `setState`, then run `stateTransition` with `body.data` encoding `add(n)` or `leaveChannel()` and `header.participant` set to `getNextToWrite()` or to another address.
+- Oracle: From the next writer, `add` emits `Addition` and `Roster`, raises `getSum()` by n and advances the turn, and `leaveChannel` removes the author and returns one `MESSAGE_TYPE_EXIT` message with its balance; from any other author both revert with their "only next player" reason and change no state.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`REQ-SM-1-Y72CKX.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 
 - [ ] `UNIT-TEST-SM-MATH-1-3TW0WT.P1` — `add` from the injected next writer updates deterministically and emits the expected ordered events/messages
@@ -69,7 +66,9 @@ Transitions and context
 
 State codec
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `setState(abi.encode(state))` with an empty `MathState`, a one-participant state, a typical state, and a state at `maxChannelParticipants` with `type(uint256).max` values.
+- Oracle: `getState()` returns the supplied bytes exactly, and `getParticipants()` and `getBalance` keep each participant paired with its balance.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-MATH-2-TBFZ5Z.P1` — An empty `MathState` round-trips exactly and preserves participant/balance array alignment
@@ -81,6 +80,8 @@ State codec
 
 Canonical representation
 
+- Setup: Reach equal `MathState` values through `setState` and through transitions, and call `setState` with truncated bytes, a differently shaped tuple, and `participants`/`balances` arrays of unequal length.
+- Oracle: Equal states give identical `getState()` bytes, and malformed, incompatible or misaligned bytes revert and leave the previous state in place.
 - Specification: [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
 - Specification tests: [`REQ-SM-2-PHCRFR.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr.t1)
 
@@ -93,6 +94,8 @@ Canonical representation
 
 Turn selection
 
+- Setup: Call `getNextToWrite()` inside a transition on a state with no participants, one participant, and many participants while `currentTurnIndex` steps through a full cycle, and after a join or removal changes the roster.
+- Oracle: With no participants it returns `_tx.header.participant`; otherwise it returns `participants[currentTurnIndex % participants.length]`, and a removal at an index below `currentTurnIndex % length` decrements `currentTurnIndex`.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -105,7 +108,9 @@ Turn selection
 
 Admission and top-up
 
-- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Setup: Restore a `MathState` with `setState` and deliver `MESSAGE_TYPE_JOIN` messages through `processInboundMessage` for a new participant, a repeat participant, zero and `type(uint256).max` amounts, a repeated delivery, and an invalid state.
+- Oracle: A new participant is appended once to `getParticipants()` with `getBalance` equal to its deposit, a repeat join adds the amount to that participant's balance only, and an overflowing top-up reverts and leaves `getState()` unchanged.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
 - [x] `UNIT-TEST-SM-MATH-5-AYZHPG.P1` — New joins append once
@@ -119,6 +124,8 @@ Admission and top-up
 
 Removal and slashing policy
 
+- Setup: Call `removeParticipant` and `slashParticipant` for a member before, at and after the current turn index, for a non-member, and twice for the same member.
+- Oracle: Removing a member returns `(true, exit)` with its balance, shifts later participants and balances down together, and decrements `currentTurnIndex` only when the removed index was before the turn; `slashParticipant` gives the same result as `removeParticipant`, and a non-member or second removal returns `false` and leaves `getState()` unchanged.
 - Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
@@ -132,6 +139,8 @@ Removal and slashing policy
 
 Simple-amount algebra
 
+- Setup: Call `addBalance`, `subtractBalance`, `areBalancesEqual`, `isBalanceLesserThan`, `getZeroBalance` and `getTotalStateBalance` with zero, boundary and `type(uint256).max` amounts, then repeat a rejected call with valid inputs.
+- Oracle: Results equal checked `uint256` arithmetic on `amount` and `getZeroBalance()` is the identity; `subtractBalance` with a smaller first operand reverts with "MathStateMachine: balance1 < balance2", an overflowing `addBalance` or `getTotalStateBalance` reverts with a panic, and the following valid call returns the exact result.
 - Specification: [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`REQ-BAL-1-Z8RH4V.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v.t1), [`REQ-BAL-2-KTSW9B.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
@@ -149,6 +158,8 @@ Simple-amount algebra
 
 Application interface
 
+- Setup: Compare the `MathStateMachine` ABI with the `AStateMachine` declarations the off-chain adapter calls, and call each view or pure function around a transition.
+- Oracle: Every base function is present with the base signature and mutability, and calling `getState`, `getParticipants`, `getNextToWrite`, `getSum`, `getBalance` or the balance functions leaves the `getState()` bytes unchanged.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 

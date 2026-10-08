@@ -6,7 +6,7 @@
 
 ## Requirements
 
-- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
+- [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 
 ## UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7
 

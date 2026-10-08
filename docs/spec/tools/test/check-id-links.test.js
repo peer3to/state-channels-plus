@@ -118,6 +118,78 @@ test("--write sets each case checkbox from the mappings", () =>
         assert.equal(check.status, 0, check.stderr);
     }));
 
+test("a mapped skipped test leaves its box empty and fails check", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.test.ts",
+            'it("case 1", () => {});\nit("case 2", () => {});\ndescribe.skip("off", () => { it("case 3", () => {}); });\n'
+        );
+        f.write(
+            testReport,
+            coversTable(
+                row(1, `${requirement}.T1.P1`),
+                row(2, "—"),
+                row(3, `${family}.P2`)
+            )
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(report),
+            new RegExp(`^- \\[ \\] \`${family}\\.P2\` — second case$`, "m")
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(check.stderr, /Covers cell maps a skipped test/);
+    }));
+
+test("a divergence line without a tracking item fails check", () =>
+    fixture((f) => {
+        f.ids("--write");
+        const linked = f.read(report);
+        const bullet = linked.match(
+            new RegExp(`^- .*${requirement}.*$`, "m")
+        )[0];
+        f.write(
+            report,
+            linked.replace(
+                bullet,
+                `${bullet}\n  Partial: \`run\` skips a case.`
+            )
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(check.stderr, /divergence line links no FIND/);
+    }));
+
+test("a family heading with trailing text fails check", () =>
+    fixture((f) => {
+        f.ids("--write");
+        f.write(
+            report,
+            f
+                .read(report)
+                .replace(`## ${family}\n`, `## ${family} — Escalation guard\n`)
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(check.stderr, /family heading must be exactly/);
+    }));
+
+test("a family heading repeated in one document fails check", () =>
+    fixture((f) => {
+        f.ids("--write");
+        f.write(
+            report,
+            `${f.read(report)}\n## ${family}\n\nAgain.\n\n- \`${family}.P3\` — third case\n`
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(
+            check.stderr,
+            new RegExp(`${family}: multiple canonical definitions`)
+        );
+    }));
+
 test("a removed mapping fails check and --write flips one box and one status line", () =>
     fixture((f) => {
         f.ids("--write");
@@ -187,6 +259,23 @@ test("names a verification row whose line anchor matches no declaration", () =>
             check.stderr,
             /tests\/test\/fix\.test\.ts\.md: test\/fix\.test\.ts:9: no test declaration at anchor/
         );
+    }));
+
+test("a requirement with no planned case still has a status block", () =>
+    fixture((f) => {
+        const unplanned = "REQ-FIX-5-AAAAA6";
+        f.write(
+            "docs/spec/specification/unplanned.md",
+            `# Unplanned\n\n**\`${unplanned}\` — Unplanned rule.** Keeps it.\n`
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(status),
+            new RegExp(
+                `\`${unplanned}\`[^\\n]*\\nSpecification cases tested: none planned\\.\\n`
+            )
+        );
+        assert.equal(f.ids().status, 0);
     }));
 
 test("the status file holds one block per requirement and lists only partial gaps", () =>
@@ -321,6 +410,27 @@ test("a requirement defined at a heading gets an anchor and a glossed reference"
             )
         );
         assert.equal(f.ids().status, 0);
+    }));
+
+test("a wrapped untitled statement is labelled by its whole first clause", () =>
+    fixture((f) => {
+        const wrapped = "REQ-FIX-4-AAAAA5";
+        f.write(
+            "docs/spec/specification/wrapped.md",
+            `# Wrapped\n\n**\`${wrapped}\`.** Proofs connect the start through required\nmembership hops. More text.\n\n- a list item\n`
+        );
+        f.write(
+            "docs/spec/implementation/source/src/notes.ts.md",
+            `# notes.ts\n\n## Requirements\n\n- ${wrapped}\n`
+        );
+        f.ids("--write");
+        assert.match(
+            f.read("docs/spec/implementation/source/src/notes.ts.md"),
+            new RegExp(
+                `^- \\[\`${wrapped}\` \\(Proofs connect the start through required membership hops\\)\\]\\(`,
+                "m"
+            )
+        );
     }));
 
 test("a requirement with no title is labelled by its first clause outside the specification", () =>

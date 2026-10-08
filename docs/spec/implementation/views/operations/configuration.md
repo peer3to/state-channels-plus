@@ -212,9 +212,7 @@ Checked-in defaults contain no secrets; secret-bearing values are supplied at ru
 
 ## Gaps
 
-- [`REQ-CONFIG-1-PDHA8T` (Explicit precedence)](../../../specification/runtime/configuration.md#req-config-1-pdha8t)
-  Partial: Provenance and redaction audit pending.
 - [`REQ-CONFIG-2-JA2SKN` (Cross-layer compatibility)](../../../specification/runtime/configuration.md#req-config-2-ja2skn)
-  Partial: Complete compatibility gate not demonstrated.
+  Missing: `createConfig` carries no protocol version, and no step checks protocol compatibility with the deployment or peers before protocol work begins ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../specification/open-questions.md#oq-34-fy08v2)).
 - [`REQ-CONFIG-3-J4H12F` (Safe bounds)](../../../specification/runtime/configuration.md#req-config-3-j4h12f)
-  Partial: Safe-bound validation not fully defined.
+  Partial: `createConfig` range-checks only `LOG_QUERY_MAX_BLOCKS` (`assertLogQueryMaxBlocks`), and `coerceEnvValue` silently drops an unparseable environment value ([`FIND-CONFIG-1-WZM0W0`](../../../audit/open-findings.md#find-config-1-wzm0w0)).

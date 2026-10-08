@@ -19,7 +19,7 @@
 - [`REQ-FP-4-WHKBXP` (A recorded slash disqualifies the participant from dispute participation and…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-4-whkbxp)
 - [`INV-FP-8-BFNRSY` (Proof application is idempotent per offender)](../../../../../specification/disputes/fraud-proofs.md#inv-fp-8-bfnrsy)
 - [`INV-MSG-2-PQ0T1K` (No replay, no omission)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k)
-- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
 
 ## UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK
 

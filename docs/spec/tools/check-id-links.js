@@ -5,7 +5,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
     AUDITABLE_ID_PATTERN,
+    EXACT_ID_LINK_RE,
     HASH_PATTERN,
+    REQUIREMENT_PATTERN,
     anchorForId
 } = require("./shared/id-utils");
 const {
@@ -43,10 +45,6 @@ const ID_RE = () => new RegExp(AUDITABLE_ID_PATTERN, "g");
 // " — " at the start of a line is how id-registry.js recognises a definition
 // site; an em-dash gloss on a wrapped reference line registers a competing
 // definition and flips canonical anchor ownership.
-const EXACT_ID_LINK_RE = new RegExp(
-    `(?:\\x60)?\\[+\\x60*(${AUDITABLE_ID_PATTERN})\\x60*(?:[ \\t]*\\([^)\\]]*\\))?\\]\\([^)]+\\)(?:\\x60)?`,
-    "g"
-);
 const ID_ANCHOR_RE =
     /<a id="(?:req|inv|unit-test|integration-test|oq|def|find)-[^"]+"><\/a>/gi;
 // A canonical heading anchor on its own line, together with every adjacent
@@ -182,8 +180,20 @@ function buildGlossary(registry) {
                 definition.document,
                 fs.readFileSync(definition.document, "utf8").split(/\r?\n/)
             );
-        const line = cache.get(definition.document)[definition.line];
+        const lines = cache.get(definition.document);
+        let line = lines[definition.line];
         if (!line) continue;
+        // a hard-wrapped statement continues until a blank line, list item,
+        // heading, table row or quote
+        if (!/^\s*[#|]/.test(line))
+            for (
+                let next = definition.line + 1;
+                next < lines.length &&
+                /^\S/.test(lines[next]) &&
+                !/^(?:[#|>]|[-*+] |\d+\. )/.test(lines[next]);
+                next += 1
+            )
+                line += ` ${lines[next]}`;
         const stripped = line.replace(ID_ANCHOR_RE, "");
         const match =
             stripped.match(GLOSS_HEADING_RE) ||
@@ -323,6 +333,15 @@ function check() {
                 continue;
             }
             if (fenced) continue;
+            // a divergence line names the item that tracks it
+            if (
+                specRelative(document).startsWith("implementation/") &&
+                /^\s+(?:Partial|Contradicts|Missing):/.test(line) &&
+                !/\b(?:FIND|DEF|OQ)-[A-Z0-9-]+/.test(line)
+            )
+                issues.push(
+                    `${specRelative(document)}:${lineIndex + 1}: divergence line links no FIND-*, DEF-* or OQ-*`
+                );
             for (const legacy of line.matchAll(LEGACY_ID_RE)) {
                 if (!/^(?:REQ|INV)-X-\d+$/.test(legacy[0]))
                     issues.push(
@@ -381,7 +400,19 @@ function check() {
         }
     }
     for (const [id, definition] of registry.definitions) {
-        if (headingAnchored(definition)) continue;
+        if (headingAnchored(definition)) {
+            // its links use the heading slug, so the heading must be the bare ID
+            if (definition.kind === "heading") {
+                const heading = fs
+                    .readFileSync(definition.document, "utf8")
+                    .split(/\r?\n/)[definition.line];
+                if (heading !== `## ${id}`)
+                    issues.push(
+                        `${specRelative(definition.document)}:${definition.line + 1}: family heading must be exactly "## ${id}"`
+                    );
+            }
+            continue;
+        }
         const anchor = anchorForId(id);
         const owners = anchorOwners.get(anchor) || [];
         if (owners.length !== 1)
@@ -439,7 +470,10 @@ function withCheckboxes(markdown, document, registry, tested) {
 
 function requirementStatus(registry, tested) {
     const cases = new Map();
+    const requirementRe = new RegExp(`^${REQUIREMENT_PATTERN}$`);
     for (const id of registry.definitions.keys()) {
+        // a requirement with no planned case still gets its block
+        if (requirementRe.test(id) && !cases.has(id)) cases.set(id, []);
         const match = id.match(/^(.+?)\.(T\d+\.P\d+)$/);
         if (!match) continue;
         if (!cases.has(match[1])) cases.set(match[1], []);
@@ -448,6 +482,8 @@ function requirementStatus(registry, tested) {
     const numeric = (a, b) => a.localeCompare(b, "en", { numeric: true });
     const blocks = [...cases.keys()].sort(numeric).map((requirement) => {
         const all = cases.get(requirement).sort(numeric);
+        if (!all.length)
+            return `\x60${requirement}\x60\nSpecification cases tested: none planned.`;
         const untested = all.filter(
             (id) => !tested.has(`${requirement}.${id}`)
         );

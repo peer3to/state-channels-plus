@@ -8,7 +8,7 @@
 
 - [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../../../specification/protocol-model/time.md#req-time-1-fm4651)
 - [`REQ-TIME-2-VG94S7` (Honest participants keep estimated chain time within the skew bound)](../../../specification/protocol-model/time.md#req-time-2-vg94s7)
-  Partial: The specification does not set a numeric skew bound, and this file does not periodically resynchronize after initialization.
+  Partial: `syncClock` runs only from `init`, with no periodic resynchronization, and no numeric skew bound exists ([`OQ-8-PEYAAQ` (Clock-skew and bias values)](../../../specification/open-questions.md#oq-8-peyaaq)).
 - [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../../../specification/protocol-model/time.md#req-time-5-s9nqxk)
 - [`REQ-RUNTIME-6-6F4SSM` (Cross-context clock equivalence)](../../../specification/runtime/execution.md#req-runtime-6-6f4ssm)
 

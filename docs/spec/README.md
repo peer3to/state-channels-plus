@@ -145,8 +145,9 @@ the requirement identity ([`INV-DA-1-TS7HX2.T1`](specification/security/data-ava
 ([`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1) … `.PN`).
 
 Every file report contains its `Source` header, one bullet per requirement the file contributes to (with a
-hand-written divergence line where the code departs), and its `UNIT-TEST-*` families; a design view keeps its
-narrative, its `INTEGRATION-TEST-*` families, its view-local requirements, and a `Gaps` section. Each family is a
+hand-written divergence line where the code departs), and its `UNIT-TEST-*` families; a design view holds its
+`INTEGRATION-TEST-*` families and a `Gaps` section. Narrative and view-local requirements still in views are
+legacy awaiting a move into the specification; no new design content goes into a view. Each family is a
 heading with one checkbox bullet per `.P1` … `.PN` case; the checkboxes are written by `yarn spec:ids:fix`.
 
 Every verification test report contains only a short overview and the tests table: one row per

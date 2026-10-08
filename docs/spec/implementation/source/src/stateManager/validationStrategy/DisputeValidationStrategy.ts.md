@@ -7,7 +7,6 @@
 ## Requirements
 
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
-  Missing: Fraud proofs discovered during replay are stored but not applied without opening a dispute (code TODO); dispute-replay strategy only.
 - [`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)
 
 ## UNIT-TEST-DISPUTEVALIDATION-STRATEGY-1-4TZTJ6

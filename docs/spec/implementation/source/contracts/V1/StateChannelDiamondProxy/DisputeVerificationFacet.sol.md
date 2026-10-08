@@ -25,7 +25,7 @@
 - [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
-- [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
+- [`REQ-LIF-4-SW8GVY` (Every initiated dispute runs through the dispute game and produces a canonical…)](../../../../../specification/settlement/lifecycle.md#req-lif-4-sw8gvy)
 
 ## UNIT-TEST-DISPUTE-VERIFICATION-FACET-1-PVCKN3
 
@@ -59,7 +59,9 @@ Reduction algebra
 
 Dispute-state restoration
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `computeDisputeOutputState` with a valid encoded `latestStateMachineState` and slash or removal targets, and with malformed state bytes.
+- Oracle: Decoding `encodedModifiedState` shows the supplied participants and balances minus exactly the removed targets; malformed bytes revert the call and return no output.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6.P1` — The supplied dispute output state is restored exactly before membership mutation
@@ -69,6 +71,8 @@ Dispute-state restoration
 
 Apply removals and slashes
 
+- Setup: Call `computeDisputeOutputState` on a Math state (with an `address(0)` sentinel participant) with no targets, a `selfRemoval`, a `selfRemoval` plus a `timeout`, an `onChainSlashes` entry, a non-member, duplicated targets, and a state machine whose hook returns false or reverts.
+- Oracle: Each successful hook call yields one `MESSAGE_TYPE_EXIT` message in `outboundMessageBlock.messages` with the target's balance, slashes first and then removals in `_calculateRemovals` order, and the target leaves the decoded state; no targets keep every participant with no messages, a false hook adds no exit, and a reverting hook reverts the whole call.
 - Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
@@ -84,6 +88,8 @@ Apply removals and slashes
 
 Withdrawal calculation
 
+- Setup: Call `computeDisputeOutputState` with a snapshot `totalWithdrawals` and exits whose balances sum exactly, overflow or underflow the state machine's balance algebra, or carry custom `Balance.data` the implementation rejects.
+- Oracle: `outputState.totalWithdrawals` and `outboundMessageBlock.totalBalance` equal the snapshot total plus every exit balance through `addBalance`; a rejecting balance operation reverts the call with no output.
 - Specification: [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`REQ-BAL-1-Z8RH4V.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
@@ -96,6 +102,8 @@ Withdrawal calculation
 
 Wrapper/facet equivalence
 
+- Setup: Run the same slash and removal targets through `slashParticipant`/`removeParticipant` directly on the state machine and through `computeDisputeOutputState`.
+- Oracle: Each successful wrapper call records one exit message matching its returned exit, and the facet's outbound block carries one exit per successful target built from the returned exits, so the state machine's own recorded message is not counted a second time.
 - Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 

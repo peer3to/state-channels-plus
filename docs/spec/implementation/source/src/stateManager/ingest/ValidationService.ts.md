@@ -9,7 +9,7 @@
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
-- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
+- [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
@@ -63,6 +63,8 @@ Predicate chain
 
 Author decision
 
+- Setup: Call `validateBlockConfirmation` with blocks authored by the selected writer and by other authors at empty, one-participant and many-participant pre-states across a full turn cycle, and with a non-member author.
+- Oracle: Only the author equal to `diamondStateMachine.getNextToWrite()` on the pre-state passes; a wrong member author reaches `strategy.invalidStateTransitionDetected` and a non-member reaches `strategy.blockAuthorIsNotParticipant`.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -76,6 +78,8 @@ Author decision
 
 Strategy coverage
 
+- Setup: Feed the same wrong-author block to `validateBlockConfirmation` under `BlockValidationStrategy`, `CalldataCommittedStrategy`, `SpectatingValidationStrategy` and `DisputeValidationStrategy`.
+- Oracle: Each strategy's `invalidStateTransitionDetected` receives the block: the live and calldata-committed strategies create an invalid-state-transition proof, request a dispute and return `DISPUTE`; spectating aborts unless the peer is a committed participant; dispute replay applies the proof against the replay predecessor.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -88,6 +92,8 @@ Strategy coverage
 
 Membership boundaries
 
+- Setup: Commit a join, a removal or a slash in the block before the one under test, then call `validateBlockConfirmation` with the state machine at that post-change state.
+- Oracle: The eligible author equals `getNextToWrite()` of the exact post-change pre-state; an author chosen from the stale pre-change state is rejected through `invalidStateTransitionDetected`.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -99,6 +105,8 @@ Membership boundaries
 
 Selector failure
 
+- Setup: Run a queued entry through `onBlockConfirmation` while `diamondStateMachine.getNextToWrite()` throws.
+- Oracle: The error surfaces from `onBlockConfirmation`, `assembleFromTransaction` never runs, and the mutex is released with the state machine on its pre-state.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 

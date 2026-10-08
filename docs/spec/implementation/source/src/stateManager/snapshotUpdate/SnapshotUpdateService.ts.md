@@ -12,7 +12,7 @@
 - [`REQ-MSG-5-5XB7DB` (Catch-up MUST be batchable into smaller ranges with identical results)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-5-5xb7db)
 - [`REQ-MSG-7-Q40Q3R` (Same-fork advance MUST consume all pending inbound messages)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-7-q40q3r)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor)](../../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
+- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 
 ## UNIT-TEST-SNAPSHOT-UPDATE-SERVICE-1-A4B38N
 

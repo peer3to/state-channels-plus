@@ -32,7 +32,8 @@ const {
     REQUIREMENT_RE,
     SPECIFICATION_PERMUTATION_PATTERN,
     SPECIFICATION_PLAN_PATTERN,
-    TEST_PLAN_ITEM_RE
+    TEST_PLAN_ITEM_RE,
+    withoutToolWritten
 } = require("./id-utils");
 
 const GENERATED_ROOT = path.join(SPEC_ROOT, "generated");
@@ -572,9 +573,8 @@ function hash(value) {
 
 function normalize(value) {
     return (
-        value
-            // Tool-written test status is derived, never part of an approval.
-            .replace(/^(\s*-\s+)\[[ x]\]\s+/gm, "$1")
+        // Tool-written test status and links are never part of an approval.
+        withoutToolWritten(value)
             .replace(/\|\s*(?:Pending|Approved|Stale)\s*\|/gi, "|")
             .replace(/\s+/g, " ")
             .trim()

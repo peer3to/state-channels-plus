@@ -8,7 +8,6 @@
 
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
-  Partial: Local mirror only; production manager addresses use `connectStateChannelManager` from [stateChannelManager.ts](stateChannelManager.ts.md).
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-LOCAL-DIAMOND-BINDING-1-W8ATC1

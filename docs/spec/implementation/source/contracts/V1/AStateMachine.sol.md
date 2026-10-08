@@ -6,29 +6,27 @@
 
 ## Requirements
 
-- [`REQ-SM-1-Y72CKX` (Author = _tx.header.participant, time = _tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
-  Partial: No static or runtime policy rejects an application that reads prohibited ambient context or `_tx.body`.
+- [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+  Partial: `stateTransition` stores only `_tx.header` and leaves `_tx.body` empty ([`OQ-21-PEZK9X` (`_tx.body` population and state-encoding versioning)](../../../open-questions.md#oq-21-pezk9x)); keeping ambient EVM context out of the integrator's transition logic is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
-  Partial: Interface implemented; integrator conformance pending — Canonical field/collection ordering is application-defined and neither statically checked nor generically tested.
+  Partial: canonical serialization in the integrator's `getState`/`_setState` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
-  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
-- [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
-  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+  Partial: determinism of the integrator logic `stateTransition` calls is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: the `getState`/`_setState` round-trip is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-3-88RFP2` (Mappings only with complete deterministic key enumeration)](../../../../specification/protocol-model/state-machines.md#req-sm-3-88rfp2)
-  Partial: Integrator obligation; not generically enforced — No linter, runtime validator, or shared test harness detects incomplete or nondeterministic mapping enumeration.
+  Partial: complete mapping enumeration in the integrator's `getState` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
-  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
+  Partial: underflow rejection in the integrator's `subtractBalance` is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
-  Partial: Interface implemented; integrator conformance pending — Solidity mutability constrains state writes but does not prove canonical custom-data semantics or cross-runtime determinism.
-- [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
-  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+  Partial: admission and top-up in the integrator's `_joinChannel` are integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
-  Partial: Interface split across contract and local adapter; engineer audit pending — Interface presence is visible in source, but completeness, atomic failure, and semantic equivalence have not been audited operation by operation.
 - [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
 - [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
 
@@ -72,6 +70,8 @@ Transition runs only with its full budget
 
 Transition orchestration
 
+- Setup: Restore a Math state with `setState`, run a transition that leaves outbound messages, then call a funded `stateTransition` whose `body.data` dispatches a transition emitting zero, one or many messages.
+- Oracle: The call returns `(true, messages)` where `messages` equal `getOutboundMessages()` and hold only this transition's messages in emission order; the previous transition's messages are gone.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -83,6 +83,8 @@ Transition orchestration
 
 Transition rejection
 
+- Setup: After a transition that changed state and left outbound messages, call a funded `stateTransition` whose dispatched function reverts with a reason or with empty returndata.
+- Oracle: `stateTransition` reverts, re-raising the reason unchanged or reverting with "AStateMachine - Call failed - result length 0", and `getState()` and `getOutboundMessages()` equal their values from before the call.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -93,7 +95,9 @@ Transition rejection
 
 Injected execution context
 
-- Specification: [`REQ-SM-1-Y72CKX` (Author = _tx.header.participant, time = _tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
+- Setup: Run the same `stateTransition` on a concrete subclass while varying `transaction.header.participant` and `timestamp`, the ambient EVM context (`msg.sender`, `block.timestamp`, `block.number`), and the `transaction.body` fields other than `data`.
+- Oracle: Only the header participant and time and the dispatched arguments change the resulting `getState()` and outbound messages; ambient and `_tx.body` changes leave both byte-identical. The base contract has no check that rejects ambient reads, so the oracle is asserted per concrete subclass.
+- Specification: [`REQ-SM-1-Y72CKX` (Author = \_tx.header.participant, time = \_tx.header.timestamp)](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx)
 - Specification tests: [`REQ-SM-1-Y72CKX.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx.t1)
 
 - [ ] `UNIT-TEST-SM-ASTATE-3-W1VEFR.P1` — Only the injected participant/time and dispatched arguments affect application behavior
@@ -104,7 +108,9 @@ Injected execution context
 
 State boundary
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `setState` on a concrete subclass with encodings taken from `getState()` of known states, then with truncated bytes and a differently shaped encoding.
+- Oracle: A valid encoding makes `getState()` return the supplied bytes exactly; a malformed encoding reverts in `_setState` and `getState()` keeps its previous bytes.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-ASTATE-4-25RMFZ.P1` — Concrete subclasses round-trip valid states through `setState`/`getState`
@@ -114,7 +120,9 @@ State boundary
 
 Inbound dispatch
 
-- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Setup: Call `processInboundMessage` with a `MESSAGE_TYPE_JOIN` message carrying an encoded `JoinChannel`, a custom message type and an unknown type, against hooks that return false or revert.
+- Oracle: A join message is decoded and handed to `_joinChannel`, so the joiner appears in `getParticipants()` with its deposited balance; every other type reaches only `_processCustomInboundMessage` (the base returns false), and a false or reverting hook leaves `getState()` unchanged.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
 - [x] `UNIT-TEST-SM-ASTATE-5-HYC257.P1` — Join messages decode and reach `_joinChannel`
@@ -127,6 +135,8 @@ Inbound dispatch
 
 Removal and slashing wrappers
 
+- Setup: On a Math state, call `removeParticipant` and `slashParticipant` for a present target, an absent target, and the same target a second time.
+- Oracle: A successful call returns `(true, exit)` and appends exactly one `MESSAGE_TYPE_EXIT` message whose participant and balance equal the returned exit; an absent or repeated target returns `false` with an empty exit, appends no message and leaves `getState()` unchanged.
 - Specification: [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-8-8CHSQ8.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
@@ -139,6 +149,8 @@ Removal and slashing wrappers
 
 Complete public interface
 
+- Setup: Call every public entry point of a concrete subclass (`stateTransition`, `setState`/`getState`, the balance functions, `getNextToWrite`, `processInboundMessage`/`joinChannel`, `removeParticipant`/`slashParticipant`) with canonical and rejected inputs.
+- Oracle: Each entry point exists with its declared mutability, equal inputs give equal results, and a rejected input reverts without changing `getState()` or `getOutboundMessages()`.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 

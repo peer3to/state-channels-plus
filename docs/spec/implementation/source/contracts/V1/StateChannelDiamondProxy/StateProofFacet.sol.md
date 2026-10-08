@@ -9,13 +9,13 @@
 - [`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b)
 - [`REQ-ENFPROOF-1-RH4WEM` (Single verification authority)](../../../../../specification/enforcement/proof-verification.md#req-enfproof-1-rh4wem)
 - [`REQ-ENFPROOF-3-EEDR2Y` (Falsifying detail on failure)](../../../../../specification/enforcement/proof-verification.md#req-enfproof-3-eedr2y)
-- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
-- [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis)](../../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
-- [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
-- [`REQ-SP-7-70EMAT` (In the retained region, verification checks)](../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat)
-- [`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the)](../../../../../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
+- [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
+- [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
+- [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../../../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
+- [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat)
+- [`REQ-FIN-3-9P9J4Q` (A signature on block B is also an indirect vote for every ancestor of B on the…)](../../../../../specification/protocol-model/finality.md#req-fin-3-9p9j4q)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
-- [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored)](../../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
+- [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 
 ## UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR
 

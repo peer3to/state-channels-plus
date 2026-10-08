@@ -25,7 +25,10 @@ function collectConformance(graph) {
     const byId = new Map(); // id -> [{status, document, line}]
     for (const document of graph.documents.implementationDocs) {
         const lines = fs.readFileSync(document, "utf8").split(/\r?\n/);
+        let section = null;
         lines.forEach((line, index) => {
+            if (/^## /.test(line)) section = line.slice(3).trim();
+            if (section !== "Requirements" && section !== "Gaps") return;
             const id = line.match(CLAIM_RE)?.[1];
             if (!id) return;
             let status = "Linked";
@@ -109,15 +112,15 @@ function generateImplementationCoverage(graph = buildDocumentationGraph()) {
         "",
         "## Score",
         "",
-        `- Specification IDs fully implemented (only \`Linked\` claims): ${score(requirementTotal - problemIds.length, requirementTotal)}`,
+        `- Specification IDs linked with no recorded divergence: ${score(requirementTotal - problemIds.length, requirementTotal)}`,
         `- Source files with a file report: ${score(graph.mirrors.length - sourcesWithoutFileReports.length, graph.mirrors.length)}`,
         "",
         "## Contents",
         "",
-        "- [Specification IDs not fully implemented](#specification-ids-not-fully-implemented)",
+        "- [Specification IDs unlinked or with a recorded divergence](#specification-ids-unlinked-or-with-a-recorded-divergence)",
         "- [Source files without a report](#source-files-without-a-report)",
         "",
-        "## Specification IDs not fully implemented",
+        "## Specification IDs unlinked or with a recorded divergence",
         "",
         "Every requirement/invariant whose implementation-layer conformance claim is absent, `Partial`,",
         "`Contradicts`, `Missing`, or any other non-`Linked` status. Statuses are shown verbatim from",

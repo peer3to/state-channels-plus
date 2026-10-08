@@ -6,7 +6,7 @@
 
 ## Requirements
 
-- [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
+- [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`INV-TJOIN-2-H7JSQM` (Local pending protection for submitted joins)](../../../../../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm)
 - [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)

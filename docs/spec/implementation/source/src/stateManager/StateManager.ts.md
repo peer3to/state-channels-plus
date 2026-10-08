@@ -29,10 +29,10 @@
 - [`INV-MSG-3-PCR3KT` (Tip totalBalance = cumulative sum of message balances)](../../../../specification/settlement/cross-layer-messages.md#inv-msg-3-pcr3kt)
 - [`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../../../../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)
 - [`REQ-MSG-11-VS3ZGC` (A deposited-but-unincluded joiner MUST be able to force inclusion via the…)](../../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc)
-- [`REQ-FIN-1-SP669G` (Participants MUST NOT be required to wait for explicit threshold finality before)](../../../../specification/protocol-model/finality.md#req-fin-1-sp669g)
+- [`REQ-FIN-1-SP669G` (Participants MUST NOT be required to wait for explicit threshold finality…)](../../../../specification/protocol-model/finality.md#req-fin-1-sp669g)
 - [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
 - [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
-- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment)](../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
 - [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
@@ -150,6 +150,8 @@ Validation context selection
 
 Transition pipeline atomicity
 
+- Setup: Drive a valid block and a block whose transaction the application rejects through `blockIngestService.onBlockConfirmation` on a harness session, recording `diamondStateMachine.getState()`, the stored block, the outbound message block, the queue entry and the latest state snapshot before and after.
+- Oracle: A valid block advances the application state, stored block, outbound messages, queue and snapshot together through `blockCommitService.success`; a rejected one reaches `invalidStateTransitionDetected`, gets its pre-validation state restored and advances none of them.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -160,7 +162,9 @@ Transition pipeline atomicity
 
 State lifecycle
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Read `diamondStateMachine.getState()` around a `setState` store/restore, a fork switch through `stateApplicationService.unsafeApplyReductionGenesis`, a `peekNextToWrite` inspection, a predecessor replay through `onBlockConfirmation`, a malformed `setState` and its retry.
+- Oracle: After each operation the live state bytes equal the expected state (the restored state, the new fork's genesis state, or the unchanged pre-state); a malformed encoding throws from `setState` and the prior bytes stay in place.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P1` — Store/restore preserves the correct live state bytes
@@ -174,6 +178,8 @@ State lifecycle
 
 Author scheduling
 
+- Setup: Submit blocks authored by the selected next writer and by another participant through `onBlockConfirmation` under each strategy `getActiveValidationStrategy` returns.
+- Oracle: `validateBlockConfirmation` reads `diamondStateMachine.getNextToWrite()` on the block's pre-state; the correct author proceeds to execution and a wrong author goes to the strategy's `invalidStateTransitionDetected` before `assembleFromTransaction` runs.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -184,7 +190,9 @@ Author scheduling
 
 Inbound inclusion
 
-- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Setup: Store join, top-up and custom inbound message blocks through `onInboundMessage`, carry them in the next block's `messageBlocks`, and repeat with duplicate delivery, a retry, concurrent delivery, and a message the application refuses.
+- Oracle: `assembleFromTransaction` applies each message once through `processInboundMessage`, adding its balance to `totalDeposits` and advancing membership, the inbound cursor, state and snapshot once; a refused message throws "Failed to process inbound message" and none of them change.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
 - [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P1` — A join message updates membership, balances, cursor, state, and snapshot exactly once
@@ -199,6 +207,8 @@ Inbound inclusion
 
 Balance accounting
 
+- Setup: Commit blocks carrying inbound deposits and outbound exits at zero and maximum balance values, then one whose deposit aggregation overflows `addBalance`.
+- Oracle: The snapshot's `totalDeposits` and `totalWithdrawals` grow by exactly the inbound and exit balances and reconcile with the application's `getTotalStateBalance`; the overflowing block is rejected with no state, snapshot or storage change.
 - Specification: [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`REQ-BAL-3-P7Q83F.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
@@ -209,6 +219,8 @@ Balance accounting
 
 Interface consumption
 
+- Setup: Exercise each `ADiamondStateMachine` method the manager calls (`stateTransition`, `setState`/`getState`, `getNextToWrite`/`peekNextToWrite`, `processInboundMessage`, the balance methods, `getParticipants`) through manager operations with succeeding, no-op, failing and retried application outcomes, then `dispose`.
+- Oracle: Success advances the pipeline, a no-op leaves state unchanged, a failure rejects without partial state, a retry yields the same result, and no adapter call runs after `dispose` completes.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
@@ -222,7 +234,9 @@ Interface consumption
 
 Concurrency
 
-- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Interleave concurrent `onBlockConfirmation` calls, `blockQueueManager.tryExecuteFromQueue` drains, inbound deliveries and a predecessor replay on one session, all serialized by `stateManager.mutex`.
+- Oracle: No task observes a half-applied state or a `getNextToWrite` result from a superseded state, each inbound message is applied once, and the live state after a replay equals the state before it.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K.P1` — Mutex/queue interleavings cannot expose half-applied state

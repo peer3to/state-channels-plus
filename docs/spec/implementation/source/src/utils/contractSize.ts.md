@@ -7,7 +7,6 @@
 ## Requirements
 
 - [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e)
-  Partial: Paths without full artifacts rely on network enforcement.
 
 ## UNIT-TEST-CONTRACT-SIZE-1-MX797V
 

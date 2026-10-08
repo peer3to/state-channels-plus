@@ -7,7 +7,6 @@
 ## Requirements
 
 - [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)
-  Partial: This helper does not choose the manager surfaces.
 
 ## UNIT-TEST-CONTRACT-ABI-1-HW1A66
 

@@ -12,20 +12,14 @@
   Partial: [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
-  Partial: Determinism of arbitrary integrator logic is not enforced; the generic cross-runtime replay-equivalence harness is missing.
-- [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
-  Partial: Interface and concrete Math codec implemented; general conformance pending — No generic round-trip harness exists, and `peekNextToWrite` does not restore live state when its temporary query throws.
+- [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+  Partial: `peekNextToWrite` does not restore the live state when its temporary `getNextToWrite` query throws ([`FIND-STATE-1-0K7XMY`](../../../../audit/open-findings.md#find-state-1-0k7xmy)).
 - [`REQ-SM-2-PHCRFR` (Canonical, deterministic, lossless serialization)](../../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr)
-  Partial: Interface implemented; integrator conformance pending — Canonical field/collection ordering is application-defined and neither statically checked nor generically tested.
 - [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v)
-  Partial: Interface and simple-amount implementation present; custom algebra pending — Arbitrary `Balance.data` algebras remain integrator-owned and have no reusable conformance harness.
 - [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b)
-  Partial: Interface implemented; integrator conformance pending — Solidity mutability constrains state writes but does not prove canonical custom-data semantics or cross-runtime determinism.
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
-- [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
-  Partial: Dispatch and concrete admission/top-up implemented; general conformance pending — The Math path demonstrates the required behavior, but no generic conformance suite proves it for another application contract.
+- [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
-  Partial: Interface split across contract and local adapter; engineer audit pending — Interface presence is visible in source, but completeness, atomic failure, and semantic equivalence have not been audited operation by operation.
 
 ## UNIT-TEST-EVM-DIAMOND-SM-1-Q8XJV1
 
@@ -67,6 +61,8 @@ Local reduction outcome
 
 ABI encoding/decoding
 
+- Setup: Call each adapter method over a real `AContractExecutor` bound to a deployed state machine; the adapter encodes calldata with `contractInterface.encodeFunctionData`, sends mutations through `executeCall` and views through `simulateCall`, and decodes with `Codec.decodeEvmResult` or the ABI coder.
+- Oracle: Each method sends its own function's selector and arguments, and returns the same values as the contract's direct call (`(bool, Message[])` for `stateTransition`, bytes for `getState`, address for the selectors, `BalanceStruct` fields for the balance methods, bool for `processInboundMessage`).
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
@@ -80,6 +76,8 @@ ABI encoding/decoding
 
 Transition result
 
+- Setup: Call `stateTransition` with transactions that succeed with zero, one and many outbound messages, with one that reverts inside the EVM, and repeat each call from the same restored state.
+- Oracle: Success returns `success: true` with the contract's messages in emitted order; an error that `isInvalidStateTransitionError` accepts returns `success: false`, no messages and a no-op `successCallback`; any other error (under-funded refusal, executor failure) is thrown; repeated calls return the same result.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -93,6 +91,8 @@ Transition result
 
 Logs and callback
 
+- Setup: Run a transition that emits several contract events with a `StateManager` set through `setStateManager`, then invoke `successCallback`; repeat with an `events.emit` that throws.
+- Oracle: `contractEvents` is emitted once per parsed log, in log order, only when `successCallback` runs (unknown logs are skipped); an emit failure is logged as `Contract event emit failed` and neither throws nor changes `getState`.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
@@ -103,7 +103,9 @@ Logs and callback
 
 Get/set state
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `setState` then `getState` with valid encoded states, then make the executor fail and make the returned bytes undecodable.
+- Oracle: Valid states read back byte-for-byte; an executor or decode failure throws `StateMachineInterface.setState: …` or `StateMachineInterface.getState: …` and no bytes are returned.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-EVM-ADAPTER-4-XP8N5Z.P1` — Valid states round-trip
@@ -114,7 +116,9 @@ Get/set state
 
 Temporary next-writer query
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Setup: Call `peekNextToWrite(encodedState)` on a machine holding a different live state, once succeeding, once with the temporary `setState` failing and once with `getNextToWrite` failing.
+- Oracle: After every call `getState` equals the live state from before it; `peekNextToWrite` restores live state only on the success path (no `finally`), so the `getNextToWrite`-failure case leaves the peeked state in place.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P1` — Live state is restored after success
@@ -126,6 +130,8 @@ Temporary next-writer query
 
 Balance adapter
 
+- Setup: Call `addBalance`, `subtractBalance` and `getTotalStateBalance` with in-range, underflowing and overflowing balances over the in-process `ContractExecutor` and the `RpcContractExecutor`.
+- Oracle: Successful results equal the contract's `Balance` field for field under both executors; a contract rejection throws `StateMachineInterface.<method>: …` under both, with no result returned.
 - Specification: [`REQ-BAL-1-Z8RH4V` (subtractBalance rejects underflow)](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B` (Balance operations pure/deterministic)](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`REQ-BAL-1-Z8RH4V.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v.t1), [`REQ-BAL-2-KTSW9B.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
@@ -137,7 +143,9 @@ Balance adapter
 
 Inbound/lifecycle operations
 
-- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Setup: Call `processInboundMessage` with join and custom messages, the read-only views `getParticipants`, `getNextToWrite` and `runView`, `getStateMachineAddress` and `dispose`, then repeat with a failing executor.
+- Oracle: `processInboundMessage` returns the contract's bool, changes state through `executeCall` and publishes its logs; views leave `getState` unchanged; `getStateMachineAddress` returns the constructor address; `dispose` does nothing; failures throw `StateMachineInterface.<method>: …`, except `getParticipants`, which propagates the raw error.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1), [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
 
 - [ ] `UNIT-TEST-SM-EVM-ADAPTER-7-4GJWQR.P1` — Inbound mutation has correct effects and contextual errors

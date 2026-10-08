@@ -251,7 +251,11 @@ function buildIdRegistry() {
             (value) =>
                 value.priority === unique[0].priority &&
                 value.kindPriority === unique[0].kindPriority &&
-                value.document !== unique[0].document
+                // a family heading or case bullet repeated in one document is
+                // also a duplicate: one family, one heading
+                value !== unique[0] &&
+                (value.document !== unique[0].document ||
+                    headingAnchored(value))
         );
         if (samePriority.length)
             duplicates.push({ id, definitions: [unique[0], ...samePriority] });

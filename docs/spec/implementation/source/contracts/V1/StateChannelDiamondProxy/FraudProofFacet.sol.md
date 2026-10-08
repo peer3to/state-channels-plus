@@ -14,10 +14,10 @@
 - [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
 - [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
-  Partial: Checked amount arithmetic implemented; custom aggregation pending — No static rule or reusable suite prevents integrator `unchecked` arithmetic or invalid custom-data aggregation.
+  Partial: `_handleBlockInvalidStateTransition` sums withdrawals through the integrator's `addBalance`; overflow rejection is integrator-owned and not generically enforced ([`FIND-INTEGRATOR-1-5MF8N9`](../../../../../audit/open-findings.md#find-integrator-1-5mf8n9)).
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
-- [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
+- [`INV-FIN-2-MK27J6` (Signing a block is a binding, non-equivocating vote for that block and the…)](../../../../../specification/protocol-model/finality.md#inv-fin-2-mk27j6)
 - [`REQ-FP-1-9PD823` (Fraud-proof enforcement is separate from the dispute game)](../../../../../specification/disputes/fraud-proofs.md#req-fp-1-9pd823)
 - [`REQ-FP-2-CH4DA1` (Every block fraud-proof handler is sound)](../../../../../specification/disputes/fraud-proofs.md#req-fp-2-ch4da1)
 - [`REQ-FP-6-TS1QAV` (An invalid fraud-proof submission slashes its submitter when the submitter is…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-6-ts1qav)
@@ -26,7 +26,7 @@
 - [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../../../../../specification/protocol-model/time.md#req-time-4-83v27z)
 - [`REQ-DA-2-KYZ70M` (The specification of any timing-sensitive rule MUST state which of these…)](../../../../../specification/security/data-availability.md#req-da-2-kyz70m)
 - [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../../../../../specification/security/trust-model.md#inv-trust-1-6tywdh)
-- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
+- [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../../../../../specification/security/trust-model.md#req-trust-1-k5ps99)
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG
 
@@ -81,6 +81,8 @@ Timestamp-fraud predicate
 
 Challenged transition replay
 
+- Setup: Call `applyFraudProofs` with a `BlockInvalidStateTransition` proof whose signed block, previous block and snapshot are bound, varying whether the block's transaction, the supplied `previousStateStateMachineState`, or the block's `stateSnapshotHash` differ from an honest replay.
+- Oracle: When the replay through `executeStateTransition` reproduces `stateSnapshotHash`, `runFraudProof` returns `address(0)` and the proof sender is slashed; a rejected transaction or a mismatched result slashes the block signer, and a pre-state that does not hash to the snapshot's `stateMachineStateHash` is an invalid proof that slashes the sender.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
@@ -93,6 +95,8 @@ Challenged transition replay
 
 Outbound balance aggregation
 
+- Setup: Replay a signed block whose transition emits zero, one or many outbound messages, including balances that overflow `addBalance` or carry custom data the implementation rejects.
+- Oracle: The recomputed snapshot adds each message balance to `totalWithdrawals` once and raises `latestOutboundMessageBlockHeight` by one only when messages exist; a rejecting `addBalance` reverts the whole `applyFraudProofs` call, so no slash is recorded.
 - Specification: [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`REQ-BAL-3-P7Q83F.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 
@@ -106,6 +110,8 @@ Outbound balance aggregation
 
 Author validation dependency
 
+- Setup: Replay a `BlockInvalidStateTransition` proof for a Math `add` block authored by the next writer, by another member and by a non-member, and for an application whose transition omits the `getNextToWrite` check.
+- Oracle: The facet never calls `getNextToWrite` itself: with Math a wrong or non-member author makes the transition revert and `runFraudProof` returns the signer, while the correct author with a correct snapshot returns `address(0)`; an application that omits the check replays a wrong-author block as valid, which is the visible gap of P2.
 - Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
 
@@ -118,6 +124,8 @@ Author validation dependency
 
 Failure and retry
 
+- Setup: Submit `applyFraudProofs` with a proof whose replay is rejected or whose aggregation overflows, repeat it, then submit a valid proof for another block in a later call.
+- Oracle: A rejected transaction slashes the signer once and a repeat changes nothing, an overflow reverts the whole call every time, and the later proof's verdict equals its verdict on a fresh deployment because `executeStateTransition` restores the supplied pre-state before every replay.
 - Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
 - Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`REQ-BAL-3-P7Q83F.T1`](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
 

@@ -12,12 +12,10 @@
 - [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-STOR-1-D4XE73` (Complete durable set)](../../../../specification/storage/durability.md#req-stor-1-d4xe73)
-  Partial: The medium is in-memory: nothing survives restart, so the durability half of the requirement is unmet until the disk medium lands ([durability.md](../../../../specification/storage/durability.md)).
+  Partial: `Storage` keeps every store in memory, so nothing survives a restart ([`OQ-23-SDBGYB` (SDK restart and recovery semantics)](../../../open-questions.md#oq-23-sdbgyb)).
 - [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](../../../../specification/storage/durability.md#req-stor-2-tarp8s)
 - [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../../../../specification/storage/durability.md#req-stor-4-mf6ft6)
-  Partial: No pruning mechanism exists — retention is vacuously safe but growth is unbounded; policy pending with the disk medium.
 - [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../../../../specification/storage/durability.md#req-stor-5-t6eqsa)
-  Partial: Corruption detection and versioned encodings are not applicable in-memory and absent — required at the disk migration.
 
 ## UNIT-TEST-STORAGE-FACADE-1-TF3MZ1
 

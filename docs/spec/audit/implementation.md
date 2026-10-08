@@ -157,7 +157,7 @@ registrations can also be removed repeatedly through the original callback. Its 
 records the complete method, listener, event-log, query, and passthrough boundary instead of only
 the structural Result predicate.
 
-Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+Other file reports' requirement bullets, recorded divergences, and unit families remain visible in generated coverage.
 
 Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
 
@@ -375,7 +375,7 @@ registrations can also be removed repeatedly through the original callback. Its 
 records the complete method, listener, event-log, query, and passthrough boundary instead of only
 the structural Result predicate.
 
-Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+Other file reports' requirement bullets, recorded divergences, and unit families remain visible in generated coverage.
 
 Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
 

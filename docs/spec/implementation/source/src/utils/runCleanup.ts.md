@@ -12,6 +12,9 @@
 
 Ordered cleanup and failure preservation
 
+- Setup: Call `runCleanup` and `runCleanupSync` with no steps, ordered steps, async steps, and steps that throw or reject (including `undefined`) before later steps.
+- Oracle: Every step runs in order, each async step settles before the next starts, and the call throws or rejects with exactly the first failure, `undefined` included, after the last step has run.
+
 - [x] `UNIT-TEST-CLEANUP-1-14NFGW.P1` — Empty sync and async sequences complete without error
 - [x] `UNIT-TEST-CLEANUP-1-14NFGW.P2` — Synchronous steps execute in order before return
 - [x] `UNIT-TEST-CLEANUP-1-14NFGW.P3` — Synchronous failures do not skip later steps; the original first error is thrown

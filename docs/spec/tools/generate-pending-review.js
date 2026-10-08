@@ -13,6 +13,7 @@ const {
     relativeLink,
     writeOrCheckReport
 } = require("./shared/report-utils");
+const { withoutToolWritten } = require("./shared/id-utils");
 const { REQUIREMENT_STATUS } = require("./shared/traceability-utils");
 
 const SPEC_ROOT = path.join(__dirname, "..");
@@ -30,16 +31,12 @@ function listMd(dir) {
     return out;
 }
 
-// Tool-written checkboxes are derived test status, not reviewed content, so a
-// new test does not return a reviewed document to pending.
+// Tool-written checkboxes and link labels are not reviewed content, so a new
+// test or a reworded requirement does not return a document to pending.
 function contentHash(file) {
     return crypto
         .createHash("sha256")
-        .update(
-            fs
-                .readFileSync(file, "utf8")
-                .replace(/^(\s*-\s+)\[[ x]\]\s+/gm, "$1")
-        )
+        .update(withoutToolWritten(fs.readFileSync(file, "utf8")))
         .digest("hex")
         .slice(0, 16);
 }
