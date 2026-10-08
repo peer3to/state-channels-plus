@@ -69,7 +69,7 @@ Source identity: `csf_623195021241d901f52c336c`; rule `zero-verdict`; occurrence
 
 **Evidence and path (at `9dc243769`).** The zero-sentinel equality was unchanged. Any chain caller can submit a committed honest dispute during its kill period, choose a proof handler that returns zero for invalid evidence, and declare participant zero. The success branch delegates to killDispute, which slashes the real disputer and removes its commitment.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–37](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L37); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:119–126](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L119-L126); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–37](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L37); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:134–137](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L134-L137); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
 
 **Boundary:** any chain account, with no credential, through the routed `applyDisputeFraudProofs` entrypoint. The caller needs only the public contents of a committed dispute. Ranking class: unauthenticated on-chain path.
 
