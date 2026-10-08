@@ -32,11 +32,17 @@ import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondPro
 import {
     DisputeBlockAuthorNotParticipant,
     DisputeInvalidBlockStructure,
+    InvalidDisputeReason,
     TimeoutCalldataPosted
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
 import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
+import {LocalDiamond} from "../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol";
+import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
+import {StateSnapshotFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol";
+import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
+import {ErrorDisputeExecutionOutOfGas} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
@@ -156,6 +162,14 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         return _handleDisputeOnChainSlashesNotSubset(encodedProof, dispute);
     }
 
+    function handleInvalidDisputeReason(bytes memory encodedProof, Dispute memory dispute)
+        external
+        pure
+        returns (address)
+    {
+        return _handleInvalidDisputeReason(encodedProof, dispute);
+    }
+
     function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
         Balance memory balance = Balance({amount: 0, data: ""});
         return Message({
@@ -190,7 +204,7 @@ contract InboundVerificationHarness is StateChannelCommon {
     }
 }
 
-/// Wires SM + Utility so public computeDisputeOutputState (and _calculateRemovals) can be exercised.
+/// Wires SM + Utility so public computeDisputeOutputState can be exercised.
 contract DisputeOutputStateHarness is DisputeVerificationFacet {
     constructor(AStateMachine sm, address util) {
         stateMachineImplementation = sm;
@@ -224,28 +238,28 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         outputHarness = new DisputeOutputStateHarness(stateMachine, address(utilityFacet));
     }
 
-    // reduce() must not OOB-panic when dispute.input.onChainSlashes.length exceeds
-    // participants + pending (maxSlashCount).
-    function test_reduce_oversizedOnChainSlashes_doesNotPanic() public {
-        Dispute[] memory disputes = new Dispute[](1);
-        disputes[0].input.channelId = CHANNEL_ID;
-        disputes[0].input.forkId = FORK_ID;
-
+    // reduce() reads no participant set: the disputes' listed slashes stay candidates, deduplicated, even with no
+    // channel; only the output transition decides which of them are participants.
+    function test_reduce_listedSlashesWithoutChannel_keptAsDedupedCandidates() public {
+        Dispute[] memory disputes = new Dispute[](2);
         address[] memory fakeSlashes = new address[](20);
         for (uint256 i = 0; i < 20; i++) {
             fakeSlashes[i] = address(uint160(i + 1));
         }
-        disputes[0].input.onChainSlashes = fakeSlashes;
+        for (uint256 i = 0; i < 2; i++) {
+            disputes[i].input.channelId = CHANNEL_ID;
+            disputes[i].input.forkId = FORK_ID;
+            disputes[i].input.onChainSlashes = fakeSlashes;
+        }
 
-        // maxSlashCount = 0 (no channel open → no participants) → extra slashes are skipped
         ReduceOutput memory out = diamond.reduce(disputes);
-        assertEq(out.slashedParticipants.length, 0);
+        assertEq(abi.encode(out.slashedParticipants), abi.encode(fakeSlashes));
     }
 
     // A reduction already mined for the fork moves the channel snapshot past the
-    // slashed signer and empties the bounded pending set; a late reducer must
-    // still fold that signer's on-chain slash, or its output diverges from the
-    // reduction on chain.
+    // slashed signer; a late reducer must still fold that signer's on-chain
+    // slash, or its output diverges from the reduction on chain. The fold reads
+    // no snapshot, so the channel snapshot cannot change it.
     function test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         address survivor = address(0xA11CE);
@@ -262,32 +276,28 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(out.slashedParticipants[0], slashed);
     }
 
-    // slashedParticipants in the output must never exceed participants + pending,
-    // regardless of what a dispute claims in onChainSlashes.
-    function testFuzz_reduce_slashedParticipantsNeverExceedsMaxSlashCount(uint8 slashCount) public {
+    // The candidate set is the deduplicated union of every dispute's listed slashes, whatever their count.
+    function testFuzz_reduce_listedSlashCandidatesAreDeduplicated(uint8 slashCount) public {
         vm.assume(slashCount > 0);
-
-        Dispute[] memory disputes = new Dispute[](1);
-        disputes[0].input.channelId = CHANNEL_ID;
-        disputes[0].input.forkId = FORK_ID;
 
         address[] memory fakeSlashes = new address[](slashCount);
         for (uint256 i = 0; i < slashCount; i++) {
             fakeSlashes[i] = address(uint160(i + 1));
         }
-        disputes[0].input.onChainSlashes = fakeSlashes;
+        Dispute[] memory disputes = new Dispute[](2);
+        for (uint256 i = 0; i < 2; i++) {
+            disputes[i].input.channelId = CHANNEL_ID;
+            disputes[i].input.forkId = FORK_ID;
+            disputes[i].input.onChainSlashes = fakeSlashes;
+        }
 
         ReduceOutput memory out = diamond.reduce(disputes);
-        // no open channel → maxSlashCount = 0; output must always be within that bound
-        assertEq(out.slashedParticipants.length, 0);
+        assertEq(abi.encode(out.slashedParticipants), abi.encode(fakeSlashes));
     }
 
-    // ---- public computeDisputeOutputState (hits _calculateRemovals + exit shrink) ----
-    // Participants include address(0) as a sentinel: _calculateRemovals allocates length 2 and
-    // only shrinks when removalCount < 2. Without that shrink, trailing address(0) slots are
-    // fed to removeParticipant and wrongly strip the sentinel — so these tests go red if the
-    // shrink is dropped. (The both-removals case fills both slots, so shrink is a no-op there;
-    // its mutation surface is the ordered exit list.)
+    // ---- public computeDisputeOutputState (removals + exit shrink) ----
+    // Participants include address(0) as a sentinel: a removal list with trailing address(0)
+    // slots would strip the sentinel, so these tests go red if such slots reach removeParticipant.
 
     function test_computeDisputeOutputState_noRemoval_keepsAllParticipantsAndNoExits() public {
         address[] memory participants = _participantsWithZeroSentinel();
@@ -403,6 +413,106 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
     }
 
+    // ---- LocalDiamond gas-capped dispute computation ----
+
+    function test_computeDisputeOutputState_localDiamondBudgetUsedUp_revertsDisputeExecutionOutOfGas() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+        LocalDiamond localDiamond = _deployLocalDiamond(30_000);
+
+        vm.expectPartialRevert(ErrorDisputeExecutionOutOfGas.selector);
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    // The out-of-gas happens inside the state machine's `setState`; the facet keeps the 1/64 that the nested call
+    // leaves it and bubbles an empty revert.
+    function test_computeDisputeOutputState_localDiamondNestedCallUsesUpBudget_revertsDisputeExecutionOutOfGas()
+        public
+    {
+        address[] memory participants = new address[](150);
+        for (uint256 i = 0; i < participants.length; i++) {
+            participants[i] = address(uint160(0xA000 + i));
+        }
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectPartialRevert(ErrorDisputeExecutionOutOfGas.selector);
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    function test_computeDisputeOutputState_localDiamondFacetRevertWithinBudget_keepsRevertBytes() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](1);
+        inboundMessageBlocks[0].messages = new Message[](1);
+        inboundMessageBlocks[0].messages[0].messageType = unsupportedMessageType;
+        inboundMessageBlocks[0].messages[0].participant = participants[1];
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(0),
+                uint256(0),
+                participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        localDiamond.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    // A state the state machine cannot decode reverts without data long before the budget is used up.
+    function test_computeDisputeOutputState_localDiamondEmptyRevertWithinBudget_staysEmpty() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        LocalDiamond localDiamond = _deployLocalDiamond(3_000_000);
+
+        vm.expectRevert(bytes(""));
+        localDiamond.computeDisputeOutputState(input, snapshot, hex"01", new MessageBlock[](0));
+    }
+
+    function test_computeDisputeOutputSnapshotData_localDiamondWithinBudget_readsParticipantsOfOutputState() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.timeout.participant = participants[2];
+        LocalDiamond localDiamond = _deployLocalDiamond(0);
+
+        DisputeOutputState memory out =
+            localDiamond.computeDisputeOutputState(input, snapshot, encodedState, new MessageBlock[](0));
+        SnapshotData memory outputSnapshot =
+            localDiamond.computeDisputeOutputSnapshotData(input, snapshot, encodedState, new MessageBlock[](0));
+
+        assertEq(outputSnapshot.stateMachineStateHash, keccak256(out.encodedModifiedState));
+        assertEq(outputSnapshot.participants.length, 3);
+        assertEq(outputSnapshot.participants[0], participants[0]);
+        assertEq(outputSnapshot.participants[1], participants[1]);
+        assertEq(outputSnapshot.participants[2], address(0));
+        _assertExactExitMessages(out, _oneAddress(participants[2]), _oneAmount(30));
+    }
+
     function test_computeDisputeOutputState_selfRemovalAndTimeout_removesBothInOrderAndEmitsExits() public {
         address[] memory participants = _participantsWithZeroSentinel();
         DisputeInput memory input;
@@ -414,7 +524,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
 
-        // _calculateRemovals order: selfRemoval first, then timeout (fills both slots)
+        // removal order: selfRemoval first, then timeout
         assertEq(result.participants.length, 2);
         assertEq(result.participants[0], participants[2]);
         assertEq(result.participants[1], address(0));
@@ -438,8 +548,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
 
-        // onChainSlashes non-empty → timeout ignored by _calculateRemovals; only slash applies
-        // removals empty after shrink — without shrink, trailing zeros would also strip the sentinel
+        // the slash removes a participant → the timeout is not applied; only the slash exits
         assertEq(result.participants.length, 3);
         assertEq(result.participants[0], participants[1]);
         assertEq(result.participants[1], participants[2]);
@@ -501,7 +610,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(out.outboundMessageBlock.messages.length, 0);
     }
 
-    // reduceOutput path (does not hit _calculateRemovals; keeps prior coverage of reduceOutputToSnapshotData)
+    // reduceOutput path (keeps prior coverage of reduceOutputToSnapshotData)
     function test_reduceOutputToSnapshotData_timeoutOnly_removesTimedOutParticipant() public {
         address[] memory participants = _participants();
         ReduceOutput memory reducedOutput;
@@ -554,6 +663,66 @@ contract DisputeVerificationFacetTest is DiamondHarness {
 
         assertEq(output.length, 1);
         assertEq(output[0], participants[2]);
+    }
+
+    // Fork F1 reduces a slash of `slashed` into F2. The F2 window still sees the
+    // same on-chain slash as a candidate, but `slashed` is no participant of F2:
+    // the slash is not applied and does not suppress F2's timeout of `timedOut`.
+    function test_reduceOutputToSnapshotData_ancestorSlashInChildFork_appliesTimeout() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory participants = _participants();
+        address slashed = participants[0];
+        address timedOut = participants[1];
+        bytes32 childForkId = keccak256("dv-child-fork");
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, timedOut, slashed, 100);
+
+        Dispute[] memory parentDisputes = new Dispute[](1);
+        parentDisputes[0].input.channelId = CHANNEL_ID;
+        parentDisputes[0].input.forkId = FORK_ID;
+        address[] memory childParticipants = _outputParticipants(harness.reduce(parentDisputes), participants);
+        assertEq(childParticipants.length, 2);
+        assertEq(childParticipants[0], timedOut);
+        assertEq(childParticipants[1], participants[2]);
+
+        harness.seedDisputeWindow(CHANNEL_ID, childForkId, 200);
+        Dispute[] memory childDisputes = new Dispute[](1);
+        childDisputes[0].input.channelId = CHANNEL_ID;
+        childDisputes[0].input.forkId = childForkId;
+        childDisputes[0].input.timeout.participant = timedOut;
+        ReduceOutput memory childOutput = harness.reduce(childDisputes);
+        assertEq(childOutput.slashedParticipants.length, 1);
+        assertEq(childOutput.slashedParticipants[0], slashed);
+
+        address[] memory output = _outputParticipants(childOutput, childParticipants);
+        assertEq(output.length, 1);
+        assertEq(output[0], participants[2]);
+    }
+
+    // A dispute of F2 that lists the on-chain slash of `slashed`, a participant only of the ancestor F1, is
+    // provably invalid whatever its other reasons: InvalidDisputeReason slashes its disputer. Listing a
+    // participant of F2's latest state is not.
+    function test_handleInvalidDisputeReason_slashOfAncestorForkParticipant_slashesDisputer() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory participants = _participants();
+        address slashed = participants[0];
+        StateSnapshot memory childGenesis;
+        childGenesis.snapshotData.originForkId = FORK_ID;
+        childGenesis.snapshotData.participants = new address[](2);
+        childGenesis.snapshotData.participants[0] = participants[1];
+        childGenesis.snapshotData.participants[1] = participants[2];
+        childGenesis.forkId = keccak256(abi.encode(childGenesis.snapshotData));
+
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.forkId = childGenesis.forkId;
+        dispute.input.disputer = participants[2];
+        dispute.input.timeout.participant = participants[1];
+        dispute.input.onChainSlashes = _oneAddress(slashed);
+        bytes memory proof = abi.encode(InvalidDisputeReason({latestStateSnapshot: childGenesis}));
+
+        assertEq(harness.handleInvalidDisputeReason(proof, dispute), participants[2]);
+        dispute.input.onChainSlashes = _oneAddress(participants[1]);
+        assertEq(harness.handleInvalidDisputeReason(proof, dispute), address(0));
     }
 
     // ---- getOnChainSlashedParticipantsUpToTimestamp (hits _shrinkAddressArray) ----
@@ -1137,8 +1306,28 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         participants[2] = address(0xA3);
     }
 
-    /// Three real members + address(0) sentinel. Trailing zero slots from an unshrunk
-    /// _calculateRemovals array would remove the sentinel and break length/order asserts.
+    /// A local diamond over the suite's machine; `gasLimit` 0 keeps the default dispute budget.
+    function _deployLocalDiamond(uint256 gasLimit) internal returns (LocalDiamond) {
+        return new LocalDiamond(
+            address(stateMachine),
+            address(new DisputeManagerFacet()),
+            address(new DisputeVerificationFacet()),
+            address(fraudProofFacet),
+            address(new DisputeFraudProofFacet()),
+            address(new StateSnapshotFacet()),
+            address(new JoinChannelFacet()),
+            address(new StateProofFacet()),
+            address(utilityFacet),
+            P2P_TIME,
+            0,
+            0,
+            0,
+            gasLimit,
+            MAX_CHANNEL_PARTICIPANTS
+        );
+    }
+
+    /// Three real members + address(0) sentinel.
     function _participantsWithZeroSentinel() internal pure returns (address[] memory participants) {
         participants = new address[](4);
         participants[0] = address(0xA1);
@@ -1237,6 +1426,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         StateSnapshot memory snapshot;
         bytes memory encodedState = abi.encode(state);
         snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        // the snapshot already consumed the reduced inbound head: no inbound blocks to apply
+        snapshot.snapshotData.latestInboundMessageBlockHash = reducedOutput.latestInboundMessageBlockHash;
         MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
         (, bytes memory encodedModifiedState,) = diamond.reduceOutputToSnapshotData(
             keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, inboundMessageBlocks

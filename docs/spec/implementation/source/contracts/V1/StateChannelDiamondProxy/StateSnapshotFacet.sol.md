@@ -35,17 +35,25 @@ Same-fork adoption constructs ProofWalkInput and requires the walk's finalizedSn
 2. **The state-proof self-call is typed by the manager interface.** Verification of the incoming
    proof is reached on `address(this)` through
    [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md)
-   ([#L142](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L142)) instead of the proxy contract type; the call now carries ProofWalkInput and consumes the returned finalized snapshot, and this facet does not import the proxy.
+   ([#L155](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L155)) instead of the proxy contract type; the call now carries ProofWalkInput and consumes the returned finalized snapshot, and this facet does not import the proxy.
 3. **Final close updates enumeration in the snapshot transaction.** Registry removal, snapshot
    deletion, balance cleanup, and `StateSnapshotUpdated` either commit together or all revert.
 4. **A disputed fork advances only by reduction.** The same-fork advance refuses a disputed current fork with
-   `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId)` ([#L84](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L84)), reusing `_isForkDisputed` as the join
+   `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId)` ([#L86](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L86)), reusing `_isForkDisputed` as the join
    path does: the refusal is permanent, whatever the kill period. The successor-fork update changes the current state,
    so it walks the expired reduced-result links to their end and adopts only that latest fork: an earlier target is
    refused with `RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId)` ([#L47](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L47)), a disputed latest fork
-   with `RaceConditionSnapshotUpdateDisputedFork` ([#L48](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L48)). Open kill periods are not otherwise consulted: while a fork is
+   with `RaceConditionSnapshotUpdateDisputedFork` ([#L49](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L49)). Open kill periods are not otherwise consulted: while a fork is
    disputed nothing can be adopted onto the chain, so the chain set the milestone-finality read uses stays fixed
    ([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)).
+
+5. **The outbound range is verified before any message is processed.** `_updateStateSnapshot` cuts
+   the blocks the on-chain snapshot already covers, then requires the shared
+   `_verifyOutboundMessageBlocks` ([#L104](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L104))
+   or reverts `ErrorOutboundMessageBlocksInvalid`. That verifier checks links, heights and the
+   endpoint against the new snapshot before it sums balances, so a forged balance is refused with
+   this error, not an arithmetic panic. Authenticated blocks whose balances overflow still revert
+   inside the sum ([StateChannelCommon.sol.md](./StateChannelCommon.sol.md)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -94,7 +102,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-ENFSNAP-1-FYN3BW`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-fyn3bw) | Covered               | **Here:** prune-verify-process-cap in both paths.                                                                                                                                                                                                                                                                                                                                                                                                                        | Blocked-withdrawal handling (malicious consumer) remains the settlement open question.               |
 | [`REQ-ENFSNAP-3-VD9T8A`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-3-vd9t8a) | Covered               | **Here:** pending-inbound-consumed requirement on same-fork advance.                                                                                                                                                                                                                                                                                                                                                                                                     | None.                                                                                                |
 | [`REQ-ENFSNAP-2-MGRCY8`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-2-mgrcy8) | Covered               | **Here:** prune-then-process over linked ranges makes any batch split converge to the same tips and totals.                                                                                                                                                                                                                                                                                                                                                              | Convergence is asserted by construction; the permutation test evidence is a verification obligation. |
-| [`REQ-ENFSNAP-4-ESP98F`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f) | Covered               | **Here:** the permanent disputed-fork refusal of the same-fork advance ([#L84](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L84)) and the latest-undisputed-fork rule of the successor-fork update ([#L47](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L47)). **Other files:** [DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md) (creates and refreshes the window the refusal reads). | None.                                                                                                |
+| [`REQ-ENFSNAP-4-ESP98F`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f) | Covered               | **Here:** the permanent disputed-fork refusal of the same-fork advance ([#L86](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L86)) and the latest-undisputed-fork rule of the successor-fork update ([#L47](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L47)). **Other files:** [DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md) (creates and refreshes the window the refusal reads). | None.                                                                                                |
 
 ## Component test obligations
 

@@ -337,6 +337,46 @@ export async function killSpamDispute(
 }
 
 /**
+ * Peer `peerIndex` kills the spam dispute it stored a counter for and
+ * disputes `forkId` in one multicall, as its audit would. Returns the
+ * message `dispute()` rejected with ("" when it did not) and the peer's
+ * dispute marker read right after.
+ */
+export async function killAndDisputeSpamDispute(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    spammer: Address,
+    forkId: ForkId
+): Promise<{ rejected: string; disputed: boolean }> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, args) => {
+            const kill = sm.storage.disputeFraudProofs
+                .getDisputeFraudProofs()
+                .find(
+                    (proof) =>
+                        proof.dispute.input.disputer === args.spammer &&
+                        proof.dispute.input.forkId === args.forkId
+                )?.dispute;
+            if (!kill) throw new Error("The spam dispute is missing");
+            let rejected = "";
+            try {
+                await sm.disputeManager.dispute(args.forkId, { kill });
+            } catch (error) {
+                rejected =
+                    error instanceof Error ? error.message : String(error);
+            }
+            return {
+                rejected,
+                disputed: sm.storage.disputes.didIDispute(args.forkId)
+            };
+        },
+        { spammer, forkId },
+        { timeoutMs: h.event.hostExecTimeoutMs() }
+    );
+}
+
+/**
  * The dispute `disputer` committed, as peer `observerIndex` handled its
  * DisputeCommitted event; waits for that event.
  */

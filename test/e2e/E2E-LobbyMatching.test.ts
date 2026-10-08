@@ -1305,6 +1305,7 @@ describe("E2E: lobby matching", function () {
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-negotiation-abort");
         const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        let rematchReleases: (() => Promise<number>)[] = [];
 
         try {
             // Both attempts exist while the terms exchange is parked, so the
@@ -1332,6 +1333,15 @@ describe("E2E: lobby matching", function () {
                     if (!commitment) {
                         throw new Error("Negotiation attempt is gone");
                     }
+                    // Both peers stay in the lobby and re-match after the
+                    // abort. Park the re-match before it creates an attempt,
+                    // so the cleared attempt stays observable and the parked
+                    // terms exchange cannot fail a second attempt.
+                    rematchReleases = await Promise.all(
+                        [lowerIndex, higherIndex].map((index) =>
+                            h.rpcStub.holdMatchedNegotiation(index)
+                        )
+                    );
                     await h.byzantine.sendRawNegotiationRpc(
                         lowerIndex,
                         higherIndex,
@@ -1368,6 +1378,7 @@ describe("E2E: lobby matching", function () {
                 }
             );
         } finally {
+            await Promise.all(rematchReleases.map((release) => release()));
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);
         }
     });

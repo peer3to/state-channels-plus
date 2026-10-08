@@ -677,7 +677,7 @@ describe("Unit: bot-connection fixes", function () {
     });
 
     describe("own-join observation and join authorization expiry", function () {
-        it("U75: a delayed on-chain observation starts the deadline and the counting grace at observation, not at submission", async function () {
+        it("U75a: a delayed on-chain observation starts the deadline and the counting grace at observation, not at submission", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
             const joiner = h.getPeer(prepared.joiner.index);
@@ -758,7 +758,7 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U75: an uncertain join that never reaches the chain → own join state open until the chain passes its authorization deadline, then expired", async function () {
+        it("U75b: an uncertain join that never reaches the chain → own join state open until the chain passes its authorization deadline, then expired", async function () {
             const h = TestSession.getHarness();
             const prepared = await prepareJoinWithAuthorization(h, 10);
             const signer = prepared.joiner.p2pInstance.p2pSigner;
@@ -806,7 +806,7 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U75: a pending joiner whose join never lands → its leave waits for the join and settles back to SYNCED once the authorization expired on chain", async function () {
+        it("U75c: a pending joiner whose join never lands → its leave waits for the join and settles back to SYNCED once the authorization expired on chain", async function () {
             const h = TestSession.getHarness();
             const prepared = await prepareJoinWithAuthorization(h, 8);
             const joiner = prepared.joiner;
@@ -860,7 +860,7 @@ describe("Unit: bot-connection fixes", function () {
             }
         });
 
-        it("U75: a join observed during the leave's join wait turns the leave into a member's leave", async function () {
+        it("U75d: a join observed during the leave's join wait turns the leave into a member's leave", async function () {
             const h = TestSession.getHarness();
             const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
             const joiner = prepared.joiner;
@@ -890,6 +890,133 @@ describe("Unit: bot-connection fixes", function () {
             ).to.not.equal(null);
             await joiner.p2pInstance.dispose();
             await expect(leave).to.be.rejectedWith("disposed");
+        });
+
+        it("U75e: a landed join whose self-removal reduction the joiner installs while the chain still lists it → the chain's snapshot event lowers it to SYNCED and its leave settles", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin();
+            const joiner = prepared.joiner;
+            const joinerQuery = h.control(joiner).query;
+            // The founders omit the join, so the joiner stays pending.
+            for (const peerIndex of [0, 1, 2]) {
+                await h.byzantine.stubPendingInboundInclusion(peerIndex);
+            }
+            // Every snapshot post parks, so the chain still lists the joiner
+            // when it installs the reduction genesis that drops it.
+            const posts = await Promise.all(
+                h.peers.map((peer) =>
+                    h.rpcStub.holdSnapshotPostSend(peer.index)
+                )
+            );
+            try {
+                expect(
+                    await joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(true);
+                const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+                let leaveSettled = false;
+                const settled = leave.then(() => {
+                    leaveSettled = true;
+                });
+                await h.event.waitUntilLeavePhase(
+                    joiner.index,
+                    "awaiting-exit"
+                );
+                const disputedForkId = await joinerQuery.getForkId().request();
+                // The founders author until the joiner's exit fallback
+                // starts its self-removal dispute.
+                await h.transition.keepAuthoringUntil({
+                    until: async () =>
+                        (await joinerQuery.getLeaveChannelState().request())
+                            ?.phase === "awaiting-settlement",
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 8
+                });
+                await waitFor(
+                    async () =>
+                        (await joinerQuery.getForkId().request()) !==
+                        disputedForkId,
+                    h.event.protocolEventTimeoutMs()
+                );
+                const reducedForkId = await joinerQuery.getForkId().request();
+                expect(await joinerQuery.getStatus().request()).to.equal(
+                    Status.PENDING_PARTICIPANT
+                );
+                expect(
+                    await h.channelManager.getPendingParticipants(h.channelId)
+                ).to.include(joiner.address);
+
+                // The founders keep authoring, so no later dispute installs
+                // another state: only the snapshot event can settle the leave.
+                await Promise.all(posts.map((post) => post.release()));
+                await h.transition.keepAuthoringUntil({
+                    until: () => leaveSettled,
+                    waitForPeers: [0, 1, 2],
+                    maximumBlocks: 8
+                });
+                await settled;
+
+                expect(await joinerQuery.getStatus().request()).to.equal(
+                    Status.SYNCED
+                );
+                expect(await joinerQuery.getForkId().request()).to.equal(
+                    reducedForkId
+                );
+                expect(
+                    await joinerQuery.getOnChainParticipantUnion().request()
+                ).to.not.include(joiner.address);
+            } finally {
+                await Promise.all(posts.map((post) => post.release()));
+            }
+        });
+
+        it("U75f: a pending joiner whose uncertain join can still land handles a snapshot event that does not list it → it stays PENDING_PARTICIPANT with its join open", async function () {
+            const h = TestSession.getHarness();
+            // the authorization stays open through the test
+            const prepared = await prepareJoinWithAuthorization(h, 120);
+            const joiner = prepared.joiner;
+            const joinerQuery = h.control(joiner).query;
+            const restore = await h.rpcStub.failMembershipSubmissionUncertain(
+                joiner.index,
+                "joinChannel"
+            );
+            try {
+                expect(
+                    await joiner.p2pInstance.p2pSigner.joinChannel(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    )
+                ).to.equal(false);
+                expect(await joinerQuery.getStatus().request()).to.equal(
+                    Status.PENDING_PARTICIPANT
+                );
+                const handled = h.event.getEventCallCount(
+                    joiner.index,
+                    "onStateSnapshotUpdated"
+                );
+
+                // a founder's snapshot post: the chain lists no pending join
+                await h.transition.postSnapshotWait({ peerIndex: 0 });
+                await h.event.waitForEventCounts(
+                    "onStateSnapshotUpdated",
+                    [{ peerId: joiner.index, expectedCount: handled + 1 }],
+                    undefined,
+                    { mode: "atLeast" }
+                );
+
+                expect(await joinerQuery.getStatus().request()).to.equal(
+                    Status.PENDING_PARTICIPANT
+                );
+                expect(
+                    (await joiner.p2pInstance.p2pSigner.getOwnJoinState()).state
+                ).to.equal("open");
+            } finally {
+                await restore();
+            }
         });
     });
 

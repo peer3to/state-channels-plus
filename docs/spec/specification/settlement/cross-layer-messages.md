@@ -298,9 +298,9 @@ able to block later admissions. The flow:
 the `JOIN` messages in the persisted inbound chain that the channel's current snapshot has not
 consumed: the walk from the inbound head stops at the snapshot's own inbound hash, so a join the
 snapshot already applied (including the original participants' open joins) is never pending.
-Reduction keeps a wider view for slash eligibility: `reduce` folds an on-chain slash for any signer
-that ever joined, so a late reducer whose channel snapshot has already moved past the slashed signers
-still computes the reduction already on chain.
+Reduction does not use this set for slash eligibility: it applies only slashes of participants of
+the reduced latest state with its pending joins ([disputes.md §5](../disputes/disputes.md)), so a late reducer whose channel snapshot has
+already moved past the slashed signers still computes the reduction already on chain.
 Pending participants are already part of the slash-excluding eligibility set for later joins and
 disputes (`getOnChainThresholdSet`, `canParticipateInDisputes`) even before any channel block
 includes them.
@@ -327,7 +327,7 @@ block is adopted on-chain (§2).
 Dispute-derived exits use the same stream: reduction applies slashes (`_slashParticipant`),
 removals/timeouts and self-removals (`_removeParticipant`) to the output state and packages the
 resulting `ExitChannel`s into one deterministic outbound block committed by the successor-fork
-genesis snapshot (`generateDisputeOutputState`). Normal exits, dispute-derived exits, and any
+genesis snapshot (`_generateDisputeOutputState`). Normal exits, dispute-derived exits, and any
 future outbound instruction are processed by the identical incremental mechanism — there is no
 separate withdrawal transaction type.
 

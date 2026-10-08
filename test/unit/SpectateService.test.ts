@@ -15,7 +15,9 @@ import {
     assertConcurrentPinnedRequests,
     assertBatchedSyncFinality,
     assertComputedSuccessorSync,
+    assertFailedSyncInstallPersistsNothing,
     assertPinnedHeight,
+    assertQueuedSuccessorBlockSurvivesSyncInstall,
     assertSyncWindowReadRace
 } from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
@@ -55,6 +57,14 @@ describe("Unit: SpectateService", function () {
     });
     it("successor sync succeeds before its genesis is installed without either blacklist", async function () {
         await assertComputedSuccessorSync(TestSession.getHarness(), true);
+    });
+    it("a successor sync whose install read fails after the VM write → throws, the VM is restored, nothing of the payload is stored, the fork stays", async function () {
+        await assertFailedSyncInstallPersistsNothing(TestSession.getHarness());
+    });
+    it("a successor block's queue timeout running while the sync install is held → the fork is unknown, not known stale: the block is probed, then stored on the successor", async function () {
+        await assertQueuedSuccessorBlockSurvivesSyncInstall(
+            TestSession.getHarness()
+        );
     });
     it("pinned sync serves the exact current height", async function () {
         await assertPinnedHeight(TestSession.getHarness(), 0);
@@ -442,7 +452,7 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("historic verification", function () {
-        it("on-chain snapshot ahead of the payload genesis on the same fork → milestones and outbound verified from it, accepted", async function () {
+        it("on-chain snapshot ahead of the payload genesis on the same fork → milestones and the latest-fork outbound run verified from it, accepted", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const forkId = h.activeForkId!;

@@ -330,8 +330,9 @@ without writing if the cache is missing or either file cannot be read.
 To correct a test's cost by hand, add it to the optional
 `test-costs.overrides.json`, keyed by
 `runner|file|full title`, e.g.
-`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4 } }`; the fields
-are `durationMs`, `cores` and `rssGb`. An invalid overrides file fails the run
+`{ "hardhat|test/e2e/foo.test.ts|Foo does bar": { "rssGb": 4, "comment": "why" } }`;
+the fields are `durationMs`, `cores` and `rssGb`, plus an optional string
+`comment` that records why the cost is set by hand. An invalid overrides file fails the run
 before anything is built, in either schedule. The defaults are placeholders in
 `scripts/e2e-parallel/shared/constants.js`, to be tuned from
 `run-metrics.json`. Workers on protocol 13/14 keep the old admission.

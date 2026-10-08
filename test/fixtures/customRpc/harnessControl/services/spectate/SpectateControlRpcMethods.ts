@@ -103,6 +103,16 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
             })
         );
     }
+
+    /** Replace the stored block at the block's height with it; returns its hash. */
+    public replaceStoredBlock(encodedSignedBlock: string): string {
+        const block = Block.fromSignedBlock(
+            Codec.decode(encodedSignedBlock, Type.SignedBlock)
+        );
+        const blocks = this.service.sm.storage.blocks;
+        blocks.deleteBlock(block.forkId, block.height);
+        return String(blocks.storeBlock(block));
+    }
 }
 
 export default SpectateControlRpcMethods;

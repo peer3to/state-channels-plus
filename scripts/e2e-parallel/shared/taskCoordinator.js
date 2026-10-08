@@ -372,7 +372,8 @@ class TaskCoordinator {
             ];
             if ((task.infrastructureRetryCount || 0) === 0) {
                 task.infrastructureRetryCount = 1;
-                this.requeue(assignment);
+                if (!this.isTaskAssigned(assignment.taskId))
+                    this.requeue(assignment);
                 return {
                     accepted: true,
                     disposition: "retry-infrastructure",
@@ -389,8 +390,10 @@ class TaskCoordinator {
             (assignment.task.starvationRetryCount || 0) === 0
         ) {
             assignment.task.starvationRetryCount = 1;
-            this.queue.push({ task: assignment.task, seq: assignment.seq });
-            this.nudgeIdleWorkers();
+            if (!this.isTaskAssigned(assignment.taskId)) {
+                this.queue.push({ task: assignment.task, seq: assignment.seq });
+                this.nudgeIdleWorkers();
+            }
             return {
                 accepted: true,
                 disposition: "retry-starvation",
@@ -422,13 +425,7 @@ class TaskCoordinator {
         for (const assignment of lost.reverse()) {
             this.assignments.delete(assignment.attemptId);
             if (this.completedTaskIds.has(assignment.taskId)) continue;
-            if (
-                [...this.assignments.values()].some(
-                    (other) => other.taskId === assignment.taskId
-                )
-            ) {
-                continue;
-            }
+            if (this.isTaskAssigned(assignment.taskId)) continue;
             this.requeue(assignment);
         }
         return lost.length;
@@ -583,6 +580,16 @@ class TaskCoordinator {
         };
         this.onResult(result);
         return result;
+    }
+
+    /**
+     * A speculative copy of the task is still running: that copy is its
+     * retry, so the task is not queued as well.
+     */
+    isTaskAssigned(taskId) {
+        return [...this.assignments.values()].some(
+            (assignment) => assignment.taskId === taskId
+        );
     }
 
     requeue(assignment) {

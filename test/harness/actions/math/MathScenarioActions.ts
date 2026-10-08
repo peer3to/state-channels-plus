@@ -376,11 +376,13 @@ export class MathScenarioActions extends ScenarioActions {
      * A disputed fork whose kill period has expired, with every peer's
      * `reduction-*` timer held so nothing reduces until a test says so:
      * preDisputeSetup, hold the timers, one invalid state transition by the
-     * malicious peer, the committed dispute, then the evidence period.
+     * malicious peer, the committed dispute, `afterDispute` while the
+     * evidence period is still open, then the evidence period.
      */
     async stageReducibleDisputedFork(options?: {
         configOverrides?: HarnessOptions["configOverrides"];
         beforeDispute?: () => Promise<void>;
+        afterDispute?: () => Promise<void>;
         disputingPeerIndices?: number[];
         peerCount?: number;
         maliciousPeerIndex?: number;
@@ -407,7 +409,20 @@ export class MathScenarioActions extends ScenarioActions {
             peersIndices: options?.disputingPeerIndices,
             expectedCount: 1
         });
-        await sleep(this.harness.event.evidencePeriodWaitMs(2));
+        await options?.afterDispute?.();
+        // The evidence period counts from the dispute window's creation, not
+        // from when every peer observed the dispute: the reduction genesis
+        // carries that time, and the successor's first writer must still be
+        // inside its window once a test releases the reductions.
+        const windowCreatedAt = Number(
+            await this.harness.channelManager.getDisputeWindowCreationTimestamp(
+                this.harness.channelId,
+                sourceForkId
+            )
+        );
+        await this.harness.event.waitUntilTimestamp(
+            windowCreatedAt + this.harness.event.evidencePeriodWaitMs(2) / 1000
+        );
         return { sourceForkId };
     }
 

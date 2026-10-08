@@ -202,7 +202,7 @@ Items already known to be missing, ahead of the full review.
 **Open question:** the P2P layer has no gossip rate-limiting policy. It is not yet designed, and
 it is required for availability, resource control, and griefing resistance.
 
-**Current:** [NetworkRpcRouter](../../../src/rpc/router/NetworkRpcRouter.ts#L43) broadcasts RPCs to all connected
+**Current:** [NetworkRpcRouter](../../../src/rpc/router/NetworkRpcRouter.ts#L18) broadcasts RPCs to all connected
 peers (full mesh), disconnects a peer that sends an oversized RPC frame, and supports
 disconnect-and-blacklist of misbehaving peers. There is no rate limiting, throttling, queueing
 policy, or backpressure — **gap**.
@@ -315,7 +315,17 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still does not verify the posted block's author signature, so a crafted writer can kill a justified forced timeout and slash the honest forcer (its linkage to the dispute's latest state is now required; see the timeout refutation section below) ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A moot candidate that is never refused still blocks later timeouts on its fork ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path is no longer a recheck case and no longer strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429), resolved): it drops the refused candidate by identity and hands the withheld posted block back to the block pipeline once ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)), and a forced timeout is submitted only where the pipeline rejected that posted block, at the target's own turn ([`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)). That narrows forcing compared with the previous behavior, which forced over any unaccepted commitment including valid calldata still in validation. Two residual risks remain and are tracked: the on-chain forced-timeout proof still does not verify the posted block's author signature, so a crafted writer can kill a justified forced timeout and slash the honest forcer (its linkage to the dispute's latest state is now required; see the timeout refutation section below) ([`FIND-TIMEOUT-2-J7S0TS`](open-findings.md#find-timeout-2-j7s0ts)); and the sibling previous-producer refusal still has no handler ([`FIND-TIMEOUT-3-H1RTAH`](open-findings.md#find-timeout-3-h1rtah)). A separate store issue is resolved: the timeout store keeps the newest candidate, so a candidate for a height the node already passed no longer blocks the next timeout on its fork, and the chain still applies the lowest timed-out height across committed disputes ([`FIND-TOSTORE-1-3BQ7EE`](open-findings.md#find-tostore-1-3bq7ee)).
+
+[`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn) closes a self-slashing path: a node whose synchronization installed a later state still held the skipped height's predecessor, so a check armed earlier could submit a timeout below the latest proved state, which the chain kills as not linked and slashes the honest disputer. [ParticipantTimeoutService](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md) now stands down unless the height is the next unfilled height, read under the state mutex at check entry and again atomically with storing the claim. Residual risk: a node whose local state lags the chain's latest proved state still holds an older next height; this guard does not cover that case.
+
+### Slash eligibility per fork
+
+[`REQ-DIS-11-WQK8P2`](../specification/disputes/disputes.md#req-dis-11-wqk8p2) closes a liveness hole: an ancestor fork's slash, still in the channel-wide on-chain slash set, was folded into every later reduction and suppressed each later timeout, so a stalled participant could never be timed out after any slash. A dispute that lists such a slash is now killed through `InvalidDisputeReason` and its disputer slashed, and a reduction neither applies it nor lets it suppress a timeout ([`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). Eligibility comes from the reduced latest state, not the channel's current snapshot, so late reducers still agree with the reduction on chain. The rule depends on the integrator's state machine: `_slashParticipant` must refuse an absent participant and must return true for every current participant, as `AStateMachine` documents. Two residual risks follow, one per direction: a machine that reports success for an absent target suppresses the timeout again, and a machine whose `_slashParticipant` returns false for a present participant also removes the timeout target, which inverts [`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine. This assessment remains pending engineer review.
+
+### Lost evidence race after a kill
+
+[`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) now states that an auditor's kill-and-dispute, more-evidence or replacement upload refused because the evidence period expired lost a first-wins race, and that this refusal is a no-op. [DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns that classification, so every caller stays live without a wrapper, except the terminal-leave fallback, which fails the leave ([`FIND-LEAVE-4-WDH0XC`](open-findings.md#find-leave-4-wdh0xc)). The two leave outcomes after a lost race (the exit fallback settles; `startDisputeFallback` fails the leave, both block-bound and on the watchdog) stay as they are and are recorded under [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj). A kill or fraud proofs go out in front of the upload through the proxy's best-effort `multicallBestEffortLast` ([StateChannelManagerProxy](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)): the kill lands even when the upload is refused, and it is not sent a second time. Forge cases in `StateChannelManagerProxyMulticall.t.sol` also cover the empty call list, a sole call that succeeds and a sole call that reverts. A kill-and-dispute refused as a whole still sends its kill alone, and a failed late kill remains fatal ([`OQ-SPEC-SP-LATE-1-T4J935` (Recovery after a late challenge fails)](../specification/open-questions.md#oq-spec-sp-late-1-t4j935) stays open). Every other refusal, read from the receipt or thrown, keeps its existing policy. Residual risk: a refused upload leaves the node's own evidence out of the window, and the no-op does not check that the committed evidence covers it ([`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj)). A refusal inside the best-effort multicall is reported in the receipt's `MulticallLastCallFailed` event, not reverted; the one decoder of that event ([evmErrorHandler](../implementation/source/src/utils/evmErrorHandler.ts.md) `multicallLastCallRevertData`) reads only logs of the manager address with that event's topic. A refusal that names no reason (bare `0x`, or the proxy's `Delegatecall failed` for a facet that reverted without data) means the last call ran out of the gas the best-effort estimate left it; it is classified by the decoded refusal of the failed all-or-nothing estimate, so a lost evidence race stays a no-op, and with no decoded estimate refusal it is fatal. The `DisputeKillAndDispute` unit suite covers the least-gas estimate, both reasonless forms, an unhandled custom refusal, and a bare `0x` after an estimate that succeeded. These assessments remain pending engineer review.
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -569,6 +579,40 @@ posted block remains the decoding exposure of [`FIND-DECODE-1-FD1V6V`](open-find
 The refutation's replay follows the same upfront stipend rule as every other replay: an under-funded
 refutation reverts with no verdict, and one funded with its cost plus the manager's replay
 requirement is judged ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+
+## Dispute outbound run — 2026-10-08
+
+A dispute's posted auditing data carries the outbound run above the chain anchor, and auditors
+persist it for later withdrawals. Until 2026-10-08 nothing verified it: the chain bound only the data
+hash, and auditors stored every posted block. A disputer could make honest auditors store forged
+exit blocks, or omit real ones a later snapshot advance needs. Now the auditor cuts the run at the
+chain's current anchor and verifies the rest up to the dispute's latest state; it persists only that
+verified part. A run that does not verify makes the dispute killable by `DisputeInvalidOutboundRun`,
+which the chain judges against its own stored anchor
+([StateProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md),
+[`REQ-DIS-12-AXY60R`](../specification/disputes/disputes.md#req-dis-12-axy60r)). The anchor only moves forward and every
+on-chain snapshot is itself outbound-verified, so a run that links one anchor also links every later
+anchor on its stream: a later anchor move cannot frame an honest disputer. The auditor's retry when
+the chain refuses its counter is reachable: the anchor advances while the audit runs (for example a
+snapshot post or a reduction lands before a slow auditor's counter check), and the auditor then
+judges the run again from the new anchor
+([DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts#L595-L600)).
+A refusal from an unchanged anchor throws. Both paths have unit cases in
+`DisputeValidationServiceOutboundRun`, so
+[`REQ-DIS-12-AXY60R.T1.P18`](../specification/disputes/disputes.md#req-dis-12-axy60r.t1.p18) is a kept,
+tested permutation (engineer decision 2026-10-08).
+The verifier checks the hash chain, the end height and the end hash before it sums balances
+([StateChannelCommon.sol](../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L401-L416)),
+so a forged balance that overflows the state machine's `addBalance` makes the run invalid instead
+of a revert: the audit and the on-chain counter both return false, and `DisputeInvalidOutboundRun`
+kills the dispute. Forge cases in `DisputeInvalidOutboundRun.t.sol` (extra block above the latest
+head, overflowing balance kills, overflowing balance is invalid and not a revert) and the E2E
+`MaxUint256`-balance case in `test/e2e/disputeValidation/outboundRun.test.ts` cover this.
+Residual: omitted auditing data posts no run, so an auditor of an omitted-data dispute relies on
+its own history or tail replay for those blocks. Residual: blocks that the upper head authenticates
+and whose balances overflow still revert; that needs a signed upper state that contains them.
+`DisputeFraudProofFacet` is 24,272 bytes deployed in the "hardhat paris" build profile, 304 bytes of
+headroom under the EIP-170 limit of 24,576.
 
 ## One signature per signer per message — 2026-09-27
 

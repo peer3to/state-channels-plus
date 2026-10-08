@@ -20,11 +20,18 @@
 ## Responsibility and observable boundary
 
 The event vocabulary the SDK's chain listener consumes (opened, snapshot updated, calldata
-posted, dispute lifecycle, slashes, stream processing, storage cleared).
+posted, dispute lifecycle, slashes, stream processing, storage cleared), plus
+`MulticallLastCallFailed(bytes revertData)`, which the sender of a best-effort multicall reads
+from its own receipt.
 
 ## Key design decisions
 
 1. **Events are the observation contract:** the client's mirror replication keys on these signatures ([`REQ-IX-7-A004VZ` (Chain observation)](../../../../specification/interactions.md#req-ix-7-a004vz)).
+2. **`MulticallLastCallFailed` is a receipt signal, not a channel event:** it carries no channel ID,
+   so the chain listener never fetches or dispatches it. The proxy's `multicallBestEffortLast`
+   emits it with the raw revert data of its refused last call
+   ([StateChannelManagerProxy](./StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)), and
+   [DisputeManager](../../src/disputeManager/DisputeManager.ts.md) decodes it from the receipt.
 
 ## Inputs, outputs, state, and side effects
 

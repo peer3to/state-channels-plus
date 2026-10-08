@@ -16,7 +16,7 @@
 ## 1. Purpose & observable contract
 
 The on-chain manager is one deployed entry contract —
-[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L25) —
+[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L24) —
 that presents the whole diamond surface at a single address while the logic is split across
 separately deployed **facets** reached by `delegatecall`. All state lives in the proxy's storage;
 facets execute in that storage context.
@@ -46,7 +46,7 @@ What it explicitly does not guarantee (Current):
   replaced or added after deployment.
 - **No EIP-2535 compliance.** Selector routing exists, but there is no `diamondCut` and no loupe;
   introspection is the single non-standard read-only
-  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79).
+  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L149).
   The Diamond resemblance is structural (proxy + selector routing + facets + shared storage), not
   standard-conformant.
 
@@ -59,7 +59,7 @@ flowchart TB
     Caller["External caller / SDK<br/>(binds StateChannelManagerInterface)"]
     subgraph ProxyBox["StateChannelManagerProxy (one address, all storage)"]
         direction TB
-        SelfOps["Implemented on the proxy<br/>open · postBlockCalldata · multicall<br/>facetAddressForSelector"]
+        SelfOps["Implemented on the proxy<br/>open · postBlockCalldata · multicall<br/>multicallBestEffortLast · facetAddressForSelector"]
         OnlySelf["onlySelf functions<br/>depositAssetsComposable · withdrawAssetsComposable<br/>executeStateTransition"]
         FB["fallback()<br/>_delegatecall(_facetForSelector(msg.sig), msg.data)"]
         Storage[("StateChannelManagerStorage<br/>config · facet addresses · snapshots · balances<br/>inbound blocks · calldata commitments · dispute data")]
@@ -95,9 +95,9 @@ The mechanics, each verified in code:
   variables; the layout is defined in exactly one place. Storage is at the default root (slot 0),
   not under namespaced Diamond-storage slots.
 - **Selector routing in the fallback.** The proxy declares no forwarder bodies. `fallback()`
-  ([#L67](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67))
+  ([#L136](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L136))
   resolves `msg.sig` through the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L285)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L414)
   and delegatecalls that facet with raw `msg.data`. Revert data still bubbles through the unchanged
   [`GeneralUtils._delegatecall`](../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6).
   The constructor registers each entry with `_registerRoute(Facet.fn.selector, facetAddress)`, so
@@ -107,17 +107,18 @@ The mechanics, each verified in code:
   collision protection, events, and upgrade tests.
 - **Functions implemented on the proxy itself.** Only what needs the proxy's own storage and
   composition: `postBlockCalldata`
-  ([#L91](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91)),
-  `open` ([#L118](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118)),
+  ([#L161](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L161)),
+  `open` ([#L194](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194)),
   `depositAssetsComposable`
-  ([#L198](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L198)),
+  ([#L284](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L284)),
   `withdrawAssetsComposable`
-  ([#L242](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242)),
+  ([#L328](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L328)),
   `executeStateTransition`
-  ([#L248](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L248)),
-  `multicall` ([#L263](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L263)),
+  ([#L334](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L334)),
+  `multicall` ([#L350](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L350)),
+  `multicallBestEffortLast` ([#L368](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L368)),
   and the read-only introspection `facetAddressForSelector`
-  ([#L79](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79)),
+  ([#L149](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L149)),
   plus the fallback and the constructor
   ([#L33](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L33)).
   A selector the proxy declares itself never reaches the fallback, so those selectors are
@@ -125,19 +126,19 @@ The mechanics, each verified in code:
   facet for them.
 - **`onlySelf` guard.** `depositAssetsComposable`, `withdrawAssetsComposable` and
   `executeStateTransition` — all three on the proxy — require `msg.sender == address(this)`
-  ([`onlySelf`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L61)).
+  ([`onlySelf`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L80)).
   They are reached by an **external CALL from the proxy to itself**, which makes `msg.sender` the
   proxy address. Facets make that call through the caller-side type,
   `StateChannelManagerInterface(address(this)).fn(...)` (e.g.
-  [JoinChannelFacet#L83](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L83)),
+  [JoinChannelFacet#L111](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L111)),
   and a facet running under delegatecall shares the proxy's `address(this)`, so the pattern works
   from inside facets. The proxy's own `open` calls itself as
   `StateChannelManagerProxy(address(this)).depositAssetsComposable(...)`
-  ([#L158](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L158)).
+  ([#L242](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242)).
   External callers can never satisfy the guard.
 - **Consumer fallback of last resort.** An unconfigured selector resolves to
   `consumerFacetAddress`
-  ([#L356](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L356)),
+  ([#L416](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L416)),
   so the integrator's `openChannelGenesis`, `deposit`, `withdraw`, and any custom consumer function
   are reachable at the proxy address. Note this forwards **every** unrouted selector — see the
   reachability concern in [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).
@@ -151,7 +152,7 @@ The mechanics, each verified in code:
       ([report](../../../source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md));
       they need no storage context;
     - the **proxy-storage views**
-      ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)) —
+      ([#L272 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L272)) —
       participants, slash sets, snapshots, balances, timing config, calldata commitments, dispute
       windows and their period predicates — are routed selectors and run under `delegatecall`, so
       they read the **proxy's** storage.
@@ -171,7 +172,7 @@ The mechanics, each verified in code:
 - **Test-only variant.**
   [`LocalDiamond`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L20) extends the
   proxy with storage-sync event handlers and a zero consumer facet for local testing. It keeps a
-  debug `_isBlockAuthentic` override ([#L444](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444)). Neither it nor production has an
+  debug `_isBlockAuthentic` override ([#L457](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L457)). Neither it nor production has an
   external block-authenticity or block-decoding selector for the client. It is not a production
   deployable.
 - **Callers use one manager binding.** `connectStateChannelManager` starts with the exact
@@ -197,24 +198,24 @@ limit is not currently the binding one, but a contract whose runtime code alread
 trends toward it too.
 
 `Current:` every mainnet-deployable contract is **inside the budget**. Measured deployed-bytecode
-sizes from the Hardhat artifacts (`solc 0.8.34`, optimizer `runs: 100`, `viaIR: true`):
+sizes from the Hardhat artifacts, build profile hardhat paris (`solc 0.8.34`, optimizer `runs: 100`, `viaIR: true`):
 
 | Contract                   | Deployed bytes | vs. 24,576 budget                                       |
 | -------------------------- | -------------: | ------------------------------------------------------- |
-| `DisputeFraudProofFacet`   |         22,716 | under — 1,860 bytes of headroom (the tightest)          |
-| `DisputeVerificationFacet` |         19,945 | under — 4,631 headroom                                  |
-| `UtilityFacet`             |         15,166 | under — 9,410 headroom                                  |
-| `StateProofFacet`          |         14,707 | under                                                   |
-| `StateChannelManagerProxy` |         12,464 | under — 12,112 headroom                                 |
-| `FraudProofFacet`          |         12,998 | under                                                   |
-| `StateSnapshotFacet`       |         11,806 | under                                                   |
-| `DisputeManagerFacet`      |          9,558 | under                                                   |
-| `JoinChannelFacet`         |          7,338 | under                                                   |
-| `LocalDiamond` (test-only) |         27,985 | over — acceptable only because it never targets mainnet |
+| `DisputeFraudProofFacet`   |         24,272 | under — 304 bytes of headroom (the tightest)            |
+| `DisputeVerificationFacet` |         19,228 | under — 5,348 headroom                                  |
+| `StateProofFacet`          |         17,886 | under — 6,690 headroom                                  |
+| `UtilityFacet`             |         15,205 | under — 9,371 headroom                                  |
+| `StateSnapshotFacet`       |         13,581 | under                                                   |
+| `StateChannelManagerProxy` |         13,119 | under — 11,457 headroom                                 |
+| `FraudProofFacet`          |         12,819 | under                                                   |
+| `DisputeManagerFacet`      |          9,630 | under                                                   |
+| `JoinChannelFacet`         |          7,748 | under                                                   |
+| `LocalDiamond` (test-only) |         31,761 | over — acceptable only because it never targets mainnet |
 
-Initcode is clear of EIP-3860: the proxy's creation bytecode is 27,375 bytes (runtime 12,464) and
-its full constructor data is 27,855 bytes; `DisputeFraudProofFacet` is 22,743 bytes; `LocalDiamond`
-is 42,276 bytes before constructor arguments and 42,724 bytes with them. All are under 49,152.
+Initcode is clear of EIP-3860: the proxy's creation bytecode is 30,106 bytes (runtime 13,119) and
+`DisputeFraudProofFacet`'s is 24,299 bytes. `LocalDiamond`'s is 48,070 bytes before constructor
+arguments, close to the 49,152 limit; it is deployed only to the local EVM.
 
 The map is chosen for constant lookup cost, scalable routing, and future upgradeability. The
 current route table is constructor-only. Mutable routing remains a separate governance design with
@@ -224,13 +225,13 @@ a routing-comparison benchmark.
 What keeps the sizes where they are, observed in source:
 
 - The proxy carries no forwarder bodies and no view wrappers — one constructor-populated selector
-  map plus the seven functions it declares itself (§2). Its runtime is 12,464 bytes.
+  map plus the seven functions it declares itself (§2). Its runtime is 13,119 bytes.
 - `StateChannelCommon` compiles to 58 bytes standalone: it declares no `public` members at all, so
   its `internal` bodies are inlined only into the facets that actually call them rather than
   duplicated into every facet's ABI (the placement rule in
   [AGENTS.md](../../../../../../AGENTS.md)).
 - `UtilityFacet` carries the ~28 proxy-storage views on top of its stateless helpers, which is why
-  it is the third-largest deployable at 15,166 bytes.
+  it is the fourth-largest deployable at 15,205 bytes.
 - The two facets nearest the ceiling, `DisputeFraudProofFacet` and `DisputeVerificationFacet`, are
   large because each hosts a whole proof family in one contract.
 - `StateProofFacet`, `DisputeVerificationFacet`, and `LocalDiamond` import `hardhat/console.sol`
@@ -242,9 +243,9 @@ What keeps the sizes where they are, observed in source:
 - **<a id="req-con-1-er48s7"></a>`REQ-CON-1-ER48S7`.** Every contract intended for mainnet deployment (the proxy, all facets, and any
   integrator consumer facet or state machine) MUST have deployed bytecode ≤ 24,576 bytes and
   initcode ≤ 49,152 bytes. `Current:` satisfied — every production deployable fits (table above);
-  the largest, `DisputeFraudProofFacet`, has 1,860 bytes of headroom, so further growth in the
+  the largest, `DisputeFraudProofFacet`, has 304 bytes of headroom, so further growth in the
   dispute-fraud-proof family is the first thing that will break the budget again. `LocalDiamond`
-  (27,985) is over and stays over; it is test-only and never targets mainnet. Both implementation
+  (31,761) is over and stays over; it is test-only and never targets mainnet. Both implementation
   requirements refine
   [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e).
 
@@ -272,7 +273,7 @@ Future Work.
    through that slot). A migration must be able to keep reading an old namespace while introducing
    a new one, so upgrades can read, migrate, and safely coexist with prior layouts.
 3. **Size headroom on the dispute facets.** [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7)
-   holds, but `DisputeFraudProofFacet` (22,716) and `DisputeVerificationFacet` (19,945) carry the
+   holds, but `DisputeFraudProofFacet` (24,272) and `DisputeVerificationFacet` (19,228) carry the
    least room. Splitting those two along their proof families is the remaining size work; the other
    deployables have no size pressure.
 
@@ -319,9 +320,9 @@ _Non-normative._
 
 ## Implementation traceability
 
-| Requirement / invariant                                | Statement                                                                                                                                                                                          | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Gap / divergence                                              |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7) | Every production deployable stays within EIP-170 runtime and EIP-3860 initcode limits.                                                                                                             | Covered               | **Here:** final compiled sizes and the exact `LocalDiamond` exemption are recorded above. **Other files:** `ContractSize.test.ts` scans all classified artifacts.                                                                                                                                                                                                                                                                                                                                              | None.                                                         |
-| [`REQ-CON-2-CBVFV9`](architecture.md#req-con-2-cbvfv9) | Build and artifact-backed deployment automatically enforce the limits.                                                                                                                             | Covered               | **Here:** network enforcement remains final; the artifact scan and `deployArtifact` are early checks; `LocalDiamond` is narrowly exempt while `allowUnlimitedContractSize` remains enabled. **Other files:** `contractSize.ts`, `deploy.ts`, and Universal Deployment cover the artifact-backed `deployArtifact` path.                                                                                                                                                                                         | Paths without full artifact data rely on network enforcement. |
-| [`INV-CON-3-QSMFC7`](architecture.md#inv-con-3-qsmfc7) | Proxy and all facets share exactly one storage layout: facets inherit `StateChannelManagerStorage` and declare no state variables of their own.                                                    | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L7); all facets via [StateChannelCommon.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L13), `UtilityFacet` included since it gained that base ([UtilityFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L13))                                                                                                 | None.                                                         |
-| [`REQ-CON-4-H4YDV5`](architecture.md#req-con-4-h4ydv5) | `onlySelf` functions (`depositAssetsComposable`, `withdrawAssetsComposable`, `executeStateTransition`) MUST revert for any external caller; they are reachable only through the proxy's self-CALL. | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L61) (`onlySelf` modifier); call sites in [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L158), [JoinChannelFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L83), [FraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150) | None.                                                         |
+| Requirement / invariant                                | Statement                                                                                                                                                                                          | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Gap / divergence                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7) | Every production deployable stays within EIP-170 runtime and EIP-3860 initcode limits.                                                                                                             | Covered               | **Here:** final compiled sizes and the exact `LocalDiamond` exemption are recorded above. **Other files:** `ContractSize.test.ts` scans all classified artifacts.                                                                                                                                                                                                                                                                                                                                               | None.                                                         |
+| [`REQ-CON-2-CBVFV9`](architecture.md#req-con-2-cbvfv9) | Build and artifact-backed deployment automatically enforce the limits.                                                                                                                             | Covered               | **Here:** network enforcement remains final; the artifact scan and `deployArtifact` are early checks; `LocalDiamond` is narrowly exempt while `allowUnlimitedContractSize` remains enabled. **Other files:** `contractSize.ts`, `deploy.ts`, and Universal Deployment cover the artifact-backed `deployArtifact` path.                                                                                                                                                                                          | Paths without full artifact data rely on network enforcement. |
+| [`INV-CON-3-QSMFC7`](architecture.md#inv-con-3-qsmfc7) | Proxy and all facets share exactly one storage layout: facets inherit `StateChannelManagerStorage` and declare no state variables of their own.                                                    | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L7); all facets via [StateChannelCommon.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L13), `UtilityFacet` included since it gained that base ([UtilityFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L13))                                                                                                  | None.                                                         |
+| [`REQ-CON-4-H4YDV5`](architecture.md#req-con-4-h4ydv5) | `onlySelf` functions (`depositAssetsComposable`, `withdrawAssetsComposable`, `executeStateTransition`) MUST revert for any external caller; they are reachable only through the proxy's self-CALL. | Covered               | [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L80) (`onlySelf` modifier); call sites in [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242), [JoinChannelFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L111), [FraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150) | None.                                                         |

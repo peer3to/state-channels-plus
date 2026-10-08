@@ -1,8 +1,10 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import {
     forgedOutboundBlock,
-    stageAnchoredSyncPayload
+    stageAnchoredSyncPayload,
+    stageOutboundAroundAnchor
 } from "@test/fixtures/HistoricSyncStaging";
 import { servedPayload } from "@test/fixtures/MilestoneSyncStaging";
 import { proofHeights } from "@test/fixtures/MilestoneSyncStaging";
@@ -148,6 +150,64 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
         expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
+    });
+
+    it("U27: a fresh requester whose chain anchor holds the fork's first outbound block and a later exit sits above it → served and stored is only the block above the anchor; its dispute carries that block and the chain accepts it", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, anchor, remaining } = await stageOutboundAroundAnchor(
+            h,
+            { finalBlocks: 2 }
+        );
+        const anchorHead = anchor.latestOutboundMessageBlockHash;
+        expect(anchor.latestOutboundMessageBlockHeight).to.equal(1);
+        await withHeldFreshRequester(h, async (requester) => {
+            const outcome = await applyPayloads(
+                h,
+                requester,
+                String(forkId),
+                ["served"],
+                { observeWalks: true, responderIndex: remaining[0] }
+            );
+            expect(outcome.outcomes[0]).to.deep.include({
+                accepted: true,
+                threw: ""
+            });
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
+            const served = outcome.served!.outboundMessageBlocksOfTheLatestFork;
+            expect(served).to.have.length(1);
+            expect(served[0].previousBlockHash).to.equal(anchorHead);
+            expect(Number(served[0].blockHeight)).to.equal(2);
+            const stored = await h.execOnHost(
+                requester,
+                (sm, a) => ({
+                    anchorBlock: !!sm.storage.outboundMessages.getMessageBlock(
+                        a.anchorHead
+                    ),
+                    aboveAnchor: sm.storage.outboundMessages
+                        .getLatestMessageBlocks()
+                        .map((block) => String(block.previousBlockHash))
+                }),
+                { anchorHead }
+            );
+            expect(stored).to.deep.equal({
+                anchorBlock: false,
+                aboveAnchor: [anchorHead]
+            });
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(
+                    requester.index,
+                    forkId
+                );
+            expect(auditingData.outboundMessageBlocks).to.deep.equal(served);
+            expect(
+                await chainAcceptsDisputeProof(
+                    h.channelManager,
+                    dispute,
+                    auditingData
+                )
+            ).to.equal(true);
+        });
     });
 
     it("U28: a fresh requester whose local diamond missed a consumed top-up → the local diamond walk is false, the chain walk accepts, the sync completes", async function () {

@@ -328,7 +328,7 @@ export default class LeaveChannelService {
             this.armWatchdog(operation);
             return;
         }
-        membership.abandonUnobservedJoin();
+        membership.dropMembership();
         this.logger.info(
             "Terminal channel leave settled: the join authorization expired and the join never reached the chain"
         );

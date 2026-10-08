@@ -28,14 +28,14 @@ state, and **nothing implements it**
 Its declarations are grouped by owner: `// implemented by StateChannelManagerProxy`
 ([#L16](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L16)) then one
 `// routed to <Facet>` block per facet — UtilityFacet
-([#L42](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L42)), DisputeManagerFacet
-([#L156](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L156)),
-DisputeVerificationFacet ([#L165](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L165)),
-FraudProofFacet ([#L199](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L199)),
-DisputeFraudProofFacet ([#L208](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L208)),
-StateSnapshotFacet ([#L223](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L223)),
-JoinChannelFacet ([#L238](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L238)) and
-StateProofFacet ([#L252](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L252)).
+([#L44](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L44)), DisputeManagerFacet
+([#L164](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L164)),
+DisputeVerificationFacet ([#L173](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L173)),
+FraudProofFacet ([#L207](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L207)),
+DisputeFraudProofFacet ([#L216](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L216)),
+StateSnapshotFacet ([#L231](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L231)),
+JoinChannelFacet ([#L246](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L246)) and
+StateProofFacet ([#L260](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L260)).
 It inherits `StateChannelManagerEvents`, so a consumer bound to this type also decodes every event
 the diamond emits.
 
@@ -54,6 +54,10 @@ self-calls into proxy-implemented operations, and TypeScript through the generat
 3. **Mutability follows the owner.** Walk predicates are view. Auditing-data omission and header
    checks are nonpayable because their dispatch paths use delegatecall. This controls whether a
    caller simulates or sends a transaction. Routing parity remains a proxy test obligation.
+
+`multicallBestEffortLast`, the proxy's best-effort multicall, is declared with the proxy-owned functions ([#L40](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L40)).
+
+`verifyOutboundRunAboveAnchor` and `isDisputeOutboundRunInvalid` are declared for typed callers ([#L144](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L144), [#L290](../../../../../../contracts/V1/StateChannelManagerInterface.sol#L290)).
 
 ## Inputs, outputs, state, and side effects
 

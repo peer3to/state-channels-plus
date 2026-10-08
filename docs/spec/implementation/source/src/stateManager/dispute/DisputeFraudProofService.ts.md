@@ -25,9 +25,11 @@ reason, and the `Timeout*` set) — one per audited dispute, first failure wins.
 
 ## Key design decisions
 
-Factories encode and store typed counter payloads; the auditor chooses the first valid fault. Per-step invalidity stores the supplied pointer and snapshots, with no private walk. New builders cover below-anchor, timeout-superseded and final-conflict. Block-specific positions remain relative to the last milestone; author evidence accepts explicit BlockPredecessor snapshot and optional block, using genesis form when absent. See [DisputeFraudProofService.ts](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts#L93).
+Factories encode and store typed counter payloads; the auditor chooses the first valid fault. Per-step invalidity stores the supplied pointer and snapshots, with no private walk. New builders cover below-anchor, timeout-superseded and final-conflict. Block-specific positions remain relative to the last milestone; author evidence accepts explicit BlockPredecessor snapshot and optional block, using genesis form when absent. See [DisputeFraudProofService.ts](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts#L94).
 
 1. **One proof per dispute** pairs with first-write-wins storage and the audit's stop-at-first rule.
+
+`createDisputeInvalidOutboundRun` stores the outbound-run counter with the committed auditing data as its payload ([#L300](../../../../../../../src/stateManager/dispute/DisputeFraudProofService.ts#L300)).
 
 ## Inputs, outputs, state, and side effects
 

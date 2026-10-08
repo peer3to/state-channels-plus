@@ -107,17 +107,16 @@ function _hadParticipantPostedEvidence(DisputeWindow storage disputeWindow, addr
     return false;
 }
 
+// A listed on-chain slash is valid only for a participant of the dispute's latest state, the disputed fork's
+// participant state. A slash of anyone else, e.g. a participant an ancestor fork already removed, invalidates the
+// dispute whatever its other reasons.
 function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory latestStateSnapshot) pure returns (bool) {
+    for (uint256 i = 0; i < input.onChainSlashes.length; i++) {
+        if (!_isAddressInArray(latestStateSnapshot.snapshotData.participants, input.onChainSlashes[i])) return false;
+    }
     bool isForcedInboundMessage =
         input.lastInboundMessageBlockHeight > latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight;
-    // onChainSlashes counts as a reason only when every entry is still in
-    // latestStateSnapshot.participants — already-slashed (and thus removed)
-    // participants can't be slashed again.
-    bool hasValidOnChainSlash = input.onChainSlashes.length > 0;
-    for (uint256 i = 0; hasValidOnChainSlash && i < input.onChainSlashes.length; i++) {
-        hasValidOnChainSlash = _isAddressInArray(latestStateSnapshot.snapshotData.participants, input.onChainSlashes[i]);
-    }
-    return input.timeout.participant != address(0) || hasValidOnChainSlash || input.selfRemoval
+    return input.timeout.participant != address(0) || input.onChainSlashes.length > 0 || input.selfRemoval
         || isForcedInboundMessage || input.requireExistingDisputeWindow;
 }
 

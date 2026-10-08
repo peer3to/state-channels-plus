@@ -208,12 +208,25 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    /**
+     * One simulated call: the executor runs it alone and reverts its state
+     * change, so the live state is never replaced and no lock is needed.
+     */
     async peekNextToWrite(encodedState: Bytes): Promise<Address> {
-        const state = await this.getState();
-        await this.setState(encodedState);
-        const nextToWrite = await this.getNextToWrite();
-        await this.setState(state);
-        return nextToWrite;
+        const callData = this.getEncodedCalldata("getNextToWriteOf", [
+            encodedState
+        ]);
+        try {
+            return Codec.decodeEvmResult<Address>(
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
+                "address"
+            );
+        } catch (error) {
+            throw this.createContextError("peekNextToWrite", error);
+        }
     }
 
     async setState(serializedState: Bytes): Promise<boolean> {

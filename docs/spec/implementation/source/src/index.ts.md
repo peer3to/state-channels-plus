@@ -25,7 +25,7 @@ structured contract-size error classes and limits thrown by exported deployment 
 
 ## Key design decisions
 
-The public type surface exports OwnJoinState from the membership owner. This declaration adds no runtime state or membership decision. See [index.ts](../../../../../src/index.ts#L86).
+The public type surface exports OwnJoinState from the membership owner. This declaration adds no runtime state or membership decision. See [index.ts](../../../../../src/index.ts#L88).
 
 The network service base is exported only as `ANetworkRpcService`. The old `ARpcService` alias is removed by engineer decision; callers use the explicit network name.
 
@@ -33,7 +33,7 @@ The standalone createContractExecutorFactory and ContractExecutorFactoryOptions 
 
 1. Public deployment failures and their error constructors are exported from the same package root,
    so consumers can use `instanceof ContractSizeLimitError` without a private path import.
-   The same export block ([#L100-L106](../../../../../src/index.ts#L100-L106)) also exports the
+   The same export block ([#L104-L110](../../../../../src/index.ts#L104-L110)) also exports the
    runtime-size check `assertArtifactRuntimeSize` from [contractSize](utils/contractSize.ts.md), so a
    consumer's own build can refuse an oversized artifact with the SDK's EIP-170 rule instead of a
    copy of it.
@@ -48,7 +48,7 @@ The standalone createContractExecutorFactory and ContractExecutorFactoryOptions 
    generic `AInternalRpcRoot` with the `RuntimeConnection` type, `AInternalRpcService`,
    `AInternalRpcMethods`, `createRoot`, `startRootWorker`, the `RootConstructor`/`RootStartContext`
    types, and the `RemoteRoot`, `InternalRpcRouter`, and `InternalTransport` types
-   ([#L116-L132](../../../../../src/index.ts#L116-L132)), so a consumer can define its own roots and create them inline, as a
+   ([#L122-L136](../../../../../src/index.ts#L122-L136)), so a consumer can define its own roots and create them inline, as a
    worker under an explicit local owner, or as a parentless worker ([createRoot](rpc/internal/createRoot.ts.md)).
    The concrete SDK roots (`P2pRuntimeHostRoot`, `ContractExecutorRoot`, the client and bridge roots)
    and their internal creation helpers are still not exported: a consumer obtains a parent only as the
@@ -59,6 +59,15 @@ The standalone createContractExecutorFactory and ContractExecutorFactoryOptions 
    created while it is active. A consumer importing it runs in the SDK's own process, so the residual
    risk is local only ([security assessment](../../../audit/security-assessment.md#host-only-guard-local-owners-parentless-workers-and-executor-drain--2026-09-29)).
    This public entry still keeps every concrete root private.
+5. **Client-side helpers a consumer needs to drive a runtime are public.** The entry exports the
+   status predicate `isCommittedParticipantStatus`
+   ([#L73](../../../../../src/index.ts#L73)), the `P2pInstance` and `P2pSetupOptions` types
+   ([#L75-L76](../../../../../src/index.ts#L75-L76)), and `errorMessage`
+   ([#L98](../../../../../src/index.ts#L98)). A consumer such as the poker client uses the SDK's own
+   status rule, runtime types, and error text instead of a copy. Their behavior is owned by
+   [flags](types/flags.ts.md), [P2pInstance](evm/P2pInstance.ts.md), and
+   [errorMessage](utils/errorMessage.ts.md); this entry only re-exports them. The timeout wait
+   helper `timeoutWaitTime` ([time](types/time.ts.md)) is not exported from this entry.
 
 ## Inputs, outputs, state, and side effects
 
@@ -106,7 +115,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Gap / divergence |
 | ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)    | Covered               | **Here:** public `LocalOnlyGuard` export ([#L68](../../../../../src/index.ts#L68)). **Other files:** host-only admission, punishment, and suppression in [LocalOnlyGuard](rpc/network/guards/LocalOnlyGuard.ts.md); bypass and response dispatch in [ANetworkRpcService](rpc/network/ANetworkRpcService.ts.md).                                                                                                                                                                                                      | None.            |
-| [`REQ-RUNTIME-3-VQXW59`](../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** generic root and creation exports ([#L116-L132](../../../../../src/index.ts#L116-L132)) and the local context types ([#L26](../../../../../src/index.ts#L26), [#L41](../../../../../src/index.ts#L41)). **Other files:** creation, parentless workers, and cleanup in [createRoot](rpc/internal/createRoot.ts.md); owner passing in [P2pRuntimeHostRoot](rpc/internal/roots/P2pRuntimeHostRoot.ts.md) and [ContractExecutorService](rpc/internal/services/contractExecutor/ContractExecutorService.ts.md). | None.            |
+| [`REQ-RUNTIME-3-VQXW59`](../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** generic root and creation exports ([#L122-L136](../../../../../src/index.ts#L122-L136)) and the local context types ([#L26](../../../../../src/index.ts#L26), [#L41](../../../../../src/index.ts#L41)). **Other files:** creation, parentless workers, and cleanup in [createRoot](rpc/internal/createRoot.ts.md); owner passing in [P2pRuntimeHostRoot](rpc/internal/roots/P2pRuntimeHostRoot.ts.md) and [ContractExecutorService](rpc/internal/services/contractExecutor/ContractExecutorService.ts.md). | None.            |
 
 ## Component test obligations
 

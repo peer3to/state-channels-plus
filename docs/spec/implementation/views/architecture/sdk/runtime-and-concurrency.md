@@ -36,7 +36,7 @@ a requirement.
 | [src/evm/index.ts](../../../../../../src/evm/index.ts#L1)                                                           | Not applicable — export barrel only                                                                                                                                                                     |
 | [src/evm/node/evmJumpdestCache.ts](../../../../../../src/evm/node/evmJumpdestCache.ts#L1)                           | [`REQ-RUN-1-FSV0SH`](runtime-and-concurrency.md#req-run-1-fsv0sh), [`REQ-RUN-4-NK15QS`](runtime-and-concurrency.md#req-run-4-nk15qs)                                                                    |
 | [src/evm/node/workerCpuProfiler.ts](../../../../../../src/evm/node/workerCpuProfiler.ts#L1)                         | Not applicable — optional diagnostics only                                                                                                                                                              |
-| [src/evm/signer/ClientChainSigner.ts](../../../../../../src/evm/signer/ClientChainSigner.ts#L2)                     | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
+| [src/evm/signer/ClientChainSigner.ts](../../../../../../src/evm/signer/ClientChainSigner.ts#L22)                    | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
 | [src/evm/signer/DeploymentBridgeSigner.ts](../../../../../../src/evm/signer/DeploymentBridgeSigner.ts#L1)           | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
 | [src/evm/signer/LocalContractExecutorSigner.ts](../../../../../../src/evm/signer/LocalContractExecutorSigner.ts#L1) | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
 | [src/evm/signer/NoopEventProvider.ts](../../../../../../src/evm/signer/NoopEventProvider.ts#L1)                     | Not applicable — signer compatibility adapter with no protocol policy                                                                                                                                   |
@@ -67,10 +67,10 @@ over a **paired port** ([`RuntimePort`](../../../../../../src/transport/RuntimeP
 endpoints of a pair may:
 
 - both live in one execution context — an **in-process** `MessageChannel` pair
-  ([`createRuntimeChannel`](../../../../../../src/transport/node/RuntimeChannel.ts#L1)),
+  ([`createRuntimeChannel`](../../../../../../src/transport/node/RuntimeChannel.ts#L47)),
   or
 - have one endpoint **transferred to a worker** — a transferable port
-  ([`createTransferableChannel`](../../../../../../src/transport/node/RuntimeChannel.ts#L1)
+  ([`createTransferableChannel`](../../../../../../src/transport/node/RuntimeChannel.ts#L59)
   plus [`createRootWorker`](../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts)).
 
 The message protocol and the observable behavior are **identical in both
@@ -79,7 +79,7 @@ cases**. The consequences are the whole point of the design:
 - Callers keep **no separate inline and worker implementations**. The same
   [`P2pRuntimeClientRoot`](../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts) drives
   the host over whichever port it is handed; the same
-  [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205) runs
+  [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L170) runs
   the graph regardless of which side of the boundary it is on.
 - A component **can move into a worker when profiling shows a real limit**,
   without changing its higher-level communication contract. The move is a
@@ -122,7 +122,7 @@ Three execution contexts, connected only by serialized ports:
    only client-realm proxy objects: the two client signers, a main-thread
    contract mirror, and the client `EventBus`. It owns **no node state**.
 2. **SDK runtime host.** Built by
-   [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205). It
+   [`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L170). It
    **owns the node state** (`StateManager` and everything it owns — managers,
    storage, RPC services, transports, event listener), **owns the signing key**,
    and **owns the chain nonce** (built on its own provider/wallet in
@@ -200,7 +200,7 @@ and the **diamond** instance embedded in the `LocalDiamond` for dispute replay.
 That split is a _logical_ separation to keep dispute replay from corrupting live
 state. It is **orthogonal to the thread boundary**: both instances and the
 `LocalDiamond` live behind the _same_ contract executor
-([`buildRuntime`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L307) passes one
+([`buildRuntime`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L310) passes one
 `contractExecutor` and both addresses to
 `createStandaloneFromLocalStateMachineWithExecutor`). `VM_DEDICATED_THREAD` moves
 the **whole EVM** — both instances — behind the executor worker; it never moves
@@ -226,7 +226,7 @@ once (precedence: overrides > `process.env` > `peer3.config.ts` > defaults,
 [../reference/configuration.md](../../operations/configuration.md)) into the
 `SetupPayload`, and the worker re-establishes the identical singleton via
 `createConfig(payload.config)`
-([host root](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L153)).
+([host root](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L141)).
 A worker that re-read `process.env` could diverge from the main thread; it
 deliberately does not.
 
@@ -286,8 +286,8 @@ the worker before the request protocol begins
 - **Host construction failure** posts a `hostError` and closes the port; the
   client creation rejects and all pending requests reject
   (`dispatchHostError`). A provider-creation failure before the graph exists is
-  handled the same way ([`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L205)
-  early `catch`).
+  handled the same way ([`P2pRuntimeHostRoot.start`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L174)
+  provider creation).
 - **Autonomous host errors** (a worker `unhandledRejection`/`uncaughtException`
   not tied to a request) are funnelled over the port as `hostError`
   ([`onUnhandledWorkerError`](../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts)).
@@ -308,7 +308,7 @@ the worker before the request protocol begins
   replying to `dispose` it closes its remaining handles
   ([`closeRootWorker`](../../../../../../src/rpc/internal/node/RootWorkerRuntime.ts))
   and the thread ends when the loop drains
-  ([`createWorkerShutdown`](../../../../../../src/evm/node/workerShutdown.ts#L14) waits on
+  ([`createWorkerShutdown`](../../../../../../src/evm/node/workerShutdown.ts#L15) waits on
   `exit` with no timeout). The recorded reason: `terminate()`,
   worker-side `process.exit()`, or exiting the process with a live worker all
   abort the whole process with `uv_loop_close() while having open handles` when
@@ -324,7 +324,7 @@ encodings layered on top for values structured clone handles poorly or that must
 be canonical:
 
 - **Bigints.** ethers transaction fields cross as decimal/quantity strings
-  ([`chainSignerSerialization`](../../../../../../src/rpc/internal/services/chainSigner/chainSignerSerialization.ts#L1):
+  ([`chainSignerSerialization`](../../../../../../src/rpc/internal/services/chainSigner/chainSignerSerialization.ts#L69):
   `toQuantity`/`getBigInt` over the `BIGINT_FIELDS` set). Protocol structs cross
   as canonical `Codec.encode` strings and are decoded inside the host endpoint
   (`joinChannel`/`topUpBalance`/`collectJoinChannelConfirmation` use
@@ -371,11 +371,11 @@ a worker that cannot negotiate WebRTC itself
 ([`doesWorkerNeedMainThreadBridge`](../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCProvider.ts#L31)),
 the host mints a second `MessageChannel`, **transfers its main-thread end back to
 the client** as a `webRTCBridgePort` message, and registers the worker end with
-[`WorkerBridgeWebRTCConnectionFactory`](../../../../../../src/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts#L209).
+[`WorkerBridgeWebRTCConnectionFactory`](../../../../../../src/rpc/network/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts#L64).
 The client surfaces it on `P2pInstance.webRTCBridgePort`;
 `installMainThreadBridgeIfOnMainThread()` (called automatically by `p2pSetup`)
 wires it to the real `RTCPeerConnection`
-([`WebRTCMainThreadBridge`](../../../../../../src/rpc/internal/roots/WebRTCMainThreadBridge.ts#L1)),
+([`WebRTCMainThreadBridge`](../../../../../../src/rpc/internal/roots/WebRTCMainThreadBridge.ts#L49)),
 or, under further worker nesting, leaves it for the consumer to bubble up. This
 is the one place the "identical observable behavior" contract needs a
 platform-specific side channel, and it is handled by adding _another_ transferred
@@ -441,7 +441,7 @@ justifies the cost**.
 - **Worker boundaries: both default-on, uniformly ([`REQ-RUN-13-27YE2T`](runtime-and-concurrency.md#req-run-13-27ye2t)).** The target architecture
   places the runtime host **and** the local EVM executor each in their own worker, leaving
   the application thread free. _Current:_ `VM_DEDICATED_THREAD` and `RUN_SDK_IN_THREAD` both
-  default to `false` ([`config.ts`](../../../../../../src/utils/config.ts#L1);
+  default to `false` ([`config.ts`](../../../../../../src/utils/config.ts#L66);
   [../reference/configuration.md](../../operations/configuration.md)), so the inline path is what
   ships. Divergence class: **missing** — the intent is settled; flipping the defaults is
   unfinished work, gated on the budgets of §6.2 and on the equivalence criterion (§11.6)

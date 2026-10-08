@@ -25,7 +25,11 @@ Service/RpcMethods re-exports incl. the WebRTC bridge installer and negotiation 
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **The join lifetime default has one owner.** `DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS` is
+   re-exported from [config](../../../utils/config.ts.md), its owner, beside `JoinChannelService`
+   ([index.ts#L27](../../../../../../../../src/rpc/network/services/index.ts#L27)), so existing importers of
+   the services barrel read the same value the runtime configuration defaults to. No other behavior
+   of its own.
 
 ## Inputs, outputs, state, and side effects
 

@@ -4,6 +4,11 @@ import {
     servedPayload,
     syncFromResponder
 } from "@test/fixtures/MilestoneSyncStaging";
+import {
+    assertConflictBeforeSyncCommit,
+    assertConflictWhileHoldingBase,
+    assertDisposalDuringSyncInstall
+} from "@test/fixtures/SyncInstallStaging";
 import { stageSpectatorBehindUnfinalizedTail } from "@test/fixtures/SyncReplayBaseStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -102,5 +107,29 @@ describe("Unit: SpectateService replay base", function () {
                 .query.getLatestStateMachineStateHash(forkId)
                 .request()
         );
+    });
+
+    describe("staged install", function () {
+        it("a block conflicting with the served history lands between staging and commit → VM restored, nothing published, fork and status unchanged", async function () {
+            await assertConflictBeforeSyncCommit(
+                TestSession.getHarness(),
+                true
+            );
+        });
+
+        it("no conflict between staging and commit → the held install commits and the sync reaches the tip", async function () {
+            await assertConflictBeforeSyncCommit(
+                TestSession.getHarness(),
+                false
+            );
+        });
+
+        it("requester holds the base and a stored block conflicts with the served history → aborted, local state kept", async function () {
+            await assertConflictWhileHoldingBase(TestSession.getHarness());
+        });
+
+        it("runtime stops while the install is held → nothing installed, no verdict on the responder", async function () {
+            await assertDisposalDuringSyncInstall(TestSession.getHarness());
+        });
     });
 });

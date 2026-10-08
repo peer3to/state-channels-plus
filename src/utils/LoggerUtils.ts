@@ -704,6 +704,27 @@ export class LoggerUtils {
         };
     }
 
+    /**
+     * A dispute window's deadlines and the seconds left until each by the
+     * chain-estimated clock. A negative remainder means the period is over.
+     */
+    static getDisputeDeadlineMetadata(deadlines: {
+        killPeriodEnd: number;
+        evidencePeriodEnd?: number;
+    }) {
+        const now = Clock.getTimeInSeconds();
+        const { killPeriodEnd, evidencePeriodEnd } = deadlines;
+        return {
+            killPeriodEnd,
+            killPeriodRemainingSeconds: killPeriodEnd - now,
+            evidencePeriodEnd,
+            evidencePeriodRemainingSeconds:
+                evidencePeriodEnd === undefined
+                    ? undefined
+                    : evidencePeriodEnd - now
+        };
+    }
+
     static getMessageStructMeta(message: MessageStruct) {
         const messageType = String(message.messageType);
         const decodedMessageType = this.decodeMessageType(messageType);

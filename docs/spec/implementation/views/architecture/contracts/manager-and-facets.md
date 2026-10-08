@@ -15,7 +15,7 @@
 
 ## 1. Purpose & observable contract
 
-[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L25)
+[`StateChannelManagerProxy`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L24)
 is the single on-chain address that governs channels: opening, joins/top-ups, block-calldata
 commitments, disputes, fraud proofs, state proofs, snapshot advancement, and (through the
 integrator's consumer facet) deposits and withdrawals. It implements seven functions itself and
@@ -53,17 +53,18 @@ which declares the complete surface, and against the implementing proxy/facet bo
 ### 2.0 How a call reaches its contract
 
 - Seven functions are declared on the proxy and dispatch directly:
-  [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118),
-  [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91),
-  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L198),
-  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L242),
-  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L248),
-  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L263), and
-  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L79).
+  [`open`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194),
+  [`postBlockCalldata`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L161),
+  [`depositAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L284),
+  [`withdrawAssetsComposable`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L328),
+  [`executeStateTransition`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L334),
+  [`multicall`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L350),
+  [`multicallBestEffortLast`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L368), and
+  [`facetAddressForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L149).
 - Everything else reaches
-  [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L67),
+  [`fallback()`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L136),
   which delegatecalls the facet that the shared-storage route map
-  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L285)
+  [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L414)
   returns for `msg.sig`, passing raw `msg.data`.
 - The constructor installs routes with `_registerRoute(Facet.fn.selector, facetAddress)`. Duplicate
   registration and codeless route targets revert, lookup is constant-time, and runtime mutation is not exposed. Mutable
@@ -72,17 +73,20 @@ which declares the complete surface, and against the implementing proxy/facet bo
   where the fallback would send a selector. Selectors the proxy declares itself never reach the
   fallback, so they are not in the table and this view reports the consumer facet for them.
 - **Unconfigured selectors** resolve to `consumerFacetAddress`
-  ([#L356](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L356)) —
+  ([#L416](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L416)) —
   the fallback of last resort, which is how the integrator's consumer functions are reachable.
 - **Deliberate exclusions (`notRouted`).** Some `public`/`external` facet functions are internal
   steps of a larger operation and are intentionally kept off the diamond surface, so they fall
   through to the consumer facet like any unknown selector. The authoritative list, with the reason
   per function, is
-  [test/fixtures/ProxySelectorRoutingFixture.ts](../../../../../../test/fixtures/ProxySelectorRoutingFixture.ts#L33):
+  [test/fixtures/ProxySelectorRoutingFixture.ts](../../../../../../test/fixtures/ProxySelectorRoutingFixture.ts#L38):
     - `DisputeVerificationFacet`: `checkDisputeAuditingDataCommitment`,
-      `computeDisputeOutputSnapshotData`, `computeDisputeOutputState`, `generateDisputeOutputState`,
+      `computeDisputeOutputSnapshotData`, `computeDisputeOutputState`,
       `isDisputeOutputCorrect` (internal verification/computation steps; `LocalDiamond` delegatecalls
-      the computation helpers with its own gas budget) and `killDispute` (driven from inside the
+      the computation helpers with the dispute execution gas budget and reverts
+      `ErrorDisputeExecutionOutOfGas(gasLimit, gasUsed)` when a computation uses it up, also when the
+      out-of-gas happens inside a nested state-machine call; any other failure keeps its own revert
+      data) and `killDispute` (driven from inside the
       dispute pipeline; exposing it would widen the attack surface).
     - `FraudProofFacet`: `runFraudProof` — a single step driven by `applyFraudProofs`, not callable
       on its own.
@@ -98,6 +102,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
 | `topUpBalance(JoinChannelConfirmation memory, bytes32 expectedSnapshotHash, bytes32 expectedForkId)` | `JoinChannelFacet`        | Balance top-up for an existing participant. See §4.1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `postBlockCalldata(SignedBlock memory, uint256 maxTimestamp)`                                        | (self)                    | Persists the commitment `keccak256(abi.encode(signedBlock, block.timestamp))` under `[channelId][msg.sender][forkId][transactionCnt]`. Guards: `block.timestamp <= maxTimestamp` (`RaceConditionBlockCalldataTimestampTooLate`), no overwrite (`ErrorBlockCalldataAlreadyPosted`), `msg.sender` must equal the block's author (`ErrorBlockCalldataMsgSenderNotBlockAuthor`). Does **not** verify the block — the sender vouches for the data; junk is later slashable against the commitment. Emits `BlockCalldataPosted`. Data-availability role: [../security/data-availability.md](../../../../specification/security/data-availability.md). |
 | `multicall(bytes[] calldata)`                                                                        | (self, delegatecall loop) | Executes each call against the proxy itself, bubbling the first revert. Enables atomic compositions (e.g. upload dispute + reduce). A routed selector inside a call still reaches its facet, via the proxy's own fallback.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `multicallBestEffortLast(bytes[] calldata)`                                                          | (self, delegatecall loop) | The same loop, except that a revert of the last call keeps the earlier effects and emits `MulticallLastCallFailed(revertData)` instead of reverting. The SDK sends a dispute upload last behind the kill and fraud proofs it carries.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `facetAddressForSelector(bytes4 sig) returns (address)`                                              | (self, view)              | Read-only introspection: the facet the fallback would delegatecall for `sig`, or the consumer facet when `sig` is unrouted. See §2.0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `fallback()`                                                                                         | routed facet / consumer   | Delegatecalls `_facetForSelector(msg.sig)` with raw `msg.data`; an unrouted selector lands on the integrator consumer facet (custom functions, `deposit`, `withdraw`, `openChannelGenesis`). Reachability caveat: [state-machine-base.md §7](./state-machine-base.md#7-aconsumerfacet-the-integrator-consumer-contract).                                                                                                                                                                                                                                                                                                                        |
 
@@ -127,23 +132,25 @@ Behavior: [../protocol/disputes.md](../../../../specification/disputes/disputes.
 Behavior: [../protocol/state-proofs.md](../../../../specification/disputes/state-proofs.md),
 [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md).
 
-| Function                                                                                                                                                   | Routes to                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                        | `StateProofFacet`          |
-| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                | `StateProofFacet`          |
-| `verifyMilestones(ProofWalkInput memory) returns (ProofWalkResult memory)`                                                                                 | `StateProofFacet`          |
-| `getAnchorSnapshot`                                                                                                                                        | `StateProofFacet`          |
-| `isStateProofStepInvalid`                                                                                                                                  | `StateProofFacet`          |
-| `isBlockChallengeEligible`                                                                                                                                 | `StateProofFacet`          |
-| `isStateProofBelowOnChainAnchor`                                                                                                                           | `StateProofFacet`          |
-| `isTimeoutSupersededByFinalState`                                                                                                                          | `StateProofFacet`          |
-| `isDisputeConflictingWithFinalState`                                                                                                                       | `StateProofFacet`          |
-| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)` | `StateProofFacet`          |
-| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                           | `StateSnapshotFacet`       |
-| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`             | `StateSnapshotFacet`       |
-| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                        | `DisputeVerificationFacet` |
-| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                  | `UtilityFacet` (view)      |
-| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                     | `UtilityFacet` (pure)      |
+| Function                                                                                                                                                                        | Routes to                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `isCorrectLatestState(Dispute memory, SnapshotData memory genesisStateSnapshotData) returns (bool)`                                                                             | `StateProofFacet`          |
+| `isInvalidBlockStructureInStateProof(StateProof memory, uint256 blockIndex) returns (bool)`                                                                                     | `StateProofFacet`          |
+| `verifyMilestones(ProofWalkInput memory) returns (ProofWalkResult memory)`                                                                                                      | `StateProofFacet`          |
+| `getAnchorSnapshot`                                                                                                                                                             | `StateProofFacet`          |
+| `isStateProofStepInvalid`                                                                                                                                                       | `StateProofFacet`          |
+| `isBlockChallengeEligible`                                                                                                                                                      | `StateProofFacet`          |
+| `isStateProofBelowOnChainAnchor`                                                                                                                                                | `StateProofFacet`          |
+| `isTimeoutSupersededByFinalState`                                                                                                                                               | `StateProofFacet`          |
+| `isDisputeConflictingWithFinalState`                                                                                                                                            | `StateProofFacet`          |
+| `isDisputeOutboundRunInvalid(Dispute memory, DisputeInvalidOutboundRun memory) returns (bool)`                                                                                  | `StateProofFacet`          |
+| `isMilestoneFinal(bytes32 forkId, SnapshotData memory thresholdSnapshotData, MilestoneProof memory) returns (bool isFinal, bytes32 finalizedSnapshotHash)`                      | `StateProofFacet`          |
+| `updateStateSnapshotFork(bytes32 channelId, StateSnapshot memory newStateSnapshot, MessageBlock[] memory outboundMessageBlocks)`                                                | `StateSnapshotFacet`       |
+| `updateStateSnapshotSameFork(bytes32 channelId, MilestoneProof[] memory, StateSnapshot[] memory, MessageBlock[] memory outboundMessageBlocks)`                                  | `StateSnapshotFacet`       |
+| `verifyBalanceInvariantCheckSnapshot(bytes32 channelId, SnapshotData memory, bytes memory encodedStateMachineState) returns (bool)`                                             | `DisputeVerificationFacet` |
+| `verifyOutboundMessageBlocks(MessageBlock[] memory, SnapshotData memory lowerSnapshot, SnapshotData memory upperSnapshot) returns (bool)`                                       | `UtilityFacet` (view)      |
+| `verifyOutboundRunAboveAnchor(MessageBlock[] memory, SnapshotData memory anchorData, SnapshotData memory latestData) returns (bool isValid, MessageBlock[] memory aboveAnchor)` | `UtilityFacet` (view)      |
+| `pruneOutboundMessageBlocks(MessageBlock[] memory, bytes32 lowerHash) returns (MessageBlock[] memory)`                                                                          | `UtilityFacet` (pure)      |
 
 ### 2.4 Views
 
@@ -194,7 +201,7 @@ All three are declared on the proxy and callable only via its self-CALL, which f
 
 Constructor parameters; a `0` argument selects the default. Values are seconds
 (`gasLimit` is gas). Held as `internal` storage on
-[`StateChannelManagerStorage`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L9)
+[`StateChannelManagerStorage`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L14-L19)
 and read externally through the routed views in §2.4.
 
 | Parameter                                | Default (verified constant) | Role (thin — see protocol docs)                                                                                                                                                                                                                                                                                               |
@@ -228,7 +235,7 @@ declaration and the implementation in sync.
 
 ### 4.1 `JoinChannelFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L1).
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L7).
 `joinChannel` / `topUpBalance` share `_processJoinChannel(…, isTopUp)`:
 
 - `msg.sender` must be the joining participant (`ErrorJoinChannelInvalidSubmitter`); the join must
@@ -249,9 +256,10 @@ declaration and the implementation in sync.
 
 ### 4.2 `StateSnapshotFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L1). Advances the
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L8). Advances the
 canonical on-chain snapshot; both paths prune already-processed outbound blocks, verify the
-outbound chain between old and new snapshot (`_verifyOutboundMessageBlocks`), process each
+outbound chain between old and new snapshot (`_verifyOutboundMessageBlocks`: links, heights and
+the endpoint first, then the balance sum, so a forged balance is refused, not a panic), process each
 outbound message (`EXIT` → consumer `withdraw`; unknown types revert
 `ErrorOutboundMessageTypeUnsupported`), and enforce `withdrawals ≤ deposits`
 (`CantWithdrawMoreThanDeposits`). Emits `StateSnapshotUpdated`, `OutboundMessagesProcessed`,
@@ -276,13 +284,14 @@ outbound message (`EXIT` → consumer `withdraw`; unknown types revert
 `getAnchorSnapshot` exposes that start; the local-only trusted-start entry belongs to LocalDiamond.
 `isCorrectLatestState` binds the latest claim. The facet also owns `isStateProofStepInvalid`,
 `isStateProofBelowOnChainAnchor`, `isTimeoutSupersededByFinalState`,
-`isDisputeConflictingWithFinalState`, and `isBlockChallengeEligible`. Block-structure and
+`isDisputeConflictingWithFinalState`, `isDisputeOutboundRunInvalid` (the posted outbound run judged
+from the stored anchor; a forged balance gives an invalid verdict, not a revert), and `isBlockChallengeEligible`. Block-structure and
 single-milestone checks reuse the same common mechanics. The proof contains milestones only;
 its last milestone carries the tail. No XOR format or separate signed-block path remains.
 
 ### 4.4 `DisputeManagerFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L1). Opens and
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L8). Opens and
 extends dispute windows. `uploadDispute` (no calldata; `postedAuditingData` must be false) and
 `uploadDisputeWithCalldata` (auditing data must hash to `disputeAuditingDataHash`) share
 `_uploadDispute`:
@@ -305,28 +314,33 @@ extends dispute windows. `uploadDispute` (no calldata; `postedAuditingData` must
 
 ### 4.5 `DisputeVerificationFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L1). The
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L10). The
 reduction engine ([../protocol/disputes.md](../../../../specification/disputes/disputes.md)): `reduce` (deterministic,
 order-independent fold of the committed disputes: latest block by height with hash tie-break,
-slash-set union filtered to snapshot ∪ pending, lowest-height timeout, self-removals,
-inbound tip as of window expiry), `reduceOutputToSnapshotData` (verifies linkage of the supplied
-latest snapshot/state/inbound blocks, applies slashes > timeout precedence, produces the successor
+slash-candidate union of on-chain and listed slashes with no participant filter, lowest-height
+timeout, self-removals, inbound tip as of window expiry), `reduceOutputToSnapshotData` (verifies
+linkage of the supplied latest snapshot/state/inbound blocks, applies slashes > timeout precedence:
+the timeout joins the removals only when no slash took effect, which relies on the state machine's
+`_slashParticipant` returning true for every current participant; produces the successor
 `SnapshotData` + modified state + outbound block), `reduceAndFinalize` (commit with
-`expectedReducedForkId` idempotence), `challengeDisputeReduction` (recompute; wrong stored result →
+`expectedReducedForkId` idempotence; no caller eligibility check, open per
+[`OQ-27-GT4W09` (Reducer eligibility is disabled)](../../../../specification/open-questions.md#oq-27-gt4w09)), `challengeDisputeReduction` (recompute; wrong stored result →
 slash the reducer and replace it; correct stored result → slash the challenger),
 `killDispute` (remove a committed dispute during the kill period and slash its disputer),
-`computeDisputeOutputSnapshotData` / `computeDisputeOutputState` / `generateDisputeOutputState`
-(output-state construction helpers, also used by honest provers), `isDisputeOutputCorrect`, and
+`computeDisputeOutputSnapshotData` / `computeDisputeOutputState`
+(output-state construction helpers, also used by honest provers; their internal `_generateDisputeOutputState` loads
+the state machine state once, applies joins, slashes and removals to it, reads it back once and
+leaves it loaded, so the callers read the output participants without a second `setState`), `isDisputeOutputCorrect`, and
 `verifyBalanceInvariantCheckSnapshot` (the aggregate `totalDeposits == totalWithdrawals +
 getTotalStateBalance()` check protecting late joiners —
 [../protocol/cross-layer-messages.md](../../../../specification/settlement/cross-layer-messages.md)). Contains live
-`console.log` calls. At 19,945 deployed bytes it is the second-largest production deployable
+`console.log` calls. At 19,228 deployed bytes (hardhat paris build profile) it is the second-largest production deployable
 ([architecture.md §3](./architecture.md#3-deployment-size-constraint)). Six of its functions are
 deliberately unrouted (§2.0).
 
 ### 4.6 `FraudProofFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L1). Block-level fraud
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L9). Block-level fraud
 ([../protocol/fraud-proofs.md](../../../../specification/disputes/fraud-proofs.md)). `applyFraudProofs(proofs, context)`:
 for each not-yet-slashed target, `runFraudProof` dispatches on `FraudProofType`
 (`BlockDoubleSign`, `BlockInvalidStateTransition` — full re-execution via
@@ -339,16 +353,16 @@ later reductions.
 
 ### 4.7 `DisputeFraudProofFacet`
 
-[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L1). Proves a
+[Source](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L15). Proves a
 _dispute_ fraudulent during its kill period. `applyDisputeFraudProofs(proofs)`: skips
 uncommitted (already-killed) disputes, requires the kill period open, dispatches on
 `DisputeFraudProofType` (17 types across dispute-content and timeout families —
-[DisputeFraudProofTypes.sol](../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L3) /
-[ProofTypes.sol](../../../../../../contracts/V1/types/ProofTypes.sol#L3)). A valid proof kills the dispute
+[DisputeFraudProofTypes.sol](../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L5) /
+[ProofTypes.sol](../../../../../../contracts/V1/types/ProofTypes.sol#L79)). A valid proof kills the dispute
 and slashes its disputer (`killDispute` → `DisputeKilled`); an invalid proof slashes the submitter.
 Also exposes `validateTimeoutCalldataPostedProof` and the helper predicates routed to it (§2.2).
-At 22,716 deployed bytes it is the largest deployable and the one closest to the EIP-170 ceiling —
-1,860 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
+At 24,272 deployed bytes (hardhat paris build profile) it is the largest deployable and the one closest to the EIP-170 ceiling —
+304 bytes of headroom ([architecture.md §3](./architecture.md#3-deployment-size-constraint)).
 
 ### 4.8 `UtilityFacet`
 
@@ -362,8 +376,9 @@ deployment with two surfaces, which is why it is
   `retrieveSignerAddress`, `decodeBlock` / `tryDecodeBlock`, and the address/bytes/exit-channel
   array operations. They need no storage context, so the facet's own storage is irrelevant to them.
 - **Proxy-storage views, reached by delegatecall** through the routing table
-  ([#L262 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)):
-  the whole of §2.4 plus `verifyOutboundMessageBlocks` / `pruneOutboundMessageBlocks` (§2.3). Each
+  ([#L272 onward](../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L272)):
+  the whole of §2.4 plus `verifyOutboundMessageBlocks` / `verifyOutboundRunAboveAnchor` /
+  `pruneOutboundMessageBlocks` (§2.3). Each
   is a thin wrapper over a `StateChannelCommon` `internal` accessor or a direct read of
   `disputeData`, so they need the shared layout and read the **proxy's** storage under
   delegatecall. That requirement is what makes the `StateChannelCommon` base necessary.
@@ -371,12 +386,12 @@ deployment with two surfaces, which is why it is
 `isGenesisSnapshotWithoutTimeCheck` and `isSnapshotNewer` are `pure`, so the storage context is
 irrelevant to them; both are routed, and `isGenesisSnapshotWithoutTimeCheck` is additionally
 declared on `UtilityFacetInterface`. Observed inconsistency in
-[`StateChannelCommon._getGenesisTimestamp`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L73):
+[`StateChannelCommon._getGenesisTimestamp`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L90):
 one branch reaches it through the routed self-call
 `StateChannelManagerInterface(address(this))`
-([#L85](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L85)) while
+([#L102](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L102)) while
 another reaches the same `pure` function by plain CALL on the facet
-([#L102](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L102)).
+([#L119](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L119)).
 The results agree; the routed path just costs an extra CALL plus a delegatecall.
 
 ### 4.9 Consumer facet & test-only contracts
@@ -390,7 +405,7 @@ forwarder for library tests) are test-support only and MUST NOT be deployed to p
 
 Block authenticity has no external selector: `_isBlockAuthentic` is internal on
 `StateChannelCommon`, used by the fraud-proof and state-proof facets. `LocalDiamond` keeps its
-debug [`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L444) override for mirrored proof checks and adds no client-facing
+debug [`_isBlockAuthentic`](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L457) override for mirrored proof checks and adds no client-facing
 decoding entry: the client decodes blocks with `Codec` and checks author signatures under the
 signature carve-out of [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) (decoding parity is open,
 [`FIND-DECODE-1-FD1V6V`](../../../../audit/open-findings.md#find-decode-1-fd1v6v)).
@@ -446,7 +461,7 @@ SDK's chain listener consumes these. All verified:
 
 ## 7. Errors
 
-[`Errors.sol`](../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L1) — custom errors in two
+[`Errors.sol`](../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L4) — custom errors in two
 families:
 
 - **Validation errors (`Error*`)** — the submitted argument is invalid regardless of timing: bad
@@ -507,7 +522,7 @@ _Non-normative._
   `OutboundMessagesProcessed` event (§6); gas-limiting `verifyMilestones`/`verifyStateProof`
   against unverifiable oversized proofs (`StateProofFacet` comment).
 - Replace the `hasPosted` address array with a participant bitmask (source comment in
-  [DisputeTypes.sol](../../../../../../contracts/V1/types/DisputeTypes.sol#L3)).
+  [DisputeTypes.sol](../../../../../../contracts/V1/types/DisputeTypes.sol#L96)).
 - Rename `ErrorDisputeThrottled` into one family consistently.
 - Per-channel state-machine mapping (today one implementation serves all channels).
 - Unit coverage for the gaps in §8.
@@ -516,8 +531,8 @@ _Non-normative._
 
 | Requirement / invariant                                        | Statement                                                                                                                                                                                                                                | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                     | Gap / divergence |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CON-11-VDGJYA`](manager-and-facets.md#req-con-11-vdgjya) | `open` MUST reject duplicate participants and already-open channels, verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot.                          | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L118) (`open`)                                                                                                                                                          | None.            |
-| [`INV-CON-12-MXRTGG`](manager-and-facets.md#inv-con-12-mxrtgg) | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                    | Covered               | [StateSnapshotFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L148) (`_applyOutboundMessageBlocks`)                                                                                                                                               | None.            |
-| [`REQ-CON-13-C7ACX2`](manager-and-facets.md#req-con-13-c7acx2) | Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.                                                                                | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L91) (`postBlockCalldata`)                                                                                                                                              | None.            |
-| [`REQ-CON-14-MBV0SV`](manager-and-facets.md#req-con-14-mbv0sv) | Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window. | Covered               | [DisputeManagerFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L40) (`_uploadDispute`); [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L57) (`disputerThrottle`)        | None.            |
-| [`REQ-CON-15-6M91QC`](manager-and-facets.md#req-con-15-6m91qc) | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                           | Covered               | [DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17) (`applyDisputeFraudProofs`); [DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L285) (`killDispute`) | None.            |
+| [`REQ-CON-11-VDGJYA`](manager-and-facets.md#req-con-11-vdgjya) | `open` MUST reject duplicate participants and already-open channels, verify a unanimous threshold signature over `encodedOpenChannel`, and require ≥ 2 successful deposits before storing the genesis snapshot.                          | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L194) (`open`)                                                                                                                                                          | None.            |
+| [`INV-CON-12-MXRTGG`](manager-and-facets.md#inv-con-12-mxrtgg) | Processed withdrawals never exceed resolved deposits for a channel: every outbound message application re-checks `totalWithdrawals ≤ totalDeposits` (`CantWithdrawMoreThanDeposits`).                                                    | Covered               | [StateSnapshotFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L160) (`_applyOutboundMessageBlocks`)                                                                                                                                               | None.            |
+| [`REQ-CON-13-C7ACX2`](manager-and-facets.md#req-con-13-c7acx2) | Block-calldata commitments are append-only and author-bound: no overwrite, `msg.sender` must be the block's author, and posting must beat `maxTimestamp`.                                                                                | Covered               | [StateChannelManagerProxy.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L161) (`postBlockCalldata`)                                                                                                                                             | None.            |
+| [`REQ-CON-14-MBV0SV`](manager-and-facets.md#req-con-14-mbv0sv) | Dispute uploads are participant-gated and throttled: disputer == `msg.sender`, disputer eligible (snapshot ∪ pending − slashed), one window-opening upload per `evidenceTime` per address, one evidence post per participant per window. | Covered               | [DisputeManagerFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L40) (`_uploadDispute`); [StateChannelManagerStorage.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L73) (`disputerThrottle`)        | None.            |
+| [`REQ-CON-15-6M91QC`](manager-and-facets.md#req-con-15-6m91qc) | A committed dispute proven fraudulent during the kill period MUST be killed and its disputer slashed; an invalid dispute-fraud-proof submission slashes the submitter instead.                                                           | Covered               | [DisputeFraudProofFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17) (`applyDisputeFraudProofs`); [DisputeVerificationFacet.sol](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L277) (`killDispute`) | None.            |

@@ -47,9 +47,9 @@ The fixed item has no rank. All 7 protocol inputs are retained here, including t
 
 Source identity: `csf_8a972993ab889a6f4a696895`; rule `milestone-skip`; occurrence `occ_cad859aa82ba1b122a359989`.
 
-**Current evidence and path.** The exact all-skipped replacement is fixed. StateProofFacet now requires the final claimed snapshot to equal the trusted threshold. updateStateSnapshotSameFork separately requires a newer snapshot, so the old bypass cannot satisfy both checks. Empty proofs cannot bypass the nonempty-snapshot and matching-length checks.
+**Current evidence and path.** The exact all-skipped replacement is fixed. StateSnapshotFacet now requires the proof walk's final snapshot to equal the claimed new snapshot. updateStateSnapshotSameFork separately requires a newer snapshot, so the old bypass cannot satisfy both checks. Empty proofs cannot bypass the nonempty-snapshot and matching-length checks.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol:404–411](../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol#L404-L411); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:54–75](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L54-L75); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–192](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L192); [test/unit/SpectateService.test.ts:636–697](../../../test/unit/SpectateService.test.ts#L636-L697).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:156–157](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L156-L157); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:68–77](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L68-L77); [test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol:167–203](../../../test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol#L167-L203); [test/unit/SpectateService.test.ts:635–696](../../../test/unit/SpectateService.test.ts#L635-L696).
 
 **Boundary:** any chain account, with no credential, through the routed `updateStateSnapshotSameFork` entrypoint. Ranking class: unauthenticated on-chain path; it has no rank because the path is fixed.
 
@@ -69,7 +69,7 @@ Source identity: `csf_623195021241d901f52c336c`; rule `zero-verdict`; occurrence
 
 **Current evidence and path.** The zero-sentinel equality is unchanged. Any chain caller can submit a committed honest dispute during its kill period, choose a proof handler that returns zero for invalid evidence, and declare participant zero. The success branch delegates to killDispute, which slashes the real disputer and removes its commitment.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:17–35](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L17-L35); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:118–128](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L118-L128); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:529–557](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L529-L557).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:27–31](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L27-L31); [contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol:115–117](../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L115-L117); [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol:277–279](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L277-L279) (`killDispute`, delegating to `_killDispute` at [DisputeVerificationFacet.sol:499–529](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L499-L529)).
 
 **Boundary:** any chain account, with no credential, through the routed `applyDisputeFraudProofs` entrypoint. The caller needs only the public contents of a committed dispute. Ranking class: unauthenticated on-chain path.
 
@@ -96,7 +96,7 @@ Source identity: `csf_dc2174473e0ce47f18083689`; rule `unbound-snapshot`; occurr
 
 **Current evidence and path.** The early fork mismatch still returns a valid signer verdict before binding the supplied previous snapshot to the signed block. An external caller holding an honest signed block can supply a different-fork previous snapshot and target its eligible signer through the routed applyFraudProofs entrypoint.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:109–145](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L109-L145); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:11–27](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L27).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:129](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L129); [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:11–29](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L11-L29).
 
 **Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one honest signed block, which every channel peer and spectator receives. Ranking class: unauthenticated on-chain path.
 
@@ -123,7 +123,7 @@ Source identity: `csf_f664a2f1629d842430826ec3`; rule `pruned-inbound`; occurren
 
 **Current evidence and path.** The forged-inbound handler still equates absence from the live map with forgery. Normal snapshot adoption deletes the consumed inbound head and its ancestors. After a later head is adopted, a retained honest signed block containing an earlier genuine head can satisfy the false-fraud verdict.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:330–362](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L330-L362); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:196–205](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L196-L205).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol:351–362](../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L351-L362); [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol:207–216](../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L207-L216).
 
 **Boundary:** any chain account, through the routed `applyFraudProofs` entrypoint. The only material needed is one retained honest signed block that includes the earlier inbound head. Ranking class: unauthenticated on-chain path.
 
@@ -150,7 +150,7 @@ Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrenc
 
 **Current evidence and path.** The proxy opening path is unchanged: it verifies participant signatures and passes deadlineTimestamp to the consumer deposit path without checking expiry. The SDK clears the attempt after the signed window. A negotiating peer can retain signatures and later open using the bundled consumer behavior.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:218–238](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L218-L238); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–718](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L718); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:233–242](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L233-L242); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:682–722](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L682-L722); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:43–47](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L43-L47).
 
 **Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials.
 
@@ -177,7 +177,7 @@ Original finding: confirmed, high severity, rank 5;
 Source identity: `csf_237e0d0f589b22bf18c348fb`; rule `sync-inbound`; occurrence `occ_482d7e145268e00610d5142b`.
 
 The original finding depended on persisting unused inbound reduction inputs from a chain-final
-window. Current [persistence](../../../src/rpc/network/services/spectate/SpectateService.ts#L1028)
+window. Current [persistence](../../../src/rpc/network/services/spectate/SpectateService.ts#L1042)
 skips that window's supplied snapshot, state and inbound blocks. Nonfinal windows still execute
 reduction before those inputs are trusted. The old unconditional-persistence path is no longer
 current evidence of an exploit.
@@ -202,7 +202,7 @@ Source identity: `csf_01e69b761bddfdcbeac64472`; rule `sync-genesis-time`; occur
 
 The trusted walk now selects canonical final state. The prior `isSameForkRegression` helper is
 removed and cannot support a current exploit argument. The payload's supplied genesis snapshot
-is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1033).
+is still stored by [SpectateService](../../../src/rpc/network/services/spectate/SpectateService.ts#L1053-L1057).
 Trace every downstream consumer before deciding whether a timestamp-only mutation can affect
 first-block production or another trusted state path. This review does not establish full resolution.
 

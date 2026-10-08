@@ -26,7 +26,7 @@ classification.
 
 The conditional-window refusal has its own channel/fork error, `RaceConditionDisputeWindowNotOpen`, so the client does not classify it as evidence expiry or participation failure.
 
-Every `RaceCondition*` error is declared in one block. `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId)` ([#L141](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L141)) is the permanent refusal of a same-fork advance on a disputed fork, and the successor-fork refusal of a disputed latest fork. `RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId)` ([#L142](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L142)) refuses a successor-fork target that is not the end of the expired reduced-result links, naming both forks. `RaceConditionDisputeInboundNotLatest(latestInboundMessageBlockHash, disputeInboundMessageBlockHash)` ([#L145](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L145)) carries the chain's inbound head and the dispute's anchor, so the client recovers to that head. `RaceConditionJoinChannelForkDisputed` ([#L143](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L143)) refuses both a join and a top-up on a disputed fork.
+Every `RaceCondition*` error is declared in one block. `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId)` ([#L143](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L143)) is the permanent refusal of a same-fork advance on a disputed fork, and the successor-fork refusal of a disputed latest fork. `RaceConditionSnapshotUpdateNotLatestFork(targetForkId, latestForkId)` ([#L144](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L144)) refuses a successor-fork target that is not the end of the expired reduced-result links, naming both forks. `RaceConditionDisputeInboundNotLatest(latestInboundMessageBlockHash, disputeInboundMessageBlockHash)` ([#L147](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L147)) carries the chain's inbound head and the dispute's anchor, so the client recovers to that head. `RaceConditionJoinChannelForkDisputed` ([#L145](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L145)) refuses both a join and a top-up on a disputed fork.
 
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
 2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
@@ -64,6 +64,18 @@ Every `RaceCondition*` error is declared in one block. `RaceConditionSnapshotUpd
    [AStateMachine](../AStateMachine.sol.md), is raised before the transition runs, when the
    stipend call could not grant the full budget; no transition code has executed. The manager
    re-raises it unchanged, so a client sees "attach more gas" rather than a fraud outcome ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)).
+7. **A gas-capped local dispute computation that uses up its budget is named.**
+   `ErrorDisputeExecutionOutOfGas(gasLimit, gasUsed)`
+   ([Errors.sol#L12](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol#L12)) is
+   raised by [LocalDiamond](./LocalDiamond.sol.md) when its delegated dispute output computation
+   used up the forwarded dispute execution budget and returned no data. That includes an
+   out-of-gas inside a nested state-machine call, where the facet keeps the 1/64 it did not pass
+   on: the classifier allows `forwarded / 64 + 5_000` gas of margin. Before it, that case
+   reverted with empty data, which a client could not tell apart from any other bare revert. The
+   two operands give the configured budget and the gas the frame used, so the log shows how far
+   over the budget the computation went. The error is local only; no production facet raises it.
+   It propagates as an error and is never an answer
+   ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)).
 
 ## Inputs, outputs, state, and side effects
 

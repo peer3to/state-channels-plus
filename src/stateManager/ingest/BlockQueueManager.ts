@@ -21,7 +21,7 @@ import {
     Signature,
     Timestamp
 } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -53,6 +53,9 @@ export default class BlockQueueManager {
     private readonly recoveryScheduledForFork: Set<ForkId> = new Set();
     private readonly recoverySuppressedUntil: Map<ForkId, Timestamp> =
         new Map();
+    // Source probes and fork recoveries in flight. This manager owns them:
+    // `dispose` waits for them, so none outlives the stop of its StateManager.
+    private readonly inFlight: Set<Promise<void>> = new Set();
 
     constructor(
         private readonly stateManager: StateManager,
@@ -373,6 +376,7 @@ export default class BlockQueueManager {
     }
 
     private scheduleForkRecovery(forkId: ForkId): void {
+        if (this.stateManager.isDisposed) return;
         if (this.recoveryScheduledForFork.has(forkId)) return; // coalesce
         const suppressedUntil = this.recoverySuppressedUntil.get(forkId);
         if (
@@ -383,9 +387,7 @@ export default class BlockQueueManager {
         }
         this.recoveryScheduledForFork.add(forkId);
         this.timeoutManager.scheduleTask(
-            () => {
-                DetachedPromises.collect(this.runForkRecovery(forkId));
-            },
+            () => this.track(() => this.runForkRecovery(forkId)),
             0,
             `BlockQueueManager.runForkRecovery - fork ${forkId}`
         );
@@ -428,6 +430,7 @@ export default class BlockQueueManager {
 
     private async queueTimeout(blockHash: Hash): Promise<void> {
         this.timeoutHandles.delete(blockHash);
+        if (this.stateManager.isDisposed) return;
         // Dequeue first: the timeout owns the entry it sees - no race with
         // other tasks. Copies arriving from here on pool into a fresh entry
         // that converges on its own.
@@ -618,10 +621,38 @@ export default class BlockQueueManager {
         }
     }
 
-    public dispose(): void {
+    /**
+     * The StateManager is already disposed, so no producer here starts new
+     * work. Cancel the queue timers, then wait for the probes and recoveries
+     * in flight: they still use p2p, the timeout manager and the executor,
+     * so the caller keeps those alive until this returns. Every job settles
+     * before the queues clear, even when one fails; the first failure then
+     * rejects this call, so it is not hidden.
+     */
+    public async dispose(): Promise<void> {
         for (const hash of this.timeoutHandles.keys())
             this.cancelQueueTimeout(hash);
+        const results = await Promise.allSettled(this.inFlight);
         this.stateManager.storage.queues.clear();
+        this.recoveryScheduledForFork.clear();
+        this.recoverySuppressedUntil.clear();
+        const failure = results.find(
+            (result): result is PromiseRejectedResult =>
+                result.status === "rejected"
+        );
+        if (failure) throw failure.reason;
+    }
+
+    /**
+     * Start work this manager owns. Nothing starts after disposal. A failure
+     * outside `dispose` stays an unhandled rejection, as for detached work.
+     */
+    private track(work: () => Promise<void>): void {
+        if (this.stateManager.isDisposed) return;
+        const promise: Promise<void> = work().finally(() =>
+            this.inFlight.delete(promise)
+        );
+        this.inFlight.add(promise);
     }
 
     private cancelQueueTimeout(blockHash: Hash): void {
@@ -636,12 +667,12 @@ export default class BlockQueueManager {
      * Ask every attributed source and the author to prove the block's
      * lineage, once each. A failed probe excludes the peer inside `sync`. A
      * probe that succeeds without that lineage carrying the block proves the
-     * peer supplied junk: it is excluded here. Probes are observed detached
-     * work; nothing after the sync awaits, so a probe cannot reject.
+     * peer supplied junk: it is excluded here. Probes are owned work that
+     * `dispose` waits for.
      */
     private probeSources(entry: QueuedBlockEntry): void {
         for (const peer of getSourcePeersAndAuthor(entry)) {
-            DetachedPromises.collect(this.probeSource(peer, entry));
+            this.track(() => this.probeSource(peer, entry));
         }
     }
 

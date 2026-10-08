@@ -23,9 +23,11 @@ Dispute counter payload structs and their type-emission constructor; the enum is
 
 ## Key design decisions
 
-This file owns payload structs and the type-emission constructor; the enum is in ProofTypes.sol. Per-step invalidity includes milestone index, optional block index and committed auditing data or authenticated supplied snapshots. Conflict has a milestone/block pointer distinct from last-milestone-relative block-specific wrappers. Timeout supersession carries supporting final proof; below-anchor needs no challenger state. Consumers own predicate validity. See [DisputeFraudProofTypes.sol](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L52).
+This file owns payload structs and the type-emission constructor; the enum is in ProofTypes.sol. Per-step invalidity includes milestone index, optional block index and committed auditing data or authenticated supplied snapshots. Conflict has a milestone/block pointer distinct from last-milestone-relative block-specific wrappers. Timeout supersession carries supporting final proof; below-anchor needs no challenger state. Consumers own predicate validity. See [DisputeFraudProofTypes.sol](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L53).
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+
+`DisputeInvalidOutboundRun` carries only the committed `DisputeAuditingData`: the anchor is read on chain, never supplied ([#L169](../../../../../../../contracts/V1/types/DisputeFraudProofTypes.sol#L169)).
 
 ## Inputs, outputs, state, and side effects
 

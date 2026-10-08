@@ -24,7 +24,8 @@ contract DisputeFraudProofTypes {
         DisputeInboundAnchorBehindLatestState memory u,
         DisputeStateProofBelowOnChainAnchor memory v,
         TimeoutSupersededByFinalState memory w,
-        DisputeConflictsWithFinalState memory x
+        DisputeConflictsWithFinalState memory x,
+        DisputeInvalidOutboundRun memory y
     ) {}
 }
 
@@ -161,4 +162,10 @@ struct DisputeBlockAuthorNotParticipant {
 // proof claims the fork genesis, which any same-fork non-genesis anchor (also block zero's resulting snapshot) is past.
 struct DisputeStateProofBelowOnChainAnchor {
     bool __;
+}
+
+// `auditingData` is the dispute's committed posted data with its latest state. Its outbound run, cut at the chain
+// anchor's outbound head, does not link that head to the latest state's (StateProofFacet.isDisputeOutboundRunInvalid).
+struct DisputeInvalidOutboundRun {
+    DisputeAuditingData auditingData;
 }

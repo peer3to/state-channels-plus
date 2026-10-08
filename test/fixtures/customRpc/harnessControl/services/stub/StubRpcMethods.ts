@@ -11,11 +11,13 @@ import type {
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
     PausedReductionStatus,
+    RecordedBestEffortEstimate,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     RecordedGasEstimate,
     RecordedReplayGasRead,
     ReductionSimulationErrorName,
+    RefusedUploadKind,
     ReplayGasEstimateMethod,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
@@ -26,7 +28,8 @@ import type {
     DetachedCallOutcome,
     BlockWorkHoldPoint,
     StubService,
-    SignatureBlockMatch
+    SignatureBlockMatch,
+    StateMutexStateHold
 } from "./StubService";
 
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -1282,6 +1285,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public holdSyncInstall(): boolean {
+        this.service.holdSyncInstall();
+        return true;
+    }
+
+    public getSyncInstallEntered(): number {
+        return this.service.getSyncInstallEntered();
+    }
+
+    public releaseSyncInstall(): boolean {
+        this.service.releaseSyncInstall();
+        return true;
+    }
+
     public recordSyncReductionWindows(): boolean {
         this.service.recordSyncReductionWindows();
         return true;
@@ -1480,43 +1497,45 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         }
         if (at === "submit") {
             const contract = this.service.sm.stateChannelManagerContract;
-            const gasLimit = contract.getGasLimit;
             const multicall = contract.multicall;
-            this.service.stubOriginals.set("reductionSubmitGasLimit", gasLimit);
             this.service.stubOriginals.set(
                 "reductionSubmitMulticall",
                 multicall
             );
             this.service.reductionSubmitCalls = 0;
-            Reflect.set(
-                contract,
-                "getGasLimit",
-                async (...parameters: unknown[]) => {
-                    // Hold the completed read, not a new call on a provider
-                    // that disposal may close before the gate is released.
-                    const result = await Reflect.apply(
-                        gasLimit,
-                        contract,
-                        parameters
-                    );
-                    return resume(async () => result);
+            // Hold the reduce's chain write (a multicall carrying
+            // `reduceAndFinalize`) and count every chain write, keeping the
+            // method's static-call and estimation faces for the simulation.
+            const held = async (...parameters: unknown[]) => {
+                const calls = parameters[0] as string[];
+                const isReduce = calls.some(
+                    (data) =>
+                        contract.interface.parseTransaction({ data })?.name ===
+                        "reduceAndFinalize"
+                );
+                const send = () => {
+                    this.service.reductionSubmitCalls += 1;
+                    return Reflect.apply(multicall, contract, parameters);
+                };
+                if (!isReduce) return send();
+                // The send has no result to replace: anything but "throw"
+                // releases it as is.
+                gate.entered += 1;
+                await gate.gate;
+                if (resumeWith === "throw") {
+                    throw new Error(REDUCTION_ATTEMPT_STUB_FAILURE);
                 }
-            );
-            // Count the chain write while keeping the method's static-call
-            // and estimation faces for the simulation that precedes it.
-            const counted = (...parameters: unknown[]) => {
-                this.service.reductionSubmitCalls += 1;
-                return Reflect.apply(multicall, contract, parameters);
+                return send();
             };
             for (const key of Object.getOwnPropertyNames(multicall)) {
-                if (key in counted) continue;
+                if (key in held) continue;
                 Object.defineProperty(
-                    counted,
+                    held,
                     key,
                     Object.getOwnPropertyDescriptor(multicall, key)!
                 );
             }
-            Reflect.set(contract, "multicall", counted);
+            Reflect.set(contract, "multicall", held);
             return true;
         }
         const computation = manager["reductionComputationService"];
@@ -1630,6 +1649,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             { taskName: "stub.holdStateMutex" }
         );
         return true;
+    }
+
+    /** Hold the state mutex with the fork's state at `height` installed. */
+    public holdStateMutexOnState(height: number): boolean {
+        this.service.holdStateMutexOnState(height);
+        return true;
+    }
+
+    /** The installed state's next writer and the overwritten writes, while held. */
+    public getStateMutexStateHold(): StateMutexStateHold | null {
+        const hold = this.service.stateMutexStateHold;
+        return hold ? { ...hold } : null;
     }
 
     public getStateMutexHeldCount(): number {
@@ -1800,6 +1831,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public stubFailFirstAdoptionPost(failures: number = 1): boolean {
         this.service.installAdoptionPostFailure(failures);
         return true;
+    }
+
+    /** Send the first reduce underfunded, so it is mined and reverts out of gas. */
+    public stubUnderfundFirstReducePost(): boolean {
+        this.service.installUnderfundedReducePost();
+        return true;
+    }
+
+    public restoreUnderfundedReducePost(): boolean {
+        this.service.restoreUnderfundedReducePost();
+        return true;
+    }
+
+    /** Mined status of each reduce send recorded by the underfunded-reduce stub, in send order. */
+    public getReduceSendStatuses(): Promise<(number | null)[]> {
+        return this.service.getReduceSendStatuses();
     }
 
     /** The multicall call names recorded so far by the adoption-post failure stub. */
@@ -2094,12 +2141,14 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     public stubRecordDisputeSubmissions(
         holdSubmissions: boolean,
         failure?: DisputeSubmissionFailureSpec,
-        forward = false
+        forward = false,
+        refuseUpload?: RefusedUploadKind
     ): boolean {
         this.service.installDisputeSubmissionRecorder(
             holdSubmissions,
             failure,
-            forward
+            forward,
+            refuseUpload
         );
         return true;
     }
@@ -2195,6 +2244,47 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.restoreReplayGasEstimateScale();
     }
 
+    /** Answer the best-effort dispute multicall estimate with the least gas. */
+    public stubMinimumBestEffortEstimate(): boolean {
+        this.service.installMinimumBestEffortEstimate();
+        return true;
+    }
+
+    public getRecordedBestEffortEstimates(): RecordedBestEffortEstimate[] {
+        return this.service.recordedBestEffortEstimates.map((estimate) => ({
+            ...estimate
+        }));
+    }
+
+    public restoreMinimumBestEffortEstimate(): boolean {
+        return this.service.restoreMinimumBestEffortEstimate();
+    }
+
+    /** Count, hold or fault the local outbound-run verdict of a dispute audit. */
+    public stubOutboundRunVerification(
+        holdFirst: boolean,
+        answerInvalid: boolean
+    ): boolean {
+        this.service.installOutboundRunVerificationProbe(
+            holdFirst,
+            answerInvalid
+        );
+        return true;
+    }
+
+    public getOutboundRunVerificationCount(): number {
+        return this.service.outboundRunVerificationProbe?.calls ?? 0;
+    }
+
+    public releaseOutboundRunVerification(): boolean {
+        this.service.outboundRunVerificationProbe?.release();
+        return true;
+    }
+
+    public restoreOutboundRunVerification(): boolean {
+        return this.service.restoreOutboundRunVerificationProbe();
+    }
+
     /**
      * Record the manager's replay-requirement reads (forwarded); the first
      * `failFirst` reads reject instead. `hold` parks each read until
@@ -2251,6 +2341,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         disputeManager.dispute = (async (forkId, options) => {
             if (!options?.kill) return dispute(forkId, options);
             this.service.suppressedDisputeKillCount += 1;
+            return {};
         }) as typeof disputeManager.dispute;
         return true;
     }
@@ -2271,6 +2362,22 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         this.service.stubOriginals.delete("disputeKill");
         this.service.stubOriginals.delete("disputeKillMulticall");
         return true;
+    }
+
+    /**
+     * No `dispute()` holds or waits on the dispute mutex (its state is
+     * private) and no dispute event is still being handled.
+     */
+    public isDisputeMutexIdle(): boolean {
+        const mutex = this.service.sm.disputeManager.mutex as unknown as {
+            isLocked: boolean;
+            queue: unknown[];
+        };
+        return (
+            !mutex.isLocked &&
+            mutex.queue.length === 0 &&
+            this.service.sm.eventHandler["disputeHandlingPromises"].size === 0
+        );
     }
 
     /** Callers queued behind the dispute mutex (its queue is private). */
@@ -2318,6 +2425,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const state: PausedConstructDisputeState = {
             targetForkId: forkId,
             entered: 0,
+            uploadConstructions: 0,
             released: false,
             inside: false,
             gate,
@@ -2330,6 +2438,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 return originalConstruct(requestedForkId, options);
             }
             state.inside = true;
+            if (options) state.uploadConstructions += 1;
             return originalConstruct(requestedForkId, options).finally(() => {
                 state.inside = false;
             });
@@ -2365,6 +2474,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const state = this.service.pausedConstructDispute;
         return {
             entered: state?.entered ?? 0,
+            uploadConstructions: state?.uploadConstructions ?? 0,
             released: state?.released ?? false
         };
     }
@@ -2700,6 +2810,7 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         // the dispute is suppressed; a kill it would carry still lands alone
         disputeManager.dispute = (async (_forkId, options) => {
             if (options?.kill) await disputeManager.killDispute(options.kill);
+            return {};
         }) as typeof disputeManager.dispute;
         return true;
     }
@@ -3095,6 +3206,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public failMembershipReceipt(kind: HeldMembershipReceiptKind): boolean {
         this.service.failMembershipReceipt(kind);
+        return true;
+    }
+
+    public landMembershipSubmissionThenFail(
+        kind: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.landMembershipSubmissionThenFail(kind);
         return true;
     }
 

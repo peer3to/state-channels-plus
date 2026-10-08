@@ -28,7 +28,7 @@ atomic composable deposit, appended inbound JOIN block.
 
 1. **One `_processJoinChannel(…, isTopUp)`** keeps the two admission cases from drifting apart — the membership split is a flag check, everything else shared.
 2. **The undisputed-fork gate is an internal call, not an external self-call.** Both join and top-up
-   evaluate [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L213)
+   evaluate [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L230)
    on [StateChannelCommon](./StateChannelCommon.sol.md)
    ([#L64](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L64)) before the membership split and revert
    `RaceConditionJoinChannelForkDisputed`; it
@@ -46,7 +46,7 @@ atomic composable deposit, appended inbound JOIN block.
    power without making the address absent from the recorded membership union. The top-up branch
    separately rejects an existing participant that is on-chain-slashed.
 5. **A sub-threshold confirmation is rejected with both address sets, from a revert branch.**
-   [#L93](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L93)
+   [#L99](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L99)
    raises `ErrorJoinChannelConfirmationNotThresholdSigned(participant, thresholdParticipants, signers)`,
    where `signers` comes from
    [`UtilityFacet.retrieveSignerAddresses`](./UtilityFacet.sol.md) over the same
@@ -105,7 +105,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                    | Gap / divergence |
 | ------------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca) | Covered               | **Here:** self-submission, pins, expiry, and unanimity checks are implemented; `_processJoinChannel` derives countersign eligibility through the shared slash-excluding `getOnChainThresholdSet`.                                                                                                                           | None.            |
-| [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | Covered               | **Here:** the membership split, slashed-participant top-up rejection, and the disputed-fork gate for join and top-up ([#L59](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L59)).                                                                                                         | None.            |
+| [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | Covered               | **Here:** the membership split, slashed-participant top-up rejection, and the disputed-fork gate for join and top-up ([#L59-L81](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L59-L81)).                                                                                                 | None.            |
 | [`INV-ENFADM-1-H53AQY`](../../../../../specification/enforcement/admission-and-funds.md#inv-enfadm-1-h53aqy) | Covered               | **Here:** successful admission invokes the atomic composable-deposit path. **Other files:** [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) builds and appends the JOIN block and advances the head/totals.                                                                                                   | None.            |
 | [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) | Covered               | **Here:** deposits flow only through the atomic composable path, so a deposit failure reverts the admission. **Other files:** [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) performs composition and appends only successful deposits; [AConsumerFacet](./AConsumerFacet.sol.md) owns the adapter boundary. | None.            |
 

@@ -160,13 +160,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
      * Validation failures reject the peer and return false. The caller owns
-     * the lifecycle consequence of a failed sync.
+     * the lifecycle consequence of a failed sync. A disposed runtime applies
+     * nothing and returns false with no verdict on the peer.
      */
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
     ): Promise<boolean> {
+        if (this.p2pManager.stateManager.isDisposed) return false;
         const channelId = syncRequest.channelId;
 
         // A malicious/broken peer can return bytes that aren't a valid
@@ -211,9 +213,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             //      2.7) verify outboundMessageBlocks from onChainSnapshot to final genesisSnapshot | TODO - think do we need to verify joinChannelBlocks
             //      2.8) verify that genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
             //      2.9) verify stateProof proves latest state -> abort otherwise
-            //      2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
+            //      2.10) verify outboundMessageBlocks from the on-chain snapshot when it is on the proven fork, else from final genesisSnapshot, to latestFinalizedSnapshot
             //      2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
-            //      2.9 and 2.10 start at the on-chain snapshot when it is on the proven fork, so pruned history is never needed
             // 3) no adoption is simulated against the live chain; the checks above are the verification
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             //
@@ -497,25 +498,24 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     "served state does not reach the final point"
                 );
 
-            // 2.10) verify outboundMessageBlocks of the latest fork from the proof start to the installed state
-            const start = walk.start ?? genesisSnapshot;
-            const outboundAheadOfStart =
-                base.snapshot.latestOutboundMessageBlockHeight >=
-                start.latestOutboundMessageBlockHeight;
-            const outboundMessageBlocksOfTheLatestFork = outboundAheadOfStart
-                ? await diamondStateMachine.localDiamondContract.pruneOutboundMessageBlocks(
-                      syncPayload.outboundMessageBlocksOfTheLatestFork,
-                      start.latestOutboundMessageBlockHash
-                  )
-                : [];
-            if (
-                outboundAheadOfStart &&
-                !(await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
-                    outboundMessageBlocksOfTheLatestFork,
-                    start.snapshotData,
+            // 2.10) verify outboundMessageBlocks of the latest fork from the on-chain anchor (1) when it is on
+            // this fork, else from the fork genesis (2.6), to the installed state. Only the run above the
+            // anchor is kept: a later snapshot post and a dispute carry nothing below it. An anchor above
+            // the installed state leaves nothing to keep; the replay adds the later blocks.
+            const outboundStart =
+                onChainSnapshot.forkID === forkId
+                    ? onChainSnapshot
+                    : genesisSnapshot;
+            const {
+                isValid: areValidLatestForkExitBlocks,
+                aboveAnchor: outboundMessageBlocksOfTheLatestFork
+            } =
+                await diamondStateMachine.localDiamondContract.verifyOutboundRunAboveAnchor(
+                    syncPayload.outboundMessageBlocksOfTheLatestFork,
+                    outboundStart.snapshotData,
                     base.snapshot.snapshotData
-                ))
-            )
+                );
+            if (!areValidLatestForkExitBlocks)
                 return this.rejectSync(
                     peerAddress,
                     "latest-fork outbound blocks invalid"
@@ -550,11 +550,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     )
                 }
             );
-            if (shouldAbort)
+            if (shouldAbort) {
+                if (stateManager.isDisposed) return false;
                 return this.rejectSync(
                     peerAddress,
                     "payload persistence aborted"
                 );
+            }
 
             // 5) replay the last run from the installed point
             // from the base on, every block is decoded and linked
@@ -852,13 +854,25 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
         }
 
+        // the run above the local diamond's anchor when it is on this fork:
+        // the requester's chain anchor is not behind it, and nothing below it
+        // is kept. An anchor at or above the final point leaves nothing.
+        const outboundStart =
+            currentOnChainSnapshot.forkID === forkId
+                ? currentOnChainSnapshot
+                : latestForkGenesisSnapshot;
         const outboundMessageBlocksOfTheLatestFork =
-            stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    latestFinalizedSnapshot.latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    latestForkGenesisSnapshot.latestOutboundMessageBlockHash
-            });
+            outboundStart.latestOutboundMessageBlockHeight >=
+            latestFinalizedSnapshot.latestOutboundMessageBlockHeight
+                ? []
+                : stateManager.storage.outboundMessages.getMessageBlocksInRange(
+                      {
+                          upperBlockHash:
+                              latestFinalizedSnapshot.latestOutboundMessageBlockHash,
+                          lowerBlockHash:
+                              outboundStart.latestOutboundMessageBlockHash
+                      }
+                  );
         // Return payload with all available data
         const syncPayload: SyncPayload = {
             disputeWindows,
@@ -990,7 +1004,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * Persists the verified sync: dispute windows, the genesis, outbound
      * runs, the proof material the walk verified (final history advances the
      * view), then installs the replay base unless this peer already holds
-     * that point or a later one. Existing data is never overwritten.
+     * that point or a later one. Existing data is never overwritten. The
+     * history is stored in the same synchronous step that installs the base,
+     * so no task sees it before the fork swap. A runtime disposed before that
+     * step persists and installs nothing (abort).
      */
     public async persistSyncPayload(
         syncPayload: SyncPayload,
@@ -1000,52 +1017,58 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         const { walk, evidence, base } = verified;
         return await stateManager.withMutex(
             async () => {
+                if (stateManager.isDisposed) return { shouldAbort: true };
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
                 const forkId = base.snapshot.forkID;
                 // verified history conflicting with what this peer holds: abort
-                if (
-                    !stateManager.agreementManager.persistVerifiedProof(
+                const persistProof =
+                    stateManager.agreementManager.stageVerifiedProof(
                         syncPayload.stateProof,
                         evidence,
                         walk,
                         { replayFromIndex: base.fromIndex, advanceView: true }
-                    )
-                )
-                    return { shouldAbort: true };
-
-                for (const dw of syncPayload.disputeWindows) {
-                    for (const dispute of dw.disputeConfirmations) {
-                        storage.disputes.storeDisputeConfirmation(dispute);
+                    );
+                if (!persistProof) return { shouldAbort: true };
+                const persistHistory = () => {
+                    if (stateManager.isDisposed || !persistProof())
+                        return false;
+                    for (const dw of syncPayload.disputeWindows) {
+                        for (const dispute of dw.disputeConfirmations) {
+                            storage.disputes.storeDisputeConfirmation(dispute);
+                        }
+                        // a chain-final window ran no local reduction, so its
+                        // reduction input is unverified: never stored
+                        if (verified.chainFinalForkIds.has(dw.forkId)) continue;
+                        storage.stateSnapshots.storeStateSnapshot(
+                            StateSnapshot.from(dw.latestStateSnapshot)
+                        );
+                        storage.stateMachineStates.storeStateMachineState(
+                            dw.latestEncodedStateMachineState
+                        );
+                        for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
+                            storage.inboundMessages.store(inboundBlock);
+                        }
                     }
-                    // a chain-final window ran no local reduction, so its
-                    // reduction input is unverified: never stored
-                    if (verified.chainFinalForkIds.has(dw.forkId)) continue;
                     storage.stateSnapshots.storeStateSnapshot(
-                        StateSnapshot.from(dw.latestStateSnapshot)
+                        StateSnapshot.from(
+                            syncPayload.latestForkGenesisSnapshot
+                        )
                     );
                     storage.stateMachineStates.storeStateMachineState(
-                        dw.latestEncodedStateMachineState
+                        syncPayload.latestForkGenesisEncodedState,
+                        {
+                            hash: syncPayload.latestForkGenesisSnapshot
+                                .snapshotData.stateMachineStateHash
+                        }
                     );
-                    for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
-                        storage.inboundMessages.store(inboundBlock);
-                    }
-                }
-                storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(syncPayload.latestForkGenesisSnapshot)
-                );
-                storage.stateMachineStates.storeStateMachineState(
-                    syncPayload.latestForkGenesisEncodedState,
-                    {
-                        hash: syncPayload.latestForkGenesisSnapshot.snapshotData
-                            .stateMachineStateHash
-                    }
-                );
-                for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
-                    storage.outboundMessages.store(omb);
-                for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
-                    storage.outboundMessages.store(omb);
-                if (base.block) storage.blocks.storeBlock(base.block);
+                    for (const omb of syncPayload.outboundMessageBlocksUpToLatestGenesis)
+                        storage.outboundMessages.store(omb);
+                    for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
+                        storage.outboundMessages.store(omb);
+                    if (base.block) storage.blocks.storeBlock(base.block);
+                    return true;
+                };
 
                 const baseHeight =
                     base.fromIndex === 0 ? -1 : base.snapshot.blockHeight;
@@ -1058,18 +1081,23 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     ) !== undefined &&
                     localLatestHeight >= baseHeight;
                 if (holdsBase) {
+                    if (!persistHistory()) return { shouldAbort: true };
                     this.logger.info(
                         "Sync keeps the local state: it already holds the installed point or a later one",
                         { forkId, baseHeight, localLatestHeight }
                     );
                     return { shouldAbort: false };
                 }
-                await stateManager.stateApplicationService.unsafeSetLatestState(
-                    base.snapshot.toStruct(),
-                    base.state
-                );
+                // a conflict found after the VM write restores the VM
+                const installed =
+                    await stateManager.stateApplicationService.unsafeSetLatestState(
+                        base.snapshot.toStruct(),
+                        base.state,
+                        undefined,
+                        persistHistory
+                    );
                 this.logger.debug(`Finished persisting sync payload`);
-                return { shouldAbort: false };
+                return { shouldAbort: !installed };
             },
             { taskName: "persistSyncPayload" }
         );

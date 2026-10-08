@@ -27,6 +27,8 @@ StateProof contains only milestones. MilestoneProof holds a linked run: threshol
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
+`DisputeInvalidOutboundRun` is appended last to `DisputeFraudProofType`, so existing values keep their numbers ([#L101](../../../../../../../contracts/V1/types/ProofTypes.sol#L101)).
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents              |

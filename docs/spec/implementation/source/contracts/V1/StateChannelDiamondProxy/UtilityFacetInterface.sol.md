@@ -42,7 +42,7 @@ compile-time type bound to `utilityFacetAddress`.
    ([UtilityFacet.sol#L13](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L13)).
 3. **Only the stateless helpers are declared here.** The facet's proxy-storage views are reached
    through the proxy's selector routing, not through this type, so they are deliberately absent —
-   the two surfaces stay separable ([UtilityFacet.sol#L262](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L264)).
+   the two surfaces stay separable ([UtilityFacet.sol#L272](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L272)).
 
 ## Inputs, outputs, state, and side effects
 

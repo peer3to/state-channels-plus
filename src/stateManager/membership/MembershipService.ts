@@ -220,10 +220,21 @@ export default class MembershipService {
         );
     }
 
+    /**
+     * Starts this signer's self-removal dispute and returns its marker. An
+     * upload that lost the evidence race is thrown, so each leave path maps
+     * that refusal by its own policy. Today there are two outcomes: the exit
+     * fallback after the authored exit block (`onExitFallbackFailed`) settles
+     * the leave, since the window's reduction removes the leaver; the leave's
+     * own dispute fallback (`startDisputeFallback`, block bound or watchdog)
+     * fails it.
+     * TODO(OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ): revisit how a lost evidence race is interpreted
+     */
     public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
         const sm = this.stateManager;
         sm.storage.forceExit.setForceExit(true);
-        await sm.disputeManager.dispute(forkId);
+        const { lostEvidenceRace } = await sm.disputeManager.dispute(forkId);
+        if (lostEvidenceRace) throw lostEvidenceRace;
         return sm.storage.disputes.didIDispute(forkId);
     }
 
@@ -476,11 +487,15 @@ export default class MembershipService {
         );
     }
 
-    /** A pending join that never reached the chain is dropped: back to SYNCED. */
-    public abandonUnobservedJoin(): void {
+    /**
+     * This signer's membership ended: its join never reached the chain, or
+     * the chain dropped its seat or pending join. The join tracking is
+     * cleared and a committed status goes back to SYNCED.
+     */
+    public dropMembership(): void {
         const sm = this.stateManager;
         this.resetJoinTracking();
-        if (sm.status === Status.PENDING_PARTICIPANT)
+        if (isCommittedParticipantStatus(sm.status))
             sm.setStatus(Status.SYNCED);
     }
 
@@ -507,6 +522,20 @@ export default class MembershipService {
         const deadline = this.getJoinAuthorizationDeadline();
         if (deadline === undefined) return false;
         return (await Clock.getBlockchainTime()).timestamp <= deadline;
+    }
+
+    /**
+     * Whether this pending joiner's join can still land: it was not observed
+     * on chain yet and its authorization is open. An observed join already
+     * landed, and this runtime submits a join once.
+     */
+    public async canOwnJoinStillLand(): Promise<boolean> {
+        if (
+            this.stateManager.status !== Status.PENDING_PARTICIPANT ||
+            this.isOwnJoinObserved()
+        )
+            return false;
+        return this.isJoinAuthorizationOpen();
     }
 
     /** The state of this runtime's tracked join; see {@link OwnJoinState}. */

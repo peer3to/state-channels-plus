@@ -28,6 +28,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062) | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                   | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
 | [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb)                               | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code            | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
+| [`OQ-IMPL-CLOCK-1-R6W7FM`](open-questions.md#oq-impl-clock-1-r6w7fm)                                 | The runtime clock offset is taken once at host start, so runtimes started at different moments drift apart when chain time drifts | Code            | [Clock.ts.md](source/src/Clock.ts.md), [time.md](../specification/protocol-model/time.md)                                                                                                             | Open                              |
 
 <a id="oq-impl-strike-1-b10cbb"></a>
 
@@ -313,3 +314,18 @@ add a second snapshot publisher or claim a submitted transaction already grants 
 Concurrent membership misses now share one in-flight refresh. Should chain-membership and other on-demand queries toward RPC nodes also have a cooldown for performance? The engineer requested this question for later review. No cooldown or retry window is introduced here; the shared promise bounds simultaneous refreshes, not sequential query rate.
 
 Owner: [implementation report](source/src/stateManager/membership/MembershipService.ts.md). Decision recorded in the 2026-09-17 implementation review.
+
+<a id="oq-impl-clock-1-r6w7fm"></a>
+
+## OQ-IMPL-CLOCK-1-R6W7FM — Runtime clock offset taken once at host start
+
+`Clock.syncClock` sets the runtime's offset to the chain head timestamp when the runtime host starts
+and is not called again during the session ([Clock](source/src/Clock.ts.md)). On a loaded Hardhat node
+chain time fell about 7 s behind wall time within about 70 s, so a runtime started a minute after the
+seated ones held a different offset: its handshake requests were refused as outside the agreement window,
+and a pending joiner refused a valid block for lack of time (`NOT_ENOUGH_TIME`) and aborted on a snapshot
+that did not list it. The mechanism follows the protocol clock model, which is the open specification
+question [`OQ-SPEC-CLOCK-1-Z8TBFE` (Keeping runtime clocks in agreement over a session)](../specification/open-questions.md#oq-spec-clock-1-z8tbfe); the implementation choices (periodic or
+event-driven re-sync, a process-wide offset, or an enforced skew bound) wait on that decision.
+
+Owner: [Clock implementation report](source/src/Clock.ts.md).

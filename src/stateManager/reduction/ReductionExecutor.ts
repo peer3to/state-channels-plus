@@ -408,25 +408,23 @@ export default class ReductionExecutor {
             channelId: this.stateManager.channelId
         });
         let txResponse: TransactionResponse | undefined;
+        // the reduce is mined -> adopt the latest undisputed fork
+        const onMined = () => {
+            if (!this.stateManager.isDisposed)
+                this.adoptReducedFork(candidate.reducedForkId, 1);
+        };
+        // Gas comes from the signer's estimate: the dispute execution limit
+        // bounds one dispute computation, not the reduce transaction, whose
+        // calldata and on-chain checks grow with the disputes it carries.
+        // The disposal check in `complete` runs before the send starts; a
+        // disposal during the send does not stop the broadcast, only the
+        // adoption after it.
         const transaction = this.stateManager.stateChannelManagerContract
-            .getGasLimit()
-            .then((gasLimit) => {
-                // Disposal can land while the gas limit resolves; the chain
-                // write is the last reduction-owned effect and is re-checked
-                // right before it happens.
-                if (this.stateManager.isDisposed) return undefined;
-                return this.stateManager.stateChannelManagerContract.multicall(
-                    submission.calldata,
-                    { gasLimit }
-                );
-            })
+            .multicall(submission.calldata)
             .then(async (tx) => {
-                if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
-                // the reduce is mined -> adopt the latest undisputed fork
-                if (!this.stateManager.isDisposed)
-                    this.adoptReducedFork(candidate.reducedForkId, 1);
+                onMined();
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
@@ -443,6 +441,11 @@ export default class ReductionExecutor {
                     signer: this.stateManager.signer,
                     handlers
                 });
+                // handled without a race: its resend of the reduce was mined
+                if (handled && !raceErrorName) {
+                    onMined();
+                    return;
+                }
                 if (handled && raceErrorName) {
                     const status = await this.classifyReductionRace(
                         raceErrorName,

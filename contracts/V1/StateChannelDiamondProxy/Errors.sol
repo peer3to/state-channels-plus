@@ -8,6 +8,8 @@ error ErrorDuplicateParticipant(address participant);
 
 //State transition replay
 error ErrorStateTransitionFrameOutOfGas();
+// A gas-capped local dispute computation used up its whole budget.
+error ErrorDisputeExecutionOutOfGas(uint256 gasLimit, uint256 gasUsed);
 
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted(

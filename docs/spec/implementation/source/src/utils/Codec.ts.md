@@ -33,6 +33,8 @@ The codec registers the three new counter payload schemas and overloads. Milesto
    across compatible ethers copies in separate production chunks; constructor identity is not part
    of the serialization contract.
 
+`DisputeInvalidOutboundRun` is encoded with its own ethers type, the committed auditing data in a one-field tuple ([#L316](../../../../../../src/utils/Codec.ts#L316)).
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents                                                                               |

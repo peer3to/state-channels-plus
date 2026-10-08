@@ -9,7 +9,11 @@ import {
     randomAddress,
     blockStructWithTransactionHeader
 } from "@test/factory";
-import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
+import {
+    holdReplayOnPredecessorState,
+    postTimelyNextWriterTimeout,
+    stageBlindPendingAuditor
+} from "@test/fixtures/DisputeAuditStaging";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
@@ -990,6 +994,36 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
+        it("successor fork dispute lists the on-chain slash of a participant only the ancestor fork had -> false + InvalidDisputeReason, whatever its other reasons", async function () {
+            const h = TestSession.getHarness();
+            const { newForkId, maliciousPeerIndices, honestPeerIndices } =
+                await h.scenario.fourPeersDisputeResolution();
+            const removed = h.getPeer(maliciousPeerIndices[0]!).address;
+            const [disputerIndex, auditorIndex] = honestPeerIndices as [
+                number,
+                number
+            ];
+            // premise: the ancestor's slash is still recorded on chain
+            expect(
+                await h.channelManager.isParticipantSlashedOnChain(
+                    h.channelId,
+                    removed
+                )
+            ).to.equal(true);
+            const { dispute } = await h.dispute.fetchConstructedDispute(
+                disputerIndex,
+                newForkId
+            );
+            dispute.input.onChainSlashes = [removed];
+            dispute.input.requireExistingDisputeWindow = true;
+
+            const run = await h.dispute.auditDispute(auditorIndex, dispute);
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.InvalidDisputeReason
+            );
+        });
+
         // verifyDisputeOutput's unlinked-auditing-data kill is covered under
         // "posted auditing data" by the two ZeroHash + height 0 cases
     });
@@ -1066,44 +1100,9 @@ describe("Unit: DisputeValidationService", function () {
 
         it("window creation timestamp >= previous block timestamp + timeoutWaitTime -> timeout checks pass, true", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            const forkId = h.activeForkId!;
-            // the committed dispute would otherwise reduce the fork mid-test,
-            // and idle peers would race in their own natural timeout disputes
-            for (const peer of h.peers) {
-                await h.rpcStub.holdReductionRace(peer.index);
-                await h.rpcStub.suppressTimeoutCheck(peer.index);
-            }
-
-            const head = await h
-                .control(h.getPeer(0))
-                .query.getLatestBlockInfo(forkId)
-                .request();
-            const headBlock = Codec.decode(head!.encodedBlock, Type.Block);
-            const headTs = Number(headBlock.transaction.header.timestamp);
-            const headHeight = Number(
-                headBlock.transaction.header.transactionCnt
-            );
-            const wait = timeoutWaitTime(
-                resolveTestTimeConfig(),
-                headHeight + 1
-            );
-            // plant first: the upload's window-created-too-early guard compares
-            // against the timeout's minTimeStamp (set at plant time)
-            await h.tamper.plantFreshTimeoutForNextWriter(0);
-            await h.event.waitUntilTimestamp(headTs + wait + 2);
-
-            const posted = await h.tamper.postTamperedDispute(0, () => {}, {
-                markMalicious: false
-            });
+            const posted = await postTimelyNextWriterTimeout(h);
             // premise: the window was created after the writer's full wait
-            const windowTs = Number(
-                await h.channelManager.getDisputeWindowCreationTimestamp(
-                    h.channelId,
-                    forkId
-                )
-            );
-            expect(windowTs).to.be.greaterThanOrEqual(headTs + wait);
+            expect(posted.windowTs).to.be.greaterThanOrEqual(posted.deadline);
 
             const run = await h.dispute.auditDispute(1, posted.dispute);
             expect(run).to.include({ outcome: "returned", isValid: true });
@@ -1460,6 +1459,31 @@ describe("Unit: DisputeValidationService", function () {
     });
 
     describe("race", function () {
+        it("a replay holds the state mutex with the predecessor state installed while the timeout audit peeks the next writer -> the audit settles under the hold and judges the disputed state, true, no TimeoutParticipantNotNext", async function () {
+            const h = TestSession.getHarness();
+            const { dispute } = await postTimelyNextWriterTimeout(h);
+            const replay = await holdReplayOnPredecessorState(h, 1, dispute);
+            try {
+                const run = await h.dispute.auditDispute(1, dispute);
+
+                expect(run.storedProof?.disputeFraudProofType).to.equal(
+                    undefined
+                );
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+                expect(await replay.stillHeld()).to.equal(true);
+                const held = await replay.state();
+                // premise: the installed state names another next writer
+                expect(held.nextToWrite).to.not.equal(
+                    dispute.input.timeout.participant
+                );
+                // the peek never wrote the shared state machine
+                expect(held.overwrittenWrites).to.equal(0);
+            } finally {
+                await replay.release();
+            }
+        });
+
         it("fork advances while the audit is parked at getOnChainSlashedParticipants -> false + DisputeNotLatestState", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);

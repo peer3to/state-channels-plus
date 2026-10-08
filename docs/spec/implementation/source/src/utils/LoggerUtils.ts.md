@@ -23,11 +23,22 @@ Structured-log formatting helpers (dispute/auditing metadata projections, hash f
 
 ## Key design decisions
 
-Proof metadata projects milestones and latest height, with no separate signed-block count. Block metadata uses acceptedSignerAddresses so malformed evidence does not crash logging. Dispute fraud names resolve only in the dispute enum and ordinary fraud names only in its enum; unknown values display UNKNOWN(n). See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L779).
+Proof metadata projects milestones and latest height, with no separate signed-block count. Block metadata uses acceptedSignerAddresses so malformed evidence does not crash logging. Dispute fraud names resolve only in the dispute enum and ordinary fraud names only in its enum; unknown values display UNKNOWN(n). See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L791) and [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L924).
 
-Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L458).
+Peer-profile metadata has one owner: identity, blacklist state and live transport metadata. Lifecycle callers reuse this projection. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L500).
 
-Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L111).
+Time-failure metadata uses the caller's captured clock value and the existing enum formatter. Dependency-free error text coercion lives in errorMessage.ts so low-level loggers and runtime clients need not import this domain graph. See [LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L122).
+
+Dispute-deadline metadata has one owner. `getDisputeDeadlineMetadata({ killPeriodEnd, evidencePeriodEnd? })`
+([LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L711)) projects a dispute window's
+deadlines into `killPeriodEnd`, `killPeriodRemainingSeconds`, `evidencePeriodEnd` and
+`evidencePeriodRemainingSeconds`. The remaining seconds are the deadline minus `Clock.getTimeInSeconds()`,
+the chain-estimated clock (wall time plus the synced chain adjustment), not a chain read. A negative
+remainder means the period is already over. The evidence deadline is optional: without it, both
+evidence fields are `undefined` (a caller that knows only the kill period end, such as
+`DisputeManager.killDispute`). It only formats; no caller decides anything on it. Callers:
+[DisputeManager](../disputeManager/DisputeManager.ts.md) (kill send) and
+[EventHandler](../eventHandlers/EventHandler.ts.md) (dispute-window logs).
 
 Contract-call metadata is the single owner of selector decoding: it slices the selector and names it
 from one lazily built selector-to-name map over the merged SDK contract surface, so no second map
@@ -41,7 +52,7 @@ confirmations (dispute replay abort, ingest decode refusal, queue intake), whose
 not decode; `getBlockConfirmationStructMetadata` then leaves the block fields out and sets
 `undecodableBlock: true`, keeping the confirmation hash and signatures, instead of raising a decode
 error from inside the log call and replacing the caller's verdict with a throw. See
-[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L562).
+[LoggerUtils.ts](../../../../../../src/utils/LoggerUtils.ts#L579).
 
 Dispute metadata includes the signed `requireExistingDisputeWindow` value. Logs distinguish a conditional state contribution from an independently justified dispute without changing either classification.
 

@@ -25,8 +25,10 @@ The pipeline has three roles, all embodied by every honest participant:
   period; a valid one is persisted and, if the auditor holds more evidence, is
   answered with the auditor's own dispute.
 - **Reducer** — after the window's kill period, deterministically reduces the
-  window's disputes to one successor fork, installs its genesis locally, and
-  submits `reduceAndFinalize` + the fork snapshot update on-chain.
+  window's disputes to one successor fork, installs its genesis locally,
+  submits `reduceAndFinalize` alone at the signer's estimate (no fixed gas
+  limit), and once it is mined posts the fork adoption as a separate snapshot
+  update.
 
 Guarantee: every dispute path ends in a canonical successor fork adopted by
 `unsafeSetGenesisState` ([`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0)), with valid
@@ -46,7 +48,7 @@ sequenceDiagram
 
     SM->>DM: dispute(forkId) [fraud / timeout / self-removal / force-join]
     DM->>DM: constructDispute: stateProof, slashes,<br/>fraud proofs, timeout, auditing data, output hash
-    DM->>SCM: multicall(applyFraudProofs, uploadDispute[WithCalldata])
+    DM->>SCM: multicallBestEffortLast(applyFraudProofs, uploadDispute[WithCalldata])
     SCM-->>EH: DisputeCommitted[WithAuditingData]
     EH->>EH: mirror into LocalDiamond, dedup by dispute hash
     alt final dispute
@@ -76,19 +78,19 @@ sequenceDiagram
 
 ### 3.1 Local escalation (disputer role)
 
-Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L1),
+Every trigger calls [`DisputeManager.dispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L115),
 which is mutexed and idempotent per fork (`didIDispute` flag):
 
-| Trigger                                                                                                         | Site                                                                                                   | Dispute input it contributes                                                                                                                              |
-| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)      | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
-| Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L483) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
-| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
-| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
-| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
-| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
-| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                 | merged evidence                                                                                                                                           |
+| Trigger                                                                                                         | Site                                                                                                                                          | Dispute input it contributes                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Objective block fraud (double sign, invalid transition, wrong genesis, forged inbound block, invalid timestamp) | Block pipeline strategies ([block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §9)                                             | Fraud proof stored in [`FraudProofStorage`](../../../../../../src/storage/FraudProofStorage.ts#L5); applied in the dispute multicall → on-chain slash set |
+| Participant timeout                                                                                             | [`ParticipantTimeoutService.tryTimeoutParticipant`](../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L54) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
+| Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                                                             | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
+| Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                                                               | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
+| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                                                                 | `onChainSlashes`                                                                                                                                          |
+| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                                                                | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
+| Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                                                           | own view of the fork                                                                                                                                      |
+| Auditor holds more evidence than a valid observed dispute                                                       | `DisputeManager.shouldAddOwnEvidence` → `canConstructMoreEvidence` (once per fork, §6)                                                        | merged evidence                                                                                                                                           |
 
 ### 3.2 Timeout detection detail
 
@@ -118,7 +120,7 @@ committed block and after `setLatestState`):
 Disputes never arrive over peer RPC; the chain is the source of truth. The
 listener pipeline ([components.md](./components.md) §6) delivers
 `DisputeCommitted` / `DisputeCommittedWithAuditingData` to
-[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L322),
+[`EventHandler.onDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L311),
 deduplicated per dispute hash by an in-flight promise map. The handler first
 mirrors the event into the `LocalDiamond`, then applies a relevance gate: the
 dispute's fork must be the current fork, or (for final disputes) a fork with an
@@ -130,10 +132,10 @@ the acknowledged dead fork are blacklisted).
 
 ## 4. Dispute construction
 
-[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L573)
-assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply }`:
+[`DisputeManager.constructDispute(forkId)`](../../../../../../src/disputeManager/DisputeManager.ts#L711)
+assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData, fraudProofsToApply, observedOnChainSlashes }`:
 
-1. **State proof.** [`AgreementManager.getStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L67)
+1. **State proof.** [`AgreementManager.buildStateProof`](../../../../../../src/agreementManager/AgreementManager.ts#L164)
    for the fork's latest stored height: milestones at every participant-set
    change point plus a latest-state milestone when threshold coverage exists;
    with any linked tail inside its last milestone
@@ -145,10 +147,12 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
    the dispute's claimed set is a subset of the on-chain set when it executes
    (separation of fraud-proof enforcement from reduction, [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq)).
 3. **Timeout** from storage, or the empty struct.
-4. **Auditing data** (`getAuditingData`): genesis `SnapshotData`, one snapshot
+4. **Auditing data** ([`buildAuditingData`](../../../../../../src/disputeManager/DisputeManager.ts#L958)): genesis `SnapshotData`, one snapshot
    per milestone, the latest state snapshot, the latest _finalized_ state's
-   encoded machine state, and the inbound/outbound message-block ranges linking
-   snapshot tips. `isPartial` (anything missing locally) aborts construction.
+   encoded machine state, the inbound message-block range linking snapshot tips,
+   and the outbound blocks above the on-chain snapshot's outbound head up to the
+   latest state's. Missing local data throws, so construction fails; no
+   partial dispute is submitted.
 5. **Output commitment.** `LocalDiamond.computeDisputeOutputSnapshotData.staticCall(input, latestSnapshot, latestState, inboundBlocks)`
    computes the successor-fork genesis `SnapshotData`; its hash becomes
    `outputSnapshotDataHash`. The dispute thereby pre-commits to its own
@@ -162,15 +166,25 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.
 
-**Submission.** With fraud proofs: `SCM.multicall([applyFraudProofs, uploadDispute[WithCalldata]])`;
-without: the plain or calldata upload. No upload passes a gas limit: the chain signer sends each
-with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest dispute that lands
-between estimate and inclusion cannot push a late disputer out of gas (and past the evidence
-window). Race reverts are classified:
+**Submission.** With a kill or fraud proofs:
+`SCM.multicallBestEffortLast([applyDisputeFraudProofs?, applyFraudProofs?, uploadDispute[WithCalldata]])`.
+The kill and fraud proofs must succeed; the upload, last, is best effort, so they land even when
+it is refused. The proxy then emits `MulticallLastCallFailed(revertData)`; DisputeManager reads it
+from the receipt, decodes it and classifies it as a refused lone upload, and does not send the kill
+again alone. A refusal with no reason (bare `0x`, or the proxy's `Delegatecall failed`
+`Error(string)`) takes the custom error the all-or-nothing estimate reverted with; without one it
+is a fatal `Error`. The multicall's gas limit is the all-or-nothing `multicall` estimate plus the replay
+requirement; only when that estimate reverts (the upload already fails) is the best-effort call
+estimated, so a searching estimator never funds the kill alone while the upload could still land.
+Without a kill or fraud proofs: the plain or calldata upload, sent with no gas limit: the chain
+signer sends it with its estimate plus headroom (`withGasHeadroom`), so a concurrent honest
+dispute that lands between estimate and inclusion cannot push a late disputer out of gas (and past
+the evidence window). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
-`RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
-closed), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
+`RaceConditionDisputeEvidencePeriodExpired` (a lost evidence race: a no-op, with or without a kill
+in front of it; a leave whose exit fallback this was waits for the window to settle;
+[`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../../../../specification/open-questions.md#oq-spec-evidence-race-1-tknwbj)), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
 the chain's inbound head -> load the missing inbound run up to that head and
 rebuild). On failure the `didIDispute` flag is rolled back so a later attempt
 can retry.
@@ -213,7 +227,7 @@ walk checks and do not repeat the whole earlier walk.
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L352):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L341):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, load the required inbound run if not posted, compute the successor genesis via
@@ -223,9 +237,11 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   cannot assemble the data abort (spectators fail closed).
 - **Kill period expired:** committed peers still audit and replay to persist reduction data, warn on invalidity, and schedule reduction. They cannot kill after expiry. Thrown audit failures propagate; late-challenge recovery remains open.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L487)
-  with canonical preflight. A peer that already disputed only kills; otherwise the owner sends
-  kill then its own replacement in one multicall with expected-slash accounting. Known expired
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L606)
+  with canonical preflight. A peer that already disputed only kills, at once and
+  concurrently with its own upload; otherwise the owner sends
+  kill then its own replacement in one best-effort multicall with expected-slash accounting: the
+  kill lands even when the replacement is refused. Known expired
   kill preflight sends nothing; a late transaction failure propagates rather than becoming a
   successful kill.
   Valid → persist the confirmation, notify (`notifyDisputeUpdate`), then
@@ -245,11 +261,12 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   its own paths (§3.1). Reduction is scheduled at `killPeriodEnd` in every
   case.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L821)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L818)):
 drop the fork's cached evidence comparison, record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
-is current, upload replacement evidence (first honest peer wins).
+is current, upload replacement evidence (first honest peer wins; a lost race is a no-op inside
+`DisputeManager.dispute`).
 
 **`ChainSlashed` event**: mirror the slash, blacklist the peer, and open a
 dispute on the current fork if it is not yet disputed and the slashed address
@@ -257,8 +274,8 @@ is still a participant.
 
 ## 7. Reduction and successor-fork creation
 
-[`ReductionManager`](../../../../../../src/stateManager/reduction/ReductionManager.ts#L42) /
-[`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L52) /
+[`ReductionManager`](../../../../../../src/stateManager/reduction/ReductionManager.ts#L44) /
+[`ReductionExecutor`](../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L53) /
 [`ReductionComputationService`](../../../../../../src/stateManager/reduction/ReductionComputationService.ts#L20):
 
 1. **Trigger.** Scheduled at `killPeriodEnd` per §6; also from the block
@@ -269,7 +286,7 @@ is still a participant.
 2. **Preconditions** (re-checked at run time): fork still current; window
    exists on-chain; kill period expired (memoized per `(channel, fork)` —
    "not expired until `killPeriodEnd`" is reused, "expired" is terminal).
-3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/EventSyncService.ts#L268):
+3. **Dispute set.** [`EventSyncService.loadSynchronizedWindowCommitments`](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L215):
    the window's commitments from the chain, with any dispute whose event never
    reached us recovered by targeted log queries (3 attempts, widening span)
    — a reducer never reads a window its storage cannot back. Empty window →
@@ -282,7 +299,7 @@ is still a participant.
    into the successor genesis `SnapshotData`, encoded state, and terminal
    outbound message block. `reducedForkId = keccak(encode(reducedSnapshotData))`.
 5. **Simulate then install then submit.**
-   `multicall.staticCall([reduceAndFinalize, updateStateSnapshotFork])` first;
+   `multicall.staticCall([reduceAndFinalize])` first;
    races classify as `already-reduced` (`RaceConditionDisputeAlreadyReduced`,
    `RaceConditionBlockHeightTooOld` — deterministic reduction means another
    reducer installed the same result) or `superseded` (a final dispute's
@@ -290,14 +307,16 @@ is still a participant.
    `completeWithGenesis` installs the successor genesis under the
    `StateManager` mutex via `unsafeSetGenesisState` — the point where the fork
    transitions, queues drain, status and timeout scheduling restart — and only
-   then is the transaction submitted **detached**. A completion that resolves
+   then is the transaction submitted **detached**. The disposal check runs
+   before the send starts; a disposal during the signer's send does not stop
+   the broadcast, only the fork adoption post after it is mined. A completion that resolves
    to a different `reducedForkId` than expected is fatal (`abort`).
 6. **Final-dispute fast path.** A final dispute completes the same per-fork
    operation directly with its pre-committed output (§6), skipping compute and
    submit.
 
 **Reduction challenge.** On `DisputeReducedResultCommitted`
-([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L699)):
+([`onDisputeReducedResultCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L696)):
 drop the fork's cached evidence comparison (`DisputeManager.forgetEvidenceComparison`), mirror
 into the LocalDiamond; if relevant and the challenge period expired →
 `tryReduce` (adopt). Otherwise recompute the reduction on `SCM`
@@ -309,7 +328,7 @@ reducer is blacklisted. A locally unavailable dispute set means the reduction
 was already consumed — treated as processed.
 
 **Snapshot advancement.** After the successor fork is uncontestable,
-[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L37)
+[`SnapshotUpdateService`](../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L39)
 walks the on-chain snapshot's fork through `getReducedResult` /
 `isReduceChallengePeriodExpired` hops to the first undisputed fork, builds
 `updateStateSnapshotFork` calldata (with the outbound message-block range the
@@ -419,17 +438,17 @@ _Non-normative._
 
 ## Implementation traceability
 
-| Requirement / invariant                                    | Statement                                                                                                   | Implementation status | Implementation evidence                                                                                                                                                                                                                                  | Gap / divergence |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr) | Per-fork dispute idempotence with rollback on failed upload.                                                | Covered               | [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L1) (`dispute`)                                                                                                                                            | None.            |
-| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L26) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                   | None.            |
-| [`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha) | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | Covered               | `validateDispute` + `hasStoredDisputeFraudProof` throw paths                                                                                                                                                                                             | None.            |
-| [`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd) | Deterministic, order-independent reduction; races classified as convergence.                                | Covered               | [src/stateManager/reduction](../../../../../../src/stateManager/reduction) (`classifyReductionRace`, `compute`)                                                                                                                                          | None.            |
-| [`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0) | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | Covered               | [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L52) (`completeWithGenesis`), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (final path) | None.            |
-| [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq) | Fraud proofs slash before/independently of the dispute that consumes the slash set.                         | Covered               | `constructDispute` multicall ordering; `killDispute`                                                                                                                                                                                                     | None.            |
-| [`REQ-DVP-1-MQJTYR`](dispute-pipeline.md#req-dvp-1-mqjtyr) | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`tryTimeoutParticipant`)                                                                                                                                      | None.            |
-| [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                                       | None.            |
-| [`REQ-DVP-3-CFFAW1`](dispute-pipeline.md#req-dvp-3-cffaw1) | An incorrect committed reduction is challenged within the challenge period.                                 | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`validateDisputeReductionAndChallenge`)                                                                                                                     | None.            |
+| Requirement / invariant                                    | Statement                                                                                                   | Implementation status | Implementation evidence                                                                                                                                                                                                                                     | Gap / divergence |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-DVP-1-A6BYJR`](dispute-pipeline.md#inv-dvp-1-a6byjr) | Per-fork dispute idempotence with rollback on failed upload.                                                | Covered               | [src/disputeManager/DisputeManager.ts](../../../../../../src/disputeManager/DisputeManager.ts#L115) (`dispute`)                                                                                                                                             | None.            |
+| [`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tvq) | Kill decisions are grounded in canonical Solidity predicates; self-slashing proofs are preflighted.         | Covered               | [src/stateManager/dispute/DisputeValidationService.ts](../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L1040) (staticCalls, `validateTimeoutCalldataPostedProof`)                                                                    | None.            |
+| [`INV-DVP-3-ZMF1HA`](dispute-pipeline.md#inv-dvp-3-zmf1ha) | Invalid audit ⇔ exactly one stored dispute fraud proof.                                                     | Covered               | `validateDispute` + `hasStoredDisputeFraudProof` throw paths                                                                                                                                                                                                | None.            |
+| [`INV-DVP-4-Z530JD`](dispute-pipeline.md#inv-dvp-4-z530jd) | Deterministic, order-independent reduction; races classified as convergence.                                | Covered               | [src/stateManager/reduction](../../../../../../src/stateManager/reduction) (`classifyReductionRace`, `compute`)                                                                                                                                             | None.            |
+| [`INV-DVP-5-NAJRB0`](dispute-pipeline.md#inv-dvp-5-najrb0) | Every dispute path installs a successor fork via `unsafeSetGenesisState`.                                   | Covered               | [src/stateManager/reduction/ReductionManager.ts](../../../../../../src/stateManager/reduction/ReductionManager.ts#L253) (`completeWithGenesis`), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L493) (final path) | None.            |
+| [`INV-DVP-6-RFSBRQ`](dispute-pipeline.md#inv-dvp-6-rfsbrq) | Fraud proofs slash before/independently of the dispute that consumes the slash set.                         | Covered               | `constructDispute` multicall ordering; `killDispute`                                                                                                                                                                                                        | None.            |
+| [`REQ-DVP-1-MQJTYR`](dispute-pipeline.md#req-dvp-1-mqjtyr) | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | Covered               | [src/stateManager/chainFallback/ParticipantTimeoutService.ts](../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L54) (`tryTimeoutParticipant`)                                                                                  | None.            |
+| [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/eventSync/EventSyncService.ts](../../../../../../src/stateManager/eventSync/EventSyncService.ts#L215) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                    | None.            |
+| [`REQ-DVP-3-CFFAW1`](dispute-pipeline.md#req-dvp-3-cffaw1) | An incorrect committed reduction is challenged within the challenge period.                                 | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L896) (`validateDisputeReductionAndChallenge`)                                                                                                                      | None.            |
 
 ## Dispute admission and state contributions
 

@@ -45,6 +45,12 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    transition, a node whose local EVM is under-funded or whose executor fails would judge an honest
    block as fraud.
 
+5. **`peekNextToWrite` is one simulated call.** It calls `getNextToWriteOf(encodedState)` on the
+   state machine ([#L215](../../../../../../src/evm/EvmDiamondStateMachine.ts#L215)) through
+   `simulateCall`: the executor runs it under its own mutex and reverts its state change, so the
+   shared live state is never replaced, a failed read leaves nothing to restore, and callers need no
+   lock ([DisputeValidationService](../stateManager/dispute/DisputeValidationService.ts.md)).
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents        |

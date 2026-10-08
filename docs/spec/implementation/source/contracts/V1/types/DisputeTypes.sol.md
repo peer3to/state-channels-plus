@@ -24,7 +24,12 @@ ReduceOutput, Timeout.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **`DisputeAuditingData.outboundMessageBlocks` is the run above the on-chain anchor.** It holds
+   the outbound blocks above the on-chain snapshot's outbound head up to the latest state's, not the
+   run since genesis. Cut at the current chain anchor it must link the anchor's outbound head to the
+   latest state's, else `DisputeInvalidOutboundRun` kills the dispute
+   ([StateProofFacet.sol](../StateChannelDiamondProxy/StateProofFacet.sol.md)); auditors persist the
+   verified part for a later snapshot post (built by [DisputeManager.ts](../../../src/disputeManager/DisputeManager.ts.md)).
 
 ## Inputs, outputs, state, and side effects
 
