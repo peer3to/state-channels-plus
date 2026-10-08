@@ -7,9 +7,11 @@
 ## Requirements
 
 - [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
-  Contradicts: Two handlers return a valid verdict against an honest participant, so a proof that shows no misconduct appends to the slash set: the unlinked previous snapshot ([`FIND-SECURITY-2-J3J60V`](../../../../../audit/open-findings.md#find-security-2-j3j60v)) and the pruned genuine inbound block ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
+  Contradicts: The forged-inbound handler returns a valid verdict against an honest participant, so a proof that shows no misconduct appends to the slash set: the pruned genuine inbound block ([`FIND-SECURITY-3-REDPJW`](../../../../../audit/open-findings.md#find-security-3-redpjw)).
 - [`REQ-ENFFP-1-BREACW` (Symmetric stake on submission)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-1-breacw)
 - [`REQ-ENFFP-2-JXMYNB` (Proof-type completeness at the boundary)](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb)
+- [`INV-HIST-1-5N44K9` (Block commits to the state snapshot hash)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)
+- [`INV-HIST-4-DSMGGT` (forkId = keccak256)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-4-dsmggt)
 - [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
 - [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
   Partial: Checked amount arithmetic implemented; custom aggregation pending — No static rule or reusable suite prevents integrator `unchecked` arithmetic or invalid custom-data aggregation.
@@ -42,13 +44,22 @@ Proof application
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7` — WrongGenesis valid
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8` — InvalidTimestamp valid
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P9` — ForgedInboundMessageBlock valid
-- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P10` — BlockInvalidStateTransition invalid→self-slash
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P10` — BlockInvalidStateTransition invalid→self-slash
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P11` — WrongGenesis invalid→self-slash
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P12` — InvalidTimestamp invalid→self-slash
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P13` — ForgedInboundMessageBlock invalid→self-slash
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P14` — WrongGenesis naming an origin fork with no dispute window reverts `RaceConditionDisputeWindowNotOpen(channelId, originForkId)` instead of a kill-period deadline
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P15` — WrongGenesis against an open dispute window whose kill period is still running reverts `RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, currentTimestamp)`, with the deadline measured from the last evidence submission and strictly ahead of the current timestamp
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P16` — WrongGenesis whose open window leaves no genesis timestamp available reverts `RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId)` naming the channel and both forks
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P17` — BlockInvalidStateTransition against an honest first block with any previous snapshot and state that are not its predecessor's, from a non-participant: nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P18` — BlockInvalidStateTransition against an honest later block with any previous snapshot and state, and either its real predecessor block or any decodable predecessor block that is not the real one, from a non-participant: the call succeeds and nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P19` — BlockInvalidStateTransition against an honest first block with an unlinked previous snapshot on another fork, from an eligible submitter: the submitter is slashed and the signer is not
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P20` — BlockInvalidStateTransition with a linked predecessor whose replay does not give the block's snapshot hash: the signer is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P21` — BlockInvalidStateTransition whose signed block links to a previous snapshot of another fork: the signer is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P22` — the unlinked other-fork proof nested in `DisputeInvalidBlockInStateProofApplyFraudProof` against an honest dispute holding the block, from an eligible submitter: the dispute stays committed, the disputer and signer are kept, the submitter is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P23` — BlockInvalidStateTransition against an honest later block with a decodable predecessor block that is not the real one, from an eligible submitter: the submitter is slashed and the signer is not
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P24` — BlockInvalidStateTransition whose predecessor bytes do not decode as a block: the call reverts and nobody is slashed
+- [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P25` — BlockInvalidStateTransition whose later block links, through its real predecessor block, to a previous snapshot of another fork: the signer is slashed
 
 ## UNIT-TEST-FRAUD-PROOF-FACET-2-RVFP04
 

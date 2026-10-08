@@ -59,7 +59,7 @@ Reduction algebra
 
 Dispute-state restoration
 
-- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification: [`INV-SM-2-0FTJ2T` (getState/_setState exact inverses)](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
 - Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
 
 - [ ] `UNIT-TEST-SM-DISPUTE-VERIFICATION-1-ZAJQV6.P1` — The supplied dispute output state is restored exactly before membership mutation

@@ -85,10 +85,7 @@ describe("SignerRecoveryCache", () => {
         const first = await signedMessage();
         const second = await signedMessage(first.message);
         // the uncached oracle
-        const firstSigner = ethers.verifyMessage(
-            first.message,
-            first.signature
-        );
+        const firstSigner = ethers.verifyMessage(first.message, first.signature);
         const secondSigner = ethers.verifyMessage(
             second.message,
             second.signature
@@ -257,7 +254,9 @@ describe("SignerRecoveryCache", () => {
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
-                expect(recoverSigner(message, second)).to.equal(wallet.address);
+                expect(recoverSigner(message, second)).to.equal(
+                    wallet.address
+                );
                 expect(reports).to.deep.equal([
                     {
                         signer: wallet.address,
@@ -396,8 +395,7 @@ describe("SignerRecoveryCache", () => {
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 const entries = [];
-                for (let i = 0; i < 4; i++)
-                    entries.push(await doubleSignedMessage());
+                for (let i = 0; i < 4; i++) entries.push(await doubleSignedMessage());
                 for (const e of entries) recoverSigner(e.message, e.signature);
                 // entry 0 is the oldest and was evicted by entry 3
                 recoverSigner(entries[0].message, entries[0].second);
@@ -459,7 +457,9 @@ describe("SignerRecoveryCache", () => {
             const kept = recordDoubleSignatureReports();
             try {
                 recoverSigner(message, signature);
-                expect(recoverSigner(message, second)).to.equal(wallet.address);
+                expect(recoverSigner(message, second)).to.equal(
+                    wallet.address
+                );
                 expect(kept.reports.map((r) => r.signer)).to.deep.equal([
                     wallet.address
                 ]);
@@ -472,15 +472,9 @@ describe("SignerRecoveryCache", () => {
         it("a join signature re-signed with another nonce reports its signer", async () => {
             const wallet = ethers.Wallet.createRandom();
             const join = factory.joinChannel();
-            const { encoded, signature } = await SignatureUtils.signJoinChannel(
-                join,
-                wallet
-            );
-            const second = signBlockVariant(
-                wallet,
-                ethers.keccak256(encoded),
-                0
-            );
+            const { encoded, signature } =
+                await SignatureUtils.signJoinChannel(join, wallet);
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 SignatureUtils.getSignerAddressJoinChannel(join, signature);
@@ -496,15 +490,9 @@ describe("SignerRecoveryCache", () => {
         it("a transaction signature re-signed with another nonce reports its signer", async () => {
             const wallet = ethers.Wallet.createRandom();
             const transaction = factory.transaction();
-            const { encoded, signature } = await SignatureUtils.signTransaction(
-                transaction,
-                wallet
-            );
-            const second = signBlockVariant(
-                wallet,
-                ethers.keccak256(encoded),
-                0
-            );
+            const { encoded, signature } =
+                await SignatureUtils.signTransaction(transaction, wallet);
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 SignatureUtils.getSignerAddressTransaction(
@@ -527,11 +515,7 @@ describe("SignerRecoveryCache", () => {
                 dispute,
                 wallet
             );
-            const second = signBlockVariant(
-                wallet,
-                ethers.keccak256(encoded),
-                0
-            );
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 SignatureUtils.getSignerAddressDispute(dispute, signature);
@@ -546,15 +530,12 @@ describe("SignerRecoveryCache", () => {
 
         it("an open-channel signature re-signed with another nonce reports its signer", async () => {
             const wallet = ethers.Wallet.createRandom();
-            const { encoded, signature } = await SignatureUtils.signOpenChannel(
-                codecValues.openChannel(),
-                wallet
-            );
-            const second = signBlockVariant(
-                wallet,
-                ethers.keccak256(encoded),
-                0
-            );
+            const { encoded, signature } =
+                await SignatureUtils.signOpenChannel(
+                    codecValues.openChannel(),
+                    wallet
+                );
+            const second = signBlockVariant(wallet, ethers.keccak256(encoded), 0);
             const { reports, stop } = recordDoubleSignatureReports();
             try {
                 SignatureUtils.getSignerAddress(encoded, signature);

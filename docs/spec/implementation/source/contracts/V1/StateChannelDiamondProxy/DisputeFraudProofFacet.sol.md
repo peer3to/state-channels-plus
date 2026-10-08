@@ -11,7 +11,7 @@
 - [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
-  Partial: The posted block's author signature is not verified ([`FIND-TIMEOUT-2-J7S0TS`](../../../../../audit/open-findings.md#find-timeout-2-j7s0ts)).
+  Partial: The posted block's author signature is not verified ([`FIND-TIMEOUT-2-J7S0TS`](../../../../../audit/open-findings.md#find-timeout-2-j7s0ts)). The replay rebuilds the posted block's snapshot differently from clients, so an honest refutation can fail ([`FIND-TIMEOUT-4-5YNPT3`](../../../../../audit/open-findings.md#find-timeout-4-5ynpt3)).
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-DIS-1-XAJ1VA` (A dispute MUST state at least one of the five valid inputs)](../../../../../specification/disputes/disputes.md#req-dis-1-xaj1va)
 - [`REQ-FP-5-ZXW0J5` (A dispute may list any subset of recorded slashes)](../../../../../specification/disputes/fraud-proofs.md#req-fp-5-zxw0j5)

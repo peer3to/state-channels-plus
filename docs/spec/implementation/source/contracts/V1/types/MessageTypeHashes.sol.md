@@ -12,7 +12,7 @@
 
 Join discriminator
 
-- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
 
 - [ ] `UNIT-TEST-SM-MESSAGE-HASHES-1-40HWWB.P1` — The join constant equals the specified domain hash
@@ -34,7 +34,7 @@ Exit discriminator
 
 Compatibility
 
-- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
+- Specification: [`REQ-SM-7-Y38NTY` (_joinChannel handles admission and top-up)](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 - Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1), [`REQ-SM-8-8CHSQ8.T1`](../../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8.t1)
 
 - [ ] `UNIT-TEST-SM-MESSAGE-HASHES-3-PJX2MA.P1` — Constants remain identical across producers/consumers
