@@ -49,7 +49,7 @@ approvals. Planned tests preserve the owning requirement ID, for example
 rerun related evidence. The layers link through stable IDs, not paths.
 Verification holds one report per test file plus the tool-written
 `verification/requirements.md`; tested status is derived, never typed.
-`yarn spec:refresh` regenerates the five reports under `generated/` (it never
+`yarn spec:refresh` regenerates the reports under `generated/` (it never
 authors the maintained documents). The full rules live in
 `docs/spec/AGENTS.md`. Before a commit run
 `yarn spec:impact` and `yarn spec:impact --staged`; during PR review run

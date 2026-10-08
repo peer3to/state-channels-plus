@@ -222,12 +222,14 @@ verification subject. Agents must resolve each reported gap in the correct maint
 genuine missing behavior/evidence explicit.
 
 `generated/` is gitignored and not committed. Run `yarn spec:refresh` locally to (re)build it, then
-inspect all five files under `generated/`:
+inspect all seven files under `generated/`:
 
 - `specification-index.md`: specification IDs that do not appear in a specification test plan;
 - `implementation-coverage.md`: missing specification/implementation counterparts and unreferenced source files;
 - `verification-coverage.md`: missing verification rows, exact test references, layer counterparts, and unreferenced repository tests;
 - `open-questions-index.md`: unresolved questions from all four maintained layers;
+- `traceability.md`: requirement, source file and test declaration joined by stable IDs;
+- `pending-review.md`: maintained documents awaiting or needing re-review by an engineer;
 - `audit-summary.md`: the joined current readiness and blocking queues.
 
 Run `yarn spec:refresh:strict` when evaluating full completeness;
