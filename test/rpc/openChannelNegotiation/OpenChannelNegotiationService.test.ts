@@ -147,6 +147,18 @@ describe("OpenChannelNegotiationService", function () {
         );
     });
 
+    it("the lower address selects no channel while its terms request is pending", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLowerSelectionDuringTerms()
+            .request();
+        expect(result.channelId).to.equal(ethers.ZeroHash);
+        expect(result.subscriptionCounts).to.include(0);
+        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
+            true
+        );
+    });
+
     it("replays an early committed request and clears an unsigned abandoned attempt", async function () {
         const result = await fixture
             .control()

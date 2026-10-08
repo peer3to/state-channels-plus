@@ -325,6 +325,12 @@ export type AttemptClearedDuringTermsProbe = {
     subscriptionCounts: (number | null)[];
 };
 
+export type LowerTermsPendingProbe = {
+    channelId: string;
+    /** subscriptions per node for the attempt's channel */
+    subscriptionCounts: (number | null)[];
+};
+
 export type NegotiationFailureProbe = {
     channelIdAfterHigherInit: string;
     initiatorTimeoutBlacklisted: boolean;
@@ -4143,6 +4149,53 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         } finally {
             stub.releaseEventListenerRemoval();
             await service.dispose();
+        }
+    }
+
+    /**
+     * The local runtime is the lower address; the peer never answers its
+     * terms request. Reads the selection while that request is pending.
+     */
+    public async probeLowerSelectionDuringTerms(): Promise<LowerTermsPendingProbe> {
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        this.registerProfile(transport, peerAddress);
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const match = this.makeMatch(
+            peerAddress,
+            "3b",
+            localAddress,
+            "3c",
+            "3d"
+        );
+        try {
+            await this.startNegotiation(service, match);
+            const channelId = String(service.state.attempt?.channelId);
+            const requested = () =>
+                transport.frames.some(
+                    (frame) =>
+                        (JSON.parse(frame) as { method?: string }).method ===
+                        "exchangeTerms"
+                );
+            for (let retry = 0; retry < 500 && !requested(); retry += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            if (!requested()) throw new Error("Terms request was never sent");
+            return {
+                channelId: String(this.p2pManager.stateManager.channelId),
+                subscriptionCounts:
+                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                        channelId
+                    )
+            };
+        } finally {
+            await service.dispose();
+            this.p2pManager.profileManager.removeTransport(transport);
         }
     }
 

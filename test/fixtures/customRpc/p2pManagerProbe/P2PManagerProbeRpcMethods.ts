@@ -47,6 +47,7 @@ import type {
     MatchedNegotiationAdmissionProbe,
     AttemptClearedDuringTermsProbe,
     InvalidNegotiationAmountProbe,
+    LowerTermsPendingProbe,
     NegotiationFailureProbe,
     NegotiationFailureScenario,
     SignedAttemptObservationProbe,
@@ -500,6 +501,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         phase: "balance" | "selection"
     ): Promise<AttemptClearedDuringTermsProbe> {
         return this.service.probeAttemptClearedDuringTerms(phase);
+    }
+
+    public probeLowerSelectionDuringTerms(): Promise<LowerTermsPendingProbe> {
+        return this.service.probeLowerSelectionDuringTerms();
     }
 
     public probeNegotiationFailure(

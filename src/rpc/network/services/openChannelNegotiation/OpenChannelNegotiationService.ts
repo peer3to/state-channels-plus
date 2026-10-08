@@ -550,7 +550,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             attempt.theirBalance = theirBalance;
             // the ID is selected only once the exchanged terms validate
             await this.selectAttemptChannel(attempt);
-            if (this.state.attempt !== attempt) return;
             const { participants, balances } =
                 this.getParticipantsAndBalances(attempt);
             let data: BytesLike;

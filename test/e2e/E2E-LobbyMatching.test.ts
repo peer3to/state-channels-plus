@@ -1100,8 +1100,8 @@ describe("E2E: lobby matching", function () {
                 .getNegotiationAttempt()
                 .request();
             if (!deadAttempt) expect.fail("negotiation attempt is gone");
-            expect(deadAttempt.peerAddress.toLowerCase()).to.equal(
-                h.peers[lowerIndex].address.toLowerCase()
+            expect(deadAttempt.peerAddress).to.equal(
+                h.peers[lowerIndex].address
             );
             expect(await higher.query.getChannelId().request()).to.equal(
                 deadAttempt.channelId
@@ -1149,8 +1149,8 @@ describe("E2E: lobby matching", function () {
                         .getNegotiationAttempt()
                         .request();
                     if (!attempt) expect.fail("new negotiation is gone");
-                    expect(attempt.peerAddress.toLowerCase()).to.equal(
-                        h.peers[thirdIndex].address.toLowerCase()
+                    expect(attempt.peerAddress).to.equal(
+                        h.peers[thirdIndex].address
                     );
                     expect(attempt.channelId).not.to.equal(
                         deadAttempt.channelId
