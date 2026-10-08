@@ -6,6 +6,9 @@ const { REQUIREMENT_PATTERN, REQUIREMENT_RE } = require("./id-utils");
 
 const SPEC_ROOT = path.resolve(__dirname, "../..");
 const REPO_ROOT = path.resolve(SPEC_ROOT, "../..");
+// Per-requirement test status, written by `yarn spec:ids:fix`. It names every
+// requirement, so tools that react to a changed document skip it.
+const REQUIREMENT_STATUS = path.join(SPEC_ROOT, "verification/requirements.md");
 const ID_PATTERN = REQUIREMENT_PATTERN;
 const ID_RE = REQUIREMENT_RE;
 const ID_GLOBAL_RE = new RegExp(ID_PATTERN, "g");
@@ -140,6 +143,7 @@ module.exports = {
     ID_PATTERN,
     ID_RE,
     REPO_ROOT,
+    REQUIREMENT_STATUS,
     SPEC_ROOT,
     isSeparator,
     linkValues,

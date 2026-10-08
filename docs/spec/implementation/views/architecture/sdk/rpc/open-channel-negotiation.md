@@ -1,6 +1,5 @@
 # Lobby-to-Channel Negotiation
 
-> **Status:** Authored — engineer verification pending.
 > **Specifications:** [lobby matching](../../../../../specification/peer-communication/lobby-matching.md), [channel negotiation](../../../../../specification/peer-communication/channel-negotiation.md)
 
 ## Purpose

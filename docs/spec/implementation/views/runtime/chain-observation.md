@@ -2,18 +2,6 @@
 
 > **Specification subject:** [specification/runtime/chain-observation.md](../../../specification/runtime/chain-observation.md)
 
-> **Agent authoring status:** Current implementation design assembled from the source.
-> **Engineer verification:** Pending.
-
-## Contents
-
-- [Implementation overview](#implementation-overview)
-- [Assumptions and constraints](#assumptions-and-constraints)
-- [System design](#system-design)
-- [System integration test plan](#system-integration-test-plan)
-- [Source inventory](#source-inventory)
-- [Conformance traceability](#conformance-traceability)
-
 ## Implementation overview
 
 The runtime reaches the chain through the ordered endpoint list `PROVIDER_URLS`, or the single
@@ -71,40 +59,3 @@ derives the wallet, opens the nodes and returns once one node connected.
    retry's backoff.
 5. **Ownership.** The host disposes the provider, or, when the process-wide Clock still reads through
    it, stops its reconnects and releases it to the Clock, which destroys it once replaced.
-
-## System integration test plan
-
-The listener, provider, node and sync interaction crosses `src/StateChannelEventListener.ts`,
-`src/evm/p2pRuntime/rpcNodes/` and `src/stateManager/eventSync/`. Its system cases are planned in the
-specification subject's test matrix and exercised end to end against a WebSocket proxy in front of the
-test node: a cut and restored only endpoint, a newer event during the catch-up read, a failed catch-up
-read, two endpoints with one cut, a backup that connects after startup, the restored primary catching
-up over events the backup delivered, clear and select of the channel listener, the retry's exits
-(socket drop, cleared listener, disposal) with the watermark advancing afterwards, a subscription made
-before the channel opened, a catch-up node whose head is behind or at the watermark, a real recovery
-query that completes later blocks during a catch-up read, windows of `LOG_QUERY_MAX_BLOCKS` against
-an endpoint with a smaller range limit, a backup that drops for good during its catch-up read, two
-nodes catching up at once, and a connected backup whose failed window hands the rest of its
-catch-up to the first node. Exact evidence is mapped in the verification reports.
-
-## Source inventory
-
-| Source                                                                             | Report                                                                                    | Role                                                                                                                                             |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [RuntimeChainContext.ts](../../../../src/evm/p2pRuntime/RuntimeChainContext.ts)    | [RuntimeChainContext.ts.md](../../source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)    | Endpoint list, window size and wallet validation; startup on the first connected node.                                                           |
-| [RpcNodeProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts)   | [RpcNodeProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md)   | One endpoint's socket, liveness, reconnect, chain id and socket hand-over.                                                                       |
-| [MultiRpcProvider.ts](../../../../src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts) | [MultiRpcProvider.ts.md](../../source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md) | Request routing and failover, outage warning, block relay.                                                                                       |
-| [StateChannelEventListener.ts](../../../../src/StateChannelEventListener.ts)       | [StateChannelEventListener.ts.md](../../source/src/StateChannelEventListener.ts.md)       | Per-node subscriptions, held reopened streams, catch-up retries through the first connected node, abandon on socket loss and the watermark hold. |
-| [EventSyncService.ts](../../../../src/stateManager/eventSync/EventSyncService.ts)  | [EventSyncService.ts.md](../../source/src/stateManager/eventSync/EventSyncService.ts.md)  | Paged log reads, catch-up, block-scoped dedup, removed and below-watermark drops, watermark hold.                                                |
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. The rows roll up the file reports;
-each row's evidence is auditable from its links.
-
-| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                               | Gap / divergence |
-| ---------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CHAINOBS-1-5JTHY8`](../../../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8) | Covered               | **Here:** startup and validation in [RuntimeChainContext](../../source/src/evm/p2pRuntime/RuntimeChainContext.ts.md). **Other files:** the shared chain id and bounded attempts in [RpcNodeProvider](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md).                                                                                                                  | —                |
-| [`REQ-CHAINOBS-2-2NCSQ3`](../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3) | Covered               | **Here:** routing, failover, outage warning and release in [MultiRpcProvider](../../source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md). **Other files:** dropped-socket answers in [RpcNodeProvider](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md).                                                                                                          | —                |
-| [`REQ-CHAINOBS-3-N137ZP`](../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp) | Covered               | **Here:** reconnect and liveness in [RpcNodeProvider](../../source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md); subscriptions, hold and retries in [StateChannelEventListener](../../source/src/StateChannelEventListener.ts.md). **Other files:** paged catch-up and the watermark hold in [EventSyncService](../../source/src/stateManager/eventSync/EventSyncService.ts.md). | —                |
-| [`INV-CHAINOBS-1-ASVKC1`](../../../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1) | Covered               | **Here:** block-scoped dedup, removed and below-watermark drops in [EventSyncService](../../source/src/stateManager/eventSync/EventSyncService.ts.md). **Other files:** every stream fed through it by [StateChannelEventListener](../../source/src/StateChannelEventListener.ts.md).                                                                                                  | —                |

@@ -152,6 +152,7 @@
     "spec:id:new": "node docs/spec/tools/new-id.js",
     "spec:ids:check": "node docs/spec/tools/check-id-links.js",
     "spec:ids:fix": "node docs/spec/tools/check-id-links.js --write",
+    "spec:test": "node --test docs/spec/tools/test/*.test.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint:fix": "eslint src/**/*.ts test/**/*.ts --fix",

@@ -30,6 +30,6 @@ such oracles) remain with the targeted Node suites and none is assigned here.
 
 ## Tests and covered test IDs
 
-| Test                                                                                                      | Covers                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | [`INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1`](../../../../implementation/source/src/evm/p2pRuntime/browser/README.md#integration-test-browser-p2p-runtime-1-e8w0m2.p1) |
+| Test                                                                                                      | Covers                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | [`INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#integration-test-browser-p2p-runtime-1-e8w0m2) |

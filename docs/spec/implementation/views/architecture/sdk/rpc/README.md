@@ -2,14 +2,12 @@
 
 > **Specification subject:** [specification/architecture/rpc.md](../../../../../specification/peer-communication/rpc.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The peer-RPC system as the protocol's peer-to-peer entry-point surface: service
 > registration, typed proxy derivation, wire envelope, guards, delivery modes,
 > correlation/timeout/error semantics, failure outcomes, and rate limiting. This is the deep
 > reference behind the component summary in [components.md](../components.md) §2. Layering context:
 > [architecture.md](../architecture.md); flow-level behavior of the main consumer:
 > [block-confirmation-pipeline.md](../block-confirmation-pipeline.md).
-
 
 ## Shared routing and transport ownership
 
@@ -45,14 +43,14 @@ This README owns the shared model — dispatch, guards, wire contract, outcome c
 exported service has its own document in this directory that owns that service's algorithm,
 Byzantine assessment, invariants, and verification:
 
-| Service | Document |
-| --- | --- |
-| `InitHandshakeService` | [handshake.md](./handshake.md) |
-| `WebRTCSetupService` | [webrtc-setup.md](./webrtc-setup.md) |
-| `StateTransitionService` | [state-transition.md](./state-transition.md) |
-| `JoinChannelService` | [join-channel.md](./join-channel.md) |
-| `SpectateService` | [spectate.md](./spectate.md) |
-| `IsForkDisputedService` | [is-fork-disputed.md](./is-fork-disputed.md) |
+| Service                                   | Document                                                     |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| `InitHandshakeService`                    | [handshake.md](./handshake.md)                               |
+| `WebRTCSetupService`                      | [webrtc-setup.md](./webrtc-setup.md)                         |
+| `StateTransitionService`                  | [state-transition.md](./state-transition.md)                 |
+| `JoinChannelService`                      | [join-channel.md](./join-channel.md)                         |
+| `SpectateService`                         | [spectate.md](./spectate.md)                                 |
+| `IsForkDisputedService`                   | [is-fork-disputed.md](./is-fork-disputed.md)                 |
 | `OpenChannelNegotiationService` (unwired) | [open-channel-negotiation.md](./open-channel-negotiation.md) |
 
 ## 1. Purpose & observable contract
@@ -74,7 +72,7 @@ boundary's contract is therefore twofold:
   ([`NetworkRpcRouter.onRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L40),
   [`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35)). Request/response replies are
   correlated, time-bounded, and only settled by the addressed peer.
-- **What it does not guarantee.** Nothing about the *semantic* validity of parameters. The
+- **What it does not guarantee.** Nothing about the _semantic_ validity of parameters. The
   envelope is untrusted JSON; every handler remains responsible for decoding and validating its
   own payload before any state effect (§4; canonical owners are listed there).
 
@@ -94,7 +92,7 @@ internal helpers, and business logic — e.g.
 owns the per-peer acknowledgment maps, and
 [`SpectateService`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L36) owns the in-flight
 sync set and the whole payload-generation/verification machinery. It pairs with an **RpcMethods**
-class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes *only* the
+class (a subclass of [`ANetworkRpcMethods`](../../../../../../../src/rpc/network/ANetworkRpcMethods.ts#L4)) that exposes _only_ the
 deliberately public, remotely callable methods. The dispatcher instantiates the RpcMethods class
 per incoming frame via `service.createRPCMethods(transport)`, binding `senderTransport` so a
 handler knows which peer called it.
@@ -102,7 +100,7 @@ handler knows which peer called it.
 Under the declared-endpoint rule in [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), private helpers and mutable service state MUST NOT be exposed through
 an `RpcMethods` class. Only methods whose remote invocation is an intended protocol entry point
 belong there; everything else stays on the service. A method on an RpcMethods class is public to
-every connected peer — putting it there *is* the act of opening a protocol entry point, and it
+every connected peer — putting it there _is_ the act of opening a protocol entry point, and it
 then carries the full ingress obligations of §4.
 
 [`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35) resolves endpoints from
@@ -155,17 +153,17 @@ sending stubs exist. Accessing a non-service property of the root through `remot
 The effect is that local TypeScript callers cannot construct a wrong call — method names,
 parameter types, and result types are all checked against the RpcMethods class — and the
 receiving and sending surfaces cannot drift apart, because both are derived from the same class.
-This is a *local-developer* safety property only; see §4 for what it does not protect.
+This is a _local-developer_ safety property only; see §4 for what it does not protect.
 
 ### 2.4 Delivery modes — chosen by the caller, constrained by the method's type
 
 The delivery handle exposed for a method depends on its declared return type
 ([`RpcHandleProxy.ts`](../../../../../../../src/rpc/network/RpcHandleProxy.ts#L1)):
 
-| Method returns | Handle | Operations |
-| --- | --- | --- |
+| Method returns           | Handle                    | Operations                                                    |
+| ------------------------ | ------------------------- | ------------------------------------------------------------- |
 | `void` / `Promise<void>` | `FireAndForgetRpcHandler` | `.broadcast()`, `.sendOne(target?)`, `.sendMultiple(targets)` |
-| any value | `RequestRpcHandler<T>` | `.request(target?, {timeoutMs?})` → `Promise<T>` |
+| any value                | `RequestRpcHandler<T>`    | `.request(target?, {timeoutMs?})` → `Promise<T>`              |
 
 - **Broadcast** ([`NetworkRpcRouter.broadcastRpc`](../../../../../../../src/rpc/router/NetworkRpcRouter.ts#L43)) sends the envelope to
   every open connection. No `requestId` — no replies.
@@ -230,8 +228,8 @@ These are two different properties and the specification states them plainly, be
 them is how ingress bugs happen:
 
 - **Type safety protects local callers.** The typed proxy (§2.3) prevents ordinary local
-  TypeScript code from constructing a wrong call. It constrains *senders compiled against this
-  codebase* and nothing else.
+  TypeScript code from constructing a wrong call. It constrains _senders compiled against this
+  codebase_ and nothing else.
 - **Wire data is untrusted JSON.** A Byzantine peer does not use the proxy; it sends arbitrary
   frames. At receipt the dispatcher verifies exactly: frame size, envelope shape (`service` and
   `method` strings, `params` an array — [`deserializeRpc`](../../../../../../../src/rpc/Rpc.ts#L42)), service
@@ -257,7 +255,7 @@ silently coercing to a lossy number, and the test harness deliberately installs 
 Type safety at the caller and Byzantine safety at the receiver are complementary requirements, not
 substitutes. Examples of the split done right:
 [`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)
-rejects a non-32-byte challenge and a non-finite time *before signing anything* (a NaN would slip
+rejects a non-32-byte challenge and a non-finite time _before signing anything_ (a NaN would slip
 past the skew comparison);
 [`SpectateService.applySyncResponse`](../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L100)
 decodes the peer's payload inside its failure handling so undecodable bytes become an aborted
@@ -268,7 +266,7 @@ producing its own signature.
 
 ## 5. Guards — first-class session gating
 
-Guards gate a service's entire public surface on objective preconditions about the *caller*,
+Guards gate a service's entire public surface on objective preconditions about the _caller_,
 before any method logic runs. They are the boundary's authentication/admission layer, distinct
 from the per-endpoint payload validation of §4.
 
@@ -306,7 +304,7 @@ during its grace overlap. All built-in services except
 `InitHandshakeService` use it
 (`StateTransitionService`, `SpectateService`, `IsForkDisputedService`, `JoinChannelService`,
 `WebRTCSetupService`, plus the unwired `OpenChannelNegotiationService`). `InitHandshakeService`
-is deliberately unguarded — it *is* the authentication mechanism and must accept pre-session
+is deliberately unguarded — it _is_ the authentication mechanism and must accept pre-session
 traffic.
 
 `onFailure` distinguishes two cases:
@@ -322,14 +320,14 @@ traffic.
    already closed is dropped silently because local retirement is not peer malice.
 
 **Open question:** the guard's retry queue and the request/response path interact badly. On guard
-failure `runRPC` *always* sends the `"rejected by guard"` error response when a `requestId` is
+failure `runRPC` _always_ sends the `"rejected by guard"` error response when a `requestId` is
 present — including in the queue-and-wait case — so a request-style RPC arriving during handshake
 negotiation is rejected immediately at the caller, and when the queued copy is later replayed its
 (second) response carries an already-settled `requestId` and is silently dropped by the caller's
 [`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L168). The retry queue therefore only benefits
 fire-and-forget RPCs; whether request-style RPCs should instead be held without an early error
 (or never queued) is undecided. A secondary wrinkle: in the non-negotiating branch `onFailure`
-disconnects the transport *before* `runRPC` attempts to send that error response on it.
+disconnects the transport _before_ `runRPC` attempts to send that error response on it.
 (Divergence class: decision pending; observed in
 [`ANetworkRpcService.runRPC`](../../../../../../../src/rpc/network/ANetworkRpcService.ts#L35) +
 [`HandshakeCompletedGuard`](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L44).)
@@ -343,8 +341,8 @@ invoke this service — e.g. participant vs. spectator), admission state (channe
 progress), and other objective preconditions. Guards MUST be side-effect-free in `check` (pure
 predicate) with all consequences in `onFailure`; each guard MUST document its ordering
 constraints, trusted-transport applicability, and rejection behavior. Endpoint-level validation
-(§4) remains mandatory regardless of guards — a guard authenticates or admits the *caller*, never
-the *payload*.
+(§4) remains mandatory regardless of guards — a guard authenticates or admits the _caller_, never
+the _payload_.
 
 ## 6. The wire contract, stage by stage
 
@@ -391,7 +389,7 @@ struct convention and is authenticated and re-validated in the pipeline.
 point for every frame from every transport (network and loopback):
 
 1. **Frame-size cap.** `Buffer.byteLength(serializedRpc, "utf8") > MAX_RPC_FRAME_BYTES` (16 MiB,
-   [`Rpc.ts`](../../../../../../../src/rpc/Rpc.ts#L1)) → log, disconnect and blacklist, stop — *before* any `JSON.parse`, so
+   [`Rpc.ts`](../../../../../../../src/rpc/Rpc.ts#L1)) → log, disconnect and blacklist, stop — _before_ any `JSON.parse`, so
    an oversized frame cannot force unbounded parse work. The cap is measured in wire-relevant UTF-8
    bytes; a frame exactly at the cap is admitted and the first byte over is rejected.
 2. **Response classification.** If the frame decodes as an `RpcResponse` → correlation handling
@@ -406,12 +404,12 @@ point for every frame from every transport (network and loopback):
    `Object.prototype`; otherwise `runRPC` resolves `false` → disconnect and blacklist.
 7. **Invocation.** `createRPCMethods(transport)` binds the sender; the method runs with `params`
    spread raw.
-   - **Request path** (`requestId` present): the handler's awaited return value is sent as
-     `{ok: true, result}`; a thrown/rejected error is caught, logged, and sent as
-     `{ok: false, error}` — the connection is **kept** (deliberate: handler errors report to the
-     caller instead of dropping the session).
-   - **Fire-and-forget path:** an async rejection is logged and the sender is **disconnected**
-     (no blacklist); a synchronous throw resolves `false` → disconnect and blacklist via `onRpc`.
+    - **Request path** (`requestId` present): the handler's awaited return value is sent as
+      `{ok: true, result}`; a thrown/rejected error is caught, logged, and sent as
+      `{ok: false, error}` — the connection is **kept** (deliberate: handler errors report to the
+      caller instead of dropping the session).
+    - **Fire-and-forget path:** an async rejection is logged and the sender is **disconnected**
+      (no blacklist); a synchronous throw resolves `false` → disconnect and blacklist via `onRpc`.
 8. **Dispatcher backstop.** Any exception escaping the above disconnects the transport.
 
 ```mermaid
@@ -443,7 +441,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
 
 - **Correlation.** `requestId` is a router-local monotonically increasing counter rendered as a
   string; the pending-request table maps it to `{resolve, reject, transport, timeout}`.
-  Uniqueness is per router; unpredictability is *not* relied on — response
+  Uniqueness is per router; unpredictability is _not_ relied on — response
   authenticity rests entirely on transport binding (below), not on guessing resistance.
 - **Timeout.** Default `timeConfig.agreementTime` seconds (converted to ms), overridable per call
   via `{timeoutMs}`; scheduled on the `TimeoutManager`. Expiry removes the entry and rejects with
@@ -451,7 +449,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
   in-flight request, and the remote handler is never cancelled (its late response is silently
   dropped, below).
 - **Addressed-peer rule ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).** Only the peer the request was sent to may settle it.
-  [`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L168) compares peer *identity*
+  [`handleRpcResponse`](../../../../../../../src/rpc/router/ARpcRouter.ts#L168) compares peer _identity_
   ([`NetworkTransport.isSamePeer`](../../../../../../../src/transport/ATransport.ts#L31), checksum-address based) —
   not transport object identity — so a WebRTC upgrade still settles pending requests; a response
   from any other peer **blacklists and disconnects the responder**.
@@ -463,7 +461,7 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
   protocol decisions.
 - **Disconnect.** `disconnectConnection` rejects every pending request bound to that transport
   object ("Peer disconnected before RPC response arrived") and cancels their timers. After a
-  transport upgrade, requests issued on the *old* transport are rejected when it is retired
+  transport upgrade, requests issued on the _old_ transport are rejected when it is retired
   (object-identity match in `rejectPendingRpcRequestsForTransport`), even though the peer remains
   connected — callers are expected to retry against the address, which resolves to the live
   transport.
@@ -475,11 +473,11 @@ resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
 RPC handlers run as ordinary tasks on the single-threaded host runtime; nothing in the RPC layer
 acquires the `StateManager` mutex. This is deliberate and load-bearing: peer ingest is the
 cheap, mergeable, out-of-order regime, and only the downstream dequeue-and-execute path takes the
-mutex ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, [`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4).
+mutex ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, [`REQ-BCP-3-1GCEH9` (Intake and merge never take the transition mutex)](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4).
 Consequently an RPC endpoint MUST NOT assume exclusive access to live state — it hands validated
 input to the owning manager, which enforces its own concurrency discipline. The block-queue
 boundedness argument also lands here: the queue deliberately has no cap of its own because the
-*RPC layer* is the intended admission-control point (§9).
+_RPC layer_ is the intended admission-control point (§9).
 
 Inline-host deployments can wrap every incoming-RPC handler invocation in the integrator's
 `handlerExecutionContext` ([architecture.md](../architecture.md) §1.1) — a scheduling hook, not a
@@ -515,18 +513,18 @@ state effect is a defect.
   checks `stateManager.isDisposed` at its own checkpoints (e.g.
   [`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L409)).
 - **Transport replacement.** Peer identity is the EVM address; profiles (and blacklist state)
-  survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H`](../components.md#inv-sdk-6-ccg31h)). The
+  survive transport churn ([`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7), [`INV-SDK-6-CCG31H` (Identity-keyed blacklisting)](../components.md#inv-sdk-6-ccg31h)). The
   WebRTC upgrade retires the old transport after an `agreementTime` grace; address-targeted
   delivery always resolves the current transport, and response correlation tolerates the upgrade
   (§6.5). Services that must survive churn key their state by address, not transport
   (IsForkDisputed acks, spectate in-flight set); handshake negotiation state is deliberately
-  transport-keyed (`WeakMap`/`WeakSet`) because it *is* per-connection.
+  transport-keyed (`WeakMap`/`WeakSet`) because it _is_ per-connection.
 
 ### 6.9 Versioning and compatibility
 
 **Current:** there is no protocol-version negotiation anywhere in the RPC layer. The envelope has
 no version field; no version is exchanged in the handshake; the only versioned identifier on the
-wire is the handshake domain string `peer3:init-handshake:v1` ([`REQ-SDK-3-91XMZR`](../components.md#req-sdk-3-91xmzr)), which scopes exactly
+wire is the handshake domain string `peer3:init-handshake:v1` ([`REQ-SDK-3-91XMZR` (Domain-tagged handshake signatures)](../components.md#req-sdk-3-91xmzr)), which scopes exactly
 one message type. Two peers running incompatible SDK revisions discover it only through
 downstream failures (unknown service/method → disconnect; undecodable Codec payloads → endpoint
 failure).
@@ -577,32 +575,32 @@ EVM-address index to that profile, and the profile then survives transport churn
 whether an unauthenticated ban must survive a new SDK peer handle or process restart.
 (Divergence class: decision pending.)
 
-| Failure | Where | Consequence |
-| --- | --- | --- |
-| Oversized frame | `onRpc` step 1 | Disconnect |
-| Undecodable frame / bad envelope | `onRpc` step 3 | Disconnect |
-| Unknown service | `onRpc` step 4 | Disconnect |
-| Unknown method | `runRPC` | Disconnect |
-| Guard failure — unverified transport | `HandshakeCompletedGuard` | Disconnect + blacklist (+ error response if request) |
-| Guard failure — transport already closed | `HandshakeCompletedGuard` | Silent drop; no execution or peer punishment |
-| Guard failure — handshake in progress | `HandshakeCompletedGuard` | Queue + retry after handshake; timeout → disconnect + blacklist; request-style additionally gets an immediate error (see §5.2 open question) |
-| Request handler throws | `runRPC` request path | Error response; connection kept |
-| Fire-and-forget handler rejects/throws | `runRPC` | Disconnect (no blacklist) |
-| Malformed handshake request / skew violation | `initHandshakeService` | Disconnect + request error |
-| Duplicate handshake ack | `initHandshakeService` | Disconnect + blacklist |
-| Handshake response invalid/timeout (outgoing) | `initHandshakeService` | Disconnect |
-| Handshake ack timeout | `initHandshakeService` | Blacklist by verified address, else disconnect |
-| Block confirmation judged Byzantine (strategy verdict `false`) | `stateTransitionService` → pipeline | Disconnect + blacklist |
-| Block confirmation invalid but tolerated (duplicate, wrong fork, unknown sender…) | pipeline strategies | Ignore (entry dropped or queued; connection kept) — see [block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9 |
-| Provable equivocation / invalid transition in ingested blocks | pipeline, not RPC layer | Fraud-proof / dispute work ([dispute-pipeline.md](../dispute-pipeline.md)); the RPC layer itself never constructs proofs |
-| Unprovable spectate request | `spectateService` responder | Disconnect + blacklist requester + request error |
-| Spectate sync failure (outgoing, any cause) | `spectateService` caller | Disconnect + blacklist responder — **[`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n)**, over-broad |
-| Fork-not-disputed / duplicate dispute-ack request | `isForkDisputedService` responder | Disconnect + blacklist + request error |
-| Dispute-ack rejection/error/timeout (outgoing) | `isForkDisputedService` caller | Disconnect + blacklist |
-| Join-signature validation failure | `joinChannelService` | Request error only; connection kept |
-| WebRTC signaling failure (any) | `webRTCSetupService` | Silent ignore |
-| Response from non-addressed peer | `handleRpcResponse` | Disconnect + blacklist responder |
-| Response with unknown/expired `requestId` | `handleRpcResponse` | Silent ignore |
+| Failure                                                                           | Where                               | Consequence                                                                                                                                  |
+| --------------------------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Oversized frame                                                                   | `onRpc` step 1                      | Disconnect                                                                                                                                   |
+| Undecodable frame / bad envelope                                                  | `onRpc` step 3                      | Disconnect                                                                                                                                   |
+| Unknown service                                                                   | `onRpc` step 4                      | Disconnect                                                                                                                                   |
+| Unknown method                                                                    | `runRPC`                            | Disconnect                                                                                                                                   |
+| Guard failure — unverified transport                                              | `HandshakeCompletedGuard`           | Disconnect + blacklist (+ error response if request)                                                                                         |
+| Guard failure — transport already closed                                          | `HandshakeCompletedGuard`           | Silent drop; no execution or peer punishment                                                                                                 |
+| Guard failure — handshake in progress                                             | `HandshakeCompletedGuard`           | Queue + retry after handshake; timeout → disconnect + blacklist; request-style additionally gets an immediate error (see §5.2 open question) |
+| Request handler throws                                                            | `runRPC` request path               | Error response; connection kept                                                                                                              |
+| Fire-and-forget handler rejects/throws                                            | `runRPC`                            | Disconnect (no blacklist)                                                                                                                    |
+| Malformed handshake request / skew violation                                      | `initHandshakeService`              | Disconnect + request error                                                                                                                   |
+| Duplicate handshake ack                                                           | `initHandshakeService`              | Disconnect + blacklist                                                                                                                       |
+| Handshake response invalid/timeout (outgoing)                                     | `initHandshakeService`              | Disconnect                                                                                                                                   |
+| Handshake ack timeout                                                             | `initHandshakeService`              | Blacklist by verified address, else disconnect                                                                                               |
+| Block confirmation judged Byzantine (strategy verdict `false`)                    | `stateTransitionService` → pipeline | Disconnect + blacklist                                                                                                                       |
+| Block confirmation invalid but tolerated (duplicate, wrong fork, unknown sender…) | pipeline strategies                 | Ignore (entry dropped or queued; connection kept) — see [block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9               |
+| Provable equivocation / invalid transition in ingested blocks                     | pipeline, not RPC layer             | Fraud-proof / dispute work ([dispute-pipeline.md](../dispute-pipeline.md)); the RPC layer itself never constructs proofs                     |
+| Unprovable spectate request                                                       | `spectateService` responder         | Disconnect + blacklist requester + request error                                                                                             |
+| Spectate sync failure (outgoing, any cause)                                       | `spectateService` caller            | Disconnect + blacklist responder — **[`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n)**, over-broad                      |
+| Fork-not-disputed / duplicate dispute-ack request                                 | `isForkDisputedService` responder   | Disconnect + blacklist + request error                                                                                                       |
+| Dispute-ack rejection/error/timeout (outgoing)                                    | `isForkDisputedService` caller      | Disconnect + blacklist                                                                                                                       |
+| Join-signature validation failure                                                 | `joinChannelService`                | Request error only; connection kept                                                                                                          |
+| WebRTC signaling failure (any)                                                    | `webRTCSetupService`                | Silent ignore                                                                                                                                |
+| Response from non-addressed peer                                                  | `handleRpcResponse`                 | Disconnect + blacklist responder                                                                                                             |
+| Response with unknown/expired `requestId`                                         | `handleRpcResponse`                 | Silent ignore                                                                                                                                |
 
 **Open question:** the classification is inconsistent across services in ways no recorded decision
 explains: join-signature abuse is penalty-free (error only) while an unprovable spectate request
@@ -610,7 +608,7 @@ is an immediate permanent blacklist; fire-and-forget handler errors disconnect b
 errors keep the connection (letting a peer probe guarded request endpoints with invalid payloads
 indefinitely at zero cost); WebRTC signaling swallows everything. Each choice is individually
 defensible (join requests can be honestly stale; request errors are the documented contract;
-signaling is best-effort), but the intended per-class policy — *which* failures are Byzantine
+signaling is best-effort), but the intended per-class policy — _which_ failures are Byzantine
 evidence vs. honest-failure tolerable — has never been stated and should be decided once,
 centrally, rather than per endpoint. (Divergence class: decision pending.)
 
@@ -618,7 +616,7 @@ centrally, rather than per endpoint. (Divergence class: decision pending.)
 
 **Current:** the only resource bound at this boundary is the 16 MiB frame cap (§6.4) plus
 per-entry structural caps downstream in the block queue. Nothing prevents a peer from sending an
-unbounded *number* of individually valid RPCs — handshake attempts, spectate requests (each
+unbounded _number_ of individually valid RPCs — handshake attempts, spectate requests (each
 triggering proof generation, which is expensive), join-signature requests (penalty-free errors,
 §8), block confirmations (each scheduling ingest work), or unsolicited responses (silently
 ignored but parsed). Remote peers can therefore consume unbounded CPU, memory, bandwidth, and
@@ -626,7 +624,7 @@ scheduled-task capacity. Divergence class: **missing** (accepted direction, not 
 
 **Intended (engineer direction, 2026-08-10 — [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)):** enforcement lives in
 a **single, central rate limiter at the RPC level**, shared across all RPC services (possibly
-scoped per peer) — deliberately *not* per-service limits — so one clean mechanism protects
+scoped per peer) — deliberately _not_ per-service limits — so one clean mechanism protects
 everything, including custom-root services that would otherwise each reinvent (or forget)
 limiting. The natural seat is the common dispatch path (`NetworkRpcRouter.onRpc`), upstream of parse
 and dispatch. This limiter is also what bounds the pre-execution block queue: a finite admission
@@ -671,36 +669,102 @@ Open design content within [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../.
 
 The neutral [RPC specification](../../../../../specification/peer-communication/rpc.md#requirements-and-invariants)
 is the only owner of canonical RPC requirement and test-plan meanings. This implementation view
-records status and evidence without redefining those IDs.
+narrates how the SDK implements them without redefining those IDs.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| --- | --- | --- | --- |
-| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Partial | Handshake and service reports prove mutual success, pre-auth rejection, and half-auth isolation. | Forged, stale, and reconnect identity permutations remain exact-evidence gaps where no mapped test exists. |
-| [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Partial | `Rpc`, `Codec`, transport, cross-module, and service reports own wire and structural evidence. | Version-mismatch handling is absent. |
-| [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial | `NetworkRpcRouter` supplies response admission and timeout hooks to the shared request owner; `P2PManager` owns disconnect policy and disposal; `ANetworkRpcService` owns one-attempt response delivery. | No cancellation API exists. |
-| [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Partial | Service-owned block, sync, join, dispute, and signaling reports. | Join has one complete mapped matrix. Block, sync, dispute, transport-upgrade, and unwired open-channel authorization remain unassigned where no single declaration proves the full family oracle. |
-| [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Partial | Service-owned block merge/order, handshake replay, dispute replay, and sync concurrency evidence. | Block-delivery retry after failure has no exact no-duplicate-effect oracle. |
-| [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Missing | The fixed frame cap and sync in-flight limit provide narrow local bounds. | No central pending-count, aggregate, per-peer, proof-work, or signaling-work bound; see [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5). |
-| [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Covered | `NetworkRpcRouter` and `ANetworkRpcService` own the ordered ingress and endpoint-resolution stages. | None demonstrated. |
-| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial | `runGuards`, `HandshakeCompletedGuard`, `ANetworkRpcService`, and loopback/network tests. | Request-style retry is ineffective during negotiation; see [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
-| [`REQ-RPC-8-44XECF`](../../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | Missing | No compatibility field or handshake negotiation exists. | All compatibility permutations remain unassigned under [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
+- [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
+- [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+- [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+- [`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)
+- [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
+- [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)
+- [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
+- [`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf)
 
-## 12. Implementation integration test plan
+## Gaps
 
-Canonical permutation meanings stay in the neutral specification. These integration IDs group
-cross-file implementation evidence and link to those canonical owners.
+- [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+  Partial: neither the `Rpc` envelope nor `InitHandshakeService` carries a protocol version, so an incompatible peer's messages fail through downstream decode or validation errors rather than one deterministic refusal ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)).
+- [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)
+  Missing: `ANetworkRpcService` dispatches every authorized request with no central pending-count, aggregate, per-peer, proof-work or signaling-work bound ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)).
 
-| Integration test ID | Canonical owners | Setup and expected result | Required permutations |
-| --- | --- | --- | --- |
-| <a id="integration-test-rpc-2-pbz4qy"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY` | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Dispatch authenticated and unauthenticated frames through real sessions; failed ingress stays isolated from unrelated sessions. | <a id="integration-test-rpc-2-pbz4qy.p1"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P1` authenticated dispatch; <a id="integration-test-rpc-2-pbz4qy.p2"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P2` pre-auth rejection; <a id="integration-test-rpc-2-pbz4qy.p3"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P3` crafted endpoint isolation; <a id="integration-test-rpc-2-pbz4qy.p4"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P4` multibyte oversized offender isolation. |
-| <a id="integration-test-rpc-3-zkfxgt"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT` | [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Race every implemented settlement outcome and require one winner plus registry/timer cleanup. | <a id="integration-test-rpc-3-zkfxgt.p1"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P1` response/error/send cleanup; <a id="integration-test-rpc-3-zkfxgt.p5"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P5` disposal cleanup; <a id="integration-test-rpc-3-zkfxgt.p6"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P6` response/timeout; <a id="integration-test-rpc-3-zkfxgt.p7"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P7` response/disconnect; <a id="integration-test-rpc-3-zkfxgt.p8"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P8` replacement/unknown/duplicate response; <a id="integration-test-rpc-3-zkfxgt.p9"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P9` remote-error/timeout; <a id="integration-test-rpc-3-zkfxgt.p10"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P10` response/remote-error; <a id="integration-test-rpc-3-zkfxgt.p11"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P11` remote-error/disconnect; <a id="integration-test-rpc-3-zkfxgt.p12"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P12` timeout/disconnect; <a id="integration-test-rpc-3-zkfxgt.p13"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P13` foreign responder; <a id="integration-test-rpc-3-zkfxgt.p14"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P14` concurrent distinct/duplicate response. |
-| <a id="integration-test-rpc-4-exz35f"></a>`INTEGRATION-TEST-RPC-4-EXZ35F` | [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Run guards in order across trusted loopback and untrusted network paths; one failure owns the consequence. | <a id="integration-test-rpc-4-exz35f.p1"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P1` order and short-circuit; <a id="integration-test-rpc-4-exz35f.p2"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P2` loopback bypass; <a id="integration-test-rpc-4-exz35f.p3"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P3` pre-handshake consequence; <a id="integration-test-rpc-4-exz35f.p4"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P4` unrelated-session isolation. |
-| <a id="integration-test-rpc-5-acp2qt"></a>`INTEGRATION-TEST-RPC-5-ACP2QT` | [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Install one structural custom root and deliver through inline and worker hosts. | <a id="integration-test-rpc-5-acp2qt.p1"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P1` structural recognition; <a id="integration-test-rpc-5-acp2qt.p2"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P2` inline host; <a id="integration-test-rpc-5-acp2qt.p3"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P3` worker host; <a id="integration-test-rpc-5-acp2qt.p4"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P4` request/error delivery. |
-| <a id="integration-test-rpc-6-009egg"></a>`INTEGRATION-TEST-RPC-6-009EGG` | [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Reuse service-owned authorization and replay tests; no shared omnibus test duplicates their payload matrices. | <a id="integration-test-rpc-6-009egg.p3"></a>`INTEGRATION-TEST-RPC-6-009EGG.P3` join authorization; <a id="integration-test-rpc-6-009egg.p4"></a>`INTEGRATION-TEST-RPC-6-009EGG.P4` handshake replay; <a id="integration-test-rpc-6-009egg.p5"></a>`INTEGRATION-TEST-RPC-6-009EGG.P5` dispute replay; <a id="integration-test-rpc-6-009egg.p6"></a>`INTEGRATION-TEST-RPC-6-009EGG.P6` block authorization; <a id="integration-test-rpc-6-009egg.p7"></a>`INTEGRATION-TEST-RPC-6-009EGG.P7` sync authorization; <a id="integration-test-rpc-6-009egg.p8"></a>`INTEGRATION-TEST-RPC-6-009EGG.P8` block merge; <a id="integration-test-rpc-6-009egg.p9"></a>`INTEGRATION-TEST-RPC-6-009EGG.P9` sync concurrency. |
+## INTEGRATION-TEST-RPC-2-PBZ4QY
+
+Inbound frames reach an endpoint only over an authenticated session, and a rejected frame punishes only its sender's session.
+
+- Setup: Harness peers send a custom `pingService.ping` over an authenticated session, a spectate request over a captured pre-handshake transport, a raw frame naming the inherited method `toString` (`rpcHandlerProbe.sendRawRpc`), and a multibyte oversized frame (`rpcHandlerProbe.sendMultibyteOversizedRpc`), with a third peer as bystander.
+- Oracle: Authenticated pings and pongs reach both peers; the pre-handshake request is rejected by the guard and never reaches the spectate handler; the crafted and oversized senders are blacklisted and disconnected, the crafted frame records no ping or sum, and the receiver keeps exchanging pings with the bystander.
+- Specification: [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)
+
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P1` — authenticated dispatch
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P2` — pre-auth rejection
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P3` — crafted endpoint isolation
+- [x] `INTEGRATION-TEST-RPC-2-PBZ4QY.P4` — multibyte oversized offender isolation
+
+## INTEGRATION-TEST-RPC-3-ZKFXGT
+
+Every outbound request settles exactly once and leaves no pending entry or timer behind.
+
+- Setup: `p2pManagerProbe` drives `P2PManager` requests through success, remote error, default error, synchronous send failure, disposal, a foreign responder, concurrent requests, and each pair of response, remote error, timeout and disconnect in both orders.
+- Oracle: The first outcome wins (the response value, the remote error message, `timed out after <n>ms` or `Peer disconnected before RPC response arrived`) and pending and timer counts end at zero; concurrent requests get distinct IDs, and a response from an unrelated peer gets that peer blacklisted and disconnected without settling the intended request.
+- Specification: [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)
+
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P1` — response/error/send cleanup
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P5` — disposal cleanup
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P6` — response/timeout
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P7` — response/disconnect
+- [ ] `INTEGRATION-TEST-RPC-3-ZKFXGT.P8` — replacement/unknown/duplicate response
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P9` — remote-error/timeout
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P10` — response/remote-error
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P11` — remote-error/disconnect
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P12` — timeout/disconnect
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P13` — foreign responder
+- [x] `INTEGRATION-TEST-RPC-3-ZKFXGT.P14` — concurrent distinct/duplicate response
+
+## INTEGRATION-TEST-RPC-4-EXZ35F
+
+Guards run in declaration order on untrusted transports, the first failure alone decides the consequence, and trusted loopback skips them.
+
+- Setup: `runGuards` over a passing, failing, passing guard list; an `ANetworkRpcService` call over the real loopback transport; `HandshakeCompletedGuard` facing an unverified peer that is not negotiating; and an E2E spectate request sent over a pre-handshake transport.
+- Oracle: Checks stop at the first failure and only its failure handler runs; loopback runs the endpoint with zero guard checks; the non-negotiating peer is blacklisted and disconnected with no endpoint invoked; the blocked spectate request returns `RPC request rejected by guard` without reaching the handler, and the guarded peer later connects to a third peer and answers its spectate request.
+- Specification: [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
+
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P1` — order and short-circuit
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P2` — loopback bypass
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P3` — pre-handshake consequence
+- [x] `INTEGRATION-TEST-RPC-4-EXZ35F.P4` — unrelated-session isolation
+
+## INTEGRATION-TEST-RPC-5-ACP2QT
+
+A custom RPC root with the public service shape is recognized structurally and serves requests in both inline and worker hosts.
+
+- Setup: `hasRpcService` and `RemoteRpcProxy.createProxy` on a `CrossModuleRpcService` root; `p2pSetup` with a custom root in inline and worker mode calling `mutexProbe.isLockedAtHandlerEntry`; and an inline client calling `pingService.sum`, `ping` and `fail` on itself and on a peer through `hostRpc`.
+- Oracle: The root is recognized and its service proxy is reused across reads; the custom handler enters with the state mutex unlocked in both modes; self and peer sums return the right sum, nonce and requester, a remote `fail` rejects with its message, and the next request on the same session succeeds.
+- Specification: [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)
+
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P1` — structural recognition
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P2` — inline host
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P3` — worker host
+- [x] `INTEGRATION-TEST-RPC-5-ACP2QT.P4` — request/error delivery
+
+## INTEGRATION-TEST-RPC-6-009EGG
+
+Each service authorizes its senders and rejects replayed or concurrent duplicate requests in its own handler.
+
+- Setup: Reuses the service-owned tests instead of one shared payload matrix: join signature requests validated by the responder, a duplicate handshake ack after a completed handshake, a second dispute-ack request for an already-acknowledged fork, a stored block re-ingested with an extra non-participant signature, and two concurrent `spectate.startSync` calls for one peer.
+- Oracle: Exact joins are signed and invalid requests refused; the duplicate handshake ack gets its sender blacklisted and disconnected, the repeated dispute-ack request gets its sender disconnected; the extra signature is dropped and its sender blacklisted without dropping or replaying the block; the concurrent syncs produce one spectate request on the wire.
+- Specification: [`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)
+
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P3` — join authorization
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P4` — handshake replay
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P5` — dispute replay
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P6` — block authorization
+- [ ] `INTEGRATION-TEST-RPC-6-009EGG.P7` — sync authorization
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P8` — block merge
+- [x] `INTEGRATION-TEST-RPC-6-009EGG.P9` — sync concurrency
 
 ## Future Work
 
-*Non-normative.*
+_Non-normative._
 
 - The central RPC rate limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)) and its prioritization scheme (§9).
 - Protocol-version negotiation at handshake time (§6.9), coordinated with the signature-domain
@@ -713,13 +777,3 @@ cross-file implementation evidence and link to those canonical owners.
 - Wire `OpenChannelNegotiationService` or document integrator wiring as the supported path
   ([open-channel-negotiation.md](./open-channel-negotiation.md);
   [components.md](../components.md) Future Work).
-
-## Implementation traceability
-
-The detailed status table in [Canonical requirement ownership](#canonical-requirement-ownership)
-is authoritative for this view. Source-level evidence remains in the linked reports, and exact
-test assignments remain in verification reports. The neutral specification owns all canonical
-test-plan meanings; unsupported cancellation, central rate limiting, compatibility negotiation,
-and open-channel wire authorization stay visible as gaps rather than receiving partial mappings.
-
-Common lifecycle composition: every internal endpoint owns readiness waits and child-first disposal/quiescence through its lifecycle service. SDK deployment completion remains separate. Repeated cleanup shares completion, and domain readiness points stay unchanged. Forced port removal remains distinct from graceful request/acknowledgement cleanup.

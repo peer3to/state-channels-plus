@@ -2,7 +2,6 @@
 
 > **Specification subject:** [specification/runtime/execution.md](../../../../specification/runtime/execution.md)
 
-> **Status:** Draft, reverse-engineered baseline. Pending engineer review.
 > **Scope:** The design decision behind the SDK's execution architecture:
 > **transport neutrality between inline and worker deployment**. Communication
 > between the main thread, the SDK runtime host, and the optional local-EVM
@@ -21,25 +20,6 @@
 ## RPC ownership
 
 Internal roots and service pairs are centralized under `src/rpc/internal`. `AInternalRpcRoot` owns one runtime router and its connections; each service retains its domain dependencies. All routers live under `src/rpc/router`. Each peer manager owns a separate NetworkRpcRouter; the manager itself owns connections, discovery, profiles and peer penalties. Both categories use shared dispatch and pending settlement, with typed category-specific transports.
-
-## Source inventory
-
-These EVM runtime files are implementation support for the worker/platform boundary. Files with no
-protocol behavior are still classified explicitly so source coverage does not imply that they prove
-a requirement.
-
-| Source file                                                                                                         | Specification IDs                                                                                                                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [src/evm/browser/evmJumpdestCache.ts](../../../../../../src/evm/browser/evmJumpdestCache.ts#L1)                     | [`REQ-RUN-1-FSV0SH`](runtime-and-concurrency.md#req-run-1-fsv0sh), [`REQ-RUN-4-NK15QS`](runtime-and-concurrency.md#req-run-4-nk15qs)                                                                    |
-| [src/evm/ConsolePrecompile.ts](../../../../../../src/evm/ConsolePrecompile.ts#L1)                                   | [`REQ-RUN-1-FSV0SH`](runtime-and-concurrency.md#req-run-1-fsv0sh)                                                                                                                                       |
-| [src/evm/EvmFactory.ts](../../../../../../src/evm/EvmFactory.ts#L1)                                                 | [`REQ-RUN-1-FSV0SH`](runtime-and-concurrency.md#req-run-1-fsv0sh), [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`REQ-RUN-4-NK15QS`](runtime-and-concurrency.md#req-run-4-nk15qs) |
-| [src/evm/index.ts](../../../../../../src/evm/index.ts#L1)                                                           | Not applicable — export barrel only                                                                                                                                                                     |
-| [src/evm/node/evmJumpdestCache.ts](../../../../../../src/evm/node/evmJumpdestCache.ts#L1)                           | [`REQ-RUN-1-FSV0SH`](runtime-and-concurrency.md#req-run-1-fsv0sh), [`REQ-RUN-4-NK15QS`](runtime-and-concurrency.md#req-run-4-nk15qs)                                                                    |
-| [src/evm/node/workerCpuProfiler.ts](../../../../../../src/evm/node/workerCpuProfiler.ts#L1)                         | Not applicable — optional diagnostics only                                                                                                                                                              |
-| [src/evm/signer/ClientChainSigner.ts](../../../../../../src/evm/signer/ClientChainSigner.ts#L2)                     | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
-| [src/evm/signer/DeploymentBridgeSigner.ts](../../../../../../src/evm/signer/DeploymentBridgeSigner.ts#L1)           | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
-| [src/evm/signer/LocalContractExecutorSigner.ts](../../../../../../src/evm/signer/LocalContractExecutorSigner.ts#L1) | [`REQ-RUN-3-60N6VR`](runtime-and-concurrency.md#req-run-3-60n6vr), [`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)                                                                    |
-| [src/evm/signer/NoopEventProvider.ts](../../../../../../src/evm/signer/NoopEventProvider.ts#L1)                     | Not applicable — signer compatibility adapter with no protocol policy                                                                                                                                   |
 
 ## 1. Purpose & observable contract
 
@@ -128,7 +108,7 @@ Three execution contexts, connected only by serialized ports:
    and **owns the chain nonce** (built on its own provider/wallet in
    [`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4),
    wrapped in `HostNonceManager`; cross-ref [architecture.md](./architecture.md)
-   [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7) / [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)). The client realm holds only proxy signers that forward
+   [`REQ-SDK-1-JKC9W7` (The runtime owns its signer)](architecture.md#req-sdk-1-jkc9w7) / [`INV-SDK-2-NH0YGE` (Host-owned signing key and nonce)](architecture.md#inv-sdk-2-nh0yge)). The client realm holds only proxy signers that forward
    over the port — **the private key never crosses a boundary** ([`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)).
 3. **Local-EVM executor.** The SDK host owns a typed executor connection and
    the common [RpcContractExecutor adapter](../../../source/src/evm/contractExecutor/RpcContractExecutor.ts.md).
@@ -143,7 +123,7 @@ Three execution contexts, connected only by serialized ports:
 except by sending a request; the host cannot reach EVM state except by calling
 the executor; neither can observe the other's internals directly.
 `P2pInstance.getStateManager()` throws in every mode precisely to keep this
-boundary honest ([architecture.md](./architecture.md) [`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed)).
+boundary honest ([architecture.md](./architecture.md) [`INV-SDK-1-DE9YED` (All app-runtime interaction crosses the port)](architecture.md#inv-sdk-1-de9yed)).
 
 The manager binding follows one ABI rule in both the main thread and host. The SDK manager ABI is
 installed first, then the application ABI serialized as `scm.abiJson` is appended. SDK definitions
@@ -194,7 +174,7 @@ worker-host/inline-vm, worker-host/dedicated-vm.
 
 ### 2.2 The two state-machine instances vs. the executor boundary
 
-[architecture.md](./architecture.md) §4 ([`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p)) defines two deployed
+[architecture.md](./architecture.md) §4 ([`INV-SDK-3-87WK8P` (Dedicated state machine for dispute replay)](architecture.md#inv-sdk-3-87wk8p)) defines two deployed
 state-machine instances: the **live** instance driving replicated channel state,
 and the **diamond** instance embedded in the `LocalDiamond` for dispute replay.
 That split is a _logical_ separation to keep dispute replay from corrupting live
@@ -337,7 +317,7 @@ be canonical:
   cross as _manifests_ (module specifier + export name), resolved inside the
   host realm ([rpc/README.md](./rpc/README.md) §2.5), not as constructed
   objects. `ethers.Signer` objects are intentionally unsupported for the same
-  reason ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)).
+  reason ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7` (The runtime owns its signer)](architecture.md#req-sdk-1-jkc9w7)).
 - **Transferables.** Bound calls accept an explicit transfer list on request or
   send. InternalTransport passes it to postMessage once. Bootstrap ports, bridge
   ports, supported data channels and explicit binary buffers retain host transfer
@@ -402,7 +382,7 @@ what:
   eligible block enters state-machine execution at a time, on the current fork,
   by `(forkId, height)`. This boundary is owned by
   [block-confirmation-pipeline.md](./block-confirmation-pipeline.md) §3.1
-  ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x), [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4) and **not restated here**.
+  ([`INV-BCP-1-H2H41X` (Validation and execution under the state mutex)](block-confirmation-pipeline.md#inv-bcp-1-h2h41x), [`REQ-BCP-3-1GCEH9` (Intake and merge never take the transition mutex)](block-confirmation-pipeline.md#req-bcp-3-1gceh9)/4) and **not restated here**.
 
 **How they relate ([`INV-RUN-1-JM2D9F`](runtime-and-concurrency.md#inv-run-1-jm2d9f)).** Ports move work _between_ contexts in parallel;
 the mutex serializes the one operation that mutates live state _within_ the host.
@@ -475,7 +455,7 @@ justifies the cost**.
   budget.
 - **Supported-device envelope: a mid-range phone ([`REQ-RUN-14-YAHYR4`](runtime-and-concurrency.md#req-run-14-yahyr4)).** _Decided
   2026-08-10._ The SDK MUST run a typical channel (about six participants,
-  [../security/trust-model.md](../../../../specification/security/trust-model.md) [`REQ-TRUST-5-NDVRW8`](../../../../specification/security/trust-model.md#req-trust-5-ndvrw8)) on a
+  [../security/trust-model.md](../../../../specification/security/trust-model.md) [`REQ-TRUST-5-NDVRW8` (The design targets many SMALL channels, not large ones)](../../../../specification/security/trust-model.md#req-trust-5-ndvrw8)) on a
   **mid-range mobile browser** — on the order of 4 GB device RAM, a few hundred
   MB of usable JS heap for the whole application, and a mobile-class CPU.
   Anything more capable (laptop, desktop, server-side Node) is above the floor.
@@ -503,34 +483,6 @@ justifies the cost**.
   sustained blocks/second at six participants) that the envelope above must be
   measured against. Without them [`REQ-RUN-14-YAHYR4`](runtime-and-concurrency.md#req-run-14-yahyr4) is a memory envelope only, and the
   measurement §44 asks for cannot be defined.
-
-### Implementation test plan
-
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
-
-| Plan item                                               | Requirement / invariant                                             | Setup and stimulus                                                                                                      | Expected result                                                                                                                                                                                                                                                                                                                             | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="req-run-1-fsv0sh.t1"></a>`REQ-RUN-1-FSV0SH.T1`   | <a id="req-run-1-fsv0sh"></a>`REQ-RUN-1-FSV0SH`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Communication is serialized messages over paired ports; the protocol and observable behavior are identical inline or worker, so callers keep no separate implementations and a component can move to a worker without changing its contract.                                                                                                | <a id="req-run-1-fsv0sh.t1.p1"></a>`REQ-RUN-1-FSV0SH.T1.P1` — valid case<br><a id="req-run-1-fsv0sh.t1.p2"></a>`REQ-RUN-1-FSV0SH.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-1-fsv0sh.t1.p3"></a>`REQ-RUN-1-FSV0SH.T1.P3` — direct invalid/opposite case<br><a id="req-run-1-fsv0sh.t1.p4"></a>`REQ-RUN-1-FSV0SH.T1.P4` — exact boundary<br><a id="req-run-1-fsv0sh.t1.p5"></a>`REQ-RUN-1-FSV0SH.T1.P5` — failure/recovery<br><a id="req-run-1-fsv0sh.t1.p6"></a>`REQ-RUN-1-FSV0SH.T1.P6` — relevant race<br><a id="req-run-1-fsv0sh.t1.p7"></a>`REQ-RUN-1-FSV0SH.T1.P7` — inline SDK-owned executor normalizes manifest addresses and clones mutable options at initialization; later caller mutation cannot alter precompile results, including binary, BigInt, false, zero and empty values.                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="req-run-2-gbcz5b.t1"></a>`REQ-RUN-2-GBCZ5B.T1`   | <a id="req-run-2-gbcz5b"></a>`REQ-RUN-2-GBCZ5B`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | No shared mutable memory between main thread, host, and executor; all inter-context interaction is a serialized message.                                                                                                                                                                                                                    | <a id="req-run-2-gbcz5b.t1.p1"></a>`REQ-RUN-2-GBCZ5B.T1.P1` — valid case<br><a id="req-run-2-gbcz5b.t1.p2"></a>`REQ-RUN-2-GBCZ5B.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-2-gbcz5b.t1.p3"></a>`REQ-RUN-2-GBCZ5B.T1.P3` — direct invalid/opposite case<br><a id="req-run-2-gbcz5b.t1.p4"></a>`REQ-RUN-2-GBCZ5B.T1.P4` — exact boundary<br><a id="req-run-2-gbcz5b.t1.p5"></a>`REQ-RUN-2-GBCZ5B.T1.P5` — failure/recovery<br><a id="req-run-2-gbcz5b.t1.p6"></a>`REQ-RUN-2-GBCZ5B.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="req-run-3-60n6vr.t1"></a>`REQ-RUN-3-60N6VR.T1`   | <a id="req-run-3-60n6vr"></a>`REQ-RUN-3-60N6VR`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Internal state is owned by the receiving component; the app cannot reach node state, the host cannot reach EVM state, except by a request.                                                                                                                                                                                                  | <a id="req-run-3-60n6vr.t1.p1"></a>`REQ-RUN-3-60N6VR.T1.P1` — valid case<br><a id="req-run-3-60n6vr.t1.p2"></a>`REQ-RUN-3-60N6VR.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-3-60n6vr.t1.p3"></a>`REQ-RUN-3-60N6VR.T1.P3` — direct invalid/opposite case<br><a id="req-run-3-60n6vr.t1.p4"></a>`REQ-RUN-3-60N6VR.T1.P4` — exact boundary<br><a id="req-run-3-60n6vr.t1.p5"></a>`REQ-RUN-3-60N6VR.T1.P5` — failure/recovery<br><a id="req-run-3-60n6vr.t1.p6"></a>`REQ-RUN-3-60N6VR.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="req-run-4-nk15qs.t1"></a>`REQ-RUN-4-NK15QS.T1`   | <a id="req-run-4-nk15qs"></a>`REQ-RUN-4-NK15QS`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Ownership, ordering, lifecycle, error, disposal, and serialization rules for a cross-boundary message are explicit before a component moves to a worker.                                                                                                                                                                                    | <a id="req-run-4-nk15qs.t1.p1"></a>`REQ-RUN-4-NK15QS.T1.P1` — valid case<br><a id="req-run-4-nk15qs.t1.p2"></a>`REQ-RUN-4-NK15QS.T1.P2` — duplicate delivery<br><a id="req-run-4-nk15qs.t1.p3"></a>`REQ-RUN-4-NK15QS.T1.P3` — direct invalid/opposite case<br><a id="req-run-4-nk15qs.t1.p4"></a>`REQ-RUN-4-NK15QS.T1.P4` — replay delivery<br><a id="req-run-4-nk15qs.t1.p5"></a>`REQ-RUN-4-NK15QS.T1.P5` — concurrent delivery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="req-run-5-dc7m8e.t1"></a>`REQ-RUN-5-DC7M8E.T1`   | <a id="req-run-5-dc7m8e"></a>`REQ-RUN-5-DC7M8E`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Every client→host request carries a client-local `requestId`; a single handler per port correlates the one matching response; only the paired context can settle it.                                                                                                                                                                        | <a id="req-run-5-dc7m8e.t1.p1"></a>`REQ-RUN-5-DC7M8E.T1.P1` — valid case<br><a id="req-run-5-dc7m8e.t1.p2"></a>`REQ-RUN-5-DC7M8E.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-5-dc7m8e.t1.p3"></a>`REQ-RUN-5-DC7M8E.T1.P3` — direct invalid/opposite case<br><a id="req-run-5-dc7m8e.t1.p4"></a>`REQ-RUN-5-DC7M8E.T1.P4` — exact boundary<br><a id="req-run-5-dc7m8e.t1.p5"></a>`REQ-RUN-5-DC7M8E.T1.P5` — failure/recovery<br><a id="req-run-5-dc7m8e.t1.p6"></a>`REQ-RUN-5-DC7M8E.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="req-run-6-mtbt2h.t1"></a>`REQ-RUN-6-MTBT2H.T1`   | <a id="req-run-6-mtbt2h"></a>`REQ-RUN-6-MTBT2H`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Cross-boundary values obey structured-clone limits: bigints as quantity/Codec strings, manifests not class instances, only ports transferred; `customData`/`kzg` rejected; non-serializable bus args drop.                                                                                                                                  | <a id="req-run-6-mtbt2h.t1.p1"></a>`REQ-RUN-6-MTBT2H.T1.P1` — valid case<br><a id="req-run-6-mtbt2h.t1.p2"></a>`REQ-RUN-6-MTBT2H.T1.P2` — zero value<br><a id="req-run-6-mtbt2h.t1.p3"></a>`REQ-RUN-6-MTBT2H.T1.P3` — malformed input<br><a id="req-run-6-mtbt2h.t1.p4"></a>`REQ-RUN-6-MTBT2H.T1.P4` — direct invalid/opposite case<br><a id="req-run-6-mtbt2h.t1.p5"></a>`REQ-RUN-6-MTBT2H.T1.P5` — exact balance/boundary<br><a id="req-run-6-mtbt2h.t1.p6"></a>`REQ-RUN-6-MTBT2H.T1.P6` — one beyond the boundary<br><a id="req-run-6-mtbt2h.t1.p7"></a>`REQ-RUN-6-MTBT2H.T1.P7` — maximum value<br><a id="req-run-6-mtbt2h.t1.p8"></a>`REQ-RUN-6-MTBT2H.T1.P8` — value conservation<br><a id="req-run-6-mtbt2h.t1.p9"></a>`REQ-RUN-6-MTBT2H.T1.P9` — adversarial input<br><a id="req-run-6-mtbt2h.t1.p10"></a>`REQ-RUN-6-MTBT2H.T1.P10` — partial failure<br><a id="req-run-6-mtbt2h.t1.p11"></a>`REQ-RUN-6-MTBT2H.T1.P11` — retry and recovery                                                                                                                                                                                                                                                                     |
-| <a id="req-run-7-xv1fdr.t1"></a>`REQ-RUN-7-XV1FDR.T1`   | <a id="req-run-7-xv1fdr"></a>`REQ-RUN-7-XV1FDR`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Worker isolation is a client performance strategy (not server scaling), applied incrementally where measurement justifies it; each boundary should be measurement-justified.                                                                                                                                                                | <a id="req-run-7-xv1fdr.t1.p1"></a>`REQ-RUN-7-XV1FDR.T1.P1` — valid case<br><a id="req-run-7-xv1fdr.t1.p2"></a>`REQ-RUN-7-XV1FDR.T1.P2` — duplicate delivery<br><a id="req-run-7-xv1fdr.t1.p3"></a>`REQ-RUN-7-XV1FDR.T1.P3` — direct invalid/opposite case<br><a id="req-run-7-xv1fdr.t1.p4"></a>`REQ-RUN-7-XV1FDR.T1.P4` — replay delivery<br><a id="req-run-7-xv1fdr.t1.p5"></a>`REQ-RUN-7-XV1FDR.T1.P5` — concurrent delivery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="inv-run-1-jm2d9f.t1"></a>`INV-RUN-1-JM2D9F.T1`   | <a id="inv-run-1-jm2d9f"></a>`INV-RUN-1-JM2D9F`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Ports parallelize across contexts; the host mutex serializes live-state mutation, preserved across the executor worker because executor calls are awaited under the mutex.                                                                                                                                                                  | <a id="inv-run-1-jm2d9f.t1.p1"></a>`INV-RUN-1-JM2D9F.T1.P1` — valid case<br><a id="inv-run-1-jm2d9f.t1.p2"></a>`INV-RUN-1-JM2D9F.T1.P2` — zero/empty/no-op case where meaningful<br><a id="inv-run-1-jm2d9f.t1.p3"></a>`INV-RUN-1-JM2D9F.T1.P3` — direct invalid/opposite case<br><a id="inv-run-1-jm2d9f.t1.p4"></a>`INV-RUN-1-JM2D9F.T1.P4` — exact boundary<br><a id="inv-run-1-jm2d9f.t1.p5"></a>`INV-RUN-1-JM2D9F.T1.P5` — failure/recovery<br><a id="inv-run-1-jm2d9f.t1.p6"></a>`INV-RUN-1-JM2D9F.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="inv-run-2-af430q.t1"></a>`INV-RUN-2-AF430Q.T1`   | <a id="inv-run-2-af430q"></a>`INV-RUN-2-AF430Q`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | 1:1 port pair; one transfer owner; one handler per port; correlation trusts the paired writer.                                                                                                                                                                                                                                              | <a id="inv-run-2-af430q.t1.p1"></a>`INV-RUN-2-AF430Q.T1.P1` — valid case<br><a id="inv-run-2-af430q.t1.p2"></a>`INV-RUN-2-AF430Q.T1.P2` — zero/empty/no-op case where meaningful<br><a id="inv-run-2-af430q.t1.p3"></a>`INV-RUN-2-AF430Q.T1.P3` — direct invalid/opposite case<br><a id="inv-run-2-af430q.t1.p4"></a>`INV-RUN-2-AF430Q.T1.P4` — exact boundary<br><a id="inv-run-2-af430q.t1.p5"></a>`INV-RUN-2-AF430Q.T1.P5` — failure/recovery<br><a id="inv-run-2-af430q.t1.p6"></a>`INV-RUN-2-AF430Q.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="inv-run-3-1akg2e.t1"></a>`INV-RUN-3-1AKG2E.T1`   | <a id="inv-run-3-1akg2e"></a>`INV-RUN-3-1AKG2E`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Host construction failure posts `hostError` + closes the port (client creation rejects, pending reject); dead client port self-disposes the host.                                                                                                                                                                                           | <a id="inv-run-3-1akg2e.t1.p1"></a>`INV-RUN-3-1AKG2E.T1.P1` — valid case<br><a id="inv-run-3-1akg2e.t1.p2"></a>`INV-RUN-3-1AKG2E.T1.P2` — malformed input<br><a id="inv-run-3-1akg2e.t1.p3"></a>`INV-RUN-3-1AKG2E.T1.P3` — direct invalid/opposite case<br><a id="inv-run-3-1akg2e.t1.p4"></a>`INV-RUN-3-1AKG2E.T1.P4` — adversarial input<br><a id="inv-run-3-1akg2e.t1.p5"></a>`INV-RUN-3-1AKG2E.T1.P5` — partial failure<br><a id="inv-run-3-1akg2e.t1.p6"></a>`INV-RUN-3-1AKG2E.T1.P6` — retry and recovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="inv-run-4-4m27ap.t1"></a>`INV-RUN-4-4M27AP.T1`   | <a id="inv-run-4-4m27ap"></a>`INV-RUN-4-4M27AP`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The signing key and nonce never cross a boundary; only the host signs; the client holds proxy signers.                                                                                                                                                                                                                                      | <a id="inv-run-4-4m27ap.t1.p1"></a>`INV-RUN-4-4M27AP.T1.P1` — valid case<br><a id="inv-run-4-4m27ap.t1.p2"></a>`INV-RUN-4-4M27AP.T1.P2` — correct identity/signature<br><a id="inv-run-4-4m27ap.t1.p3"></a>`INV-RUN-4-4M27AP.T1.P3` — direct invalid/opposite case<br><a id="inv-run-4-4m27ap.t1.p4"></a>`INV-RUN-4-4M27AP.T1.P4` — wrong identity/signature<br><a id="inv-run-4-4m27ap.t1.p5"></a>`INV-RUN-4-4M27AP.T1.P5` — missing identity/signature<br><a id="inv-run-4-4m27ap.t1.p6"></a>`INV-RUN-4-4M27AP.T1.P6` — duplicate identity/signature<br><a id="inv-run-4-4m27ap.t1.p7"></a>`INV-RUN-4-4M27AP.T1.P7` — forged identity/signature<br><a id="inv-run-4-4m27ap.t1.p8"></a>`INV-RUN-4-4M27AP.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="req-run-8-a4b4sa.t1"></a>`REQ-RUN-8-A4B4SA.T1`   | <a id="req-run-8-a4b4sa"></a>`REQ-RUN-8-A4B4SA`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Harness control is a custom-RPC root over the same serialized surfaces; a controller drives a peer only through `hostRpc` (loopback to that peer's host, or a typed relay to a peer address), never by in-process reference.                                                                                                                | <a id="req-run-8-a4b4sa.t1.p1"></a>`REQ-RUN-8-A4B4SA.T1.P1` — valid case<br><a id="req-run-8-a4b4sa.t1.p2"></a>`REQ-RUN-8-A4B4SA.T1.P2` — correct identity/signature<br><a id="req-run-8-a4b4sa.t1.p3"></a>`REQ-RUN-8-A4B4SA.T1.P3` — direct invalid/opposite case<br><a id="req-run-8-a4b4sa.t1.p4"></a>`REQ-RUN-8-A4B4SA.T1.P4` — wrong identity/signature<br><a id="req-run-8-a4b4sa.t1.p5"></a>`REQ-RUN-8-A4B4SA.T1.P5` — missing identity/signature<br><a id="req-run-8-a4b4sa.t1.p6"></a>`REQ-RUN-8-A4B4SA.T1.P6` — duplicate identity/signature<br><a id="req-run-8-a4b4sa.t1.p7"></a>`REQ-RUN-8-A4B4SA.T1.P7` — forged identity/signature<br><a id="req-run-8-a4b4sa.t1.p8"></a>`REQ-RUN-8-A4B4SA.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="req-run-9-7zwagj.t1"></a>`REQ-RUN-9-7ZWAGJ.T1`   | <a id="req-run-9-7zwagj"></a>`REQ-RUN-9-7ZWAGJ`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Every harness-control operation returns structured-clone-serializable projections; bigint-bearing structs cross `Codec.encode`d and are decoded in the host endpoint.                                                                                                                                                                       | <a id="req-run-9-7zwagj.t1.p1"></a>`REQ-RUN-9-7ZWAGJ.T1.P1` — valid case<br><a id="req-run-9-7zwagj.t1.p2"></a>`REQ-RUN-9-7ZWAGJ.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-9-7zwagj.t1.p3"></a>`REQ-RUN-9-7ZWAGJ.T1.P3` — direct invalid/opposite case<br><a id="req-run-9-7zwagj.t1.p4"></a>`REQ-RUN-9-7ZWAGJ.T1.P4` — exact boundary<br><a id="req-run-9-7zwagj.t1.p5"></a>`REQ-RUN-9-7ZWAGJ.T1.P5` — failure/recovery<br><a id="req-run-9-7zwagj.t1.p6"></a>`REQ-RUN-9-7ZWAGJ.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="req-run-10-fsd184.t1"></a>`REQ-RUN-10-FSD184.T1` | <a id="req-run-10-fsd184"></a>`REQ-RUN-10-FSD184`                   | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The harness-control root is not reachable by a network peer and is not present in a production artifact.                                                                                                                                                                                                                                    | <a id="req-run-10-fsd184.t1.p1"></a>`REQ-RUN-10-FSD184.T1.P1` — valid case<br><a id="req-run-10-fsd184.t1.p2"></a>`REQ-RUN-10-FSD184.T1.P2` — correct identity/signature<br><a id="req-run-10-fsd184.t1.p3"></a>`REQ-RUN-10-FSD184.T1.P3` — direct invalid/opposite case<br><a id="req-run-10-fsd184.t1.p4"></a>`REQ-RUN-10-FSD184.T1.P4` — wrong identity/signature<br><a id="req-run-10-fsd184.t1.p5"></a>`REQ-RUN-10-FSD184.T1.P5` — missing identity/signature<br><a id="req-run-10-fsd184.t1.p6"></a>`REQ-RUN-10-FSD184.T1.P6` — duplicate identity/signature<br><a id="req-run-10-fsd184.t1.p7"></a>`REQ-RUN-10-FSD184.T1.P7` — forged identity/signature<br><a id="req-run-10-fsd184.t1.p8"></a>`REQ-RUN-10-FSD184.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="req-run-11-5yyv48.t1"></a>`REQ-RUN-11-5YYV48.T1` | <a id="req-run-11-5yyv48"></a>`REQ-RUN-11-5YYV48`                   | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Concurrently executing peers and test processes are isolated: per-peer host realm and service state, disjoint account partitions per process, per-test channel id, per-slot chain/discovery/cache.                                                                                                                                          | <a id="req-run-11-5yyv48.t1.p1"></a>`REQ-RUN-11-5YYV48.T1.P1` — valid case<br><a id="req-run-11-5yyv48.t1.p2"></a>`REQ-RUN-11-5YYV48.T1.P2` — correct identity/signature<br><a id="req-run-11-5yyv48.t1.p3"></a>`REQ-RUN-11-5YYV48.T1.P3` — new participant<br><a id="req-run-11-5yyv48.t1.p4"></a>`REQ-RUN-11-5YYV48.T1.P4` — direct invalid/opposite case<br><a id="req-run-11-5yyv48.t1.p5"></a>`REQ-RUN-11-5YYV48.T1.P5` — wrong identity/signature<br><a id="req-run-11-5yyv48.t1.p6"></a>`REQ-RUN-11-5YYV48.T1.P6` — missing identity/signature<br><a id="req-run-11-5yyv48.t1.p7"></a>`REQ-RUN-11-5YYV48.T1.P7` — duplicate identity/signature<br><a id="req-run-11-5yyv48.t1.p8"></a>`REQ-RUN-11-5YYV48.T1.P8` — forged identity/signature<br><a id="req-run-11-5yyv48.t1.p9"></a>`REQ-RUN-11-5YYV48.T1.P9` — membership boundary<br><a id="req-run-11-5yyv48.t1.p10"></a>`REQ-RUN-11-5YYV48.T1.P10` — existing participant<br><a id="req-run-11-5yyv48.t1.p11"></a>`REQ-RUN-11-5YYV48.T1.P11` — removed participant<br><a id="req-run-11-5yyv48.t1.p12"></a>`REQ-RUN-11-5YYV48.T1.P12` — slashed participant<br><a id="req-run-11-5yyv48.t1.p13"></a>`REQ-RUN-11-5YYV48.T1.P13` — concurrent membership change |
-| <a id="req-run-12-aygvm7.t1"></a>`REQ-RUN-12-AYGVM7.T1` | <a id="req-run-12-aygvm7"></a>`REQ-RUN-12-AYGVM7`                   | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The inline-vs-worker equivalence criterion states which observations must be identical across `RUN_SDK_IN_THREAD × VM_DEDICATED_THREAD`, and the matrix test is that criterion's oracle.                                                                                                                                                    | <a id="req-run-12-aygvm7.t1.p1"></a>`REQ-RUN-12-AYGVM7.T1.P1` — valid case<br><a id="req-run-12-aygvm7.t1.p2"></a>`REQ-RUN-12-AYGVM7.T1.P2` — zero/empty/no-op case where meaningful<br><a id="req-run-12-aygvm7.t1.p3"></a>`REQ-RUN-12-AYGVM7.T1.P3` — direct invalid/opposite case<br><a id="req-run-12-aygvm7.t1.p4"></a>`REQ-RUN-12-AYGVM7.T1.P4` — exact boundary<br><a id="req-run-12-aygvm7.t1.p5"></a>`REQ-RUN-12-AYGVM7.T1.P5` — failure/recovery<br><a id="req-run-12-aygvm7.t1.p6"></a>`REQ-RUN-12-AYGVM7.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| <a id="req-run-13-27ye2t.t1"></a>`REQ-RUN-13-27YE2T.T1` | <a id="req-run-13-27ye2t"></a>`REQ-RUN-13-27YE2T`                   | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Both worker boundaries (runtime host, EVM executor) are the intended defaults, uniformly — no per-environment profile branching; today's off-by-default state is a maturity gap. Engineer decision 2026-08-10 (§6.1).                                                                                                                       | <a id="req-run-13-27ye2t.t1.p1"></a>`REQ-RUN-13-27YE2T.T1.P1` — valid case<br><a id="req-run-13-27ye2t.t1.p2"></a>`REQ-RUN-13-27YE2T.T1.P2` — before deadline<br><a id="req-run-13-27ye2t.t1.p3"></a>`REQ-RUN-13-27YE2T.T1.P3` — direct invalid/opposite case<br><a id="req-run-13-27ye2t.t1.p4"></a>`REQ-RUN-13-27YE2T.T1.P4` — at deadline<br><a id="req-run-13-27ye2t.t1.p5"></a>`REQ-RUN-13-27YE2T.T1.P5` — after deadline<br><a id="req-run-13-27ye2t.t1.p6"></a>`REQ-RUN-13-27YE2T.T1.P6` — maximum honest skew                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| <a id="req-run-14-yahyr4.t1"></a>`REQ-RUN-14-YAHYR4.T1` | <a id="req-run-14-yahyr4"></a>`REQ-RUN-14-YAHYR4`                   | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | A ~6-participant channel must run within a mid-range mobile browser envelope (~4 GB device RAM, few-hundred-MB usable heap, mobile CPU). The envelope is a hard implementation budget: three contexts must be made to fit it. The 1024 MB worker cap is CI containment and is too high for this floor. Engineer decision 2026-08-10 (§6.1). | <a id="req-run-14-yahyr4.t1.p1"></a>`REQ-RUN-14-YAHYR4.T1.P1` — valid case<br><a id="req-run-14-yahyr4.t1.p2"></a>`REQ-RUN-14-YAHYR4.T1.P2` — correct identity/signature<br><a id="req-run-14-yahyr4.t1.p3"></a>`REQ-RUN-14-YAHYR4.T1.P3` — direct invalid/opposite case<br><a id="req-run-14-yahyr4.t1.p4"></a>`REQ-RUN-14-YAHYR4.T1.P4` — wrong identity/signature<br><a id="req-run-14-yahyr4.t1.p5"></a>`REQ-RUN-14-YAHYR4.T1.P5` — missing identity/signature<br><a id="req-run-14-yahyr4.t1.p6"></a>`REQ-RUN-14-YAHYR4.T1.P6` — duplicate identity/signature<br><a id="req-run-14-yahyr4.t1.p7"></a>`REQ-RUN-14-YAHYR4.T1.P7` — forged identity/signature<br><a id="req-run-14-yahyr4.t1.p8"></a>`REQ-RUN-14-YAHYR4.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="req-run-15-8cbvkb.t1"></a>`REQ-RUN-15-8CBVKB.T1` | [`REQ-RUN-15-8CBVKB`](runtime-and-concurrency.md#req-run-15-8cbvkb) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Inline and worker mode are equivalent when observable protocol behavior matches: blocks/signatures/state roots, on-chain actions, emitted events and payloads, and error identity. Timing and internal interleaving are out of scope.                                                                                                       | <a id="req-run-15-8cbvkb.t1.p1"></a>`REQ-RUN-15-8CBVKB.T1.P1` — valid case<br><a id="req-run-15-8cbvkb.t1.p2"></a>`REQ-RUN-15-8CBVKB.T1.P2` — correct identity/signature<br><a id="req-run-15-8cbvkb.t1.p3"></a>`REQ-RUN-15-8CBVKB.T1.P3` — direct invalid/opposite case<br><a id="req-run-15-8cbvkb.t1.p4"></a>`REQ-RUN-15-8CBVKB.T1.P4` — wrong identity/signature<br><a id="req-run-15-8cbvkb.t1.p5"></a>`REQ-RUN-15-8CBVKB.T1.P5` — missing identity/signature<br><a id="req-run-15-8cbvkb.t1.p6"></a>`REQ-RUN-15-8CBVKB.T1.P6` — duplicate identity/signature<br><a id="req-run-15-8cbvkb.t1.p7"></a>`REQ-RUN-15-8CBVKB.T1.P7` — forged identity/signature<br><a id="req-run-15-8cbvkb.t1.p8"></a>`REQ-RUN-15-8CBVKB.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="inv-run-5-atvkz4.t1"></a>`INV-RUN-5-ATVKZ4.T1`   | <a id="inv-run-5-atvkz4"></a>`INV-RUN-5-ATVKZ4`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | A harness-control operation executes in the host realm on live objects and returns only serializable projections; no live `Block`, transport, profile, or `StateManager` reference crosses the port.                                                                                                                                        | <a id="inv-run-5-atvkz4.t1.p1"></a>`INV-RUN-5-ATVKZ4.T1.P1` — valid case<br><a id="inv-run-5-atvkz4.t1.p2"></a>`INV-RUN-5-ATVKZ4.T1.P2` — zero/empty/no-op case where meaningful<br><a id="inv-run-5-atvkz4.t1.p3"></a>`INV-RUN-5-ATVKZ4.T1.P3` — direct invalid/opposite case<br><a id="inv-run-5-atvkz4.t1.p4"></a>`INV-RUN-5-ATVKZ4.T1.P4` — exact boundary<br><a id="inv-run-5-atvkz4.t1.p5"></a>`INV-RUN-5-ATVKZ4.T1.P5` — failure/recovery<br><a id="inv-run-5-atvkz4.t1.p6"></a>`INV-RUN-5-ATVKZ4.T1.P6` — relevant race                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| <a id="inv-run-6-ykk493.t1"></a>`INV-RUN-6-YKK493.T1`   | <a id="inv-run-6-ykk493"></a>`INV-RUN-6-YKK493`                     | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Harness stub state (installed doubles, saved originals, registered peer keys) is scoped to one peer's host service instance, so co-located inline hosts do not leak faults between peers.                                                                                                                                                   | <a id="inv-run-6-ykk493.t1.p1"></a>`INV-RUN-6-YKK493.T1.P1` — valid case<br><a id="inv-run-6-ykk493.t1.p2"></a>`INV-RUN-6-YKK493.T1.P2` — correct identity/signature<br><a id="inv-run-6-ykk493.t1.p3"></a>`INV-RUN-6-YKK493.T1.P3` — direct invalid/opposite case<br><a id="inv-run-6-ykk493.t1.p4"></a>`INV-RUN-6-YKK493.T1.P4` — wrong identity/signature<br><a id="inv-run-6-ykk493.t1.p5"></a>`INV-RUN-6-YKK493.T1.P5` — missing identity/signature<br><a id="inv-run-6-ykk493.t1.p6"></a>`INV-RUN-6-YKK493.T1.P6` — duplicate identity/signature<br><a id="inv-run-6-ykk493.t1.p7"></a>`INV-RUN-6-YKK493.T1.P7` — forged identity/signature<br><a id="inv-run-6-ykk493.t1.p8"></a>`INV-RUN-6-YKK493.T1.P8` — membership boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## 7. Future Work
 
@@ -565,7 +517,7 @@ _Non-normative._
   missed close depends on the request timeout backstop (default 30 s;
   `dispose`/`quiesce` opt out with `timeoutMs: null`).
 - The chain provider, signer ownership, and nonce discipline are the host's
-  ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)/2, [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)); this document
+  ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7` (The runtime owns its signer)](architecture.md#req-sdk-1-jkc9w7)/2, [`INV-SDK-2-NH0YGE` (Host-owned signing key and nonce)](architecture.md#inv-sdk-2-nh0yge)); this document
   assumes them and does not restate them.
 - Depends on: [architecture.md](./architecture.md) (host/client split, two SM
   instances), [block-confirmation-pipeline.md](./block-confirmation-pipeline.md)
@@ -575,26 +527,156 @@ _Non-normative._
 
 ## 9. Invariants
 
-- **[`INV-RUN-1-JM2D9F`](runtime-and-concurrency.md#inv-run-1-jm2d9f)** — Ports parallelize work across contexts; the host-internal
-  `StateManager` mutex serializes live-state mutation. Moving the EVM behind a
-  worker preserves total-order application because executor calls are awaited
-  under that mutex.
-- **[`INV-RUN-2-AF430Q`](runtime-and-concurrency.md#inv-run-2-af430q)** — A runtime channel is a 1:1 pair; a transferred port is owned by
-  exactly one context; each port has exactly one message handler. Correlation by
-  `requestId` needs no authenticity check because the paired context is the only
-  writer.
-- **[`INV-RUN-3-1AKG2E`](runtime-and-concurrency.md#inv-run-3-1akg2e)** — A host construction failure posts `hostError` and closes the
-  port so the client creation rejects and pending requests reject; a dead client
-  port triggers host self-disposal.
-- **[`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)** — The signing key and chain nonce never cross a boundary; only
-  the host signs, and the client realm holds proxy signers that forward requests
-  (cross-ref [architecture.md](./architecture.md) [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)).
-- **[`INV-RUN-5-ATVKZ4`](runtime-and-concurrency.md#inv-run-5-atvkz4)** — A harness-control operation executes in the host realm on the
-  live objects and returns only serializable projections; no live `Block`,
-  transport, profile, or `StateManager` reference crosses the port (§11.2).
-- **[`INV-RUN-6-YKK493`](runtime-and-concurrency.md#inv-run-6-ykk493)** — Harness stub state is scoped to one peer's host service
-  instance, so co-located inline hosts do not leak an installed fault between
-  peers (§11.4).
+<a id="inv-run-1-jm2d9f"></a>
+
+### INV-RUN-1-JM2D9F — Ports parallelize, the state mutex serializes
+
+Ports parallelize work across contexts; the host-internal
+`StateManager` mutex serializes live-state mutation. Moving the EVM behind a
+worker preserves total-order application because executor calls are awaited
+under that mutex.
+
+<a id="inv-run-2-af430q"></a>
+
+### INV-RUN-2-AF430Q — One-to-one channels and single port ownership
+
+A runtime channel is a 1:1 pair; a transferred port is owned by
+exactly one context; each port has exactly one message handler. Correlation by
+`requestId` needs no authenticity check because the paired context is the only
+writer.
+
+<a id="inv-run-3-1akg2e"></a>
+
+### INV-RUN-3-1AKG2E — Host construction failure closes the port
+
+A host construction failure posts `hostError` and closes the
+port so the client creation rejects and pending requests reject; a dead client
+port triggers host self-disposal.
+
+- [x] `INV-RUN-3-1AKG2E.T1.P1` — valid case
+
+<a id="inv-run-4-4m27ap"></a>
+
+### INV-RUN-4-4M27AP — Key and nonce never cross a boundary
+
+The signing key and chain nonce never cross a boundary; only
+the host signs, and the client realm holds proxy signers that forward requests
+(cross-ref [architecture.md](./architecture.md) [`INV-SDK-2-NH0YGE` (Host-owned signing key and nonce)](architecture.md#inv-sdk-2-nh0yge)).
+
+<a id="inv-run-5-atvkz4"></a>
+
+### INV-RUN-5-ATVKZ4 — Harness control runs in the host realm
+
+A harness-control operation executes in the host realm on the
+live objects and returns only serializable projections; no live `Block`,
+transport, profile, or `StateManager` reference crosses the port (§11.2).
+
+<a id="inv-run-6-ykk493"></a>
+
+### INV-RUN-6-YKK493 — Per-peer harness stub state
+
+Harness stub state is scoped to one peer's host service
+instance, so co-located inline hosts do not leak an installed fault between
+peers (§11.4).
+
+<a id="req-run-1-fsv0sh"></a>
+
+### REQ-RUN-1-FSV0SH — Serialized messages over paired ports
+
+Communication is serialized messages over paired ports; the protocol and observable behavior are identical inline or worker, so callers keep no separate implementations and a component can move to a worker without changing its contract.
+
+- [x] `REQ-RUN-1-FSV0SH.T1.P7` — inline SDK-owned executor normalizes manifest addresses and clones mutable options at initialization; later caller mutation cannot alter precompile results, including binary, BigInt, false, zero and empty values
+
+<a id="req-run-2-gbcz5b"></a>
+
+### REQ-RUN-2-GBCZ5B — No shared mutable memory across contexts
+
+No shared mutable memory between main thread, host, and executor; all inter-context interaction is a serialized message.
+
+<a id="req-run-3-60n6vr"></a>
+
+### REQ-RUN-3-60N6VR — State owned by the receiving component
+
+Internal state is owned by the receiving component; the app cannot reach node state, the host cannot reach EVM state, except by a request.
+
+<a id="req-run-4-nk15qs"></a>
+
+### REQ-RUN-4-NK15QS — Explicit cross-boundary rules before a move
+
+Ownership, ordering, lifecycle, error, disposal, and serialization rules for a cross-boundary message are explicit before a component moves to a worker.
+
+<a id="req-run-5-dc7m8e"></a>
+
+### REQ-RUN-5-DC7M8E — Client-local request correlation
+
+Every client→host request carries a client-local `requestId`; a single handler per port correlates the one matching response; only the paired context can settle it.
+
+<a id="req-run-6-mtbt2h"></a>
+
+### REQ-RUN-6-MTBT2H — Structured-clone limits on boundary values
+
+Cross-boundary values obey structured-clone limits: bigints as quantity/Codec strings, manifests not class instances, only ports transferred; `customData`/`kzg` rejected; non-serializable bus args drop.
+
+- [x] `REQ-RUN-6-MTBT2H.T1.P1` — valid case
+- [x] `REQ-RUN-6-MTBT2H.T1.P3` — malformed input
+- [x] `REQ-RUN-6-MTBT2H.T1.P4` — direct invalid/opposite case
+- [x] `REQ-RUN-6-MTBT2H.T1.P10` — partial failure
+
+<a id="req-run-7-xv1fdr"></a>
+
+### REQ-RUN-7-XV1FDR — Workers as a client performance strategy
+
+Worker isolation is a client performance strategy (not server scaling), applied incrementally where measurement justifies it; each boundary should be measurement-justified.
+
+<a id="req-run-8-a4b4sa"></a>
+
+### REQ-RUN-8-A4B4SA — Harness control is a custom-RPC root
+
+Harness control is a custom-RPC root over the same serialized surfaces; a controller drives a peer only through `hostRpc` (loopback to that peer's host, or a typed relay to a peer address), never by in-process reference.
+
+- [x] `REQ-RUN-8-A4B4SA.T1.P1` — valid case
+
+<a id="req-run-9-7zwagj"></a>
+
+### REQ-RUN-9-7ZWAGJ — Serializable harness-control projections
+
+Every harness-control operation returns structured-clone-serializable projections; bigint-bearing structs cross `Codec.encode`d and are decoded in the host endpoint.
+
+<a id="req-run-10-fsd184"></a>
+
+### REQ-RUN-10-FSD184 — Harness control unreachable by network peers
+
+The harness-control root is not reachable by a network peer and is not present in a production artifact.
+
+<a id="req-run-11-5yyv48"></a>
+
+### REQ-RUN-11-5YYV48 — Isolated concurrent peers and test processes
+
+Concurrently executing peers and test processes are isolated: per-peer host realm and service state, disjoint account partitions per process, per-test channel id, per-slot chain/discovery/cache.
+
+<a id="req-run-12-aygvm7"></a>
+
+### REQ-RUN-12-AYGVM7 — Stated inline-worker equivalence criterion
+
+The inline-vs-worker equivalence criterion states which observations must be identical across `RUN_SDK_IN_THREAD × VM_DEDICATED_THREAD`, and the matrix test is that criterion's oracle.
+
+<a id="req-run-13-27ye2t"></a>
+
+### REQ-RUN-13-27YE2T — Worker boundaries are the defaults
+
+Both worker boundaries (runtime host, EVM executor) are the intended defaults, uniformly — no per-environment profile branching; today's off-by-default state is a maturity gap. Engineer decision 2026-08-10 (§6.1).
+
+<a id="req-run-14-yahyr4"></a>
+
+### REQ-RUN-14-YAHYR4 — Six participants on a mid-range mobile browser
+
+A ~6-participant channel must run within a mid-range mobile browser envelope (~4 GB device RAM, few-hundred-MB usable heap, mobile CPU). The envelope is a hard implementation budget: three contexts must be made to fit it. The 1024 MB worker cap is CI containment and is too high for this floor. Engineer decision 2026-08-10 (§6.1).
+
+<a id="req-run-15-8cbvkb"></a>
+
+### REQ-RUN-15-8CBVKB — Inline and worker equivalence
+
+Inline and worker mode are equivalent when observable protocol behavior matches: blocks/signatures/state roots, on-chain actions, emitted events and payloads, and error identity. Timing and internal interleaving are out of scope.
 
 ## 10. Verification
 
@@ -687,7 +769,7 @@ uses SDK-owned services in all four modes. The canonical distributed runner stil
 selects worker defaults for tests without explicit placement; these four cases
 select each combination themselves.
 
-**<a id="req-run-15-8cbvkb"></a>`REQ-RUN-15-8CBVKB` — the normative criterion (engineer decision, 2026-08-10; provenance and
+**[`REQ-RUN-15-8CBVKB`](runtime-and-concurrency.md#req-run-15-8cbvkb) — the normative criterion (engineer decision, 2026-08-10; provenance and
 rejected alternatives in [§6.1](#61-decision-record--worker-placement-and-device-floor)).**
 Inline and worker
 mode are equivalent when **observable protocol behavior** is identical. In scope:
@@ -710,8 +792,6 @@ effect/event order.
 
 ### 11.7 Verification
 
-## Implementation traceability
-
 ## Shared operation ownership
 
 The runtime host shares the signer readiness check while keeping hostRpc and deployment dispatch separate. Performance reporting is shared; Node and browser retain their own sample sources, timer lifetime and throw/stop order.
@@ -727,3 +807,22 @@ Common lifecycle composition: every internal endpoint owns readiness waits and c
 Root files export their receiving start operations and remain inert when imported. Thin worker entry files set the diagnostic thread name and call the common bootstrap with the root class. Internal browser URL modules resolve the bundled entries; Node launches those entries with compiled/ts-node selection. All worker roots share memory-limit and graceful-shutdown policy. An explicit threadName worker option overrides the entry default before root initialization.
 
 Existing WebRTC ports still attach through the common root connection method. The factory does not create an extra broker or move main-thread negotiation. Inline child links record the exact two endpoints; logger traversal keeps its physical-realm behavior.
+
+## INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2
+
+Browser worker signer results and WebRTC traffic
+
+- Setup: Run the browser package script against a real chain, discovery relay, Vite host, main-thread SDK path, and app-worker SDK path
+- Oracle: Existing-channel connect returns `true` at `SYNCED`; targeted auto-open and join returns `true` at pending or participating; upgraded traffic succeeds
+
+- [x] `INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1` — the complete browser package-script flow reports both Boolean/status boundaries and successful upgraded traffic
+
+## INTEGRATION-TEST-RUNTIME-RPC-1-3J92X6
+
+SDK parent/child connection controls across local and worker placement.
+
+- Setup: Actual SDK-owned roots and connected domain services; narrow controls act on those connections.
+- Oracle: The typed host control holds only the selected real executor reply, independent SDK calls complete, release settles the correct result and leaves no owned pending request.
+
+- [x] `INTEGRATION-TEST-RUNTIME-RPC-1-3J92X6.P1` — Controls the actual executor connection through the host harness service
+- [x] `INTEGRATION-TEST-RUNTIME-RPC-1-3J92X6.P2` — Controls an SDK worker's executor connection through the same harness service

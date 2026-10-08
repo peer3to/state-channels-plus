@@ -1,82 +1,20 @@
-# WebRTCConnectionFactory.ts — Source Report
+# WebRTCConnectionFactory.ts
 
-> **Source:** [src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts)
+>
 > **Design views:** [architecture/sdk/rpc/webrtc-setup.md](../../../../../../../views/architecture/sdk/rpc/webrtc-setup.md), [architecture/sdk/runtime-and-concurrency.md](../../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)
+- [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)
 
-## Responsibility and observable boundary
+## UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM
 
-Loads the local RTC provider and creates its connection factory. If unavailable, rejects with a clear error. A fallback RuntimeHost supplies its own bridge factory directly to its WebRTC setup service before application startup.
+Native provider selection
 
-## Key design decisions
+- Setup: RTC provider present / unavailable
+- Oracle: Local factory or explicit error respectively
 
-1. **Local provider selection** — retain the no-argument native factory; host-owned fallback is bound explicitly to the setup service ([`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents              |
-| ------------ | --------------------- |
-| Inputs       | —                     |
-| Outputs      | A connection factory. |
-| Owned state  | None.                 |
-| Side effects | Provider loading.     |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                                            | Specification IDs                                                                                                                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [WebRTCConnectionFactory.ts](../../../../../../../../../../src/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`INV-RUNTIME-1-AKRHAK`](../../../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Both factories expose identical observable behavior ([`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)).
-
-## Specification adherence
-
-- Explicit unsupported-capability rejection ([`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                   | Implementation status | Evidence                                                                                | Gap / divergence |
-| --------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** the selection chain + explicit rejection. **Other files:** the two factories. | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                                    | Obligation                | Public entry and setup             | Oracle and forbidden effects                 | Required permutations                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------------------------------------- | ------------------------- | ---------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-webrtc-factory-select-1-36a0wm"></a>`UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM` | Native provider selection | RTC provider present / unavailable | Local factory or explicit error respectively | <a id="unit-test-webrtc-factory-select-1-36a0wm.p1"></a>`UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM.P1` — in-context; <a id="unit-test-webrtc-factory-select-1-36a0wm.p3"></a>`UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM.P3` — unavailable provider rejects |
-
-## Related source reports
-
-- [LocalWebRTCConnectionFactory](LocalWebRTCConnectionFactory.ts.md), [WorkerBridgeWebRTCConnectionFactory](WorkerBridgeWebRTCConnectionFactory.ts.md), [WebRTCProvider](WebRTCProvider.ts.md).
+- [ ] `UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM.P1` — in-context
+- [ ] `UNIT-TEST-WEBRTC-FACTORY-SELECT-1-36A0WM.P3` — unavailable provider rejects

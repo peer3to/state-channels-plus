@@ -1,6 +1,6 @@
 # State proofs and milestones — implementation
 
-> **Specification subject:** [State proofs](../../../specification/disputes/state-proofs.md) > **Status:** Maintained; engineer verification pending.
+> **Specification subject:** [State proofs](../../../specification/disputes/state-proofs.md)
 
 ## Ownership and flow
 
@@ -33,23 +33,3 @@ trusted starts inspect different regions. Per-step challenges reuse the internal
 re-walking prior hops, but whole-data hashing/copying grows with size. Admission gas and milestone
 length limits remain open. Exact test evidence is owned by verification reports; no broad suite
 result establishes every permutation. Engineer approval remains pending.
-
-## Source inventory
-
-| Source file                                                                                                                                  | Responsibility                                                              | Specification IDs                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [contracts/V1/types/ProofTypes.sol](../../source/contracts/V1/types/ProofTypes.sol.md)                                                       | Milestone-only proof representation                                         | [`REQ-SP-1-9YABY1`](../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)   |
-| [contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol](../../source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md) | Internal walk cursor, retained region, signer tally and consumed JOIN union | [`REQ-SP-3-SP1JG4`](../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)   |
-| [contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol](../../source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)       | Public walk, step and anchor-dependent counter predicates                   | [`REQ-SP-7-70EMAT`](../../../specification/disputes/state-proofs.md#req-sp-7-70emat)   |
-| [src/agreementManager/AgreementManager.ts](../../source/src/agreementManager/AgreementManager.ts.md)                                         | Construction, shared verification tiers and verified persistence            | [`REQ-SP-8-9ZCCEJ`](../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)   |
-| [src/stateManager/dispute/DisputeValidationService.ts](../../source/src/stateManager/dispute/DisputeValidationService.ts.md)                 | Audit counters and replay from verified tier state                          | [`REQ-SP-9-RNXP56`](../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)   |
-| [src/rpc/network/services/spectate/SpectateService.ts](../../source/src/rpc/network/services/spectate/SpectateService.ts.md)                 | Sync generation and application through shared proof owner                  | [`REQ-SP-10-JMVHTB`](../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb) |
-| [contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol](../../source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md) | Final-point snapshot adoption                                               | [`REQ-SP-5-MTE4RV`](../../../specification/disputes/state-proofs.md#req-sp-5-mte4rv)   |
-| [src/stateManager/snapshotUpdate/SnapshotUpdateService.ts](../../source/src/stateManager/snapshotUpdate/SnapshotUpdateService.ts.md)         | Construct and post the latest final point; no-op without progress           | [`REQ-SP-8-9ZCCEJ`](../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)   |
-
-## Conformance traceability
-
-Construction and shared tiers are documented in the AgreementManager report. Contract walk and
-counter boundaries are documented in the common and facet reports. Sync retention and audit
-replay belong to their caller reports. Their component permutations are the canonical obligations;
-exact executable evidence belongs to the corresponding verification reports.

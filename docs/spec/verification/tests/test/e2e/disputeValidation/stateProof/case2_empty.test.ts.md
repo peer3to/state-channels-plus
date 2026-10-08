@@ -20,4 +20,4 @@ IDs can be assigned in this report.
 
 | Test declaration                                                                                                                                                                                                                                                              | Covers |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / stateProof / Case 2 (empty stateProof) — see latestStateSnapshotHash > → see disputeInputFields/latestStateSnapshotHash → '(1) stateProof empty'`](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts#L7) (line 7) | —      |
+| [`E2E: dispute validation / stateProof / Case 2 (empty stateProof) — see latestStateSnapshotHash > → see disputeInputFields/latestStateSnapshotHash → '(1) stateProof empty'`](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts#L8) (line 8) | —      |
