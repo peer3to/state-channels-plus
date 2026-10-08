@@ -23,7 +23,7 @@ for a fork nobody runs is ignored, not fought. Two skipped declarations cross-re
 `uploadRevert/channelId.test.ts` and `disputeInputFields/forkId.test.ts`. After the
 permutation atomization the first header-mismatch case carries the mirrored
 `DisputeStateProofHeaderMismatch` predicate and header-match-check permutations, and the
-foreign-forkId block tamper carries the [`REQ-SP-7-70EMAT`](../../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat) fork-identity split; the per-identity
+foreign-forkId block tamper carries the [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat) fork-identity split; the per-identity
 [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) intake splits belong to the dedicated `uploadRevert/` and
 `disputeInputFields/` suites, so the remaining rows stay unassigned.
 

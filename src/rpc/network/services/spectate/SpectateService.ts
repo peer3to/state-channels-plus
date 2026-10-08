@@ -34,6 +34,8 @@ type VerifiedSync = {
     base: SyncReplayBase;
     /** windows the chain already reduced: their reduce input is not stored */
     chainFinalForkIds: Set<ForkId>;
+    /** windows this sync's own reduction verified: only their inbound list is stored */
+    selfReducedForkIds: Set<ForkId>;
 };
 
 export interface SyncRequest {
@@ -236,7 +238,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // Another sync may have finalized this window only in the shared
             // local EVM. Only chain finality can skip the local reduction.
             // Read finality first: a later window fetch includes any reduction that
-            // lands between reads, while a false decision safely reduces locally.
+            // lands between reads. A false decision then still checks the expected
+            // fork locally, in the window the checked disputes name, but only a
+            // reduction this sync runs checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             if (forkIds.length > 0) {
@@ -291,6 +295,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.disputeWindows.slice(adoptedWindowCount);
 
             let notReducedCount = 0;
+            // windows whose reduction this sync's own local call committed
+            const reducedByThisSync = new Set<ForkId>();
             for (const dw of linkedDisputeWindows) {
                 // each window must reduce the fork reached so far, starting at the on-chain fork
                 if (dw.forkId !== currentForkId)
@@ -331,14 +337,29 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             "dispute undecodable"
                         );
                     }
-                    try {
-                        await diamondStateMachine.localDiamondContract.reduceAndFinalize(
-                            disputes,
-                            dw.latestStateSnapshot,
-                            dw.latestEncodedStateMachineState,
-                            dw.inboundMessageBlocksAppliedInReduce,
-                            dw.reducedForkId
+                    // the local reduce picks its window from the disputes, not from dw
+                    if (
+                        !disputes.every(
+                            (dispute) =>
+                                dispute.input.channelId === channelId &&
+                                dispute.input.forkId === dw.forkId
+                        )
+                    )
+                        return this.rejectSync(
+                            peerAddress,
+                            "dispute window mismatch"
                         );
+                    try {
+                        const committedReduction =
+                            await diamondStateMachine.reduceAndFinalizeLocally(
+                                disputes,
+                                dw.latestStateSnapshot,
+                                dw.latestEncodedStateMachineState,
+                                dw.inboundMessageBlocksAppliedInReduce,
+                                dw.reducedForkId
+                            );
+                        if (committedReduction)
+                            reducedByThisSync.add(dw.forkId);
                     } catch (e) {
                         if (!isLocalEvmExecutionFailure(e)) throw e;
                         return this.rejectSync(
@@ -547,7 +568,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         linkedDisputeWindows
                             .map((dw) => dw.forkId)
                             .filter((forkId) => finalizedByFork.get(forkId))
-                    )
+                    ),
+                    selfReducedForkIds: reducedByThisSync
                 }
             );
             if (shouldAbort) {
@@ -1046,6 +1068,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         storage.stateMachineStates.storeStateMachineState(
                             dw.latestEncodedStateMachineState
                         );
+                        // only this sync's own reduction checked a window's inbound list; any
+                        // other window's list is dropped and chain events deliver the genuine blocks
+                        if (!verified.selfReducedForkIds.has(dw.forkId))
+                            continue;
                         for (const inboundBlock of dw.inboundMessageBlocksAppliedInReduce) {
                             storage.inboundMessages.store(inboundBlock);
                         }

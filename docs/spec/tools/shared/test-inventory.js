@@ -83,6 +83,17 @@ function callRootName(expression) {
     return null;
 }
 
+// it.skip(...) / describe.skip(...) anywhere in the call chain
+function isSkipCall(expression) {
+    if (ts.isPropertyAccessExpression(expression))
+        return (
+            expression.name.text === "skip" || isSkipCall(expression.expression)
+        );
+    if (ts.isCallExpression(expression))
+        return isSkipCall(expression.expression);
+    return false;
+}
+
 function literalTitle(node) {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
         return node.text;
@@ -119,9 +130,10 @@ function extractJavaScriptTests(target) {
     );
     const cases = [];
 
-    function visit(node, suites) {
+    function visit(node, suites, skipped = false) {
         if (ts.isCallExpression(node)) {
             const root = callRootName(node.expression);
+            const skip = skipped || isSkipCall(node.expression);
             if (SUITE_CALLS.has(root) && node.arguments.length) {
                 const part = titlePart(node.arguments[0], sourceFile);
                 const callback = node.arguments.find(
@@ -130,7 +142,7 @@ function extractJavaScriptTests(target) {
                         ts.isFunctionExpression(argument)
                 );
                 if (callback) {
-                    visit(callback.body, [...suites, part]);
+                    visit(callback.body, [...suites, part], skip);
                     return;
                 }
             }
@@ -145,12 +157,13 @@ function extractJavaScriptTests(target) {
                         1,
                     selector: hierarchy.map(({ title }) => title).join(" > "),
                     dynamic: hierarchy.some(({ dynamic }) => dynamic),
+                    skipped: skip,
                     source: node.getText(sourceFile)
                 });
                 return;
             }
         }
-        ts.forEachChild(node, (child) => visit(child, suites));
+        ts.forEachChild(node, (child) => visit(child, suites, skipped));
     }
 
     visit(sourceFile, []);
@@ -287,6 +300,16 @@ function scanTestMappings(documents, cases) {
                         owner: null,
                         reason: "Covers cell has no recognizable test ID"
                     });
+                continue;
+            }
+            if (testCase.skipped) {
+                invalid.push({
+                    document,
+                    target,
+                    line,
+                    owner: owners[0],
+                    reason: "Covers cell maps a skipped test"
+                });
                 continue;
             }
             const key = `${target}\0${line}`;

@@ -37,6 +37,10 @@ import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
 import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
+import {
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -48,9 +52,16 @@ import type {
     Hash,
     Timestamp
 } from "@/types/types";
-import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import {
+    Codec,
+    DetachedPromises,
+    sleep,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
 import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import type { ContractTransactionResponse } from "ethers";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -1093,7 +1104,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         // `submitOpening` is private on the service; the stub patches it by name.
         const target = service as unknown as {
-            submitOpening: (...parameters: unknown[]) => Promise<unknown>;
+            submitOpening: (
+                ...parameters: unknown[]
+            ) => Promise<ContractTransactionResponse>;
         };
         if (!this.service.stubOriginals.has("openingSubmission")) {
             this.service.stubOriginals.set(
@@ -1109,13 +1122,66 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             await new Promise<void>((resolve) => {
                 stubService.heldOpeningSubmissions.push(resolve);
             });
-            return original.apply(service, parameters);
+            // Record-only: the real submission and its outcome still reach
+            // the service unchanged.
+            try {
+                const tx = await original.apply(service, parameters);
+                DetachedPromises.collect(
+                    stubService.recordMinedOpeningRejection(tx.hash)
+                );
+                return tx;
+            } catch (error) {
+                stubService.openingSubmissionRejections.push(
+                    tryDecodeCustomError(error)?.name ?? "undecoded"
+                );
+                throw error;
+            }
         };
         return true;
     }
 
     public getHeldOpeningSubmissionCount(): number {
         return this.service.heldOpeningSubmissions.length;
+    }
+
+    public getShortOpeningDeadline(): Timestamp | null {
+        return this.service.shortOpeningDeadline;
+    }
+
+    public getOpeningSubmissionRejections(): string[] {
+        return [...this.service.openingSubmissionRejections];
+    }
+
+    /**
+     * Make this proposer's next opening terms expire `remainingSeconds` from
+     * now instead of the full opening window. The clock read that derives the
+     * deadline directly follows `buildOpeningData`, so the offset applies to
+     * that one read only; the peer's expiry observation runs on the real clock.
+     */
+    public stubShortOpeningDeadline(remainingSeconds: number): boolean {
+        const stubService = this.service;
+        this.service.shiftClockReadAfterOpeningData(
+            remainingSeconds - OPEN_CHANNEL_DEADLINE_SECONDS,
+            (shiftedNow) => {
+                stubService.shortOpeningDeadline =
+                    shiftedNow + OPEN_CHANNEL_DEADLINE_SECONDS;
+            }
+        );
+        return true;
+    }
+
+    /**
+     * Make this receiver accept, for its next opening proposal only, a
+     * deadline that leaves `minimumSeconds` instead of the protocol minimum.
+     * The clock read that sets the deadline bounds directly follows
+     * `buildOpeningData`, so the offset applies to that one read only; the
+     * peer's expiry observation runs on the real clock.
+     */
+    public stubLowerOpeningMinimumWindow(minimumSeconds: number): boolean {
+        this.service.shiftClockReadAfterOpeningData(
+            minimumSeconds - OPEN_CHANNEL_MIN_REMAINING_SECONDS
+        );
+        return true;
     }
 
     /** Restore the real submission and let the parked ones proceed. */
@@ -1271,8 +1337,13 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    public holdSyncWindowPersistence(): boolean {
-        this.service.holdSyncWindowPersistence();
+    /** Hold a sync's chain-window step before its fetch or after its persist. */
+    public holdSyncWindowPersistence(
+        at: "beforeFetch" | "afterPersist"
+    ): boolean {
+        if (at !== "beforeFetch" && at !== "afterPersist")
+            throw new Error("Invalid sync window hold point");
+        this.service.holdSyncWindowPersistence(at);
         return true;
     }
 
@@ -2581,6 +2652,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
+     * Hold only the inbound storage write of InboundMessagesProcessed: the
+     * local diamond still applies the event, while inbound storage lags it.
+     */
+    public stubHoldInboundMessageStorage(): boolean {
+        const sm = this.service.sm;
+        if (!this.service.stubOriginals.has("inboundMessageStorage")) {
+            this.service.stubOriginals.set(
+                "inboundMessageStorage",
+                sm.onInboundMessage.bind(sm)
+            );
+        }
+        sm.onInboundMessage = (async (
+            ...args: Parameters<typeof sm.onInboundMessage>
+        ) => {
+            this.service.heldInboundStorageArgs.push(args);
+        }) as typeof sm.onInboundMessage;
+        return true;
+    }
+
+    /** Restore the storage write; optionally replay the held writes through it. */
+    public async restoreInboundMessageStorage(
+        replay: boolean
+    ): Promise<boolean> {
+        const sm = this.service.sm;
+        const original = this.service.stubOriginals.get(
+            "inboundMessageStorage"
+        );
+        if (original === undefined) return false;
+        const restored = original as typeof sm.onInboundMessage;
+        sm.onInboundMessage = restored;
+        this.service.stubOriginals.delete("inboundMessageStorage");
+        const held = this.service.heldInboundStorageArgs.splice(0);
+        if (replay) for (const args of held) await restored(...args);
+        return true;
+    }
+
+    /**
      * Drop selected subscribed logs before the scheduler records their key.
      * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
      * only loses the delivery - an explicit query of the same log still reaches
@@ -3242,6 +3350,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getHeldSetChannelIdCount(): number {
         return this.service.getHeldSetChannelIdCount();
+    }
+
+    public holdEventListenerRemoval(): boolean {
+        this.service.holdEventListenerRemoval();
+        return true;
+    }
+
+    public releaseEventListenerRemoval(): number {
+        return this.service.releaseEventListenerRemoval();
+    }
+
+    public getHeldEventListenerRemovalCount(): number {
+        return this.service.getHeldEventListenerRemovalCount();
     }
 
     public overrideLobbyRoleDuration(durationMs: number): boolean {

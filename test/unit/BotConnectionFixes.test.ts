@@ -935,12 +935,13 @@ describe("Unit: bot-connection fixes", function () {
                     waitForPeers: [0, 1, 2],
                     maximumBlocks: 8
                 });
-                await waitFor(
-                    async () =>
-                        (await joinerQuery.getForkId().request()) !==
-                        disputedForkId,
-                    h.event.protocolEventTimeoutMs()
-                );
+                // Every peer leaves the disputed fork, not only the joiner: a
+                // founder whose reduction has not run yet would author the next
+                // block on the disputed fork, and the others drop it.
+                await h.assert.sync.forkChangedWait({
+                    originalForkId: disputedForkId,
+                    honestPeerIndices: h.peers.map((peer) => peer.index)
+                });
                 const reducedForkId = await joinerQuery.getForkId().request();
                 expect(await joinerQuery.getStatus().request()).to.equal(
                     Status.PENDING_PARTICIPANT

@@ -157,7 +157,7 @@ registrations can also be removed repeatedly through the original callback. Its 
 records the complete method, listener, event-log, query, and passthrough boundary instead of only
 the structural Result predicate.
 
-Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+Other file reports' requirement bullets, recorded divergences, and unit families remain visible in generated coverage.
 
 Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
 
@@ -375,7 +375,7 @@ registrations can also be removed repeatedly through the original callback. Its 
 records the complete method, listener, event-log, query, and passthrough boundary instead of only
 the structural Result predicate.
 
-Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+Other file reports' requirement bullets, recorded divergences, and unit families remain visible in generated coverage.
 
 Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
 
@@ -414,7 +414,7 @@ node's gas estimation, not the chain, the ZK precompile (14 calls, all under 7 m
    63/64 of what is left. An under-funded replay therefore silently gave the transition less than
    the stipend, the transition ran out of gas, `executeStateTransition` returned `success = false`,
    and both fraud-proof facets read that as an invalid transition. The gas a sender attached could
-   decide a verdict ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2), [`REQ-FP-7-4DD0D7`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)).
+   decide a verdict ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2), [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)).
 
 **Changes made in this tree.** _Superseded 2026-09-26 for the stipend rule and the mirror gas:
 see [Signature-parity authentication, upfront replay funding, and local EVM call gas](#signature-parity-authentication-upfront-replay-funding-and-local-evm-call-gas--2026-09-27).
@@ -675,7 +675,7 @@ view record these; new component families are [`UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4
 [`UNIT-TEST-EVM-FACTORY-1-002C8D`](../implementation/source/src/evm/EvmFactory.ts.md#unit-test-evm-factory-1-002c8d), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), and
 [`UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-34-517jax); the root-creation family replaced its parentless-rejection
 permutation with six parentless-worker permutations. No contradiction is demonstrated. The executor
-drain is bounded by the engineer decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym): `closeAdmission` races the admitted set against the exported
+drain is bounded by the engineer decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym): `closeAdmission` races the admitted set against the exported
 `IN_FLIGHT_REPLY_DRAIN_MS`, logs and abandons work still admitted at the limit, and lets disposal proceed.
 The second implementation review showed that `admit` returned the operation's own promise, so a call that
 completed after the limit, during the later in-flight reply drain, still returned its success to a caller
@@ -685,10 +685,10 @@ waiting with `Contract executor shut down before the operation finished`, and th
 success or failure is dropped with no host error, while work that finishes within the limit keeps its own
 result or error. This matches the amended [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../specification/runtime/execution.md#req-runtime-3-vqxw59) rule, which now states that the
 disposal rejection holds even when the operation later succeeds or fails. The admission family has
-[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P5`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p5) for the stuck call and gained
-[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p6), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p7) and
-[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p8) for late success, late failure, and mutex-queued work released after
-the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb.p2) now names a late deploy and simulation beside the late call.
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P5`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) for the stuck call and gained
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P6`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb), [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P7`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) and
+[`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P8`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) for late success, late failure, and mutex-queued work released after
+the limit; [`UNIT-TEST-EXECUTOR-ADMISSION-1-RPE8YB.P2`](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#unit-test-executor-admission-1-rpe8yb) now names a late deploy and simulation beside the late call.
 
 The earlier record said an unidentified transport's "handle is barred". That was wrong:
 `ProfileManager.blacklistPeer(transport)` does nothing when the transport has no profile, so a transport
@@ -697,7 +697,7 @@ with neither a profile nor a proven address is only closed and nothing is barred
 [P2PManager](../implementation/source/src/P2PManager.ts.md) reports now say so, matching the corrected comment in
 `P2PManager.disconnectConnection`. Parentless workers now also document that a worker thread that exits
 unexpectedly leaves its hidden parent live until the handle is disposed, which then releases it
-([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v.p33)).
+([`UNIT-TEST-ROOT-CREATION-1-1NWN3V.P33`](../implementation/source/src/rpc/internal/createRoot.ts.md#unit-test-root-creation-1-1nwn3v)).
 
 A pre-existing shutdown defect is fixed in the same change: `InitHandshakeService` never settled pending
 `waitForHandshakeCompleted` waits at shutdown, so a wait timer could fire after its logger was disposed and
@@ -707,7 +707,7 @@ clears the completion barrier, so every pending and later wait settles as not co
 `MainRpcService.dispose()` calls it first; the handshake guard suite reaches it through that runtime
 shutdown hook. The [InitHandshakeService](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md) and
 [MainRpcService](../implementation/source/src/rpc/network/MainRpcService.ts.md) reports record it with
-[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r.p19) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p9).
+[`UNIT-TEST-INIT-HANDSHAKE-SERVICE-1-6N4C7R.P19`](../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md#unit-test-init-handshake-service-1-6n4c7r) and [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P9`](../implementation/source/src/rpc/network/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m).
 
 The first implementation review asked whether this settlement at runtime shutdown makes a
 `DeferredAdmissionGuard` queue expire as a peer timeout, with a warning and an `allowRetry` disconnect
@@ -803,7 +803,7 @@ Residual: a reduce send released after a full host teardown never settles (the d
 ## Slash eligibility per fork — 2026-10-07
 
 **Only participants of the disputed fork's participant state can be slashed by a dispute or a
-reduction** ([`REQ-DIS-11-WQK8P2`](../specification/disputes/disputes.md#req-dis-11-wqk8p2)). The on-chain slash set is channel-wide, so a
+reduction** ([`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2)). The on-chain slash set is channel-wide, so a
 successor fork's reduction used to fold the slash of a participant an ancestor fork already
 removed, and a slash set that was not empty suppressed the successor fork's timeout. Now
 `_hasDisputeReason` invalidates a dispute that lists a slash outside its latest state's
@@ -811,7 +811,7 @@ participants (killed through the existing `InvalidDisputeReason` proof), constru
 those participants, `reduce` folds slash candidates without reading any participant set, and the
 output transition applies only slashes of participants of the loaded latest state with its pending
 joins; the timeout is suppressed only when such a slash took effect
-([`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). The per-dispute output uses the same rule, so `_calculateRemovals` and
+([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). The per-dispute output uses the same rule, so `_calculateRemovals` and
 the unused `UtilityFacet.inParticipantUnion` are deleted. Mirrors:
 [DisputeUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md),
 [DisputeVerificationFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md),
@@ -822,7 +822,7 @@ reports success for an absent target would suppress the timeout again. Residual 
 direction: the output transition adds the timeout target to the removals when no slash took effect
 ([DisputeVerificationFacet.sol](../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L385)),
 so a consumer machine whose `_slashParticipant` returns false for a present participant also removes
-the timeout target, which inverts [`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine.
+the timeout target, which inverts [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine.
 [AStateMachine.sol](../../../contracts/V1/AStateMachine.sol#L108-L112) now documents the contract:
 `_slashParticipant` must return true for every current participant.
 

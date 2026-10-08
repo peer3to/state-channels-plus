@@ -1,4 +1,7 @@
-import { getOpenChannelProposalMismatch } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import {
+    getOpenChannelProposalMismatch,
+    OPEN_CHANNEL_MIN_REMAINING_SECONDS
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 
@@ -22,7 +25,7 @@ const expected = {
     ]
 };
 const deadline = {
-    nowSeconds: NOW,
+    minSeconds: NOW + OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     maxSeconds: NOW + 60 + 10
 };
 
@@ -105,6 +108,30 @@ describe("getOpenChannelProposalMismatch", function () {
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
         ).to.match(/deadline out of range/);
+    });
+
+    it("rejects a deadline one second ahead as too close", function () {
+        const decoded = matchingProposal();
+        decoded.deadlineTimestamp = BigInt(NOW + 1);
+        expect(
+            getOpenChannelProposalMismatch(decoded, expected, deadline)
+        ).to.equal("deadline out of range");
+    });
+
+    it("rejects a deadline 29 seconds ahead as too close", function () {
+        const decoded = matchingProposal();
+        decoded.deadlineTimestamp = BigInt(NOW + 29);
+        expect(
+            getOpenChannelProposalMismatch(decoded, expected, deadline)
+        ).to.equal("deadline out of range");
+    });
+
+    it("accepts a deadline exactly 30 seconds ahead", function () {
+        const decoded = matchingProposal();
+        decoded.deadlineTimestamp = BigInt(NOW + 30);
+        expect(
+            getOpenChannelProposalMismatch(decoded, expected, deadline)
+        ).to.equal(null);
     });
 
     it("rejects a deadline beyond the allowed window", function () {

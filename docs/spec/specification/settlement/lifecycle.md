@@ -80,7 +80,8 @@ Participants submit a threshold-authorized open request to the base-layer adjudi
 application boundary accepts deposits and derives the genesis state; each off-chain participant
 then observes the canonical open event and initializes the same channel and fork.
 
-`open()` requires a non-zero channel id, at least two and at most a bounded maximum of participants, no duplicate participants, a signature from **every**
+`open()` requires a non-zero channel id, opening terms whose deadline has not passed on chain
+([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)), at least two and at most a bounded maximum of participants, no duplicate participants, a signature from **every**
 listed participant over the encoded `OpenChannel`, and at least two successful deposits. Deposits
 run composably through the application boundary (`depositAssetsComposable`), atomically when
 `OpenChannel.isAtomic` is set. The successful joins become the first inbound message block; the
@@ -260,7 +261,7 @@ Targeted connection follows [`REQ-TJOIN-1-5VGR1F` (Independent public options)](
 [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6), and
 [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
 Submitted first joins use the local pending protection in
-[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
 
 **[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
 

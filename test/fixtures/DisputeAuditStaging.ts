@@ -1453,7 +1453,11 @@ export async function expectConflictWithAuditorsFinalBlock(
  * their other disputes are suppressed: only the auditor's counters land.
  */
 export async function stageParallelHeadAudits(h: MathPeerTestHarness) {
-    await h.scenario.preDisputeSetup();
+    // The window opens before the audits are parked, so the evidence period
+    // covers the two later uploads, the held walks and their release, the
+    // three audits, and the auditor's own kill-and-dispute upload. Use the
+    // approved balance-invariant evidence window, as the other audit orders.
+    await h.scenario.preDisputeSetup({ timeConfig: { evidenceTime: 15 } });
     const forkId = h.activeForkId!;
     const { auditorIndex, restoreGossip } = await stageBlindPendingAuditor(
         h,

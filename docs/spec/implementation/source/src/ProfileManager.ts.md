@@ -1,154 +1,63 @@
-# ProfileManager.ts — Source Report
+# ProfileManager.ts
 
-> **Source:** [src/ProfileManager.ts](../../../../../src/ProfileManager.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/ProfileManager.ts](../../../../../src/ProfileManager.ts)
+>
 > **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md), [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)
+- [`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)
+- [`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)
+- [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
+- [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)
+- [`REQ-LOBBY-8-31BE0F` (Profile-loss recovery)](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)
 
-## Responsibility and observable boundary
+## UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5
 
-Peer registry and policy owner: an addressless profile is created for every transport, then the same
-profile gains a checksummed identity index after authentication. It also owns transport replacement,
-address-to-live-transport resolution, all Holepunch ban/unban policy, and every piece of ban state:
-the recorded blacklist (a flag on the profile plus the persisted verdict in
-[BlacklistStorage](./storage/BlacklistStorage.ts.md)) and one session strike map per peer key, whose
-saturated value is the suspension.
+Identity continuity
 
-## Key design decisions
+- Setup: Register, upgrade transports, reconnect, exclude with case-variant addresses
+- Oracle: Profiles/exclusions persist by identity; variants unify; retirement graced
 
-Transport disposal uses [runCleanupSync](utils/runCleanup.ts.md) so every transport is attempted and all maps are cleared before the first failure is thrown. Disposal remains synchronous.
+- [ ] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P1` — case-variant unify
+- [x] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P2` — upgrade preserves profile
+- [ ] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P3` — exclusion survives churn
+- [ ] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P4` — resolution returns live transport
+- [ ] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P5` — retiring an old transport preserves the replacement
+- [x] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P6` — current transport removal retains the identity profile when close throws
+- [x] `UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7` — final unauthenticated and authenticated loss, authentication rebinding, upgrade retirement, fallback promotion, unsubscribe, and repeated close
 
-Registration, authentication refusals, transport retirement and upgrade-ban release use the existing owner logger and shared metadata. Replacing a transport still attaches the replacement before retiring the old transport. See [ProfileManager.ts](../../../../../src/ProfileManager.ts#L19).
+## UNIT-TEST-HOLEPUNCH-BAN-1-5FB896
 
-1. **Identity outlives connection.** Profiles and exclusion state key by normalized address ([`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)); `updateTransport` keeps profile object identity across upgrades ([`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
-2. **Removal is transport-specific.** Every live transport attaches to its profile. Removing one
-   pipe promotes another live fallback when available and emits profile loss only after the last
-   transport detaches.
-3. **Every transport has a profile immediately, and the profile carries the Hyperswarm key.** The
-   peer info is stored on the profile before authentication and its public key is normalized onto the
-   profile as the `hpAddress`, indexed like the EVM address; verification adds the address and identity
-   index. `profileKey` answers the EVM address once proven and the Hyperswarm key before, so a peer
-   that never authenticates still has one key to count against. Registering a peer info whose key is
-   already suspended bans it and closes the transport at once
-   ([`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
-   The local discovery transports present a stand-in peer info keyed by the announced peer address
-   ([LocalPeerInfo](./transport/LocalPeerInfo.ts.md)), so the same path runs on every transport.
-4. **Fallback release has two lifecycle inputs.** Ordinary close follows current-transport ownership,
-   so a stale WebRTC close is inert. Explicit policy release checks the full live transport set, so a
-   non-preferred WebRTC transport waiting through upgrade grace keeps Holepunch banned.
-5. **Authentication is the final fallback admission boundary.** An in-flight Holepunch connection
-   is closed if its identity is excluded or still owns a healthy WebRTC transport. A fallback may
-   replace WebRTC only after the current direct transport closes.
-6. **The transport address is the authentication fact.** Identity profiles may span replacements,
-   but `authenticateTransport` is the only writer that gives a network transport its verified address.
-7. **Policy release has one owner.** `unblacklistPeer` clears the address exclusion, inspects every
-   live transport, and releases the Holepunch ban only when no WebRTC transport remains.
-8. **The exclusion write stays behind `P2PManager`.** Services reach exclusion through the disconnect
-   policy rather than calling `blacklistPeer` directly, so the close and the exclusion cannot diverge
-   ([P2PManager](./P2PManager.ts.md), [DisconnectPolicy](./DisconnectPolicy.ts.md)).
-9. **One strike map is the whole session record; the blacklist is persisted.** The manager keeps one
-   map from peer key (checksummed EVM address, or lowercase Hyperswarm key) to a strike count. A
-   counted close increments it; the count that reaches the caller's bound saturates to infinity, and
-   that saturated entry is the suspension. Suspending a profile writes the saturated value under both
-   its keys and bans its peer info, so neither a fresh handle for the identity nor the same handle
-   under a fresh identity is admitted; suspending an address with no profile writes the entry alone
-   and refuses that identity when it later authenticates. The map dies with the manager, so a fresh
-   session forgets a suspension. The blacklist is a verdict: the profile flag is set, its peer info is
-   banned, and the identity and the stated reason are recorded in
-   [BlacklistStorage](./storage/BlacklistStorage.ts.md), which a fresh manager sharing that storage
-   still refuses. `unblacklistPeer` removes the recorded verdict too. Suspension has no release path
-   of its own.
-10. **The retry counter is per peer, not per check.** One counter per peer key serves every call site
-    that states the bounded tier, so a peer cannot spread its allowance over different checks. Call
-    sites use the policy's default bound of three unless they name another, and the counter is never
-    reset inside a session ([`OQ-IMPL-STRIKE-1-B10CBB` (Strike reset inside a session)](../../open-questions.md#oq-impl-strike-1-b10cbb) records the open
-    reset question). A peer that presents a fresh Hyperswarm key before proof starts a fresh count.
+Ban-handle and authenticated fallback lifecycle
 
-Disposal attempts every registered transport, including unpromoted transports. A close failure does not stop later closes; after clearing profile state it rethrows the first failure.
+- Setup: Use real profiles and Holepunch/WebRTC transports with typed SDK-edge recorders through the public handshake-finalization path
+- Oracle: Every transport has a profile; explicit attacks ban; ordinary close removes transport access; any live direct transport suppresses authenticated fallback without a false disconnect hook; fallback becomes usable only after the last direct transport closes; explicit blacklist wins
 
-## Inputs, outputs, state, and side effects
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P1` — unauthenticated-profile explicit ban
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P2` — ordinary unauthenticated-profile close removes transport access
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P3` — Holepunch-to-WebRTC ban
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P4` — stale WebRTC close
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P5` — current WebRTC close
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P6` — direct fallback replacement
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P7` — explicit blacklist never unbans
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P8` — healthy WebRTC rejects an authenticated Holepunch attempt without disconnecting the identity
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P9` — current WebRTC close accepts an authenticated Holepunch fallback that becomes current and sends traffic
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P10` — excluded identity rejects and bans a later authenticated Holepunch attempt without a second disconnect event
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P11` — harness policy release permits reconnect when no direct transport remains
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P12` — selected WebRTC preserves the fallback ban during policy release
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P13` — selected Holepunch with a non-preferred live WebRTC transport preserves the fallback ban during policy release
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P14` — selected Holepunch with no live WebRTC transport releases the fallback ban during policy release
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P15` — a reconnect-allowed close of the current direct transport releases only the upgrade preference
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P16` — a suspension is unknown to a fresh manager holding the same profile
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P17` — a recorded verdict is still known to a fresh manager holding the same profile
+- [x] `UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P18` — a verdict is recorded in the shared storage with its reason, a fresh manager over that storage refuses the identity, and `unblacklistPeer` removes the record
 
-| Aspect       | Contents                                                                                                                                                          |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | Per role above.                                                                                                                                                   |
-| Outputs      | Per role above.                                                                                                                                                   |
-| Owned state  | Transport/profile indexes (by transport, EVM address, and Hyperswarm key), the blacklist flag per profile with its persisted verdict, and the session strike map. |
-| Side effects | Per role above.                                                                                                                                                   |
+## UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA
 
-## Linked requirements
+- Setup: Dispose a manager with an unauthenticated transport
+- Oracle: The transport closes and its profile is removed
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                               | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ProfileManager.ts](../../../../../src/ProfileManager.ts) | [`REQ-ID-2-F3Y8J4`](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4), [`REQ-UPG-2-WH7BC7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7), [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba), [`REQ-AUTH-4-JWCF71`](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Operates inside the participant runtime; untrusted input arrives only through the documented ingress paths.
-- The provisional-profile blacklist transfer in `attachTransportProfile` is defensive-only. The
-  normal handshake path refuses and closes an explicitly blacklisted identity before merge.
-- The component harness drives the public handshake-finalization path with typed socket and peer-info
-  edges. It proves SDK-facing admission, ownership, close, authentication, and traffic behavior, but
-  not Hyperswarm's internal network ban. The distributed harness uses `LocalTransport`, and the
-  browser WebRTC rig disables Holepunch relay.
-
-## Specification adherence
-
-- Normalized-address keying; churn-surviving exclusion ([`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) consequence store). The store records only what a caller's stated policy asked for; it takes no view of its own on whether a failure was attributable.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated. The verdict is persisted through [BlacklistStorage](./storage/BlacklistStorage.ts.md); loading it at start so the recorded handles are banned before any handshake is the future-work item in [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)'s document.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                     | Gap / divergence                                                                                                             |
-| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-ID-2-F3Y8J4`](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)                 | Covered               | **Here:** checksum normalization at every keyed structure.                                                                                                                                                                                                                                                                                                   | None.                                                                                                                        |
-| [`REQ-UPG-2-WH7BC7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)  | Covered               | **Here:** profile-preserving replacement and graced retirement preserve both authenticated transport addresses during overlap.                                                                                                                                                                                                                               | None.                                                                                                                        |
-| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                | Covered               | **Here:** final admission writes the verified address onto the exact transport. **Other files:** [HandshakeCompletedGuard](rpc/network/guards/HandshakeCompletedGuard.ts.md) reads that field and owns queue and punishment behavior.                                                                                                                        | None.                                                                                                                        |
-| [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** immediate profile registration, final authenticated fallback admission, full-live-set fallback release, and explicit-blacklist precedence. **Other files:** [PeerProfile](./PeerProfile.ts.md) stores every live transport and the handle before and after authentication; [HolepunchTransport](./transport/HolepunchTransport.ts.md) supplies it. | Hyperswarm's internal ban enforcement is outside the repository harness; application admission no longer relies on it alone. |
-| [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** attach/detach on registration, authentication rebinding, upgrade, fallback promotion, and final removal. **Other files:** PeerProfile emits the final-loss callback.                                                                                                                                                                               | None.                                                                                                                        |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID                                                                        | Obligation                                      | Public entry and setup                                                                                                         | Oracle and forbidden effects                                                                                                                                                                                                                                                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-profile-manager-1-ptvsz5"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5` | Identity continuity                             | Register, upgrade transports, reconnect, exclude with case-variant addresses                                                   | Profiles/exclusions persist by identity; variants unify; retirement graced                                                                                                                                                                                                              | <a id="unit-test-profile-manager-1-ptvsz5.p1"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P1` — case-variant unify; <a id="unit-test-profile-manager-1-ptvsz5.p2"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P2` — upgrade preserves profile; <a id="unit-test-profile-manager-1-ptvsz5.p3"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P3` — exclusion survives churn; <a id="unit-test-profile-manager-1-ptvsz5.p4"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P4` — resolution returns live transport; <a id="unit-test-profile-manager-1-ptvsz5.p5"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P5` — retiring an old transport preserves the replacement; <a id="unit-test-profile-manager-1-ptvsz5.p6"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P6` — current transport removal retains the identity profile when close throws. <a id="unit-test-profile-manager-1-ptvsz5.p7"></a>`UNIT-TEST-PROFILE-MANAGER-1-PTVSZ5.P7` — final unauthenticated and authenticated loss, authentication rebinding, upgrade retirement, fallback promotion, unsubscribe, and repeated close.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| <a id="unit-test-holepunch-ban-1-5fb896"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896`     | Ban-handle and authenticated fallback lifecycle | Use real profiles and Holepunch/WebRTC transports with typed SDK-edge recorders through the public handshake-finalization path | Every transport has a profile; explicit attacks ban; ordinary close removes transport access; any live direct transport suppresses authenticated fallback without a false disconnect hook; fallback becomes usable only after the last direct transport closes; explicit blacklist wins | <a id="unit-test-holepunch-ban-1-5fb896.p1"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P1` — unauthenticated-profile explicit ban; <a id="unit-test-holepunch-ban-1-5fb896.p2"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P2` — ordinary unauthenticated-profile close removes transport access; <a id="unit-test-holepunch-ban-1-5fb896.p3"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P3` — Holepunch-to-WebRTC ban; <a id="unit-test-holepunch-ban-1-5fb896.p4"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P4` — stale WebRTC close; <a id="unit-test-holepunch-ban-1-5fb896.p5"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P5` — current WebRTC close; <a id="unit-test-holepunch-ban-1-5fb896.p6"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P6` — direct fallback replacement; <a id="unit-test-holepunch-ban-1-5fb896.p7"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P7` — explicit blacklist never unbans; <a id="unit-test-holepunch-ban-1-5fb896.p8"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P8` — healthy WebRTC rejects an authenticated Holepunch attempt without disconnecting the identity; <a id="unit-test-holepunch-ban-1-5fb896.p9"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P9` — current WebRTC close accepts an authenticated Holepunch fallback that becomes current and sends traffic; <a id="unit-test-holepunch-ban-1-5fb896.p10"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P10` — excluded identity rejects and bans a later authenticated Holepunch attempt without a second disconnect event; <a id="unit-test-holepunch-ban-1-5fb896.p11"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P11` — harness policy release permits reconnect when no direct transport remains; <a id="unit-test-holepunch-ban-1-5fb896.p12"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P12` — selected WebRTC preserves the fallback ban during policy release; <a id="unit-test-holepunch-ban-1-5fb896.p13"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P13` — selected Holepunch with a non-preferred live WebRTC transport preserves the fallback ban during policy release; <a id="unit-test-holepunch-ban-1-5fb896.p14"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P14` — selected Holepunch with no live WebRTC transport releases the fallback ban during policy release; <a id="unit-test-holepunch-ban-1-5fb896.p15"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P15` — a reconnect-allowed close of the current direct transport releases only the upgrade preference; <a id="unit-test-holepunch-ban-1-5fb896.p16"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P16` — a suspension is unknown to a fresh manager holding the same profile; <a id="unit-test-holepunch-ban-1-5fb896.p17"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P17` — a recorded verdict is still known to a fresh manager holding the same profile; <a id="unit-test-holepunch-ban-1-5fb896.p18"></a>`UNIT-TEST-HOLEPUNCH-BAN-1-5FB896.P18` — a verdict is recorded in the shared storage with its reason, a fresh manager over that storage refuses the identity, and `unblacklistPeer` removes the record. |
-
-## Related source reports
-
-- [PeerProfile](./PeerProfile.ts.md), [P2PManager](./P2PManager.ts.md), [InitHandshakeService](rpc/network/services/initHandshake/InitHandshakeService.ts.md).
-
-## Runtime disposal
-
-The manager owns every registered network transport, including unauthenticated transports. Its enumerable transport map is the cleanup inventory. `dispose()` retires those transports and clears both identity indexes before the runtime logger is disposed. Internal RPC transports never enter this inventory.
-
-| Unit test ID                                                                          | Trigger                                             | Expected result                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-profile-disposal-1-hpxawa"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA` | Dispose a manager with an unauthenticated transport | The transport closes and its profile is removed | <a id="unit-test-profile-disposal-1-hpxawa.p1"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication; <a id="unit-test-profile-disposal-1-hpxawa.p2"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2` — A throwing transport does not prevent later unpromoted transports or Holepunch from closing; repeated manager disposal shares the first failure. |
+- [ ] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication
+- [x] `UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2` — A throwing transport does not prevent later unpromoted transports or Holepunch from closing; repeated manager disposal shares the first failure

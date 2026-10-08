@@ -17,9 +17,16 @@ import type {
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import { deserializeRpcFrame } from "@/rpc/Rpc";
+import type StateManager from "@/stateManager/StateManager";
 import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, BlockHeight, ForkId, Hash } from "@/types/types";
+import type {
+    Address,
+    BlockHeight,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -41,6 +48,7 @@ import {
     type ContractTransactionResponse,
     hexlify,
     type Interface,
+    JsonRpcApiProvider,
     resolveAddress,
     type TransactionRequest,
     ZeroAddress
@@ -103,6 +111,7 @@ export type StubKey =
     | "stateManagerAbort"
     | "snapshotUpdatedEvents"
     | "inboundMessageEvents"
+    | "inboundMessageStorage"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
@@ -151,6 +160,7 @@ export type StubKey =
     | "matchedNegotiation"
     | "failMatchedNegotiation"
     | "setChannelId"
+    | "eventListenerRemoval"
     | "postMatchTargetRefresh"
     | "membershipJoinReceipt"
     | "membershipTopUpReceipt"
@@ -216,7 +226,8 @@ type HeldRpcReply = {
         | HeldLobbyReplyKind
         | HeldNegotiationReplyKind
         | "spectate"
-        | "timeoutBuild";
+        | "timeoutBuild"
+        | "eventListenerRemoval";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -542,6 +553,10 @@ export class StubService extends ANetworkRpcService<
     capturedInitHandshakeTransport?: NetworkTransport;
     /** Opening submissions parked by the hold stub, released together. */
     heldOpeningSubmissions: (() => void)[] = [];
+    /** Decoded contract error names of opening submissions the chain rejected. */
+    openingSubmissionRejections: string[] = [];
+    /** Deadline the short-opening-deadline stub gave this proposer's terms. */
+    shortOpeningDeadline: Timestamp | null = null;
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;
@@ -590,6 +605,10 @@ export class StubService extends ANetworkRpcService<
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
     readonly heldInboundMessageArgs: unknown[][] = [];
+    /** onInboundMessage arg-tuples held by the inbound-storage hold stub. */
+    readonly heldInboundStorageArgs: Parameters<
+        StateManager["onInboundMessage"]
+    >[] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
     /** Subscribed inbound logs the drop stub has already lost once. */
@@ -705,6 +724,7 @@ export class StubService extends ANetworkRpcService<
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
+    private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
     private heldPostMatchTargetRefresh?: HeldRpcReply;
     private postMatchTargetRefreshCallCount = 0;
@@ -723,6 +743,40 @@ export class StubService extends ANetworkRpcService<
         transport: NetworkTransport;
     }[] = [];
     private restoreRequestFrameCapture?: () => void;
+
+    /**
+     * Shift the clock read that directly follows this peer's next
+     * `buildOpeningData` call by `offsetSeconds`. The offset applies to that
+     * one read only; every later read uses the real clock.
+     */
+    public shiftClockReadAfterOpeningData(
+        offsetSeconds: number,
+        onShiftedRead?: (shiftedNow: Timestamp) => void
+    ): void {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        // `buildOpeningData` is protected on the service; the stub patches it by name.
+        const target = service as unknown as {
+            buildOpeningData: (...parameters: unknown[]) => Promise<unknown>;
+        };
+        const original = target.buildOpeningData;
+        target.buildOpeningData = async (...parameters: unknown[]) => {
+            const data = await original.apply(service, parameters);
+            target.buildOpeningData = original;
+            const realClock = Clock.getTimeInSeconds;
+            const restore = () => {
+                Clock.getTimeInSeconds = realClock;
+            };
+            Clock.getTimeInSeconds = () => {
+                restore();
+                const shiftedNow = realClock.call(Clock) + offsetSeconds;
+                onShiftedRead?.(shiftedNow);
+                return shiftedNow;
+            };
+            // Never leave the offset behind if the deadline read did not come.
+            setTimeout(restore, 0);
+            return data;
+        };
+    }
 
     public recordLeaveWatchdog(): void {
         this.leaveWatchdogRestore?.();
@@ -1420,23 +1474,23 @@ export class StubService extends ANetworkRpcService<
     }
 
     public holdSyncReductionResult(): void {
-        const contract = this.sm.diamondStateMachine.localDiamondContract;
-        const original = contract.reduceAndFinalize;
+        const diamondStateMachine = this.sm.diamondStateMachine;
+        const original =
+            diamondStateMachine.reduceAndFinalizeLocally.bind(
+                diamondStateMachine
+            );
         const hold = this.createRpcHold("spectate");
         this.syncReductionHold = hold;
-        this.restoreSyncReduction = () =>
-            Reflect.set(contract, "reduceAndFinalize", original);
-        Reflect.set(
-            contract,
-            "reduceAndFinalize",
-            async (...args: Parameters<typeof original>) => {
-                const result = await original(...args);
-                this.restoreSyncReduction?.();
-                hold.entered += 1;
-                await hold.gate;
-                return result;
-            }
-        );
+        this.restoreSyncReduction = () => {
+            diamondStateMachine.reduceAndFinalizeLocally = original;
+        };
+        diamondStateMachine.reduceAndFinalizeLocally = async (...args) => {
+            const result = await original(...args);
+            this.restoreSyncReduction?.();
+            hold.entered += 1;
+            await hold.gate;
+            return result;
+        };
     }
 
     public getSyncReductionEntered(): number {
@@ -1566,7 +1620,8 @@ export class StubService extends ANetworkRpcService<
         this.restoreChainMembership = undefined;
     }
 
-    public holdSyncWindowPersistence(): void {
+    // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
+    public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
         const service = this.p2pManager.localRpc.spectateService;
         const original =
             service.fetchAndPersistOnChainDisputeWindows.bind(service);
@@ -1576,6 +1631,12 @@ export class StubService extends ANetworkRpcService<
             service.fetchAndPersistOnChainDisputeWindows = original;
         };
         service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
+            if (at === "beforeFetch") {
+                this.restoreSyncWindow?.();
+                hold.entered += 1;
+                await hold.gate;
+                return await original(...args);
+            }
             const windows = await original(...args);
             this.restoreSyncWindow?.();
             hold.entered += 1;
@@ -2007,6 +2068,46 @@ export class StubService extends ANetworkRpcService<
         return this.heldSetChannelId?.entered ?? 0;
     }
 
+    /**
+     * Holds the channel event listener's next subscription removal, the step a
+     * select or clear awaits first; later removals pass through. The removal
+     * starts at once and only its completion is held, as a slow unsubscribe.
+     */
+    public holdEventListenerRemoval(): void {
+        this.releaseEventListenerRemoval();
+        const listener = this.eventListenerInternals();
+        const original = listener.removeListener;
+        this.stubOriginals.set("eventListenerRemoval", original);
+        const hold = this.createRpcHold("eventListenerRemoval");
+        this.heldEventListenerRemoval = hold;
+        listener.removeListener = async () => {
+            const removal = original.call(listener);
+            if (hold.entered === 0) {
+                hold.entered += 1;
+                await hold.gate;
+            }
+            return removal;
+        };
+    }
+
+    public releaseEventListenerRemoval(): number {
+        const entered = this.heldEventListenerRemoval?.entered ?? 0;
+        this.heldEventListenerRemoval?.release();
+        if (this.stubOriginals.has("eventListenerRemoval")) {
+            Reflect.deleteProperty(
+                this.eventListenerInternals(),
+                "removeListener"
+            );
+            this.stubOriginals.delete("eventListenerRemoval");
+        }
+        this.heldEventListenerRemoval = undefined;
+        return entered;
+    }
+
+    public getHeldEventListenerRemovalCount(): number {
+        return this.heldEventListenerRemoval?.entered ?? 0;
+    }
+
     public overrideLobbyRoleDuration(durationMs: number): void {
         if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
             throw new Error("Role duration must be a positive integer");
@@ -2294,6 +2395,15 @@ export class StubService extends ANetworkRpcService<
     public releaseStateMutex(): void {
         this.stateMutexGate?.release();
         this.stateMutexGate = undefined;
+    }
+
+    // the listener's private removal step
+    private eventListenerInternals(): {
+        removeListener: () => Promise<void>;
+    } {
+        return this.sm.stateChannelEventListener as unknown as {
+            removeListener: () => Promise<void>;
+        };
     }
 
     private createRpcHold(kind: HeldRpcReply["kind"]): HeldRpcReply {
@@ -3166,6 +3276,36 @@ export class StubService extends ANetworkRpcService<
             this.heldOnChainSlashesQueryWaiters.push(() =>
                 resolve(held.entered)
             )
+        );
+    }
+
+    /**
+     * Record the contract error of a mined opening submission that reverted.
+     * An interval-mined node accepts the transaction and reverts it in its
+     * block, so the error is read back from the read-only transaction trace.
+     */
+    async recordMinedOpeningRejection(transactionHash: string): Promise<void> {
+        const provider = this.chainProvider;
+        const receipt = await provider.waitForTransaction(transactionHash);
+        if (!receipt || receipt.status !== 0) return;
+        if (!(provider instanceof JsonRpcApiProvider))
+            throw new Error("Expected a JSON-RPC chain provider");
+        const trace: { returnValue: string } = await provider.send(
+            "debug_traceTransaction",
+            [
+                transactionHash,
+                {
+                    disableMemory: true,
+                    disableStack: true,
+                    disableStorage: true
+                }
+            ]
+        );
+        const revertData = trace.returnValue.startsWith("0x")
+            ? trace.returnValue
+            : `0x${trace.returnValue}`;
+        this.openingSubmissionRejections.push(
+            tryDecodeCustomError({ data: revertData })?.name ?? "undecoded"
         );
     }
 

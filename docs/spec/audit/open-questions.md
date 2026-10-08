@@ -8,13 +8,15 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                                                         | Question                                                     | Source                          | Affected documents                                                                                                                  | Status                |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| [`OQ-5-4Q38M5`](open-questions.md#oq-5-4q38m5)                             | Fraud-proof completeness security review                     | Specification analysis          | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md) | Open                  |
-| [`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd)     | Lobby accepted-lease exclusion versus the no-punishment rule | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [lobby-matching.md](../specification/peer-communication/lobby-matching.md)      | Resolved (2026-09-02) |
-| [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x) | Watchdog threshold under gate load                           | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [configuration.md](../implementation/views/operations/configuration.md)         | Open                  |
-| [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                            | Resolved (2026-09-05) |
-| [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                          | Resolved (2026-09-05) |
+| ID                                                                         | Question                                                     | Source                          | Affected documents                                                                                                                                                                                             | Status                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| [`OQ-5-4Q38M5`](open-questions.md#oq-5-4q38m5)                             | Fraud-proof completeness security review                     | Specification analysis          | [security/open-security-review.md](./security-assessment.md), [protocol/fraud-proofs.md](../specification/disputes/fraud-proofs.md)                                                                            | Open                  |
+| [`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd)     | Lobby accepted-lease exclusion versus the no-punishment rule | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [lobby-matching.md](../specification/peer-communication/lobby-matching.md)                                                                                 | Resolved (2026-09-02) |
+| [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x) | Watchdog threshold under gate load                           | Gate flake root-cause plan 30   | [security-assessment.md](./security-assessment.md), [configuration.md](../implementation/views/operations/configuration.md)                                                                                    | Open                  |
+| [`OQ-AUDIT-DISPUTE-1-ER4Y3D`](open-questions.md#oq-audit-dispute-1-er4y3d) | State contributions without another reason                   | Plan 30 decision 9              | [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)                                                                                                       | Resolved (2026-09-05) |
+| [`OQ-AUDIT-DISPUTE-2-TPMNQX`](open-questions.md#oq-audit-dispute-2-tpmnqx) | Recheck a timeout refused for early chain time               | Plan 30 review 8 owner decision | [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)                                                                                                     | Resolved (2026-09-05) |
+| [`OQ-AUDIT-SYNC-1-83NTJY`](open-questions.md#oq-audit-sync-1-83ntjy)       | Inbound blocks in the sync payload                           | Engineer question (2026-10-07)  | [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx), [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf), [synchronization.md](../specification/peer-communication/synchronization.md) | Open (low priority)   |
+| [`OQ-AUDIT-RPC-1-BQA20A`](open-questions.md#oq-audit-rpc-1-bqa20a)         | Send and subscribe to multiple nodes                         | PR #511 review (2026-10-07)     | [security-assessment.md](./security-assessment.md), [chain-observation.md](../specification/runtime/chain-observation.md)                                                                                      | Open                  |
 
 <a id="oq-5-4q38m5"></a>
 
@@ -32,7 +34,7 @@ and cross-layer interactions. Tracked in detail by
 
 ## OQ-AUDIT-LOBBY-1-9S3GVD — Lobby accepted-lease exclusion versus the no-punishment rule
 
-[`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) says non-Byzantine failures are never punished.
+[`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5) says non-Byzantine failures are never punished.
 The lobby handoff bounds both sides with one agreement window, and before this decision the first side to
 close a transport cancelled the other side's punishment, so a silent or disconnected counterparty was excluded
 only when both bounds fired first. The question was whether a peer that loses its final transport after an
@@ -40,7 +42,7 @@ accepted lease may be excluded locally.
 
 **Resolution (owner, 2026-09-02).** Yes. After an accepted lease the loss is an agreement-window liability:
 the advertiser excludes at its reservation bound and the selector excludes when its in-flight commitment is
-rejected. The exclusion is a local lobby reputation entry, not on-chain punishment, so [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) now
+rejected. The exclusion is a local lobby reputation entry, not on-chain punishment, so [`REQ-SEC-3-NPPJN5` (The review MUST separate objective slashable violations from non-Byzantine…)](security-assessment.md#req-sec-3-nppjn5) now
 states the objective on-chain rule and this local exception separately. Accepted consequence: a partition
 during the handoff excludes two honest peers from each other for the blacklist lifetime. The broader
 availability and local-fault blacklist finding ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n),
@@ -95,3 +97,36 @@ errors retain their existing handling. See [`REQ-DISPUTE-PIPE-10-BT8YAR` (Rechec
 Open. Internal RPC uses structured cloning. Application-defined custom RPC and precompile inputs must obey that boundary; functions and live provider objects cannot be transferred. The remaining question is whether the SDK should validate all application-defined payload shapes before posting, or continue reporting the platform clone failure. Built-in signer requests are projected before posting. This is a boundary limit, not approval to broaden the wire contract.
 
 Owner: [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../specification/runtime/execution.md#req-runtime-1-rsm6mz). Evidence and scope: [implementation audit](implementation.md).
+
+<a id="oq-audit-sync-1-83ntjy"></a>
+
+## OQ-AUDIT-SYNC-1-83NTJY — Inbound blocks in the sync payload
+
+Open; low priority. Asked by Luka (2026-10-07). Each dispute window in a sync payload carries the
+responder's `inboundMessageBlocksAppliedInReduce`. All relevant inbound blocks are already on chain:
+the `InboundMessagesProcessed` events and the event-sync log recovery deliver them. Why does sync
+receive them from the responder at all? Reading them from the chain would make this input trustless
+and remove the edge cases that [`FIND-SECURITY-5-1KP5YX`](open-findings.md#find-security-5-1kp5yx)
+fixed and [`FIND-SYNC-4-KGP4KF`](open-findings.md#find-sync-4-kgp4kf) still tracks.
+
+Alternatives: keep the field, where the local `reduceAndFinalize` takes it as input and only a
+window that this sync reduces stores it (the current rule); or take a window's inbound blocks from
+chain data and drop the field from the sync payload. Blocking effect: none; the current rule keeps
+unchecked inbound blocks out of trusted storage. Requested decision: whether sync should keep
+receiving inbound blocks from the responder.
+
+Owner: [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28).
+Evidence and scope: [SpectateService report](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md).
+
+<a id="oq-audit-rpc-1-bqa20a"></a>
+
+## OQ-AUDIT-RPC-1-BQA20A — Send and subscribe to multiple nodes
+
+Open; not critical now, to consider for production. The current design sends every read and
+transaction to the first connected endpoint and fails over when it drops
+([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)).
+The alternative is to send to several endpoints and subscribe on several at once. Endpoints
+replicate a transaction in the mempool anyway, so sending it to several should not change on-chain
+behavior. It raises the chance of success when the selected endpoint dies: there is no wait to
+recover and reconnect to another endpoint, which could be fatal if it takes long. Every response
+can be deduplicated: treat the endpoints as redundant connections where the first response wins.

@@ -74,6 +74,9 @@ jobs:
             - name: Install dependencies
               run: yarn install --frozen-lockfile
 
+            - name: Test spec tools
+              run: yarn spec:test
+
             - name: Check spec ID links
               run: yarn spec:ids:check
 

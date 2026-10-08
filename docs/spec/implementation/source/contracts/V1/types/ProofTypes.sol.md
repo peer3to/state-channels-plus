@@ -1,84 +1,10 @@
-# ProofTypes.sol — Source Report
+# ProofTypes.sol
 
-> **Source:** [contracts/V1/types/ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/types/ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
-## Responsibility and observable boundary
-
-Proof carrier structs (FraudProof, DisputeFraudProof, state-proof elements).
-
-## Key design decisions
-
-StateProof contains only milestones. MilestoneProof holds a linked run: threshold-final first block, a trusted anchor, or the permitted genesis-zero case. ProofWalkInput binds channel/fork, proof, genesis and one snapshot slot per milestone. ProofWalkResult carries validity, the actual selected start with an explicit non-genesis flag, authenticated final snapshot, replay position and fault pointer; failed walks do not authorize use of their success fields. The counter enum appends below-anchor, timeout-superseded and final-conflict families. See [ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol#L18).
-
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
-
-`DisputeInvalidOutboundRun` is appended last to `DisputeFraudProofType`, so existing values keep their numbers ([#L101](../../../../../../../contracts/V1/types/ProofTypes.sol#L101)).
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents              |
-| ------------ | --------------------- |
-| Inputs       | Per role above.       |
-| Outputs      | Types/helpers/events. |
-| Owned state  | None.                 |
-| Side effects | None.                 |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                              | Specification IDs                                                                                  |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| [ProofTypes.sol](../../../../../../../contracts/V1/types/ProofTypes.sol) | [`REQ-DATA-1-1KNRQS`](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Declarative/support code; behavior owned by consumers.
-
-## Specification adherence
-
-- Consistent with the owning documents' type/behavior contracts.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- Consumers per the manager and state-machine-base views.
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
+- [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)

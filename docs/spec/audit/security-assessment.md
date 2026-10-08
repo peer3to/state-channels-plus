@@ -14,8 +14,10 @@ The shared frame decoder keeps the size gate before parsing and response-first c
 ## Current Codex Security findings
 
 The [finding reassessment](./codex-security-triage.md) checks the 7 protocol findings of the
-supplied scan against current `dispute` source. Six remain confirmed by static evidence and the
-all-skipped milestone replacement is fixed. The scan's 5 developer-tooling findings are tracked in
+supplied scan against current `dispute` source. Two remain confirmed by static evidence: `pruned-inbound`
+and `sync-genesis-time`. The all-skipped milestone replacement was already fixed; the zero-target
+dispute kill, the unlinked previous-snapshot slash, the expired opening signatures and the sync
+inbound data findings are fixed since. The scan's 5 developer-tooling findings are tracked in
 the tooling's own documentation. The [open finding entries](./open-findings.md#codex-security-reassessment)
 link the affected paths, counterevidence and proposed regression work. This does not complete the
 formal security review, establish runtime reproduction, or record engineer risk acceptance.
@@ -259,7 +261,7 @@ _Non-normative._
   stream commitments) and map each to its policing proof or validation, so coverage gaps surface
   mechanically instead of by inspection.
 - Reputation-independent peer scoring for rate-limit tuning (must stay outside enforcement per
-  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99`](../specification/security/trust-model.md#req-trust-1-k5ps99)).
+  [trust-model.md](../specification/security/trust-model.md) [`REQ-TRUST-1-K5PS99` (Version one uses only objective, deterministic, mathematically verifiable…)](../specification/security/trust-model.md#req-trust-1-k5ps99)).
 
 ## Traceability
 
@@ -321,7 +323,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Slash eligibility per fork
 
-[`REQ-DIS-11-WQK8P2`](../specification/disputes/disputes.md#req-dis-11-wqk8p2) closes a liveness hole: an ancestor fork's slash, still in the channel-wide on-chain slash set, was folded into every later reduction and suppressed each later timeout, so a stalled participant could never be timed out after any slash. A dispute that lists such a slash is now killed through `InvalidDisputeReason` and its disputer slashed, and a reduction neither applies it nor lets it suppress a timeout ([`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). Eligibility comes from the reduced latest state, not the channel's current snapshot, so late reducers still agree with the reduction on chain. The rule depends on the integrator's state machine: `_slashParticipant` must refuse an absent participant and must return true for every current participant, as `AStateMachine` documents. Two residual risks follow, one per direction: a machine that reports success for an absent target suppresses the timeout again, and a machine whose `_slashParticipant` returns false for a present participant also removes the timeout target, which inverts [`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine. This assessment remains pending engineer review.
+[`REQ-DIS-11-WQK8P2` (A dispute MUST list on-chain slashes only of participants of its latest state…)](../specification/disputes/disputes.md#req-dis-11-wqk8p2) closes a liveness hole: an ancestor fork's slash, still in the channel-wide on-chain slash set, was folded into every later reduction and suppressed each later timeout, so a stalled participant could never be timed out after any slash. A dispute that lists such a slash is now killed through `InvalidDisputeReason` and its disputer slashed, and a reduction neither applies it nor lets it suppress a timeout ([`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)). Eligibility comes from the reduced latest state, not the channel's current snapshot, so late reducers still agree with the reduction on chain. The rule depends on the integrator's state machine: `_slashParticipant` must refuse an absent participant and must return true for every current participant, as `AStateMachine` documents. Two residual risks follow, one per direction: a machine that reports success for an absent target suppresses the timeout again, and a machine whose `_slashParticipant` returns false for a present participant also removes the timeout target, which inverts [`INV-DIS-7-9GGZSD` (In a fork whose reduction applies an on-chain slash of a participant of the…)](../specification/disputes/disputes.md#inv-dis-7-9ggzsd) for that machine. This assessment remains pending engineer review.
 
 ### Lost evidence race after a kill
 
@@ -362,13 +364,13 @@ not resolve the assessment's five review-body findings that were explicitly left
 
 Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
 
-Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
+Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
 
 Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
 
 Synchronization replay always uses the spectating context. Uncommitted observers abort on provable participant fraud without requesting a dispute. Pending and participating peers retain their on-chain stake and delegate these faults to live fraud-proof and dispute handling. Pending participants also use live handling for arrivals, while the commit guard still excludes them from counter-signing. The exact declarations are mapped in the [validation report](../verification/tests/test/unit/ValidationService.test.ts.md).
 
-Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
+Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF` (Slashing or removal of a participant absent from the state being transformed…)](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8` (A successful slash or removal MUST return and record exactly one corresponding…)](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
@@ -569,8 +571,8 @@ and kill an honest timeout dispute; the kill slashes the honest disputer. The fa
 before the replay, that the snapshot is the one the latest proved block commits to (or the fork's
 genesis), that the machine state hashes to that snapshot's state hash, and that the posted block's
 `previousBlockHash` is the latest proved block (or the genesis snapshot)
-([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 6,
-[`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 7,
+[`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
 refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
 Residual: the posted block's author signature is still not verified
@@ -590,7 +592,7 @@ chain's current anchor and verifies the rest up to the dispute's latest state; i
 verified part. A run that does not verify makes the dispute killable by `DisputeInvalidOutboundRun`,
 which the chain judges against its own stored anchor
 ([StateProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md),
-[`REQ-DIS-12-AXY60R`](../specification/disputes/disputes.md#req-dis-12-axy60r)). The anchor only moves forward and every
+[`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../specification/disputes/disputes.md#req-dis-12-axy60r)). The anchor only moves forward and every
 on-chain snapshot is itself outbound-verified, so a run that links one anchor also links every later
 anchor on its stream: a later anchor move cannot frame an honest disputer. The auditor's retry when
 the chain refuses its counter is reachable: the anchor advances while the audit runs (for example a
@@ -674,7 +676,7 @@ that imports it runs in the same process as the SDK, so the residual risk is loc
 could reach an SDK host it could already affect in-process, but no remote peer gains anything.
 
 Executor disposal now closes admission and waits for admitted work before children close. By engineer
-decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/source/src/rpc/internal/services/contractExecutor/ContractExecutorService.ts.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
+decision [`OQ-IMPL-EXECUTOR-DRAIN-1-5D71YM` (Resolved executor admission drain bound)](../implementation/open-questions.md#oq-impl-executor-drain-1-5d71ym) the wait is bounded by the same five-second limit as the in-flight reply drain, so a precompile
 call that never returns delays that executor's disposal only that long. Work still admitted at the limit is
 abandoned without a host error. By the engineer's later decision (option a after the second
 implementation review), every caller still waiting at the limit receives the disposal rejection, and the
@@ -683,6 +685,37 @@ neither result reaches the caller or the host, so a caller never sees a result p
 declared it abandoned. The residual risk is local: only local executor calls are admitted, and an application whose
 executor work regularly exceeds the limit loses those results at shutdown. Engineer approval and risk
 acceptance remain pending.
+
+## Multiple RPC endpoints — chain observation
+
+The runtime now reaches the chain through an ordered endpoint list
+([`REQ-CHAINOBS-1-5JTHY8` (Ordered endpoint set)](../specification/runtime/chain-observation.md#req-chainobs-1-5jthy8)). Each request uses
+the first connected endpoint and fails over when it drops; a transaction is never sent to two
+endpoints at once ([`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)). Every endpoint streams
+the manager's events, reconnects with a bounded backoff, and is re-read from the completed-block
+watermark after a reconnect ([`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)). One event is processed once
+across streams; removed events are ignored and lagging deliveries below the watermark are dropped
+([`INV-CHAINOBS-1-ASVKC1` (Exactly-once event processing across endpoints)](../specification/runtime/chain-observation.md#inv-chainobs-1-asvkc1)). A catch-up holds the watermark at its first block until it has read up to the
+head or is abandoned, so no other query can move it past unread blocks, and every log query reads windows of at
+most `LOG_QUERY_MAX_BLOCKS` blocks. The catch-up is abandoned, and the hold released at once, when its
+socket ends (also while a read waits for that node to reconnect), when the subscription is cleared or
+replaced, or on disposal. After a failed window the remaining windows are read through the first
+connected endpoint, so a reopened endpoint that drops for good or keeps failing `eth_getLogs` (a lower
+range limit, a rate limit, a pruned or hostile node) no longer holds the watermark. Those reads still
+reach the reopened endpoint's head: while the first connected endpoint's head is behind it, nothing
+is read and the read is retried, so a lagging endpoint cannot end the catch-up below blocks the
+reopened endpoint's subscription never delivered. When the reopened endpoint answers its head request
+with an error, the request is retried on it with the backoff and nothing is read meanwhile; the
+catch-up never falls back to the first connected endpoint's own head. Endpoint URLs are
+logged by scheme and host only. Residual risks: while the first connected endpoint itself keeps failing
+the catch-up's windows (for example a `LOG_QUERY_MAX_BLOCKS` above its range limit), or stays behind
+the reopened endpoint's head, or the reopened endpoint keeps failing its head request, and the reopened
+socket stays open, the catch-up retries without end; the watermark stays held, so dedup entries and
+block states are not pruned, every recovery query reads from the held block, and the reopened socket's
+live events stay buffered; with a single endpoint this is that endpoint ([`FIND-RPC-1-E5ZHAR`](open-findings.md#find-rpc-1-e5zhar)); answers are not cross-checked between endpoints; a removed event's effects stay
+applied; a socket drop in the middle of one block's events can leave part of a block below the
+watermark unread until a recovery query reads it; the first endpoint to connect pins the chain id,
+and nothing checks that chain id against the deployed manager. Evidence is mapped in the unit and E2E test reports; engineer approval pending.
 
 ## Milestone-only proof update — current assessment
 

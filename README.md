@@ -67,6 +67,8 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
 ```json
 {
   "PROVIDER_URL": "http://localhost:8545",
+  "PROVIDER_URLS": [],
+  "LOG_QUERY_MAX_BLOCKS": 1000,
   "DEBUG_STATE_MANAGER": false,
   "DEBUG_DISPUTE_HANDLER": false,
   "DEBUG_P2P_MANAGER": false,
@@ -79,6 +81,8 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
 ```shell
 yarn && yarn build
 ```
+
+`PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; events are observed on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
 
 ## Run Tests
 Install local dependencies

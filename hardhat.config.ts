@@ -42,6 +42,9 @@ const config: HardhatUserConfig = {
     defaultNetwork: "hardhat",
     networks: {
         hardhat: {
+            // Hardhat's default chain unless a private test node needs a
+            // second, distinct chain (a node serving the wrong chain).
+            chainId: Number(process.env.HARDHAT_CHAIN_ID ?? 31337),
             allowUnlimitedContractSize: true,
             gas: "auto",
             // E2E parallel runs cram many concurrent games' txs into one node's

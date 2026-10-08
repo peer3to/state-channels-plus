@@ -1,176 +1,245 @@
-# StateManager.ts — Source Report
+# StateManager.ts
 
-> **Source:** [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts) > **Status:** Authored — engineer verification pending.
+> **Source:** [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts)
+>
 > **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md), [architecture/sdk/dispute-pipeline.md](../../../views/architecture/sdk/dispute-pipeline.md), [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
+- [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
+- [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
+- [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)
+- [`REQ-BLOCK-PIPE-7-FYE9VJ` (Commit before publish)](../../../../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj)
+- [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
+- [`REQ-BLOCK-PIPE-10-PHAKE2` (Counter-signing policy)](../../../../specification/block-progression/block-processing.md#req-block-pipe-10-phake2)
+- [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
+- [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](../../../../specification/runtime/sdk.md#inv-sdk-arch-1-knax7f)
+- [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
+- [`REQ-SDK-ARCH-4-GTN7QN` (Execution isolation)](../../../../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn)
+- [`REQ-DIS-10-SAHJBN` (Timeout claims MUST satisfy the deadline, linkage, schedule, and existence…)](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)
+- [`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../../../../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)
+- [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+- [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)
+- [`REQ-IX-2-2PY2EF` (Deterministic execution and commitment)](../../../../specification/interactions.md#req-ix-2-2py2ef)
+- [`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../../../../specification/interactions.md#req-ix-3-h8wcvy)
+- [`INV-HIST-1-5N44K9` (Block commits to the state snapshot hash)](../../../../specification/protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)
+- [`INV-HIST-2-27M8VA` (Hash-linking)](../../../../specification/protocol-model/history-and-commitments.md#inv-hist-2-27m8va)
+- [`INV-HIST-3-T17T78` (Snapshots commit to inbound and outbound message-stream tips)](../../../../specification/protocol-model/history-and-commitments.md#inv-hist-3-t17t78)
+- [`INV-MSG-3-PCR3KT` (Tip totalBalance = cumulative sum of message balances)](../../../../specification/settlement/cross-layer-messages.md#inv-msg-3-pcr3kt)
+- [`REQ-MSG-3-YY569F` (Packaged inbound blocks MUST chain from the previous snapshot tip and exist…)](../../../../specification/settlement/cross-layer-messages.md#req-msg-3-yy569f)
+- [`REQ-MSG-11-VS3ZGC` (A deposited-but-unincluded joiner MUST be able to force inclusion via the…)](../../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc)
+- [`REQ-FIN-1-SP669G` (Participants MUST NOT be required to wait for explicit threshold finality…)](../../../../specification/protocol-model/finality.md#req-fin-1-sp669g)
+- [`REQ-FIN-5-DH29VZ` (Block authoring is deterministic)](../../../../specification/protocol-model/finality.md#req-fin-5-dh29vz)
+- [`REQ-LIF-3-PDRTPY` (A normal state transition MAY produce an outbound message)](../../../../specification/settlement/lifecycle.md#req-lif-3-pdrtpy)
+- [`REQ-LIF-6-VG861M` (Four protocol windows are configured on the manager at deployment and mirrored…)](../../../../specification/settlement/lifecycle.md#req-lif-6-vg861m)
+- [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)
+- [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 
-## Responsibility and observable boundary
+## UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE
 
-The participant's central coordinator and the serialized half of the block pipeline: the
-execution mutex; `onBlockConfirmation` (fork re-check, authenticate, ordered validation via the
-validation service, VM-snapshot execute-and-restore, commitment comparison, signer-union check);
-`playTransaction` (local authoring); `success()` (status/join promotion, persist-then-sign-then-
-gossip commit order, exit path, calldata-post and next-author-timeout scheduling);
-`tryMergeStoredBlockConfirmation`; `tryTimeoutParticipant` (timeout detection with calldata race
-checks); `setLatestState`/`unsafeSetGenesisState` (fork transition); status/lifecycle and
-disposal.
+Full root abort
 
-## Key design decisions
+- Setup: Real runtime construction and public cleanup.
+- Oracle: Each variation checks completion, closure and surviving resources.
 
-One AgreementManager receives storage, event synchronization, logger, a live channel-id getter and local/chain contracts. Construction, shared proof tiers and retained persistence remain behind that owner; callers do not promote private finality into the mirrored chain anchor. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L189).
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1` — Inline abort closes the host and executor endpoints, rejects late queries, preserves a sibling SDK and tolerates repeated disposal
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers
+- [x] `UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Stopping retains the live provider listener; root disposal then destroys the provider, removes listeners and permits repeated disposal
 
-Channel reset and stop clear membership mirrors. Verified state application replaces local membership; a fork change requires no cache invalidation or background membership read. BlockQueueManager has no pending admission records to cancel; ordinary sync owns its request lifecycle.
+## UNIT-TEST-STATE-MANAGER-1-GFPTJF
 
-The state manager's signer is declared as the host nonce manager, not a bare ethers signer: it is the only signer the runtime ever constructs it with, and typing the entry point that way lets its concrete surface — the owned nonce counter and the gas usage recorder — reach every holder without a cast. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L80).
+Serialized execution and restore
 
-Disposal releases the state-manager logger subtree without cascading to its parent root logger. Parent/root cleanup owns that parent; independent discovery diagnostics must survive state-manager cleanup.
+- Setup: Drive valid and each-failing-stage blocks through the mutex path; crash side effects post-persist
+- Oracle: One block in execution at a time; every pre-persist failure restores the VM; post-persist failures never rewind
 
-Abort observes its own disposal promise with a rethrowing route instead of plain collection: the root adopts pending detached work when it disposes, which would otherwise settle the disposal's own failure as a disposal outcome; the route keeps that failure visible. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L318).
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P1` — mutex exclusivity under concurrent eligibility
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P2` — restore on authenticate failure
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P3` — disarm after persist
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P4` — fork re-check race under the lock
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P5` — restore on validation failure
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P6` — restore on execution failure
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P7` — restore on commitment mismatch
+- [ ] `UNIT-TEST-STATE-MANAGER-1-GFPTJF.P8` — restore on signer-union failure
 
-The public active-fork predicate requires both a live runtime and equality with its current fork; disposal and a real successor transition are separate component obligations. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L323).
+## UNIT-TEST-STATE-MANAGER-2-WSMPYS
 
-isActiveFork owns the shared live-runtime and current-fork predicate. The single validation-context selector also owns the chain-committed case: a committed participant judging a work item that carries an on-chain posting timestamp gets the one long-lived `CalldataCommittedStrategy` instance, everything else keeps the live or spectating strategy. Live arrivals select the live strategy for pending and participating peers. Proof replay uses the shared spectating strategy, which delegates committed-peer fraud reactions to the live strategy. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L526).
+Commit order and signing rules
 
-Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L57).
+- Setup: Commit blocks under each `shouldSignBlock` condition incl. the posted-and-next-author case
+- Oracle: Persist→sign→gossip order observable; forfeit rule never signs; echoes merge as duplicates
 
-1. **One mutex, three acquisition sites** (`onBlockConfirmation`, `playTransaction`, `setLatestState`) — application of state transitions is the only serialized regime; everything else runs as scheduled tasks outside it ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) boundary).
-2. **VM snapshot-and-restore around execution.** Any non-success exit restores the pre-transition state before the mutex releases; once the block persists, the restore is disarmed so post-commit side-effect failures never rewind committed state ([`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)).
-3. **Persist before sign before gossip.** Signing reads resulting participants from storage; gossip strictly follows persistence so echoes merge as duplicates ([`REQ-BLOCK-PIPE-7-FYE9VJ` (Commit before publish)](../../../../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj)).
-4. **The forfeit rule in `shouldSignBlock`:** never sign a calldata-posted block when we are the next author — signing would surrender the extra time the post granted ([time.md](../../../../specification/protocol-model/time.md)); the full sign-condition set implements [`REQ-BLOCK-PIPE-10-PHAKE2` (Counter-signing policy)](../../../../specification/block-progression/block-processing.md#req-block-pipe-10-phake2).
-5. **Timeout detection with race recovery:** recover the predecessor's posting first (may grant the target time), then the target slot's commitment — commitment-without-accepted-block yields a _forced_ claim ([`REQ-DIS-10-SAHJBN`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)).
-6. **Fork transition is the single re-anchoring point:** `setLatestState` swaps fork id, recomputes status from the new participant set (exclusion aborts), reschedules timeouts, and drains queues.
-7. **Custom RPC disposal precedes dependency teardown.** The root may settle waits that still need timeout and P2P services, so it runs first. `stop()` runs the teardown steps through the shared `runCleanup` helper: every step runs even when an earlier one fails, and the first failure (a root rejection included) is rethrown only after the remaining cleanup completed.
-8. **The contract owns live join eligibility.** The composed
-   `MembershipService.getOnChainThresholdSet` delegates to the manager contract and returns its
-   address set to SDK callers. TypeScript does not maintain a second snapshot ∪ pending − slashed
-   formula.
-9. **Discovery is a no-channel lifecycle.** The canonical member meanings live beside the `Status`
-   enum; this class stores and transitions that value without repeating the taxonomy. `DISCOVERING`
-   means one active caller topic and no selected channel ID. `NOT_OPENED` has no active lobby and may
-   be clean with no ID or hold one concrete pre-open target. Setting a channel ID remains explicit;
-   discovery never clears an existing role or ID on the caller's behalf.
-10. **The local construction context is a required pass-through.** The constructor takes a required
-    `localContext: CustomRpcContext` before its optional custom-RPC constructor and options
-    ([#L140](../../../../../../src/stateManager/StateManager.ts#L140)) and forwards it unchanged to
-    `P2PManager` ([#L210-L216](../../../../../../src/stateManager/StateManager.ts#L210-L216)). The state
-    manager keeps no copy of the owner and never inspects it; the host root supplies it
-    ([P2pRuntimeHostRoot](../rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) and the custom-RPC constructor
-    receives it ([P2PManager](../P2PManager.ts.md)) for
-    [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59).
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P1` — signs when every sign condition holds
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P2` — forfeit rule
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P3` — persist-before-gossip echo test
+- [x] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4` — status/join promotion
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P5` — blacklisted-author no-sign
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P6` — non-participating-status no-sign
+- [x] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P7` — signer-outside-union no-sign
+- [ ] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P8` — forced-join trigger arms
+- [x] `UNIT-TEST-STATE-MANAGER-2-WSMPYS.P9` — final snapshot demotes an exiting participant to synced
 
-Abort marks participation inactive, emits onAbort, changes status to OPENED and invokes the owning root disposal callback. It does not create a second child cleanup algorithm.
+## UNIT-TEST-STATE-MANAGER-3-32QM46
 
-Shutdown preparation calls the event listener’s `stop()` and drains scheduled work while dependencies remain available. `stop()` sets `isDisposed` synchronously, and that flag is the block queue's stop signal: no queue timeout, probe or fork recovery starts after it, so none starts while `stop()` awaits the custom RPC root and the event listener. It then awaits [BlockQueueManager](ingest/BlockQueueManager.ts.md) `dispose()`, which waits until every probe and recovery in flight has settled, before the timeout manager drains its tasks: a probe still uses p2p, the timeout manager and the executor, and the host root disposes the executor only after preparation returns ([#L362-L378](../../../../../../src/stateManager/StateManager.ts#L362-L378)). So `stop()` waits for in-flight queue work. The sync timeout bounds only a probe's request, not the probe; a probe whose response arrives after disposal installs nothing ([#L370-L371](../../../../../../src/stateManager/StateManager.ts#L370-L371)). A failure of that work rejects `stop()`; the timeout manager drain still runs. Final disposal removes that listener; the host closes its owned provider between preparation and final disposal.
+Timeout detection
 
-## Inputs, outputs, state, and side effects
+- Setup: Schedule timeouts across posted/unposted predecessor and target slots, window-age races, self/non-participant skips
+- Oracle: Due-time computation exact; predecessor post grants time; target commitment yields forced; early windows rejected
 
-| Aspect       | Contents                                                                                                 |
-| ------------ | -------------------------------------------------------------------------------------------------------- |
-| Inputs       | Eligible block entries; local transactions; fork transitions; lifecycle calls.                           |
-| Outputs      | Committed state + events; counter-signatures; gossip; escalations; scheduled tasks.                      |
-| Owned state  | The live application-state authority: status, current fork, mutex; everything durable via storage.       |
-| Side effects | Storage commits; chain submissions (calldata posts, snapshot updates via services); dispute escalations. |
+- [ ] `UNIT-TEST-STATE-MANAGER-3-32QM46.P1` — due-time boundary
+- [ ] `UNIT-TEST-STATE-MANAGER-3-32QM46.P2` — predecessor-post reschedule
+- [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P3` — normal timeout claim
+- [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P4` — window-age guard
+- [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P5` — self skip
+- [x] `UNIT-TEST-STATE-MANAGER-3-32QM46.P6` — forced claim on commitment-without-accepted-block
+- [ ] `UNIT-TEST-STATE-MANAGER-3-32QM46.P7` — non-participant skip
 
-## Linked requirements
+## UNIT-TEST-STATE-MANAGER-4-ECGP8V
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
+Custom RPC disposal ordering
 
-| Source file                                                           | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [StateManager.ts](../../../../../../src/stateManager/StateManager.ts) | [`INV-BLOCK-PIPE-1-1AB2ME`](../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me), [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6), [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt), [`REQ-BLOCK-PIPE-7-FYE9VJ`](../../../../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj), [`REQ-BLOCK-PIPE-8-N529VH`](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh), [`REQ-BLOCK-PIPE-10-PHAKE2`](../../../../specification/block-progression/block-processing.md#req-block-pipe-10-phake2), [`REQ-BLOCK-PIPE-11-DCHAJ2`](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2), [`INV-SDK-ARCH-1-KNAX7F`](../../../../specification/runtime/sdk.md#inv-sdk-arch-1-knax7f), [`REQ-SDK-ARCH-1-7H14H6`](../../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6), [`REQ-SDK-ARCH-4-GTN7QN`](../../../../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn), [`REQ-DIS-10-SAHJBN`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn), [`REQ-JOINSIG-2-RR2G4Q`](../../../../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q), [`REQ-GOSSIP-4-J5Z4DF`](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df), [`REQ-SDK-ARCH-6-8DE4ER`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er) |
+- Setup: Dispose a live state manager with a normal and a rejecting custom RPC root
+- Oracle: Root disposal runs while P2P dependencies are available; teardown always completes; root rejection surfaces after cleanup
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv). The conformance rows below name this owner and the other required owners.
+- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root disposes before P2P teardown
+- [x] `UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2` — root rejection surfaces after runtime teardown
 
-## Assumptions, dependencies, trust boundaries, and limits
+## UNIT-TEST-STATE-MANAGER-5-D8GDWH
 
-- Single-threaded task interleaving; the mutex is the only execution serializer.
-- Chain freshness for timeout/calldata checks inherits the mirror fallback rules ([`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)).
+On-chain join eligibility adapter
 
-## Specification adherence
+- Setup: Read the threshold after a current snapshot participant is slashed on-chain
+- Oracle: Returned addresses exactly match the contract threshold; the slashed participant is absent
 
-- Ordered one-at-a-time application on the current fork ([`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)).
-- Evidence stored before every live escalation; subjective lateness never escalates ([`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
-- Temporary validation/replay work cannot reach durable state without commit ([`REQ-SDK-ARCH-4-GTN7QN` (Execution isolation)](../../../../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn)).
-- The composed `MembershipService.getOnChainThresholdSet` exposes the contract's slash-excluding
-  join eligibility set without a parallel SDK derivation
-  ([`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../../../../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)).
+- [x] `UNIT-TEST-STATE-MANAGER-5-D8GDWH.P1` — delegates the slash-excluding threshold set without SDK-side recomputation
 
-## Specification contradictions
+## UNIT-TEST-STATE-MANAGER-6-EBJNRX
 
-None demonstrated at this file's boundary (strategy-owned consequence gaps are reported in the strategy files).
+Internal channel staging
 
-## Missing behavior
+- Setup: Stage an external channel ID on unopened harness peers through the private lifecycle control
+- Oracle: Every peer selects the exact ID while status stays `NOT_OPENED`; no lobby match, Holepunch topic, or peer connection starts
 
-Author-side check for granted extra time before posting calldata (code TODO — posts may be needlessly early, never late); `DisputeValidationStrategy` special-casing inside `success()` pending a strategy hook (code TODO).
+- [x] `UNIT-TEST-STATE-MANAGER-6-EBJNRX.P1` — external target staged without opening or discovery
 
-## Conformance traceability
+## UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K
 
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
+Active fork eligibility
 
-| Requirement / invariant                                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Gap / divergence                                                                                                    |
-| ---------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| [`INV-BLOCK-PIPE-1-1AB2ME`](../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)   | Covered               | **Here:** mutex + VM restore + disarm-at-persist. **Other files:** [BlockStorage](../storage/BlockStorage.ts.md) atomic merge rules.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | None.                                                                                                               |
-| [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)   | Covered               | **Here:** mutex sites + fork re-check under the lock. **Other files:** ordering selection in [BlockQueueManager](ingest/BlockQueueManager.ts.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                        | None.                                                                                                               |
-| [`REQ-BLOCK-PIPE-7-FYE9VJ`](../../../../specification/block-progression/block-processing.md#req-block-pipe-7-fye9vj)   | Covered               | **Here:** `success()` step order (persist → sign → persist block → gossip).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | None.                                                                                                               |
-| [`REQ-BLOCK-PIPE-8-N529VH`](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)   | Covered               | **Here:** strategy verdicts route through stored evidence before `dispute()`; `NOT_ENOUGH_TIME` parks. **Other files:** [FraudProofService](./utils/FraudProofService.ts.md) builds the evidence.                                                                                                                                                                                                                                                                                                                                                                                                        | None.                                                                                                               |
-| [`REQ-BLOCK-PIPE-10-PHAKE2`](../../../../specification/block-progression/block-processing.md#req-block-pipe-10-phake2) | Covered               | **Here:** `shouldSignBlock` — participates, in the block's participant union, author not excluded, plus the posted-and-next-author forfeit rule; exercised by [`UNIT-TEST-STATE-MANAGER-2-WSMPYS`](StateManager.ts.md#unit-test-state-manager-2-wsmpys).                                                                                                                                                                                                                                                                                                                                                 | Next-author refusal clause is the open engineer decision [`OQ-24-A4XRTB`](../../../open-questions.md#oq-24-a4xrtb). |
-| [`REQ-BLOCK-PIPE-11-DCHAJ2`](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2) | Covered               | **Here:** signer-union check in `onBlockConfirmation` (execution path) and merge-side membership check in `tryMergeStoredBlockConfirmation`. **Other files:** stray-signer consequences via the strategies' `notAllSingersAreParticipants` hook (strategy reports).                                                                                                                                                                                                                                                                                                                                      | None.                                                                                                               |
-| [`REQ-DIS-10-SAHJBN`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn)                                | Partial               | **Here:** detection-side deadline/race/forced logic in `tryTimeoutParticipant`. **Other files:** claim carriage in [DisputeManager](../disputeManager/DisputeManager.ts.md); authoritative checks on-chain.                                                                                                                                                                                                                                                                                                                                                                                              | None missing across files.                                                                                          |
-| [`REQ-JOINSIG-2-RR2G4Q`](../../../../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)      | Covered               | **Here:** `StateManager` composes `MembershipService`, whose `getOnChainThresholdSet` delegates to the manager contract and returns the slash-excluding set. **Other files:** [JoinChannelService](../rpc/network/services/joinChannel/JoinChannelService.ts.md) consumes it for collection and responder authority.                                                                                                                                                                                                                                                                                     | None.                                                                                                               |
-| [`REQ-GOSSIP-3-HQZNQX`](../../../../specification/peer-communication/block-gossip.md#req-gossip-3-hqznqx)              | Covered               | **Here:** signature-set growth re-broadcasts on the success, stored-merge, and strategy paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | None.                                                                                                               |
-| [`REQ-IX-2-2PY2EF`](../../../../specification/interactions.md#req-ix-2-2py2ef)                                         | Covered               | **Here:** transitions execute only through the injected-context machine and commit via the snapshot hierarchy with commitment comparison. **Other files:** [AStateMachine](../../contracts/V1/AStateMachine.sol.md), [EvmDiamondStateMachine](../evm/EvmDiamondStateMachine.ts.md).                                                                                                                                                                                                                                                                                                                      | None.                                                                                                               |
-| [`REQ-IX-3-H8WCVY`](../../../../specification/interactions.md#req-ix-3-h8wcvy)                                         | Covered               | **Here:** block construction consumes due inbound blocks; the N+1 forced-inclusion trigger arms when a join is ignored. **Other files:** [JoinChannelFacet](../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md), [DisputeManager](../disputeManager/DisputeManager.ts.md).                                                                                                                                                                                                                                                                                                              | None.                                                                                                               |
-| [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)      | Covered               | **Here:** [source](../../../../../../src/stateManager/StateManager.ts#L508) provides the shared block-work mutex to dispute admission and wires the recovery owner to the local mirror. **Other files:** [DisputeManager.ts](../disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [BlockProductionService.ts](block/BlockProductionService.ts.md) (authoring and signed storage), [BlockCommitService.ts](block/BlockCommitService.ts.md) (counter-signing and committed storage), [ValidationService.ts](./ingest/ValidationService.ts.md) (live-arrival rejection). | —                                                                                                                   |
-| [`REQ-GOSSIP-4-J5Z4DF`](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)              | Covered               | **Here:** [resetEligibility](../../../../../../src/stateManager/StateManager.ts#L309) implements the contribution described above. **Other files:** [MembershipService.ts](membership/MembershipService.ts.md), [BlockQueueManager.ts](ingest/BlockQueueManager.ts.md), [StateApplicationService.ts](snapshotUpdate/StateApplicationService.ts.md)                                                                                                                                                                                                                                                       | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified.                |
-| [`REQ-SDK-ARCH-6-8DE4ER`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)                              | Partial               | **Here:** the declared host-nonce-manager signer in [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L80), which is what lets holders reach the recorder without a cast. **Other files:** [HostNonceManager.ts](../evm/signer/HostNonceManager.ts.md) owns the recorder.                                                                                                                                                                                                                                                                                                             | This file neither counts nor exposes gas usage.                                                                     |
+- Setup: Query the current fork before and after disposal or a real reduction
+- Oracle: Current live fork is accepted; disposed runtime and old fork are rejected
 
-## Component test obligations
+- [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P1` — current fork before and after disposal
+- [x] `UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P2` — current and old forks after a real reduction
 
-Exact test evidence is mapped against these IDs in the verification test reports.
+## UNIT-TEST-STATE-MANAGER-7-YRC0N3
 
-| Unit test ID                                                                                            | Obligation                        | Public entry and setup                                                                                                        | Oracle and forbidden effects                                                                                                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="unit-test-state-manager-abort-1-zdyefe"></a>`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE`             | Full root abort                   | Real runtime construction and public cleanup.                                                                                 | Each variation checks completion, closure and surviving resources.                                                                                                                                            | <a id="unit-test-state-manager-abort-1-zdyefe.p1"></a>`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1` — Inline abort closes the host and executor endpoints, rejects late queries, preserves a sibling SDK and tolerates repeated disposal.; <a id="unit-test-state-manager-abort-1-zdyefe.p2"></a>`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2` — Worker abort closes the host and executor endpoints, rejects late queries and preserves a sibling SDK.; <a id="unit-test-state-manager-abort-1-zdyefe.p3"></a>`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3` — Abort cancels a scheduled task before its due time, drops status to OPENED and disconnects peers.; <a id="unit-test-state-manager-abort-1-zdyefe.p4"></a>`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4` — Stopping retains the live provider listener; root disposal then destroys the provider, removes listeners and permits repeated disposal.                                                                                                                                                                                                            |
-| <a id="unit-test-state-manager-1-gfptjf"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF`                         | Serialized execution and restore  | Drive valid and each-failing-stage blocks through the mutex path; crash side effects post-persist                             | One block in execution at a time; every pre-persist failure restores the VM; post-persist failures never rewind                                                                                               | <a id="unit-test-state-manager-1-gfptjf.p1"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P1` — mutex exclusivity under concurrent eligibility; <a id="unit-test-state-manager-1-gfptjf.p2"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P2` — restore on authenticate failure; <a id="unit-test-state-manager-1-gfptjf.p3"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P3` — disarm after persist; <a id="unit-test-state-manager-1-gfptjf.p4"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P4` — fork re-check race under the lock; <a id="unit-test-state-manager-1-gfptjf.p5"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P5` — restore on validation failure; <a id="unit-test-state-manager-1-gfptjf.p6"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P6` — restore on execution failure; <a id="unit-test-state-manager-1-gfptjf.p7"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P7` — restore on commitment mismatch; <a id="unit-test-state-manager-1-gfptjf.p8"></a>`UNIT-TEST-STATE-MANAGER-1-GFPTJF.P8` — restore on signer-union failure                                                                                                             |
-| <a id="unit-test-state-manager-2-wsmpys"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS`                         | Commit order and signing rules    | Commit blocks under each `shouldSignBlock` condition incl. the posted-and-next-author case                                    | Persist→sign→gossip order observable; forfeit rule never signs; echoes merge as duplicates                                                                                                                    | <a id="unit-test-state-manager-2-wsmpys.p1"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P1` — signs when every sign condition holds; <a id="unit-test-state-manager-2-wsmpys.p2"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P2` — forfeit rule; <a id="unit-test-state-manager-2-wsmpys.p3"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P3` — persist-before-gossip echo test; <a id="unit-test-state-manager-2-wsmpys.p4"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P4` — status/join promotion; <a id="unit-test-state-manager-2-wsmpys.p5"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P5` — blacklisted-author no-sign; <a id="unit-test-state-manager-2-wsmpys.p6"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P6` — non-participating-status no-sign; <a id="unit-test-state-manager-2-wsmpys.p7"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P7` — signer-outside-union no-sign; <a id="unit-test-state-manager-2-wsmpys.p8"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P8` — forced-join trigger arms; <a id="unit-test-state-manager-2-wsmpys.p9"></a>`UNIT-TEST-STATE-MANAGER-2-WSMPYS.P9` — final snapshot demotes an exiting participant to synced |
-| <a id="unit-test-state-manager-3-32qm46"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46`                         | Timeout detection                 | Schedule timeouts across posted/unposted predecessor and target slots, window-age races, self/non-participant skips           | Due-time computation exact; predecessor post grants time; target commitment yields forced; early windows rejected                                                                                             | <a id="unit-test-state-manager-3-32qm46.p1"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P1` — due-time boundary; <a id="unit-test-state-manager-3-32qm46.p2"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P2` — predecessor-post reschedule; <a id="unit-test-state-manager-3-32qm46.p3"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P3` — normal timeout claim; <a id="unit-test-state-manager-3-32qm46.p4"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P4` — window-age guard; <a id="unit-test-state-manager-3-32qm46.p5"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P5` — self skip; <a id="unit-test-state-manager-3-32qm46.p6"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P6` — forced claim on commitment-without-accepted-block; <a id="unit-test-state-manager-3-32qm46.p7"></a>`UNIT-TEST-STATE-MANAGER-3-32QM46.P7` — non-participant skip                                                                                                                                                                                                                                                                                                 |
-| <a id="unit-test-state-manager-4-ecgp8v"></a>`UNIT-TEST-STATE-MANAGER-4-ECGP8V`                         | Custom RPC disposal ordering      | Dispose a live state manager with a normal and a rejecting custom RPC root                                                    | Root disposal runs while P2P dependencies are available; teardown always completes; root rejection surfaces after cleanup                                                                                     | <a id="unit-test-state-manager-4-ecgp8v.p1"></a>`UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1` — custom RPC root disposes before P2P teardown; <a id="unit-test-state-manager-4-ecgp8v.p2"></a>`UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2` — root rejection surfaces after runtime teardown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| <a id="unit-test-state-manager-5-d8gdwh"></a>`UNIT-TEST-STATE-MANAGER-5-D8GDWH`                         | On-chain join eligibility adapter | Read the threshold after a current snapshot participant is slashed on-chain                                                   | Returned addresses exactly match the contract threshold; the slashed participant is absent                                                                                                                    | <a id="unit-test-state-manager-5-d8gdwh.p1"></a>`UNIT-TEST-STATE-MANAGER-5-D8GDWH.P1` — delegates the slash-excluding threshold set without SDK-side recomputation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| <a id="unit-test-state-manager-6-ebjnrx"></a>`UNIT-TEST-STATE-MANAGER-6-EBJNRX`                         | Internal channel staging          | Stage an external channel ID on unopened harness peers through the private lifecycle control                                  | Every peer selects the exact ID while status stays `NOT_OPENED`; no lobby match, Holepunch topic, or peer connection starts                                                                                   | <a id="unit-test-state-manager-6-ebjnrx.p1"></a>`UNIT-TEST-STATE-MANAGER-6-EBJNRX.P1` — external target staged without opening or discovery                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| <a id="unit-test-state-manager-active-fork-1-ndtw9k"></a>`UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K` | Active fork eligibility           | Query the current fork before and after disposal or a real reduction                                                          | Current live fork is accepted; disposed runtime and old fork are rejected                                                                                                                                     | <a id="unit-test-state-manager-active-fork-1-ndtw9k.p1"></a>`UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P1` — current fork before and after disposal; <a id="unit-test-state-manager-active-fork-1-ndtw9k.p2"></a>`UNIT-TEST-STATE-MANAGER-ACTIVE-FORK-1-NDTW9K.P2` — current and old forks after a real reduction                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| <a id="unit-test-state-manager-7-yrc0n3"></a>`UNIT-TEST-STATE-MANAGER-7-YRC0N3`                         | Validation context selection      | Judge work items with and without an on-chain posting timestamp as a committed participant and as a non-participant observer. | The committed participant judges a chain-committed item in the chain-committed context and a gossip-only item in the live context; an observer judges either in the spectating context and escalates nothing. | <a id="unit-test-state-manager-7-yrc0n3.p1"></a>`UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1` — participant, chain-committed item → chain-committed context; <a id="unit-test-state-manager-7-yrc0n3.p2"></a>`UNIT-TEST-STATE-MANAGER-7-YRC0N3.P2` — non-participant observer, chain-committed item → spectating context, no escalation; <a id="unit-test-state-manager-7-yrc0n3.p3"></a>`UNIT-TEST-STATE-MANAGER-7-YRC0N3.P3` — participant, gossip-only item → live context                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+Validation context selection
 
-## Related source reports
+- Setup: Judge work items with and without an on-chain posting timestamp as a committed participant and as a non-participant observer.
+- Oracle: The committed participant judges a chain-committed item in the chain-committed context and a gossip-only item in the live context; an observer judges either in the spectating context and escalates nothing.
 
-## Terminal leave ownership
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1` — participant, chain-committed item → chain-committed context
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P2` — non-participant observer, chain-committed item → spectating context, no escalation
+- [x] `UNIT-TEST-STATE-MANAGER-7-YRC0N3.P3` — participant, gossip-only item → live context
 
-The state manager constructs and disposes `LeaveChannelService`; internal `setChannelId` remains available only
-to lifecycle owners. This contributes to [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+## UNIT-TEST-SM-STATE-MANAGER-1-WKTVE3
 
-- [BlockQueueManager](./ingest/BlockQueueManager.ts.md), [ValidationService](./ingest/ValidationService.ts.md), the four strategies, [DisputeManager](../disputeManager/DisputeManager.ts.md), [SnapshotUpdateService](./snapshotUpdate/SnapshotUpdateService.ts.md), [AgreementManager](../agreementManager/AgreementManager.ts.md), [Storage](../storage/Storage.ts.md).
+Transition pipeline atomicity
 
-## Targeted connect contribution
+- Setup: Drive a valid block and a block whose transaction the application rejects through `blockIngestService.onBlockConfirmation` on a harness session, recording `diamondStateMachine.getState()`, the stored block, the outbound message block, the queue entry and the latest state snapshot before and after.
+- Oracle: A valid block advances the application state, stored block, outbound messages, queue and snapshot together through `blockCommitService.success`; a rejected one reaches `invalidStateTransitionDetected`, gets its pre-validation state restored and advances none of them.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1)
 
-`setChannelId` installs the provider-backed listener before targeted matching. Authoritative refresh governs
-preflight and observed-open handoff. Targeted unsigned cleanup skips `clearChannelId`, so the same target and
-listener survive; ordinary derived-ID cleanup clears both. Before disposal tears down P2P state, it lets the
-local signer settle an active connect exactly once with `false`. Fatal observer sync uses the existing abort
-and disposal branch, while pending or participating operational failure preserves state.
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-1-WKTVE3.P1` — Application result, persisted state, block result, outbound messages, queue state, and snapshot advance together on success
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-1-WKTVE3.P2` — none of them advance on rejection
 
-Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).
+## UNIT-TEST-SM-STATE-MANAGER-2-WWPB98
+
+State lifecycle
+
+- Setup: Read `diamondStateMachine.getState()` around a `setState` store/restore, a fork switch through `stateApplicationService.unsafeApplyReductionGenesis`, a `peekNextToWrite` inspection, a predecessor replay through `onBlockConfirmation`, a malformed `setState` and its retry.
+- Oracle: After each operation the live state bytes equal the expected state (the restored state, the new fork's genesis state, or the unchanged pre-state); a malformed encoding throws from `setState` and the prior bytes stay in place.
+- Specification: [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P1` — Store/restore preserves the correct live state bytes
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P2` — a fork switch preserves the correct live state bytes
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P3` — temporary inspection preserves the correct live state bytes
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P4` — replay isolation preserves the correct live state bytes
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P5` — malformed state preserves the correct live state bytes
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-2-WWPB98.P6` — retry preserves the correct live state bytes
+
+## UNIT-TEST-SM-STATE-MANAGER-3-NXEV5W
+
+Author scheduling
+
+- Setup: Submit blocks authored by the selected next writer and by another participant through `onBlockConfirmation` under each strategy `getActiveValidationStrategy` returns.
+- Oracle: `validateBlockConfirmation` reads `diamondStateMachine.getNextToWrite()` on the block's pre-state; the correct author proceeds to execution and a wrong author goes to the strategy's `invalidStateTransitionDetected` before `assembleFromTransaction` runs.
+- Specification: [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
+- Specification tests: [`REQ-SM-5-3GS7A7.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-3-NXEV5W.P1` — The selector is queried against the actual pre-state and a correct author follows the active validation strategy before execution
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-3-NXEV5W.P2` — a wrong author follows the active validation strategy before execution
+
+## UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N
+
+Inbound inclusion
+
+- Setup: Store join, top-up and custom inbound message blocks through `onInboundMessage`, carry them in the next block's `messageBlocks`, and repeat with duplicate delivery, a retry, concurrent delivery, and a message the application refuses.
+- Oracle: `assembleFromTransaction` applies each message once through `processInboundMessage`, adding its balance to `totalDeposits` and advancing membership, the inbound cursor, state and snapshot once; a refused message throws "Failed to process inbound message" and none of them change.
+- Specification: [`REQ-SM-7-Y38NTY` (\_joinChannel handles admission and top-up)](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty)
+- Specification tests: [`REQ-SM-7-Y38NTY.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P1` — A join message updates membership, balances, cursor, state, and snapshot exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P2` — a top-up message updates them exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P3` — a custom message updates them exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P4` — duplicate delivery updates them exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P5` — retry updates them exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P6` — a race updates them exactly once
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-4-JM9F0N.P7` — a failure path leaves no partial update
+
+## UNIT-TEST-SM-STATE-MANAGER-5-MRDPNN
+
+Balance accounting
+
+- Setup: Commit blocks carrying inbound deposits and outbound exits at zero and maximum balance values, then one whose deposit aggregation overflows `addBalance`.
+- Oracle: The snapshot's `totalDeposits` and `totalWithdrawals` grow by exactly the inbound and exit balances and reconcile with the application's `getTotalStateBalance`; the overflowing block is rejected with no state, snapshot or storage change.
+- Specification: [`REQ-BAL-3-P7Q83F` (addBalance and aggregations reject overflow)](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f)
+- Specification tests: [`REQ-BAL-3-P7Q83F.T1`](../../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-5-MRDPNN.P1` — Application totals, inbound deposits, outbound exits, and snapshot aggregates remain equal at boundaries
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-5-MRDPNN.P2` — overflow rejects atomically
+
+## UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5
+
+Interface consumption
+
+- Setup: Exercise each `ADiamondStateMachine` method the manager calls (`stateTransition`, `setState`/`getState`, `getNextToWrite`/`peekNextToWrite`, `processInboundMessage`, the balance methods, `getParticipants`) through manager operations with succeeding, no-op, failing and retried application outcomes, then `dispose`.
+- Oracle: Success advances the pipeline, a no-op leaves state unchanged, a failure rejects without partial state, a retry yields the same result, and no adapter call runs after `dispose` completes.
+- Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
+- Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5.P1` — Every adapter capability used by the manager has an explicit success behavior
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5.P2` — an explicit no-op behavior
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5.P3` — an explicit failure behavior
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5.P4` — an explicit retry behavior
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-6-R4FVC5.P5` — an explicit teardown behavior
+
+## UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K
+
+Concurrency
+
+- Setup: Interleave concurrent `onBlockConfirmation` calls, `blockQueueManager.tryExecuteFromQueue` drains, inbound deliveries and a predecessor replay on one session, all serialized by `stateManager.mutex`.
+- Oracle: No task observes a half-applied state or a `getNextToWrite` result from a superseded state, each inbound message is applied once, and the live state after a replay equals the state before it.
+- Specification: [`INV-SM-1-J7BP6D` (Transitions deterministic)](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T` (getState/\_setState exact inverses)](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t)
+- Specification tests: [`INV-SM-1-J7BP6D.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d.t1), [`INV-SM-2-0FTJ2T.T1`](../../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t.t1)
+
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K.P1` — Mutex/queue interleavings cannot expose half-applied state
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K.P2` — interleavings cannot expose stale selectors
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K.P3` — interleavings cannot expose duplicate inbound work
+- [ ] `UNIT-TEST-SM-STATE-MANAGER-7-GY2W8K.P4` — replay work cannot mutate live state

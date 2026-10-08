@@ -365,6 +365,21 @@ export class RpcStubActions<
                 .request();
     }
 
+    async holdEventListenerRemoval(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdEventListenerRemoval()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseEventListenerRemoval()
+                .request();
+    }
+
     async overrideLobbyRoleDuration(
         peerIndex: number,
         durationMs: number
@@ -733,6 +748,28 @@ export class RpcStubActions<
             release: async (options = {}) => {
                 const { replay = true } = options;
                 await ctl().restoreInboundMessageEvents(replay).request();
+            }
+        };
+    }
+
+    /**
+     * Hold only the inbound storage write of a peer's InboundMessagesProcessed
+     * handler: its local diamond still applies the event, while inbound
+     * storage lags it.
+     */
+    async holdInboundMessageStorage(peerIndex: number): Promise<{
+        /** Restore the storage write; held writes replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldInboundMessageStorage().request();
+        this.logger.debug(
+            `Holding inbound storage writes on peer ${peerIndex}`
+        );
+        return {
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageStorage(replay).request();
             }
         };
     }

@@ -447,7 +447,10 @@ export async function assertSyncWindowReadRace(
     const source = h.getPeer(0);
     const observer = h.getPeer(2);
     const events = await h.rpcStub.holdReductionRace(observer.index);
-    await h.control(observer).stub.holdSyncWindowPersistence().request();
+    await h
+        .control(observer)
+        .stub.holdSyncWindowPersistence("afterPersist")
+        .request();
     const sync = h.execOnHost(
         observer,
         async (sm, args) =>
@@ -572,7 +575,7 @@ export async function assertConcurrentSyncWindowOverwrite(
         await waitFor(
             async () => (await stub.getSyncReductionEntered().request()) === 1
         );
-        await stub.holdSyncWindowPersistence().request();
+        await stub.holdSyncWindowPersistence("afterPersist").request();
         second = h.execOnHost(
             observer,
             async (sm, args) =>

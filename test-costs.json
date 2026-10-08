@@ -169,10 +169,22 @@
       "peakRssGb": 0.141,
       "measurementReason": null
     },
+    "hardhat|test/Clock.test.ts|Clock destroys a released provider once a replacement takes over": {
+      "durationMs": 3262,
+      "avgCores": 0.907,
+      "peakRssGb": 0.683,
+      "measurementReason": null
+    },
     "hardhat|test/Clock.test.ts|Clock initializes idempotently when real-provider calls overlap": {
       "durationMs": 3082,
       "avgCores": 0.857,
       "peakRssGb": 0.25,
+      "measurementReason": null
+    },
+    "hardhat|test/Clock.test.ts|Clock keeps a replaced provider its runtime still owns": {
+      "durationMs": 4025,
+      "avgCores": 1.088,
+      "peakRssGb": 0.814,
       "measurementReason": null
     },
     "hardhat|test/Clock.test.ts|Clock re-initializes when a different provider arrives": {
@@ -1873,6 +1885,30 @@
       "peakRssGb": 0.782,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts|E2E: invalid-transition proof predecessor binding and replay genuine predecessor proofs against client-built blocks with inbound and outbound messages slash no signer": {
+      "durationMs": 26661,
+      "avgCores": 0.959,
+      "peakRssGb": 0.958,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts|E2E: invalid-transition proof predecessor binding and replay genuine predecessor proofs against honest first and later blocks slash only a participant submitter": {
+      "durationMs": 17332,
+      "avgCores": 0.91,
+      "peakRssGb": 0.826,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts|E2E: invalid-transition proof predecessor binding and replay outsider forging the predecessor of an honest first and later block slashes nobody": {
+      "durationMs": 21646,
+      "avgCores": 0.863,
+      "peakRssGb": 0.92,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-InvalidTransitionPredecessorProof.test.ts|E2E: invalid-transition proof predecessor binding and replay participant forging the predecessor of an honest later block slashes only the submitter": {
+      "durationMs": 16782,
+      "avgCores": 0.972,
+      "peakRssGb": 1.039,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-IsForkDisputed.test.ts|E2E: Is Fork Disputed Byzantine Peer Detection should disconnect peer building on acknowledged disputed fork": {
       "durationMs": 13254,
       "avgCores": 1.109,
@@ -2005,10 +2041,22 @@
       "peakRssGb": 1.031,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching closes the peer without a strike and rematches when a live attempt's own opening is mined after the deadline": {
+      "durationMs": 21027,
+      "avgCores": 0.633,
+      "peakRssGb": 0.927,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching converges four peers on one topic into two exclusive pairs": {
       "durationMs": 14848,
       "avgCores": 0.962,
       "peakRssGb": 0.965,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching excludes a proposer whose opening deadline leaves less than the minimum window, without submitting": {
+      "durationMs": 24100,
+      "avgCores": 0.458,
+      "peakRssGb": 0.897,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching excludes both sides when the advertiser bound fires before the selector bound": {
@@ -2075,6 +2123,18 @@
       "durationMs": 12058,
       "avgCores": 1.041,
       "peakRssGb": 0.596,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching rejects retained opening signatures submitted on chain after the SDK expired the opening terms": {
+      "durationMs": 21527,
+      "avgCores": 0.526,
+      "peakRssGb": 0.701,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel": {
+      "durationMs": 11565,
+      "avgCores": 1.088,
+      "peakRssGb": 0.804,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-LobbyMatching.test.ts|E2E: lobby matching retries a targeted connect on the same runtime after a remote abort": {
@@ -2285,6 +2345,168 @@
       "durationMs": 31309,
       "avgCores": 0.733,
       "peakRssGb": 0.82,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes advances the watermark when a backup node drops for good during its catch-up read": {
+      "durationMs": 13633,
+      "avgCores": 0.918,
+      "peakRssGb": 0.806,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes catches the restored first node up over events the backup delivered and sends through it again": {
+      "durationMs": 17291,
+      "avgCores": 0.904,
+      "peakRssGb": 0.833,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes catches up a channel that opened while a peer subscribed to it before it opened was cut off": {
+      "durationMs": 12756,
+      "avgCores": 0.99,
+      "peakRssGb": 0.987,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes converges a catch-up wider than the endpoint's log range limit in LOG_QUERY_MAX_BLOCKS windows": {
+      "durationMs": 29094,
+      "avgCores": 0.499,
+      "peakRssGb": 0.99,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up": {
+      "durationMs": 18597,
+      "avgCores": 0.84,
+      "peakRssGb": 0.805,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes delivers every event exactly once and keeps sending through the second RPC node when the first is cut": {
+      "durationMs": 15912,
+      "avgCores": 0.953,
+      "peakRssGb": 1.011,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes delivers the event missed while cut when a newer event arrives during the catch-up read": {
+      "durationMs": 18577,
+      "avgCores": 0.748,
+      "peakRssGb": 0.812,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes keeps a backup's catch-up through the first connected node retrying until that node reaches the backup's head": {
+      "durationMs": 22504,
+      "avgCores": 0.593,
+      "peakRssGb": 0.893,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes keeps the key and subscription of a select started while a clear is still removing live subscriptions": {
+      "durationMs": 15055,
+      "avgCores": 0.97,
+      "peakRssGb": 1.011,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes keeps the watermark below the catch-up's unread blocks while a recovery query completes later blocks, and advances it once the read finishes": {
+      "durationMs": 14538,
+      "avgCores": 0.926,
+      "peakRssGb": 0.91,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes keeps the watermark held until both nodes' concurrent catch-up reads have finished": {
+      "durationMs": 17013,
+      "avgCores": 0.898,
+      "peakRssGb": 0.993,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes lets a select that starts while an older select is still removing live subscriptions win, and the older select subscribes nothing": {
+      "durationMs": 13121,
+      "avgCores": 0.993,
+      "peakRssGb": 0.812,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes reads exactly the watermark block through a node whose head is the watermark": {
+      "durationMs": 11993,
+      "avgCores": 0.979,
+      "peakRssGb": 0.985,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes reads nothing and answers the watermark through a node whose head is below the target head": {
+      "durationMs": 15128,
+      "avgCores": 0.962,
+      "peakRssGb": 1.01,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes reads nothing and reports caught up through a node whose head is behind the watermark": {
+      "durationMs": 11460,
+      "avgCores": 0.968,
+      "peakRssGb": 0.779,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes reads the rest of a reconnected backup's catch-up through the first connected node once its own read fails": {
+      "durationMs": 34843,
+      "avgCores": 0.412,
+      "peakRssGb": 0.923,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes reads up to its own head through a node whose head is the target head": {
+      "durationMs": 19154,
+      "avgCores": 0.992,
+      "peakRssGb": 0.891,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes releases a catch-up's watermark hold at once when the channel listener is cleared during its read": {
+      "durationMs": 13811,
+      "avgCores": 0.899,
+      "peakRssGb": 1.037,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes releases a catch-up's watermark hold at once when the channel listener is cleared while the backup's head request is retried": {
+      "durationMs": 16013,
+      "avgCores": 0.881,
+      "peakRssGb": 1.014,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes retries a failed catch-up read while the node stays connected": {
+      "durationMs": 18934,
+      "avgCores": 0.884,
+      "peakRssGb": 0.933,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes retries from the watermark when the catch-up's head read fails": {
+      "durationMs": 13715,
+      "avgCores": 1.015,
+      "peakRssGb": 0.862,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes retries the reconnected backup's head request until it answers, then reads through the lagging first node up to that head": {
+      "durationMs": 28641,
+      "avgCores": 0.587,
+      "peakRssGb": 0.804,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes stops a failing catch-up's retries when its socket drops and catches up on the next one": {
+      "durationMs": 24185,
+      "avgCores": 0.632,
+      "peakRssGb": 0.796,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes stops a failing catch-up's retries when the channel listener is cleared": {
+      "durationMs": 33258,
+      "avgCores": 0.503,
+      "peakRssGb": 0.809,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes stops a failing catch-up's retries when the peer's runtime is disposed": {
+      "durationMs": 32584,
+      "avgCores": 0.424,
+      "peakRssGb": 0.805,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes subscribes a backup node that connects after startup and delivers through it once the first node is cut": {
+      "durationMs": 14973,
+      "avgCores": 0.91,
+      "peakRssGb": 0.909,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-MultiRpcNodes.test.ts|E2E: Multiple RPC nodes unsubscribes every node socket on clear and subscribes each once again on select": {
+      "durationMs": 18386,
+      "avgCores": 0.781,
+      "peakRssGb": 0.96,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-OlderDisputeNewerState.test.ts|E2E: older dispute after sync to a newer finalized state E35: a fresh pending peer synced past the lagging chain anchor kills an older omitted-data dispute with the disputer's newer signed block from its retained evidence": {
@@ -2609,6 +2831,18 @@
       "durationMs": 11948,
       "avgCores": 0.834,
       "peakRssGb": 0.611,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder injects an inbound successor and the participant's subscribed inbound log is lost → the participant ends with the genuine block and never stores or signs the successor": {
+      "durationMs": 36273,
+      "avgCores": 0.877,
+      "peakRssGb": 1.013,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Participant sync across a chain-final window responder injects an inbound successor into an unadopted chain-final window → the synced participant never stores or signs it": {
+      "durationMs": 34650,
+      "avgCores": 0.83,
+      "peakRssGb": 1.035,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-Spectate.test.ts|E2E: Spectate Service Same Fork Spectating aborts spectating when a finalized sync block conflicts with storage": {
@@ -3947,6 +4181,18 @@
       "durationMs": 12864,
       "avgCores": 1.126,
       "peakRssGb": 0.792,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/zeroTargetFraudProof.test.ts|E2E: dispute validation / zero-target dispute fraud proof outsider zero-target proof against an honest committed dispute -> no kill, no slash": {
+      "durationMs": 33182,
+      "avgCores": 0.645,
+      "peakRssGb": 0.986,
+      "measurementReason": null
+    },
+    "hardhat|test/e2e/disputeValidation/zeroTargetFraudProof.test.ts|E2E: dispute validation / zero-target dispute fraud proof participant zero-target proof against an honest committed dispute -> submitter slashed, disputer survives": {
+      "durationMs": 28802,
+      "avgCores": 0.645,
+      "peakRssGb": 0.984,
       "measurementReason": null
     },
     "hardhat|test/evm/ContractExecutor.test.ts|ContractExecutor ambient block time a bare executor stamps exactly its clock source's value": {
@@ -5353,6 +5599,198 @@
       "peakRssGb": 0.351,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider answers reads through the next node while the first is cut": {
+      "durationMs": 8485,
+      "avgCores": 0.896,
+      "peakRssGb": 1.064,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a read over to the next node when the first drops mid-request": {
+      "durationMs": 8533,
+      "avgCores": 1.168,
+      "peakRssGb": 1.015,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a transaction over to the next node when the first drops after forwarding it": {
+      "durationMs": 8918,
+      "avgCores": 1.054,
+      "peakRssGb": 1.136,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a transaction over to the next node while the first is cut": {
+      "durationMs": 12899,
+      "avgCores": 0.749,
+      "peakRssGb": 1.169,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails runtime startup when no node is reachable and names every node": {
+      "durationMs": 8870,
+      "avgCores": 1.133,
+      "peakRssGb": 1.146,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider holds a transaction while no node is connected and sends it once one reconnects": {
+      "durationMs": 10723,
+      "avgCores": 0.903,
+      "peakRssGb": 1.148,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider marks a node whose socket stops answering as dead and fails the read over": {
+      "durationMs": 24175,
+      "avgCores": 0.373,
+      "peakRssGb": 1.203,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider passes the first node's error answer to the caller without failing over": {
+      "durationMs": 11710,
+      "avgCores": 1.101,
+      "peakRssGb": 1.14,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a read in flight when destroyed": {
+      "durationMs": 8953,
+      "avgCores": 1.07,
+      "peakRssGb": 1.142,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a read waiting for a node when destroyed": {
+      "durationMs": 11360,
+      "avgCores": 0.987,
+      "peakRssGb": 1.114,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a read waiting for a node when reconnects stop": {
+      "durationMs": 7647,
+      "avgCores": 1.08,
+      "peakRssGb": 1.137,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects startup over a log window that is not a positive integer without opening a node": {
+      "durationMs": 12433,
+      "avgCores": 0.984,
+      "peakRssGb": 1.145,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects startup over a malformed endpoint before any node opens and without its secret": {
+      "durationMs": 11958,
+      "avgCores": 1.051,
+      "peakRssGb": 1.14,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects startup over an invalid signer secret without opening a node": {
+      "durationMs": 9704,
+      "avgCores": 1.06,
+      "peakRssGb": 1.139,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each new block once from the node sockets without polling": {
+      "durationMs": 23206,
+      "avgCores": 0.458,
+      "peakRssGb": 1.171,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider resolves a transaction wait from a node socket's block event after a reconnect": {
+      "durationMs": 9592,
+      "avgCores": 1.084,
+      "peakRssGb": 1.155,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider sends a transaction to the first node only while it is connected": {
+      "durationMs": 11404,
+      "avgCores": 0.655,
+      "peakRssGb": 1.147,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider starts the runtime chain context while one of its nodes is unreachable": {
+      "durationMs": 8361,
+      "avgCores": 0.982,
+      "peakRssGb": 0.951,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider starts the runtime chain context without waiting for a silent node": {
+      "durationMs": 9937,
+      "avgCores": 1.011,
+      "peakRssGb": 1.043,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider warns once per outage of every node and again after a reconnect": {
+      "durationMs": 11819,
+      "avgCores": 0.918,
+      "peakRssGb": 1.136,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider answers a request held while its node is cut once the node is back": {
+      "durationMs": 10157,
+      "avgCores": 0.927,
+      "peakRssGb": 1.142,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider doubles the reconnect delay from 250 ms up to a 5 s bound": {
+      "durationMs": 3598,
+      "avgCores": 1.237,
+      "peakRssGb": 0.68,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider fails a request held for a reconnect when destroyed": {
+      "durationMs": 9478,
+      "avgCores": 0.961,
+      "peakRssGb": 1.126,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider fails requests at once while its node has never connected": {
+      "durationMs": 8549,
+      "avgCores": 1.277,
+      "peakRssGb": 1.124,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider hands every reopened socket to its watchers as reopened": {
+      "durationMs": 9033,
+      "avgCores": 0.982,
+      "peakRssGb": 1.006,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider keeps a node whose heartbeat is answered with an error": {
+      "durationMs": 19855,
+      "avgCores": 0.591,
+      "peakRssGb": 1.13,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider keeps reconnecting a node that refused its first connection": {
+      "durationMs": 8835,
+      "avgCores": 1.002,
+      "peakRssGb": 1.133,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider logs nothing and leaves no unhandled rejection when destroyed during a connection attempt": {
+      "durationMs": 9661,
+      "avgCores": 1.14,
+      "peakRssGb": 1.136,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider never reconnects after stopReconnecting": {
+      "durationMs": 9663,
+      "avgCores": 1.136,
+      "peakRssGb": 1.145,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|RpcNodeProvider refuses a node that serves another chain than the first connected node": {
+      "durationMs": 17657,
+      "avgCores": 1.056,
+      "peakRssGb": 2.087,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|readLogPages answers the failed window so a retry reads only from there": {
+      "durationMs": 11057,
+      "avgCores": 1.106,
+      "peakRssGb": 1.116,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|readLogPages reads logs in ascending windows and hands each window over before reading the next": {
+      "durationMs": 9185,
+      "avgCores": 1.055,
+      "peakRssGb": 1.132,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext accepts WebSocket URLs and optimistically converts HTTP URLs": {
       "durationMs": 2714,
       "avgCores": 1.186,
@@ -5389,10 +5827,46 @@
       "peakRssGb": 0.311,
       "measurementReason": null
     },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext lists PROVIDER_URLS in priority order in place of PROVIDER_URL": {
+      "durationMs": 5656,
+      "avgCores": 1.022,
+      "peakRssGb": 0.682,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext rejects a PROVIDER_URLS entry that is not WebSocket-compatible": {
+      "durationMs": 4190,
+      "avgCores": 1.11,
+      "peakRssGb": 0.806,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext rejects an endpoint with a fragment, naming it by scheme and host only": {
+      "durationMs": 5872,
+      "avgCores": 0.957,
+      "peakRssGb": 0.97,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext rejects an endpoint with an out-of-range port without its secret": {
+      "durationMs": 5298,
+      "avgCores": 0.904,
+      "peakRssGb": 0.884,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext rejects non-WebSocket-compatible provider URLs": {
       "durationMs": 2839,
       "avgCores": 1.085,
       "peakRssGb": 0.336,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext uses PROVIDER_URL alone when PROVIDER_URLS is empty": {
+      "durationMs": 4556,
+      "avgCores": 1.315,
+      "peakRssGb": 0.737,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RuntimeChainContext.test.ts|RuntimeChainContext uses PROVIDER_URL alone when PROVIDER_URLS is unset": {
+      "durationMs": 4740,
+      "avgCores": 1.021,
+      "peakRssGb": 0.929,
       "measurementReason": null
     },
     "hardhat|test/evm/chainSignerSerialization.test.ts|chain signer serialization adds gas headroom to estimates and limitless sends through an SDK worker": {
@@ -8125,6 +8599,18 @@
       "peakRssGb": 0.258,
       "measurementReason": null
     },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts|OpenChannelNegotiationService a terms request whose attempt is cleared during the balance check selects no channel and keeps the reset status": {
+      "durationMs": 7367,
+      "avgCores": 1.098,
+      "peakRssGb": 0.807,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts|OpenChannelNegotiationService a terms request whose attempt is cleared during the channel selection keeps the reset status and subscribes nothing": {
+      "durationMs": 11407,
+      "avgCores": 0.798,
+      "peakRssGb": 0.76,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts|OpenChannelNegotiationService accepts duplicate terms but punishes conflicting terms": {
       "durationMs": 9657,
       "avgCores": 1.12,
@@ -8299,6 +8785,12 @@
       "peakRssGb": 0.585,
       "measurementReason": null
     },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts|OpenChannelNegotiationService the lower address selects no channel while its terms request is pending": {
+      "durationMs": 8172,
+      "avgCores": 1.017,
+      "peakRssGb": 0.838,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts|OpenChannelNegotiationService treats an unsigned remote abort as a lifecycle exit with no verdict and no strike": {
       "durationMs": 6606,
       "avgCores": 1.063,
@@ -8315,6 +8807,12 @@
       "durationMs": 6610,
       "avgCores": 1.174,
       "peakRssGb": 0.599,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch accepts a deadline exactly 30 seconds ahead": {
+      "durationMs": 3041,
+      "avgCores": 1.161,
+      "peakRssGb": 0.74,
       "measurementReason": null
     },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch accepts a proposal that matches the negotiated terms": {
@@ -8335,6 +8833,12 @@
       "peakRssGb": 0.389,
       "measurementReason": null
     },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects a deadline 29 seconds ahead as too close": {
+      "durationMs": 3972,
+      "avgCores": 1.138,
+      "peakRssGb": 0.977,
+      "measurementReason": null
+    },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects a deadline beyond the allowed window": {
       "durationMs": 2258,
       "avgCores": 0.7,
@@ -8345,6 +8849,12 @@
       "durationMs": 2248,
       "avgCores": 0.672,
       "peakRssGb": 0.206,
+      "measurementReason": null
+    },
+    "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects a deadline one second ahead as too close": {
+      "durationMs": 4917,
+      "avgCores": 1.001,
+      "peakRssGb": 0.858,
       "measurementReason": null
     },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects a different channelId": {
@@ -12451,6 +12961,24 @@
       "peakRssGb": 0.797,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService catchUpLogs does not dispatch a log this peer already processed again": {
+      "durationMs": 17246,
+      "avgCores": 0.823,
+      "peakRssGb": 0.947,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService catchUpLogs does not dispatch the channel's opening logs again": {
+      "durationMs": 14090,
+      "avgCores": 0.999,
+      "peakRssGb": 0.841,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService catchUpLogs schedules the log this peer's subscription lost": {
+      "durationMs": 12791,
+      "avgCores": 0.97,
+      "peakRssGb": 1.048,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService drops subscription callbacks while stop is still draining scheduled work": {
       "durationMs": 13575,
       "avgCores": 1.067,
@@ -12461,6 +12989,24 @@
       "durationMs": 11275,
       "avgCores": 1.023,
       "peakRssGb": 0.766,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService holdWatermark a repeated release does not release another hold": {
+      "durationMs": 16161,
+      "avgCores": 0.959,
+      "peakRssGb": 0.99,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService holdWatermark holds at the given start block before any block completed, and publishes the channel's first block on release": {
+      "durationMs": 15065,
+      "avgCores": 0.983,
+      "peakRssGb": 0.915,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService holdWatermark keeps the watermark at its block while a later block completes, and publishes that block on release": {
+      "durationMs": 15404,
+      "avgCores": 0.859,
+      "peakRssGb": 0.826,
       "measurementReason": null
     },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService joins concurrent calldata recovery onto one chain query": {
@@ -12505,6 +13051,12 @@
       "peakRssGb": 0.789,
       "measurementReason": null
     },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments a recovery read across several windows survives a failed middle window and dispatches each dispute once": {
+      "durationMs": 20789,
+      "avgCores": 1.21,
+      "peakRssGb": 1.023,
+      "measurementReason": null
+    },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedWindowCommitments dispute recovery defeated → the window is reported unreadable, not thrown": {
       "durationMs": 22245,
       "avgCores": 1.396,
@@ -12515,6 +13067,36 @@
       "durationMs": 20095,
       "avgCores": 1.246,
       "peakRssGb": 1.022,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleLog deduplication dispatches a log a second stream delivers again only once": {
+      "durationMs": 17477,
+      "avgCores": 0.881,
+      "peakRssGb": 0.908,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleLog deduplication dispatches a log re-mined in another block after a reorg as a new event": {
+      "durationMs": 15456,
+      "avgCores": 0.976,
+      "peakRssGb": 0.919,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleLog deduplication ignores a log a reorg removed": {
+      "durationMs": 12593,
+      "avgCores": 0.937,
+      "peakRssGb": 0.783,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleStreamedLog at the watermark dispatches a never-seen log in the watermark block": {
+      "durationMs": 14368,
+      "avgCores": 0.963,
+      "peakRssGb": 0.979,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService scheduleStreamedLog drops a lagging node's log below the watermark": {
+      "durationMs": 15060,
+      "avgCores": 0.959,
+      "peakRssGb": 1.008,
       "measurementReason": null
     },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService tryRecoverBlockCalldataAndScheduleValidation chain queries fail → benign result, no throw, calldata absent": {
@@ -12803,6 +13385,12 @@
       "durationMs": 11165,
       "avgCores": 1.023,
       "peakRssGb": 0.938,
+      "measurementReason": null
+    },
+    "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort keeps a Clock-owned provider open on dispose without reconnects until the Clock replaces it": {
+      "durationMs": 11089,
+      "avgCores": 0.694,
+      "peakRssGb": 0.904,
       "measurementReason": null
     },
     "hardhat|test/stateManager/StateManagerAbort.test.ts|StateManager abort stops host work before provider destruction and final listener removal": {
@@ -16963,6 +17551,36 @@
       "peakRssGb": 0.998,
       "measurementReason": null
     },
+    "hardhat|test/unit/EvmDiamondStateMachineReduction.test.ts|Unit: EvmDiamondStateMachine reduceAndFinalizeLocally disputes naming a fork without a dispute window → false, the local window stays unreduced": {
+      "durationMs": 22723,
+      "avgCores": 0.988,
+      "peakRssGb": 1.107,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/EvmDiamondStateMachineReduction.test.ts|Unit: EvmDiamondStateMachine reduceAndFinalizeLocally expired unreduced window with its served inputs → true, the local window records the expected fork": {
+      "durationMs": 23124,
+      "avgCores": 1.064,
+      "peakRssGb": 1.027,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/EvmDiamondStateMachineReduction.test.ts|Unit: EvmDiamondStateMachine reduceAndFinalizeLocally inbound list with a fabricated successor → throws the inbound validation revert, the local window stays unreduced": {
+      "durationMs": 23856,
+      "avgCores": 0.988,
+      "peakRssGb": 1.037,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/EvmDiamondStateMachineReduction.test.ts|Unit: EvmDiamondStateMachine reduceAndFinalizeLocally window already reduced to another fork than expected → throws the expectation mismatch, the local window keeps its fork": {
+      "durationMs": 32173,
+      "avgCores": 0.944,
+      "peakRssGb": 1.018,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/EvmDiamondStateMachineReduction.test.ts|Unit: EvmDiamondStateMachine reduceAndFinalizeLocally window already reduced to the expected fork → false, the local window keeps that fork": {
+      "durationMs": 26210,
+      "avgCores": 1.085,
+      "peakRssGb": 1.016,
+      "measurementReason": null
+    },
     "hardhat|test/unit/FraudProofStorage.test.ts|Unit: FraudProofStorage DisputeFraudProofStorage: second proof for the same dispute is dropped": {
       "durationMs": 2853,
       "avgCores": 0.999,
@@ -17749,6 +18367,12 @@
       "peakRssGb": 1.026,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage chain-final unadopted window with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged": {
+      "durationMs": 25212,
+      "avgCores": 0.872,
+      "peakRssGb": 1.036,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage first dispute window not on the on-chain fork → rejected, dispute window not linked": {
       "durationMs": 26935,
       "avgCores": 0.946,
@@ -17761,6 +18385,12 @@
       "peakRssGb": 1.026,
       "measurementReason": null
     },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage reduction lands on chain after the finality read and before the window fetch, with a fabricated inbound successor → accepted, no window inbound block stored, inbound head unchanged": {
+      "durationMs": 29363,
+      "avgCores": 0.849,
+      "peakRssGb": 1.027,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage second dispute window not continuing from the first reduced fork → rejected, dispute window not linked": {
       "durationMs": 26369,
       "avgCores": 0.976,
@@ -17771,6 +18401,36 @@
       "durationMs": 26565,
       "avgCores": 0.843,
       "peakRssGb": 1.032,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage unreduced window whose disputes name a fork without a window, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 26841,
+      "avgCores": 0.881,
+      "peakRssGb": 1.03,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage unreduced window whose disputes name the window's fork under another channel, claiming a fabricated self-consistent reduced fork → rejected as a dispute window mismatch, responder blacklisted, nothing persisted": {
+      "durationMs": 23097,
+      "avgCores": 0.93,
+      "peakRssGb": 1.016,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window already reduced locally by a concurrent sync, with a fabricated inbound successor → accepted, only the concurrent sync's genuine inbound blocks stored": {
+      "durationMs": 26296,
+      "avgCores": 0.943,
+      "peakRssGb": 1.028,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync with a fabricated inbound successor → local reduction reverts, rejected, no window inbound block stored, inbound head unchanged": {
+      "durationMs": 22966,
+      "avgCores": 0.915,
+      "peakRssGb": 1.037,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService dispute window linkage window reduced locally during sync → accepted, its inbound blocks stored": {
+      "durationMs": 21779,
+      "avgCores": 1.023,
+      "peakRssGb": 1.025,
       "measurementReason": null
     },
     "hardhat|test/unit/SpectateService.test.ts|Unit: SpectateService generateSyncPayload all dispute events suppressed → recovers and proves the successor fork": {
@@ -19639,10 +20299,28 @@
       "peakRssGb": 0.209,
       "measurementReason": null
     },
+    "hardhat|test/utils/LoggerUtils.test.ts|LoggerUtils names an RPC node by scheme and host, without credentials, path or query": {
+      "durationMs": 4030,
+      "avgCores": 0.993,
+      "peakRssGb": 0.914,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LoggerUtils.test.ts|LoggerUtils names an unparseable RPC node URL without repeating it": {
+      "durationMs": 4505,
+      "avgCores": 0.935,
+      "peakRssGb": 0.697,
+      "measurementReason": null
+    },
     "hardhat|test/utils/LoggerUtils.test.ts|LoggerUtils names any calldata a peer can author without throwing": {
       "durationMs": 2502,
       "avgCores": 0.624,
       "peakRssGb": 0.206,
+      "measurementReason": null
+    },
+    "hardhat|test/utils/LoggerUtils.test.ts|LoggerUtils names every RPC node of a list by scheme and host": {
+      "durationMs": 4601,
+      "avgCores": 1.176,
+      "peakRssGb": 0.747,
       "measurementReason": null
     },
     "hardhat|test/utils/LoggerUtils.test.ts|LoggerUtils omits previous timestamp fields for subjective time failures": {

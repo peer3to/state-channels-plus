@@ -2,6 +2,13 @@ import peer3Config from "../../peer3.config";
 
 export type Config = {
     PROVIDER_URL: string;
+    // RPC nodes in priority order. The first one sends transactions while it
+    // is connected. Unset or empty means the single node PROVIDER_URL.
+    PROVIDER_URLS?: string[];
+    // Most blocks one eth_getLogs read may span. Event catch-up and recovery
+    // read longer ranges in windows of this size; set it at or below the
+    // endpoints' own range limit. A positive integer.
+    LOG_QUERY_MAX_BLOCKS: number;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -51,6 +58,8 @@ export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
 const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
+    PROVIDER_URLS: [],
+    LOG_QUERY_MAX_BLOCKS: 1000,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,
@@ -77,6 +86,17 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
 };
+
+/**
+ * Rejects a log window size that is not a positive integer: windows of
+ * zero, fractional or negative blocks never cover a range.
+ */
+export function assertLogQueryMaxBlocks(maxBlocks: number): void {
+    if (!Number.isSafeInteger(maxBlocks) || maxBlocks < 1)
+        throw new Error(
+            `LOG_QUERY_MAX_BLOCKS must be a positive integer, got ${maxBlocks}`
+        );
+}
 
 export function isNodeRuntime() {
     return (

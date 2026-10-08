@@ -105,7 +105,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         stateSnapshots[channelId] = stateSnapshot;
     }
 
@@ -116,7 +118,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         bytes32 blockHash = keccak256(abi.encode(messageBlock));
         ChannelBalance storage channelBalance = channelBalances[channelId];
         _persistInboundMessageBlock(channelId, blockHash, messageBlock);
@@ -231,7 +235,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         channelBalances[channelId].totalWithdrawals = totalWithdrawals;
     }
 
@@ -241,7 +247,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;

@@ -1,81 +1,13 @@
-# DataTypes.sol — Source Report
+# DataTypes.sol
 
-> **Source:** [contracts/V1/types/DataTypes.sol](../../../../../../../contracts/V1/types/DataTypes.sol) > **Status:** Authored — engineer verification pending.
+> **Source:** [contracts/V1/types/DataTypes.sol](../../../../../../../contracts/V1/types/DataTypes.sol)
+>
 > **Design views:** [architecture/contracts/manager-and-facets.md](../../../../views/architecture/contracts/manager-and-facets.md)
 
-## Contents
+## Requirements
 
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
-## Responsibility and observable boundary
-
-The core struct vocabulary (blocks, transactions, snapshots, message blocks, balances, joins/
-exits, channel state) — the Solidity side of the canonical encodings.
-
-## Key design decisions
-
-1. **Struct shape = signature domain** under the current no-domain-tag scheme, which is exactly why [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)] couples versioning to these definitions.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents              |
-| ------------ | --------------------- |
-| Inputs       | Per role above.       |
-| Outputs      | Types/helpers/events. |
-| Owned state  | None.                 |
-| Side effects | None.                 |
-
-## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                            | Specification IDs                                                                                  |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [DataTypes.sol](../../../../../../../contracts/V1/types/DataTypes.sol) | [`REQ-DATA-1-1KNRQS`](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
-
-## Assumptions, dependencies, trust boundaries, and limits
-
-- Declarative/support code; behavior owned by consumers.
-
-## Specification adherence
-
-- Consistent with the owning documents' type/behavior contracts.
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
-## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
-
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
-
-## Related source reports
-
-- Consumers per the manager and state-machine-base views.
+- [`REQ-DATA-1-1KNRQS` (Decoders reject malformed, truncated, trailing, out-of-range, wrong-tag, and…)](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs)
+- [`INV-HIST-1-5N44K9` (Block commits to the state snapshot hash)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-1-5n44k9)
+- [`INV-HIST-3-T17T78` (Snapshots commit to inbound and outbound message-stream tips)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-3-t17t78)
+- [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
+- [`REQ-DATA-2-A5HMZP` (Field and collection ordering, duplicate policy, optionality, and nested-byte…)](../../../../../specification/protocol-model/data-types.md#req-data-2-a5hmzp)

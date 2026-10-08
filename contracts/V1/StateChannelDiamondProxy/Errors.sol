@@ -112,6 +112,7 @@ error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 act
 
 //Race conditions
 error RaceConditionChannelAlreadyOpen(bytes32 channelId);
+error RaceConditionOpenChannelExpired(uint256 deadlineTimestamp, uint256 currentTimestamp);
 error RaceConditionBlockCalldataTimestampTooLate(uint256 maxTimestamp, uint256 currentTimestamp);
 error RaceConditionSnapshotForkMismatch(bytes32 currentForkId, bytes32 submittedForkId);
 error RaceConditionBlockHeightTooOld(uint256 currentBlockHeight, uint256 submittedBlockHeight);
