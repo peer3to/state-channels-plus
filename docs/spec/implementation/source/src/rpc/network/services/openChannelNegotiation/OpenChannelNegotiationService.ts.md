@@ -63,6 +63,9 @@ Negotiation admission and balance
 - [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P5` — rejects zero local opening balance before installing an attempt
 - [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P6` — blacklists zero remote opening balance and clears its unsigned attempt
 - [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P7` — losing the committed peer bars it from the lobby session and leaves its identity standing intact
+- [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P8` — a terms request whose attempt is cleared during its channel selection keeps the reset status and leaves no channel subscription
+- [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P9` — a terms request whose attempt is cleared during its balance check selects no channel
+- [x] `UNIT-TEST-OPEN-CHANNEL-NEGOTIATION-SERVICE-32-8V0VCD.P10` — the lower address selects no channel while its terms request is pending
 
 ## UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA
 

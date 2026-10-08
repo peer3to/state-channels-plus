@@ -339,6 +339,21 @@ export class RpcStubActions<
                 .request();
     }
 
+    async holdEventListenerRemoval(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdEventListenerRemoval()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseEventListenerRemoval()
+                .request();
+    }
+
     async overrideLobbyRoleDuration(
         peerIndex: number,
         durationMs: number

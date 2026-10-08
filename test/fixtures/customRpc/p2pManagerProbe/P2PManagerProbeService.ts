@@ -317,6 +317,20 @@ export type InvalidNegotiationAmountProbe = {
     oldLobbyTransportClosed: boolean;
 };
 
+export type AttemptClearedDuringTermsProbe = {
+    error: string;
+    status: Status;
+    channelId: string;
+    /** subscriptions per node for the cleared attempt's channel */
+    subscriptionCounts: (number | null)[];
+};
+
+export type LowerTermsPendingProbe = {
+    channelId: string;
+    /** subscriptions per node for the attempt's channel */
+    subscriptionCounts: (number | null)[];
+};
+
 export type NegotiationFailureProbe = {
     channelIdAfterHigherInit: string;
     initiatorTimeoutBlacklisted: boolean;
@@ -4060,6 +4074,129 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             matching: availability.matching,
             oldLobbyTransportClosed: transport.isClosed
         };
+    }
+
+    /**
+     * The local runtime is the higher address. Valid terms arrive and the
+     * committed peer is lost while `acceptTerms` checks the balance, or while
+     * it selects the channel (the listener's removal is held for that). The
+     * status is then reset to discovering as a lobby retry does.
+     */
+    public async probeAttemptClearedDuringTerms(
+        phase: "balance" | "selection"
+    ): Promise<AttemptClearedDuringTermsProbe> {
+        const stub = this.p2pManager.localRpc.stub;
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0x0000000000000000000000000000000000000001"
+        );
+        const transport = this.transport(peerAddress);
+        this.registerProfile(transport, peerAddress);
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const match = this.makeMatch(
+            peerAddress,
+            "2b",
+            localAddress,
+            "2c",
+            "2d"
+        );
+        try {
+            const { outcome } = await this.startNegotiation(service, match);
+            const channelId = String(service.state.attempt?.channelId);
+            if (phase === "selection") stub.holdEventListenerRemoval();
+            const accepted = service
+                .acceptTerms(
+                    transport,
+                    match.attemptNonce,
+                    match.selectorChallenge,
+                    match.advertiserChallenge,
+                    this.encodeBalance(1)
+                )
+                .then(
+                    () => "",
+                    (error: unknown) => errorMessage(error)
+                );
+            if (phase === "selection") {
+                for (let retry = 0; retry < 500; retry += 1) {
+                    if (stub.getHeldEventListenerRemovalCount() === 1) break;
+                    await new Promise((resolve) => setTimeout(resolve, 10));
+                }
+                if (stub.getHeldEventListenerRemovalCount() !== 1) {
+                    throw new Error("Channel selection never reached removal");
+                }
+            }
+            // the peer loss clears the attempt before the pending step resumes
+            this.p2pManager.profileManager.removeTransport(transport);
+            if (service.state.attempt) {
+                throw new Error("Expected the peer loss to clear the attempt");
+            }
+            await outcome;
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+            stub.releaseEventListenerRemoval();
+            const error = await accepted;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            return {
+                error,
+                status: this.p2pManager.stateManager.status,
+                channelId: String(this.p2pManager.stateManager.channelId),
+                subscriptionCounts:
+                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                        channelId
+                    )
+            };
+        } finally {
+            stub.releaseEventListenerRemoval();
+            await service.dispose();
+        }
+    }
+
+    /**
+     * The local runtime is the lower address; the peer never answers its
+     * terms request. Reads the selection while that request is pending.
+     */
+    public async probeLowerSelectionDuringTerms(): Promise<LowerTermsPendingProbe> {
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        this.registerProfile(transport, peerAddress);
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const match = this.makeMatch(
+            peerAddress,
+            "3b",
+            localAddress,
+            "3c",
+            "3d"
+        );
+        try {
+            await this.startNegotiation(service, match);
+            const channelId = String(service.state.attempt?.channelId);
+            const requested = () =>
+                transport.frames.some(
+                    (frame) =>
+                        (JSON.parse(frame) as { method?: string }).method ===
+                        "exchangeTerms"
+                );
+            for (let retry = 0; retry < 500 && !requested(); retry += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            if (!requested()) throw new Error("Terms request was never sent");
+            return {
+                channelId: String(this.p2pManager.stateManager.channelId),
+                subscriptionCounts:
+                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                        channelId
+                    )
+            };
+        } finally {
+            await service.dispose();
+            this.p2pManager.profileManager.removeTransport(transport);
+        }
     }
 
     public async probeNegotiationFailure(

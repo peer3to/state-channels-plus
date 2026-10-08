@@ -39,3 +39,6 @@ Mode-specific channel-listener ownership
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P18` — after a failed read, a first connected node behind the reopened node's head reads nothing and the hold stays until it reaches that head, then the read resumes from the failed window
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P19` — the reopened node's head request fails several times while the first connected node lags: it is asked again after each backoff, nothing is read until it answers, then the read reaches that head and the lag block's event is processed once
 - [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P20` — clearing and selecting the channel again while the reopened node's head request is retried releases the hold at once
+- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P21` — a clear that runs while a select still removes the previous subscription wins: the late select subscribes nothing
+- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P22` — a select that starts while an older select is still removing live subscriptions wins; the older select subscribes nothing
+- [x] `UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P23` — a select started while a clear is still removing live subscriptions keeps its key and subscription
