@@ -315,6 +315,8 @@ export type InvalidNegotiationAmountProbe = {
     rendezvousTopic?: string;
     matching: boolean;
     oldLobbyTransportClosed: boolean;
+    /** channel the event listener is subscribed to, if any */
+    subscribedChannelKey?: string;
 };
 
 export type NegotiationFailureProbe = {
@@ -3983,8 +3985,15 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * `holdChannelSelection` pauses the lower-address run's channel selection
+     * inside the listener's subscribe, after it started and before the
+     * rejected attempt is cleared and the lobby reset; it finishes before
+     * status is read.
+     */
     public async probeInvalidNegotiationAmount(
-        zeroBalance = false
+        zeroBalance = false,
+        holdChannelSelection = false
     ): Promise<InvalidNegotiationAmountProbe> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         const peerAddress = getChecksumAddress(
@@ -4023,6 +4032,36 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         );
         const match = await matchPromise;
         if (!match) throw new Error("Expected committed lobby match");
+        const listener = this.p2pManager.stateManager.stateChannelEventListener;
+        // the private step setChannelId awaits before it subscribes
+        const internals = listener as unknown as {
+            removeListener: () => Promise<void>;
+        };
+        const removeListener = internals.removeListener;
+        const setChannelId = listener.setChannelId;
+        let releaseSelection = () => {};
+        let selectionDone: Promise<void> = Promise.resolve();
+        if (holdChannelSelection) {
+            const gate = new Promise<void>((resolve) => {
+                releaseSelection = resolve;
+            });
+            let markDone!: () => void;
+            selectionDone = new Promise<void>((resolve) => {
+                markDone = resolve;
+            });
+            let held = false;
+            internals.removeListener = async () => {
+                if (!held) {
+                    held = true;
+                    await gate;
+                }
+                return removeListener.call(listener);
+            };
+            listener.setChannelId = async (channelId) => {
+                await setChannelId.call(listener, channelId);
+                markDone();
+            };
+        }
         const { outcome: outcomePromise } = await this.startNegotiation(
             service,
             match
@@ -4050,6 +4089,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             if (lobby.getAvailability().matching) break;
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
+        if (holdChannelSelection) {
+            releaseSelection();
+            await selectionDone;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            listener.setChannelId = setChannelId;
+            internals.removeListener = removeListener;
+        }
         const availability = lobby.getAvailability();
         return {
             error,
@@ -4058,7 +4104,10 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             status: this.p2pManager.stateManager.status,
             rendezvousTopic: availability.topic,
             matching: availability.matching,
-            oldLobbyTransportClosed: transport.isClosed
+            oldLobbyTransportClosed: transport.isClosed,
+            subscribedChannelKey: (
+                listener as unknown as { currentChannelKey?: string }
+            ).currentChannelKey
         };
     }
 

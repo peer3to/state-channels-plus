@@ -490,9 +490,13 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
     }
 
     public probeInvalidNegotiationAmount(
-        zeroBalance = false
+        zeroBalance = false,
+        holdChannelSelection = false
     ): Promise<InvalidNegotiationAmountProbe> {
-        return this.service.probeInvalidNegotiationAmount(zeroBalance);
+        return this.service.probeInvalidNegotiationAmount(
+            zeroBalance,
+            holdChannelSelection
+        );
     }
 
     public probeNegotiationFailure(

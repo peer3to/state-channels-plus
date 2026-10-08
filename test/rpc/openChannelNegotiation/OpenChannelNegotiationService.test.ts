@@ -119,6 +119,19 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.status).to.equal(Status.DISCOVERING);
     });
 
+    it("a rejected attempt's channel selection finishing after the reset leaves the lobby status and no subscription", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeInvalidNegotiationAmount(true, true)
+            .request();
+        expect(result.error).to.equal("Invalid opening balance");
+        expect(result.peerBlacklisted).to.equal(true);
+        expect(result.channelId).to.equal(ethers.ZeroHash);
+        expect(result.status).to.equal(Status.DISCOVERING);
+        expect(result.matching).to.equal(true);
+        expect(result.subscribedChannelKey).to.equal(undefined);
+    });
+
     it("replays an early committed request and clears an unsigned abandoned attempt", async function () {
         const result = await fixture
             .control()
