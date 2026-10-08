@@ -559,7 +559,7 @@ and kill an honest timeout dispute; the kill slashes the honest disputer. The fa
 before the replay, that the snapshot is the one the latest proved block commits to (or the fork's
 genesis), that the machine state hashes to that snapshot's state hash, and that the posted block's
 `previousBlockHash` is the latest proved block (or the genesis snapshot)
-([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 6,
+([DisputeFraudProofFacet.sol](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md) decision 7,
 [`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn)). A refutation that fails a link is a failed
 refutation and slashes its submitter; an honest refutation still kills the dispute. The auditor's
 preflight runs the same predicate, so an honest node never submits an unlinked refutation.
