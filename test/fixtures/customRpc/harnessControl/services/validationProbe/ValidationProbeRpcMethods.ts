@@ -5,6 +5,7 @@ import type {
     BlockProbeOptions,
     BlockValidationProbe,
     BlockValidationProbeOptions,
+    ChannelSelectionRaceProbe,
     ConcurrentCalldataRecoveryProbe,
     DisputeStrategyResultMatrix,
     DisputeStructIngestProbe,
@@ -92,8 +93,11 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         return this.service.getEventWatermark();
     }
 
-    public async getChannelSubscriptionCounts(): Promise<(number | null)[]> {
-        return this.service.getChannelSubscriptionCounts();
+    /** `channelId` defaults to the selected channel. */
+    public async getChannelSubscriptionCounts(
+        channelId?: string
+    ): Promise<(number | null)[]> {
+        return this.service.getChannelSubscriptionCounts(channelId);
     }
 
     public async clearChannelListener(): Promise<boolean> {
@@ -102,6 +106,12 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
 
     public async restoreChannelListener(): Promise<boolean> {
         return this.service.restoreChannelListener();
+    }
+
+    public async probeChannelSelectionRace(
+        first: "select" | "clear"
+    ): Promise<ChannelSelectionRaceProbe> {
+        return this.service.probeChannelSelectionRace(first);
     }
 
     public async probeStreamedLogBelowWatermark(): Promise<StreamedLogDeliveryProbe> {

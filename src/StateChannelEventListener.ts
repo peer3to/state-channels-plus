@@ -48,10 +48,12 @@ class StateChannelEventListener {
         if (this.disposed) return;
         const channelKey = toChannelKey(channelId);
         if (channelKey === this.currentChannelKey && this.listener) return;
+        // claimed before the await: a clear or newer set during it wins
+        const generation = ++this.generation;
         await this.removeListener();
+        if (this.disposed || generation !== this.generation) return;
         this.eventSyncService.setChannelId(channelId);
         this.currentChannelKey = channelKey;
-        const generation = ++this.generation;
         const filter = this.eventSyncService.getSubscriptionFilter(channelId);
         const listener = (log: Log) => {
             if (this.disposed || generation !== this.generation) return;
@@ -157,9 +159,10 @@ class StateChannelEventListener {
 
     async clearChannelId(): Promise<void> {
         if (this.disposed) return;
-        this.generation += 1;
+        // a select started during the removal owns the key
+        const generation = ++this.generation;
         await this.removeListener();
-        this.currentChannelKey = undefined;
+        if (generation === this.generation) this.currentChannelKey = undefined;
     }
 
     /** Stop accepting logs and drain work without starting an unsubscribe. */

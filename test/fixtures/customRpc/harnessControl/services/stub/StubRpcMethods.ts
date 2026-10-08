@@ -3234,6 +3234,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSetChannelIdCount();
     }
 
+    public holdEventListenerRemoval(): boolean {
+        this.service.holdEventListenerRemoval();
+        return true;
+    }
+
+    public releaseEventListenerRemoval(): number {
+        return this.service.releaseEventListenerRemoval();
+    }
+
+    public getHeldEventListenerRemovalCount(): number {
+        return this.service.getHeldEventListenerRemovalCount();
+    }
+
     public overrideLobbyRoleDuration(durationMs: number): boolean {
         this.service.overrideLobbyRoleDuration(durationMs);
         return true;

@@ -154,6 +154,7 @@ export type StubKey =
     | "matchedNegotiation"
     | "failMatchedNegotiation"
     | "setChannelId"
+    | "eventListenerRemoval"
     | "postMatchTargetRefresh"
     | "membershipJoinReceipt"
     | "membershipTopUpReceipt"
@@ -219,7 +220,8 @@ type HeldRpcReply = {
         | HeldLobbyReplyKind
         | HeldNegotiationReplyKind
         | "spectate"
-        | "timeoutBuild";
+        | "timeoutBuild"
+        | "eventListenerRemoval";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -653,6 +655,7 @@ export class StubService extends ANetworkRpcService<
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
+    private heldEventListenerRemoval?: HeldRpcReply;
     private heldSpectateResponse?: HeldRpcReply;
     private heldPostMatchTargetRefresh?: HeldRpcReply;
     private postMatchTargetRefreshCallCount = 0;
@@ -1957,6 +1960,46 @@ export class StubService extends ANetworkRpcService<
         return this.heldSetChannelId?.entered ?? 0;
     }
 
+    /**
+     * Holds the channel event listener's next subscription removal, the step a
+     * select or clear awaits first; later removals pass through. The removal
+     * starts at once and only its completion is held, as a slow unsubscribe.
+     */
+    public holdEventListenerRemoval(): void {
+        this.releaseEventListenerRemoval();
+        const listener = this.eventListenerInternals();
+        const original = listener.removeListener;
+        this.stubOriginals.set("eventListenerRemoval", original);
+        const hold = this.createRpcHold("eventListenerRemoval");
+        this.heldEventListenerRemoval = hold;
+        listener.removeListener = async () => {
+            const removal = original.call(listener);
+            if (hold.entered === 0) {
+                hold.entered += 1;
+                await hold.gate;
+            }
+            return removal;
+        };
+    }
+
+    public releaseEventListenerRemoval(): number {
+        const entered = this.heldEventListenerRemoval?.entered ?? 0;
+        this.heldEventListenerRemoval?.release();
+        if (this.stubOriginals.has("eventListenerRemoval")) {
+            Reflect.deleteProperty(
+                this.eventListenerInternals(),
+                "removeListener"
+            );
+            this.stubOriginals.delete("eventListenerRemoval");
+        }
+        this.heldEventListenerRemoval = undefined;
+        return entered;
+    }
+
+    public getHeldEventListenerRemovalCount(): number {
+        return this.heldEventListenerRemoval?.entered ?? 0;
+    }
+
     public overrideLobbyRoleDuration(durationMs: number): void {
         if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
             throw new Error("Role duration must be a positive integer");
@@ -2249,6 +2292,15 @@ export class StubService extends ANetworkRpcService<
     public releaseStateMutex(): void {
         this.stateMutexGate?.release();
         this.stateMutexGate = undefined;
+    }
+
+    // the listener's private removal step
+    private eventListenerInternals(): {
+        removeListener: () => Promise<void>;
+    } {
+        return this.sm.stateChannelEventListener as unknown as {
+            removeListener: () => Promise<void>;
+        };
     }
 
     private createRpcHold(kind: HeldRpcReply["kind"]): HeldRpcReply {

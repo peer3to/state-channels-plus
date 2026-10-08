@@ -1073,6 +1073,144 @@ describe("E2E: lobby matching", function () {
         }
     });
 
+    it("rematches and opens one channel after the counterparty disconnects while the higher peer is still selecting the channel", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-disconnect-during-selection");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const thirdIndex = 2;
+        const higher = h.control(h.peers[higherIndex]);
+        const third = h.control(h.peers[thirdIndex]);
+        // The higher peer's first listener removal after setup is the one
+        // its channel selection awaits once the lower peer's terms validate.
+        const releaseRemoval =
+            await h.rpcStub.holdEventListenerRemoval(higherIndex);
+
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                async () =>
+                    (await higher.stub
+                        .getHeldEventListenerRemovalCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            const deadAttempt = await higher.query
+                .getNegotiationAttempt()
+                .request();
+            if (!deadAttempt) expect.fail("negotiation attempt is gone");
+            expect(deadAttempt.peerAddress).to.equal(
+                h.peers[lowerIndex].address
+            );
+            expect(await higher.query.getChannelId().request()).to.equal(
+                deadAttempt.channelId
+            );
+
+            // step 1 - the counterparty drops while the selection is parked
+            await h.network.blacklistAndDisconnectPeer(lowerIndex);
+            await waitFor(
+                async () =>
+                    (await higher.query.getNegotiationAttempt().request()) ===
+                    null,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            expect(await higher.query.getChannelId().request()).to.equal(
+                ethers.ZeroHash
+            );
+            await h.network.leaveLobby([lowerIndex], topic);
+
+            // step 2 - the new pair selects its channel; the parked selection
+            // resumes before either side handles the opening proposal
+            let newChannelId = ethers.ZeroHash;
+            await h.rpcStub.withHeldNegotiationReplies(
+                [higherIndex, thirdIndex],
+                "openProposal",
+                async () => {
+                    await h.network.joinLobby([thirdIndex], topic);
+                    await waitFor(
+                        async () =>
+                            (
+                                await Promise.all(
+                                    [higher, third].map((peer) =>
+                                        peer.stub
+                                            .getHeldNegotiationReplyCount()
+                                            .request()
+                                    )
+                                )
+                            ).reduce((sum, count) => sum + count, 0) === 1,
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }),
+                        200
+                    );
+                    const attempt = await higher.query
+                        .getNegotiationAttempt()
+                        .request();
+                    if (!attempt) expect.fail("new negotiation is gone");
+                    expect(attempt.peerAddress).to.equal(
+                        h.peers[thirdIndex].address
+                    );
+                    expect(attempt.channelId).not.to.equal(
+                        deadAttempt.channelId
+                    );
+                    newChannelId = attempt.channelId;
+                    expect(
+                        await higher.query.getChannelId().request()
+                    ).to.equal(newChannelId);
+                    expect(await releaseRemoval()).to.equal(1);
+                }
+            );
+
+            // step 3 - the new pair opens exactly the channel it negotiated,
+            // and the higher peer's listener observes that opening
+            await waitFor(
+                () => third.query.isChannelOpen(newChannelId).request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            [higher, third].map((peer) =>
+                                peer.query.getStatus().request()
+                            )
+                        )
+                    ).every((status) => status === Status.PARTICIPATING),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            expect(
+                await Promise.all(
+                    [higher, third].map((peer) =>
+                        peer.query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([newChannelId, newChannelId]);
+            expect(
+                await third.query.isChannelOpen(deadAttempt.channelId).request()
+            ).to.equal(false);
+            const registry = await third.query.getOpenChannelIds().request();
+            expect(registry).to.include(newChannelId);
+            expect(registry).not.to.include(deadAttempt.channelId);
+            expect(
+                await higher.query
+                    .isBlacklisted(h.peers[thirdIndex].address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await third.query
+                    .isBlacklisted(h.peers[higherIndex].address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await releaseRemoval();
+            await h.network.leaveLobby([0, 1, 2], topic);
+        }
+    });
+
     it("leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
