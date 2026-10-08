@@ -23,4 +23,4 @@ single-scenario IDs covered below.
 
 - `dispute.input.onChainSlashes includes address not slashed on-chain → DisputeOnChainSlashesNotSubset`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P12, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P7, REQ-DISPUTE-PIPE-5-RZZB48.T1.P8
 - `dispute.input.onChainSlashes contains address not in latestStateSnapshot participants → InvalidDisputeReason`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P20, UNIT-TEST-DISPUTE-FRAUD-PROOF-SERVICE-1-ZVPVC0.P13, REQ-DISPUTE-PIPE-5-RZZB48.T1.P16, REQ-DIS-1-XAJ1VA.T1.P5
-- `E2E: dispute validation / disputeInputFields / onChainSlashes > dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed`: none
+- `dispute.input.onChainSlashes has > maxSlashCount distinct addresses → reduce must not OOB-panic, both offenders slashed`: none

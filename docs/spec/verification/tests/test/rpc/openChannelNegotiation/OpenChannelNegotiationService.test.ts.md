@@ -33,7 +33,7 @@ The worker-hosted component probes cover deferred replay, local channel-ID deriv
 - `ordinary joinLobby forwards supplied and default balances with an internal deadline`: none
 - `targeted auto-open forwards supplied and default balances with an internal deadline`: none
 
-## Mode-specific outcome evidence
+### Mode-specific outcome evidence
 
 - `target-open classification blocks submission until participant lookup completes`: UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73.P1
 

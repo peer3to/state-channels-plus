@@ -27,7 +27,9 @@ Each report ([canonical example](./tests/test/unit/ValidationService.test.ts.md)
    oracles assert, and what is out of scope.
 3. **Tests** — one bullet per declaration, ``- `<test name>`: <IDs>``, listing the test IDs that
    declaration covers in full, or `none`. The name is the declaration's own title, or its full
-   `a > b > c` selector when that title repeats in the file.
+   `a > b > c` selector when that title repeats in the file. Every declaration that is not skipped
+   gets exactly one bullet; `###` subsections may group them. Selectors must be unique within a
+   file. Only `## Tests` holds bullets; a malformed list item there fails the check.
 
 ## Assignment rules
 
@@ -71,7 +73,9 @@ reports, tests with no assigned ID, and test IDs assigned to more than one test.
 
 `requirements.md` and the checkbox on every implementation-layer case bullet are derived from
 these bullets by `yarn spec:ids:fix` and checked by `yarn spec:ids:check`, which also names every
-bullet that matches no declaration or an ambiguous one. Never edit them by hand; a merge conflict in either is
+bullet that matches no declaration, matches one ambiguously, repeats a declaration or uses a
+non-canonical name, every declaration with no bullet, and every report whose test file is gone.
+Never edit them by hand; a merge conflict in either is
 resolved by rerunning `yarn spec:ids:fix`.
 
 Oracle, environment, permutation, and evidence questions belong in

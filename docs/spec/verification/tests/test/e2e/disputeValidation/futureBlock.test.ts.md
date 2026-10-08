@@ -14,8 +14,8 @@ committed dispute references a higher block; `resolveDisputeWait` then settles t
 requiring the attacker's removal. A known teardown bug (#353, `onStateSnapshotUpdated: unknown
 snapshot while status=4`) is documented in the file; the test body itself passes. Even after the
 permutation atomization, no single-scenario ID matches this protocol-gap regression (honest peers
-refusing to fast-forward off a committed dispute's higher block), so the Covers column stays
-empty.
+refusing to fast-forward off a committed dispute's higher block), so its bullet stays
+`none`.
 
 ## Tests
 

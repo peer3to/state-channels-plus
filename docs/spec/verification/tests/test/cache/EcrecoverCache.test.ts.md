@@ -24,9 +24,6 @@ the real key.
 
 ## Tests
 
-A row lists only test IDs this test covers **in full**. Each test ID may be assigned to at most one
-test across the whole tree.
-
 - `recovers the same signer as an EVM without the memo`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P1
 - `memoizes by (digest, signature) — repeats add no entries and return the same signer`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P2
 - `repeated calls after a cache fill match the plain EVM in output and gas, with one real recovery`: UNIT-TEST-ECRECOVER-CACHE-1-S0EEQ5.P6

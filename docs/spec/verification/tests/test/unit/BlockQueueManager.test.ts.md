@@ -33,7 +33,7 @@ recorded rather than run, so no dispute is submitted by either case.
 - `a failed unknown copy preserves the existing honest contribution`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P28
 - `a failed membership read can retry on the next request`: REQ-GOSSIP-4-J5Z4DF.T1.P31, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P33
 - `sync with no sender transport ends intake without queueing the block`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P34
-- `Unit: BlockQueueManager > sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
-- `Unit: BlockQueueManager > stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
+- `sync succeeds but the sender is still absent: blacklisted with no queue entry`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P36
+- `stopping the manager clears a future queued block and cancels its timeout`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P37
 - `a queued copy that merged a gossip copy → the gossip source is cut and a forced check is requested`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P17, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P38, UNIT-TEST-BLOCK-INGEST-1-JV64AS.P5, UNIT-TEST-STATE-MANAGER-7-YRC0N3.P1
 - `posted calldata queued above the next height → restored, then judged as calldata once its height is next`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P18, UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P39

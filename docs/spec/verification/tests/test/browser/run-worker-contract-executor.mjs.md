@@ -22,7 +22,7 @@ The clock case brackets its asynchronous read with wall-time samples. It checks 
 - `browser SDK WebRTC reconnects and exchanges new messages`: none
 - `browser SDK WebRTC rejects pending negotiation on final teardown`: none
 - `browser SDK WebRTC caches auto fallback after a native transfer failure`: none
-- `browser SDK WebRTC caches auto fallback after a native transfer failure`: REQ-RUNTIME-3-VQXW59.T1.P55, UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P19
+- `fallback browser worker keeps its second inline SDK host usable after disposing the first`: REQ-RUNTIME-3-VQXW59.T1.P55, UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P19
 - `fallback browser worker keeps its first inline SDK host usable after disposing the second`: REQ-RUNTIME-3-VQXW59.T1.P56, UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P20
 - `browser crash-log collection uploads every realm`: none
 - `browser nested SDK and executor workers gossip crash logs`: REQ-LOG-8-B7VN3J.T1.P5

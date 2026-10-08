@@ -41,4 +41,4 @@ Real SDK roots and their actual message ports exercise store attachment, local o
 - `a leaf crash retains late channel identity and triggers its client upload`: UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P31
 - `does not pass peer identity between inline roots`: UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P32
 - `rapid channel updates reach both neighbours without echoing to their sender`: UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P33, REQ-LOG-4-W5XR7Q.T1.P6
-- `LoggerService > updates the channel of every local store attached to the service`: UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P34
+- `updates the channel of every local store attached to the service`: UNIT-TEST-LOGGER-GOSSIP-1-MGTRF0.P34

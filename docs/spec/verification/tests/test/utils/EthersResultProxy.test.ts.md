@@ -13,9 +13,6 @@ preservation, query-filter conversion, and unrelated member passthrough.
 
 ## Tests
 
-A row lists only test IDs this test covers **in full**. Each permutation is assigned to at most one
-test declaration.
-
 - `recursively converts Results in arrays and plain objects while retaining clean branches`: UNIT-TEST-ETHERS-RESULT-PROXY-1-1BRJ8D.P4
 - `converts a synchronous direct method result`: UNIT-TEST-ETHERS-RESULT-PROXY-2-RA8YEC.P1
 - `converts an asynchronous direct method result`: UNIT-TEST-ETHERS-RESULT-PROXY-2-RA8YEC.P2

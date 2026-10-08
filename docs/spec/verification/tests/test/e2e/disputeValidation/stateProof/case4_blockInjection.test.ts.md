@@ -20,7 +20,7 @@ permutation atomization the first header-mismatch case carries the mirrored
 `DisputeStateProofHeaderMismatch` predicate and header-match-check permutations, and the
 foreign-forkId block tamper carries the `REQ-SP-7-70EMAT` fork-identity split; the per-identity
 `REQ-DISPUTE-PIPE-1-HRBFP7` intake splits belong to the dedicated `uploadRevert/` and
-`disputeInputFields/` suites, so the remaining rows stay unassigned.
+`disputeInputFields/` suites, so the remaining tests stay `none`.
 
 ## Tests
 

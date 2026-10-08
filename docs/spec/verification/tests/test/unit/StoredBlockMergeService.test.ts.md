@@ -11,7 +11,7 @@ Drive the real merge service under live, spectating, calldata and dispute strate
 
 - `a real synced spectator persists late signatures without an outgoing confirmation`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P10
 - `a pending joiner persists late signatures without relaying before participant promotion`: REQ-GOSSIP-3-HQZNQX.T1.P5, UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P11
-- `Unit: StoredBlockMergeService > each stored copy is bounded before ordinary signature validation`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P15
+- `each stored copy is bounded before ordinary signature validation`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P15
 - `unrecoverable confirmations are removed while the stored block remains committed`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P13
 - `a block this peer never stored → undefined, nothing persisted`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P1
 - `an identical stored confirmation → DUPLICATE, signature set untouched`: UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6.P2

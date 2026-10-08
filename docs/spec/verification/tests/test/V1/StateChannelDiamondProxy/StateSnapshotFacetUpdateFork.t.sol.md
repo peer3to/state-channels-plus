@@ -28,9 +28,6 @@ alone.
 
 ## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree.
-
 - `test_updateStateSnapshotFork_snapshotNotGenesis_revertsCarryingBothForkIdsAndHeight`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P8
 - `test_updateStateSnapshotFork_noDisputeWindowOnOriginFork_revertsCarryingBothForkIds`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P9
 - `test_updateStateSnapshotFork_genesisTimestampMismatch_revertsCarryingBothTimestamps`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P10

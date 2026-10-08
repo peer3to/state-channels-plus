@@ -18,5 +18,5 @@ gates are split per revert, and this case carries the auditing-hash mismatch gat
 ## Tests
 
 - `with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P7
-- `E2E: dispute validation / uploadRevert / disputeAuditingDataHash > postedAuditingData true uploaded without calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none
-- `E2E: dispute validation / uploadRevert / disputeAuditingDataHash > postedAuditingData false uploaded with calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none
+- `postedAuditingData true uploaded without calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none
+- `postedAuditingData false uploaded with calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none

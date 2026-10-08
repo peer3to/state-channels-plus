@@ -45,13 +45,13 @@ while held, and that the release publishes the opening block.
 - `dispute recovery defeated → the window is reported unreadable, not thrown`: none
 - `dispute window-span read fails → failed recovery, no throw`: none
 - `the subscription filter is unchanged by the shared topic builder`: none
-- `EventSyncService > scheduleLog deduplication > dispatches a log a second stream delivers again only once`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P1, INV-CHAINOBS-1-ASVKC1.T1.P1
-- `EventSyncService > scheduleLog deduplication > dispatches a log re-mined in another block after a reorg as a new event`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P2, INV-CHAINOBS-1-ASVKC1.T1.P2
-- `EventSyncService > scheduleLog deduplication > ignores a log a reorg removed`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P3, INV-CHAINOBS-1-ASVKC1.T1.P3
-- `EventSyncService > scheduleStreamedLog > drops a lagging node's log below the watermark`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P4, INV-CHAINOBS-1-ASVKC1.T1.P6
-- `EventSyncService > catchUpLogs > schedules the log this peer's subscription lost`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P1, REQ-CHAINOBS-3-N137ZP.T1.P4
-- `EventSyncService > catchUpLogs > does not dispatch the channel's opening logs again`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P3, INV-CHAINOBS-1-ASVKC1.T1.P5
-- `EventSyncService > catchUpLogs > does not dispatch a log this peer already processed again`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P2, INV-CHAINOBS-1-ASVKC1.T1.P4
+- `dispatches a log a second stream delivers again only once`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P1, INV-CHAINOBS-1-ASVKC1.T1.P1
+- `dispatches a log re-mined in another block after a reorg as a new event`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P2, INV-CHAINOBS-1-ASVKC1.T1.P2
+- `ignores a log a reorg removed`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P3, INV-CHAINOBS-1-ASVKC1.T1.P3
+- `drops a lagging node's log below the watermark`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P4, INV-CHAINOBS-1-ASVKC1.T1.P6
+- `schedules the log this peer's subscription lost`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P1, REQ-CHAINOBS-3-N137ZP.T1.P4
+- `does not dispatch the channel's opening logs again`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P3, INV-CHAINOBS-1-ASVKC1.T1.P5
+- `does not dispatch a log this peer already processed again`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P2, INV-CHAINOBS-1-ASVKC1.T1.P4
 - `dispatches a never-seen log in the watermark block`: UNIT-TEST-EVENT-STREAM-DEDUP-1-HHP9F4.P5, INV-CHAINOBS-1-ASVKC1.T1.P8
 - `a recovery read across several windows survives a failed middle window and dispatches each dispute once`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P11, REQ-CHAINOBS-3-N137ZP.T1.P23
 - `keeps the watermark at its block while a later block completes, and publishes that block on release`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P7

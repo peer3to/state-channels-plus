@@ -12,9 +12,6 @@ failure cleanup.
 
 ## Tests
 
-A row lists only test IDs this test covers **in full**. Each test ID is assigned to exactly one
-declaration.
-
 - `settles a guarded request without resolving its endpoint`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P1, REQ-RPC-7-9CBSHK.T1.P2
 - `applies the same guard consequence before existing or missing endpoint resolution`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P16, REQ-RPC-6-E60S4J.T1.P4
 - `skips guards when the transport reports trusted`: UNIT-TEST-ARPC-SERVICE-1-S4T98Z.P2

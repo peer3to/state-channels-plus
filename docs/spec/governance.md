@@ -37,10 +37,11 @@ Two branches adding children to the same existing root are editing the same owne
 resolve the normal Git conflict rather than hide it behind independently random child IDs.
 
 The token at its canonical definition is plain inline code preceded by an explicit stable anchor.
-Every other concrete ID occurrence is a linked inline-code label targeting that anchor. Run
+Every other concrete ID occurrence is a linked inline-code label targeting that anchor;
+IDs in `verification/tests/` reports stay bare, and `yarn spec:ids:fix` strips links there. Run
 `yarn spec:ids:fix` after authoring to normalize anchors and references, and
 `yarn spec:ids:check` to reject legacy collision-prone IDs, undefined references, duplicate
-definitions or anchors, unlinked references, and links to the wrong definition.
+definitions or anchors, unlinked references outside test reports, and links to the wrong definition.
 
 Use another test-plan item (`.T2`, `.T3`) only when the requirement needs a materially different
 setup, stimulus, or oracle. Variations of the same obligation are `.P1`…`.PN` under that plan item.

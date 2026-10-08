@@ -36,9 +36,6 @@ never by a response. The loopback case calls the target through the local RPC pr
 
 ## Tests
 
-A row lists only permutation IDs this test covers **in full** — partial credit is never recorded. Each
-permutation ID is assigned to at most one test across the whole tree.
-
 - `lets a trusted loopback call run its endpoint once without punishment`: REQ-RPC-7-9CBSHK.T2.P1, UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8.P1
 - `blacklists and disconnects an authenticated remote request without a failure response`: UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8.P2
 - `blacklists and disconnects an authenticated remote notification without executing it`: UNIT-TEST-LOCAL-ONLY-GUARD-1-GK4GR8.P3

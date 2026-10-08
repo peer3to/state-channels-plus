@@ -35,9 +35,6 @@ Identity-state variants staged by unregistering real profiles belong to the unit
 
 ## Tests
 
-A row lists only permutation IDs this test covers **in full** — partial credit is never recorded. Each
-permutation ID is assigned to at most one test across the whole tree.
-
 - `runs a local call and blacklists and disconnects a remote requester with no response`: REQ-RPC-7-9CBSHK.T2.P2
 - `still sends an earlier guard's rejection response to a remote requester and keeps it connected`: REQ-RPC-7-9CBSHK.T2.P13
 - `blacklists and disconnects a remote notification sender without executing it`: REQ-RPC-7-9CBSHK.T2.P3

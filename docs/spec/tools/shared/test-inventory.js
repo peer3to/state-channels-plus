@@ -7,17 +7,17 @@ const {
     IMPLEMENTATION_PERMUTATION_PATTERN,
     SPECIFICATION_PERMUTATION_PATTERN
 } = require("./id-utils");
+const { REPO_ROOT, SPEC_ROOT } = require("./traceability-utils");
 
 const TEST_FILE_RE = /(?:\.(?:test|spec)\.[cm]?[jt]sx?|\.t\.sol)$/;
 const TEST_ENTRYPOINT_RE =
     /(?:^|[\s"'=])((?:\.\/)?test\/[\w./-]+\.[cm]?[jt]sx?)/g;
-// A test bullet in a verification test report, whose path mirrors the test
-// file (verification/tests/<test path>.md):
+// A test bullet under `## Tests` in a verification test report, whose path
+// mirrors the test file (verification/tests/<test path>.md):
 // - `<test name>`: <covered test IDs, or none>
-// The name is the declaration's own title, or its full `a > b > c` selector
-// when that title repeats in the file.
 const TEST_BULLET_RE = /^- `(.+)`: (.*)$/;
-const REPORTS_DIR = `${path.sep}verification${path.sep}tests${path.sep}`;
+const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+\.)\s/;
+const REPORTS_ROOT = path.join(SPEC_ROOT, "verification", "tests");
 // Only whole permutation IDs are assignable as covered test IDs.
 const COVERS_ID_RE = new RegExp(
     `${SPECIFICATION_PERMUTATION_PATTERN}|${IMPLEMENTATION_PERMUTATION_PATTERN}`,
@@ -256,17 +256,43 @@ function ignoreDisposition(target, content = fs.readFileSync(target, "utf8")) {
     return { ignored: true, reason: match[1].trim(), issue: null };
 }
 
+// A bullet names a test by its own title, or by its full `a > b > c` selector
+// when that title repeats in the file.
+const bulletName = (fileCases, testCase) =>
+    fileCases.filter((item) => item.title === testCase.title).length === 1
+        ? testCase.title
+        : testCase.selector;
+
 // The test a bullet names: an exact selector wins, else a title unique in the file.
 function namedTest(fileCases, name) {
     const exact = fileCases.filter((item) => item.selector === name);
-    if (exact.length === 1) return { testCase: exact[0] };
+    if (exact.length > 1)
+        return {
+            reason: `${exact.length} declarations share selector \`${name}\`; rename one so each test has a unique selector`
+        };
     const titled = fileCases.filter((item) => item.title === name);
-    if (titled.length === 1) return { testCase: titled[0] };
+    const matches = exact.length ? exact : titled;
+    if (matches.length !== 1)
+        return {
+            reason: titled.length
+                ? `test name \`${name}\` is ambiguous; use its full selector`
+                : `no test declaration named \`${name}\``
+        };
+    const canonical = bulletName(fileCases, matches[0]);
     return {
-        reason: titled.length
-            ? `test name \`${name}\` is ambiguous; use its full selector`
-            : `no test declaration named \`${name}\``
+        testCase: matches[0],
+        reason:
+            name === canonical
+                ? null
+                : `name test \`${name}\` as \`${canonical}\``
     };
+}
+
+// The test file a report mirrors, or null outside verification/tests/.
+function reportedTestPath(document) {
+    const relative = path.relative(REPORTS_ROOT, document);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+    return path.join(REPO_ROOT, relative.replace(/\.md$/, ""));
 }
 
 function scanTestMappings(documents, cases) {
@@ -278,59 +304,77 @@ function scanTestMappings(documents, cases) {
     const mappings = new Map();
     const invalid = [];
     for (const document of documents) {
-        const [specRoot, relative] = document.split(REPORTS_DIR);
-        if (relative === undefined) continue;
-        const target = path.resolve(
-            specRoot,
-            "..",
-            "..",
-            relative.replace(/\.md$/, "")
-        );
+        const target = reportedTestPath(document);
+        if (!target) continue;
+        const issue = (line, owner, reason) =>
+            invalid.push({ document, target, line, owner, reason });
+        if (!fs.existsSync(target)) {
+            issue(
+                null,
+                null,
+                "mirrored test file does not exist; move or delete this report"
+            );
+            continue;
+        }
         const fileCases = byTarget.get(target) || [];
+        // declaration key -> the bullet name that listed it
+        const listed = new Map();
+        let inTests = false;
         for (const row of fs.readFileSync(document, "utf8").split(/\r?\n/)) {
+            if (/^## /.test(row)) {
+                inTests = row.trim() === "## Tests";
+                continue;
+            }
+            if (!inTests || !LIST_ITEM_RE.test(row)) continue;
             const match = row.match(TEST_BULLET_RE);
-            if (!match) continue;
+            if (!match) {
+                issue(null, null, `malformed test bullet: ${row.trim()}`);
+                continue;
+            }
             const covers = match[2].trim();
             const owners = covers.match(COVERS_ID_RE) || [];
             const { testCase, reason } = namedTest(fileCases, match[1]);
             if (!testCase) {
-                invalid.push({
-                    document,
-                    target,
-                    line: null,
-                    owner: owners[0] || null,
-                    reason
-                });
+                issue(null, owners[0] || null, reason);
                 continue;
             }
             const line = testCase.line;
+            if (reason) issue(line, owners[0] || null, reason);
+            const key = `${target}\0${line}`;
+            if (listed.has(key)) {
+                issue(
+                    line,
+                    owners[0] || null,
+                    `test \`${match[1]}\` is already listed as \`${listed.get(key)}\``
+                );
+                continue;
+            }
+            listed.set(key, match[1]);
             if (!owners.length) {
                 // Unassigned test (`none`) — legal; anything else unparseable is not.
                 if (covers !== "none")
-                    invalid.push({
-                        document,
-                        target,
+                    issue(
                         line,
-                        owner: null,
-                        reason: "test bullet has no recognizable test ID"
-                    });
+                        null,
+                        "test bullet has no recognizable test ID"
+                    );
                 continue;
             }
             if (testCase.skipped) {
-                invalid.push({
-                    document,
-                    target,
-                    line,
-                    owner: owners[0],
-                    reason: "test bullet maps a skipped test"
-                });
+                issue(line, owners[0], "test bullet maps a skipped test");
                 continue;
             }
-            const key = `${target}\0${line}`;
             if (!mappings.has(key)) mappings.set(key, []);
             for (const owner of owners)
                 mappings.get(key).push({ document, owner });
         }
+        for (const item of fileCases)
+            if (!item.skipped && !listed.has(`${target}\0${item.line}`))
+                issue(
+                    item.line,
+                    null,
+                    `test \`${bulletName(fileCases, item)}\` has no bullet`
+                );
     }
     return { mappings, invalid };
 }

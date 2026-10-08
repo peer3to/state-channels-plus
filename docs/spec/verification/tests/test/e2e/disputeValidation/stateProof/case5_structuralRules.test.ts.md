@@ -8,7 +8,7 @@ The suite submits disputes with malformed milestone proofs and observes real aud
 and dispute kills. An empty milestone produces `DisputeInvalidStateProof`. An invalid tail
 author signature, a broken previous-block hash and a skipped height in a genesis block-zero
 run produce `DisputeInvalidBlockStructure`. The tests mutate real constructed disputes and
-check the stored counter type and the resulting window. The table assigns only permutations
+check the stored counter type and the resulting window. The bullets assign only permutations
 fully established by each declaration; these cases do not establish cross-milestone identity
 consistency for two differently signed blocks.
 

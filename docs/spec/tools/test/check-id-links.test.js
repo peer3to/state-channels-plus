@@ -24,8 +24,8 @@ const testsReport = (...bullets) =>
 
 // One specification document, one file report with a family, one view with a
 // view-local requirement, one test file and its verification report.
-function fixture(run) {
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "id-links-test-"));
+function fixture(run, parent = os.tmpdir()) {
+    const repo = fs.mkdtempSync(path.join(parent, "id-links-test-"));
     const write = (file, content) => {
         fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
         fs.writeFileSync(path.join(repo, file), content);
@@ -475,6 +475,181 @@ test("a test bullet with neither IDs nor none fails check", () =>
             /test\/fix\.test\.ts:2: test bullet has no recognizable test ID/
         );
     }));
+
+test("a top-level title and the same title nested under a describe name different tests", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.test.ts",
+            'it("x", () => {});\ndescribe("a", () => {\n    it("x", () => {});\n});\n'
+        );
+        f.write(
+            testReport,
+            testsReport(`- \`x\`: ${family}.P1`, `- \`a > x\`: ${family}.P2`)
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P1\``)
+        );
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P2\``)
+        );
+        assert.equal(f.ids().status, 0);
+    }));
+
+test("a bullet must use the title when the title is unique", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.test.ts",
+            'describe("a", () => {\n    it("only", () => {});\n});\n'
+        );
+        f.write(testReport, testsReport(`- \`a > only\`: ${family}.P1`));
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(check.stderr, /name test `a > only` as `only`/);
+    }));
+
+test("two bullets that name one declaration fail check", () =>
+    fixture((f) => {
+        f.write(
+            testReport,
+            testsReport(
+                bullet(1, `${family}.P1`),
+                `- \`case 1\`: ${requirement}.T1.P1`,
+                bullet(2, "none"),
+                bullet(3, "none")
+            )
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(
+            check.stderr,
+            /test\/fix\.test\.ts:1: test `case 1` is already listed as `case 1`/
+        );
+    }));
+
+test("a declaration with no bullet fails check", () =>
+    fixture((f) => {
+        f.write(testReport, testsReport(bullet(1, "none"), bullet(3, "none")));
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(
+            check.stderr,
+            /test\/fix\.test\.ts:2: test `case 2` has no bullet/
+        );
+    }));
+
+test("only list items under Tests are bullets, and a malformed one fails check", () =>
+    fixture((f) => {
+        const overview = "## Overview\n\n- `helper`: harness stub\n\n";
+        f.write(
+            testReport,
+            testsReport(
+                bullet(1, "none"),
+                bullet(2, "none"),
+                bullet(3, "none")
+            ).replace("## Tests", `${overview}## Tests`)
+        );
+        f.ids("--write");
+        assert.equal(f.ids().status, 0);
+        f.write(
+            testReport,
+            testsReport(bullet(1, "none"), "- `case 2`:none", bullet(3, "none"))
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(check.stderr, /malformed test bullet: - `case 2`:none/);
+    }));
+
+test("declarations that share a full selector fail check with a rename hint", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.test.ts",
+            'describe("a", () => {\n    it("same", () => {});\n    it("same", () => {});\n});\n'
+        );
+        f.write(testReport, testsReport("- `a > same`: none"));
+        assert.match(
+            f.ids().stderr,
+            /2 declarations share selector `a > same`; rename one so each test has a unique selector/
+        );
+        f.write(
+            "test/two.t.sol",
+            "contract A {\n    function testSame() public {}\n}\ncontract B {\n    function testSame() public {}\n}\n"
+        );
+        f.write(
+            "docs/spec/verification/tests/test/two.t.sol.md",
+            "# two.t.sol\n\n## Tests\n\n- `testSame`: none\n"
+        );
+        assert.match(
+            f.ids().stderr,
+            /2 declarations share selector `testSame`; rename one so each test has a unique selector/
+        );
+    }));
+
+test("a Solidity test and a package script entrypoint are named like any declaration", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.t.sol",
+            "contract T {\n    function testOne() public {}\n}\n"
+        );
+        f.write(
+            "docs/spec/verification/tests/test/fix.t.sol.md",
+            `# fix.t.sol\n\n## Tests\n\n- \`testOne\`: ${family}.P1\n`
+        );
+        f.write("package.json", '{"scripts":{"test:x":"node test/x.mjs"}}\n');
+        f.write("test/x.mjs", "console.log('ok');\n");
+        f.write(
+            "docs/spec/verification/tests/test/x.mjs.md",
+            `# x.mjs\n\n## Tests\n\n- \`package script test:x\`: ${family}.P2\n`
+        );
+        f.ids("--write");
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P1\``)
+        );
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P2\``)
+        );
+        assert.equal(f.ids().status, 0);
+    }));
+
+test("a report whose test file is gone fails once with the cause", () =>
+    fixture((f) => {
+        fs.renameSync(
+            path.join(f.repo, "test/fix.test.ts"),
+            path.join(f.repo, "test/moved.test.ts")
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        const lines = check.stderr
+            .split("\n")
+            .filter((line) => line.includes("tests/test/fix.test.ts.md"));
+        assert.deepEqual(lines, [
+            "verification/tests/test/fix.test.ts.md: test/fix.test.ts: mirrored test file does not exist; move or delete this report"
+        ]);
+    }));
+
+test("a repository under a verification/tests directory still finds its tests", () => {
+    const parent = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), "outer-")),
+        "verification",
+        "tests"
+    );
+    fs.mkdirSync(parent, { recursive: true });
+    try {
+        fixture((f) => {
+            f.ids("--write");
+            assert.equal(f.ids().status, 0);
+        }, parent);
+    } finally {
+        fs.rmSync(path.dirname(path.dirname(parent)), {
+            recursive: true,
+            force: true
+        });
+    }
+});
 
 test("a requirement defined at a heading gets an anchor and a glossed reference", () =>
     fixture((f) => {

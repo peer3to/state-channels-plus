@@ -18,7 +18,7 @@ middle slot rather than a revert, and an empty signature list must yield an empt
 facet's signature-threshold verification, block decode, and genesis/ordering predicates are not
 touched here (the Hardhat `SignatureVerification.test.ts` suite covers the threshold path). The
 planned permutations `UNIT-TEST-UTILITY-FACET-1-ER4P0V.P1`–`P8` all target those threshold/decode/predicate
-surfaces, so none of them is covered by the array-helper cases and those rows stay unassigned.
+surfaces, so none of them is covered by the array-helper cases and those permutations stay unassigned.
 
 ## Tests
 

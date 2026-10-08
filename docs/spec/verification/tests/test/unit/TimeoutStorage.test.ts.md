@@ -15,8 +15,6 @@ the producing timeout suites.
 
 ## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded.
-
 - `deleteTimeout with the stored plain timeout → removed`: REQ-TOSTORE-2-WX7VMH.T1.P1, UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P6
 - `a forced timeout stored over the plain one at the same height → survives deleteTimeout`: REQ-TOSTORE-2-WX7VMH.T1.P2, UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P7
 - `deleteTimeout at another height → the stored plain timeout stays`: REQ-TOSTORE-2-WX7VMH.T1.P3, UNIT-TEST-TIMEOUT-STORAGE-1-TAX9C3.P8

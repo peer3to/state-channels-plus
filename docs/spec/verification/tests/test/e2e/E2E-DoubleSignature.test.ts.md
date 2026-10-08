@@ -24,9 +24,6 @@ listener; and ordinary block traffic leaves every peer unblacklisted by every ot
 
 ## Tests
 
-A row lists only test IDs this test covers **in full**. Each test ID may be assigned to at most one
-test across the whole tree.
-
 - `a participant gossiping a second valid signature for a stored block is blacklisted by the receiver`: REQ-ID-5-GW1ZEY.T1.P7, UNIT-TEST-P2PMANAGER-33-XKAJJN.P1, UNIT-TEST-P2PMANAGER-33-XKAJJN.P9
 - `a relayed double signature blacklists only its signer`: REQ-ID-5-GW1ZEY.T1.P8, UNIT-TEST-P2PMANAGER-33-XKAJJN.P2
 - `a node that recovers its own double signature never blacklists itself`: REQ-ID-5-GW1ZEY.T1.P10, UNIT-TEST-P2PMANAGER-33-XKAJJN.P3, UNIT-TEST-P2PMANAGER-33-XKAJJN.P8

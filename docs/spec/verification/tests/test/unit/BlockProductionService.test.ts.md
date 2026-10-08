@@ -14,8 +14,6 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 
 ## Tests
 
-A row lists only test IDs this test covers in full. Each ID may be assigned to at most one test.
-
 - `next-to-write → true; any other peer → false`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P1
 - `no inbound message ever stored → empty`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P2
 - `inbound arrived but not yet consumed → returned; once consumed → empty`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P3

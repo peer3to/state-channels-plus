@@ -40,7 +40,8 @@ document has to be read up front, say for which work.
   leaves a gap, and surviving children are never renumbered or reused. Concurrent changes to that
   table must resolve the ordinary Git conflict.
 - At the one canonical definition, keep the ID as unlinked inline code with its explicit anchor.
-  Every other concrete ID occurrence must be a linked inline-code label pointing to that anchor.
+  Every other concrete ID occurrence must be a linked inline-code label pointing to that anchor;
+  IDs in `verification/tests/` reports stay bare, and `yarn spec:ids:fix` strips links there.
 - After changing IDs or references, run `yarn spec:ids:fix`, inspect the link changes, then run
   `yarn spec:refresh`. The refresh includes `yarn spec:ids:check` and fails on legacy IDs,
   collisions, undefined IDs, duplicate definitions or anchors, unlinked references, and wrong
@@ -135,14 +136,15 @@ integration case: its checkbox in the file report or view. Which test covers a c
 ID in `verification/tests/`. Specification documents carry no test evidence.
 
 Make every requirement, plan, and permutation reference navigable without losing its code styling:
-use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line
+use linked inline-code labels (bare IDs in test reports) and stable explicit anchors at maintained definitions. Do not use line
 numbers as identity anchors; formatting and nearby documentation edits make them stale.
 
 Each test-file report (`verification/tests/<path>.md`) has: a header (`Test file:` link, and an
 `Exercises:` link when the suite targets one production component); a short prose **Overview**
 grounded in the real test bodies; and a **Tests** section with one bullet per declaration,
 ``- `<test name>`: <IDs>``. The name is the declaration's own title, or its full `a > b > c`
-selector when that title repeats in the file; the tool resolves it, so no line numbers. The IDs are
+selector when that title repeats in the file; the tool resolves it, so no line numbers. Every
+non-skipped declaration has exactly one bullet, and selectors are unique within a file. The IDs are
 the bare **permutation IDs** that declaration covers **in full**, comma-separated. The
 permutation is the unit of evidence: root test IDs (`.T<n>` or bare `UNIT-TEST-*`/
 `INTEGRATION-TEST-*`) name the family in the planning table and are never assignable. Judge each

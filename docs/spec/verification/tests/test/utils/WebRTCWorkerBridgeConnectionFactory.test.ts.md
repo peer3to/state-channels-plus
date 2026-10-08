@@ -21,6 +21,6 @@ Exercises real SDK-owned worker bridge roots, main-thread broker roots and nativ
 - `delivers real connection changes only to replacement callbacks`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P16
 - `ignores retired provider channel callbacks after reconnect`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P17
 - `sends only one proxy close while closing and after closure`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P18
-- `WorkerBridgeWebRTCConnectionFactory > becomes ready before broker attachment and resumes queued negotiation after attachment`: UNIT-TEST-BRIDGE-ROOT-1-K5XX3Y.P1, REQ-RUNTIME-3-VQXW59.T1.P46
-- `WorkerBridgeWebRTCConnectionFactory > disposes an unattached broker connection and rejects queued negotiation`: UNIT-TEST-BRIDGE-ROOT-1-K5XX3Y.P2, REQ-RUNTIME-3-VQXW59.T1.P47
+- `becomes ready before broker attachment and resumes queued negotiation after attachment`: UNIT-TEST-BRIDGE-ROOT-1-K5XX3Y.P1, REQ-RUNTIME-3-VQXW59.T1.P46
+- `disposes an unattached broker connection and rejects queued negotiation`: UNIT-TEST-BRIDGE-ROOT-1-K5XX3Y.P2, REQ-RUNTIME-3-VQXW59.T1.P47
 - `delivers broker errors and an abnormal bridge closure to the owner`: UNIT-TEST-WORKER-BRIDGE-FACTORY-1-C3NBB8.P21

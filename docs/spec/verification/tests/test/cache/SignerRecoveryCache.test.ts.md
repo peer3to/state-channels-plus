@@ -43,9 +43,6 @@ give identical bytes. The bound tests restore the global size setting in `finall
 
 ## Tests
 
-A row lists only test IDs this test covers **in full**. Each test ID may be assigned to at most one
-test across the whole tree.
-
 - `recovers the correct signer (matches verifyMessage)`: UNIT-TEST-SIGNER-RECOVERY-CACHE-1-J4Y8ZP.P1
 - `memoizes by (message, signature) — repeats add no entries`: UNIT-TEST-SIGNER-RECOVERY-CACHE-1-J4Y8ZP.P2
 - `keys on the message — one signature over two messages recovers each message's own signer`: UNIT-TEST-SIGNER-RECOVERY-CACHE-1-J4Y8ZP.P7

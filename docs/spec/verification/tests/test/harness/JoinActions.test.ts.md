@@ -16,7 +16,7 @@ the minimum block count is authored even when the spectator syncs faster than th
 participants' sync suppressed leaves the spectator `OPENED` while the fork keeps moving. Oracles
 are the helper's result (`blocksAuthored`, `height`), peer status through the control port, and the
 error identity of rethrown failures. The helper is harness code, so no unit or integration test ID
-family exists for it and every row stays unassigned.
+family exists for it and every bullet stays `none`.
 
 ## Tests
 
@@ -27,4 +27,4 @@ family exists for it and every row stays unassigned.
 - `authors the minimum even when the spectator spawns and syncs fast`: none
 - `installs a beforeConnect stub before the first real sync request runs`: none
 - `spawn-only keeps blocks flowing and leaves the spectator OPENED`: none
-- `JoinActions spectator spawn helper > counts a slow authoring completion inside the next keep-alive window`: none
+- `counts a slow authoring completion inside the next keep-alive window`: none

@@ -33,4 +33,4 @@ The suite exercises actual SDK-owned components and connections. Each declaratio
 - `keeps owner rejection settlement before timeout`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P23
 - `ignores unknown and duplicate responses`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P24
 - `rejects all entries once and releases timers`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P25
-- `RpcRouter > registers before synchronous loopback delivery can reply`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P28
+- `registers before synchronous loopback delivery can reply`: UNIT-TEST-ARPC-ROUTER-1-459EX2.P28

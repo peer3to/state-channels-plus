@@ -18,8 +18,8 @@ left.
 - `reports an empty delta without moving the cursor`: UNIT-TEST-LOG-STORE-1-279Z99.P3
 - `reports a gap when eviction outran the cursor`: UNIT-TEST-LOG-STORE-1-279Z99.P4
 - `draws a 64-bit store id that no two stores share`: UNIT-TEST-LOG-STORE-1-279Z99.P5
-- `LogStore > rejects an infinite storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P6
-- `LogStore > rejects a NaN storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P9
-- `LogStore > rejects a negative storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P10
-- `LogStore > evicts an entry larger than the entire storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P7
-- `LogStore > retains no entries with a zero storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P8
+- `rejects an infinite storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P6
+- `rejects a NaN storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P9
+- `rejects a negative storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P10
+- `evicts an entry larger than the entire storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P7
+- `retains no entries with a zero storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P8

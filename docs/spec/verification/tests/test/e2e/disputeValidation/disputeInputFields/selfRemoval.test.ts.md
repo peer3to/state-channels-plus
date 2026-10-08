@@ -25,10 +25,9 @@ The kill-period case parks the leaver's exit post at its send, commits honest di
 
 ## Tests
 
-- `dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set`: REQ-DIS-1-XAJ1VA.T1.P9
+- `dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set`: REQ-DIS-1-XAJ1VA.T1.P9, REQ-SM-8-8CHSQ8.T1.P17
 - `an honest leaver re-joined before its exit post → its self-removal dispute is its last signed state; no stale proof, no slash`: REQ-DISPUTE-PIPE-8-BVR8XV.T1.P4, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P21
 - `an honest leaver's fallback waits for an admitted incoming signature before capturing its dispute`: REQ-DISPUTE-PIPE-8-BVR8XV.T1.P10
 - `an honest leaver's exit post inside a kill period is refused → self-removal dispute, no proof, no slash`: REQ-ENFSNAP-4-ESP98F.T1.P5
 - `an honest leaver's exit post refused after it already disputed the fork → its own dispute stands, removed by the reduced state, no proof, no slash`: REQ-ENFSNAP-4-ESP98F.T1.P9
 - `dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState`: none
-- `E2E: dispute validation / disputeInputFields / selfRemoval > dispute.input.selfRemoval = true; honest disputer voluntarily exits → dispute commits and disputer removed from participant set`: REQ-SM-8-8CHSQ8.T1.P17

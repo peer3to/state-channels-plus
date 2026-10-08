@@ -24,4 +24,4 @@ one-peer initial sync, so it assigns no targeted-join permutation. The related r
 - `an older snapshot timestamp shortens the scheduled timeout check by exactly that offset`: none
 - `a snapshot timestamp far in the past → the scheduled delay goes negative (unclamped, pinned)`: none
 - `unsafeSetGenesisState stores a height-0 snapshot for the fork and swaps the active fork`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P1
-- `Unit: StateApplicationService > failed chain membership inspection restores VM state without publishing storage, fork or eligibility`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15
+- `failed chain membership inspection restores VM state without publishing storage, fork or eligibility`: UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P15

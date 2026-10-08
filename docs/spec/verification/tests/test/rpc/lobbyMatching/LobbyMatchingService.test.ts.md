@@ -24,7 +24,7 @@ The default main RPC root is driven through a worker-hosted P2P manager with con
 - `rejects a late pick after commitment without blacklisting its requester`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P8, REQ-LOBBY-9-N894C0.T1.P7
 - `completeLobby preserves the handed-off transport after targeted completion`: UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P9
 
-## Generic matcher additions
+### Generic matcher additions
 
 Direct cases prove caller-topic matching without negotiation ownership, allow-all default policy, unmatched
 timeout cleanup, timer removal before accepted-match resolution, one shared unmatched cancellation owner,
@@ -35,7 +35,7 @@ The reservation-recovery declaration also separates neutral loss from abuse: fin
 does not blacklist, while repeated authenticated wrong-topic traffic reaches the bounded rejection
 limit, then blacklists and disconnects that peer.
 
-## Targeted matcher declarations
+### Targeted matcher declarations
 
 - `settles cancellation when the selected peer disconnects during commit`: UNIT-TEST-LOBBY-CANCELLATION-1-FDXZHE.P1, REQ-LOBBY-7-BXQ1QA.T1.P7, UNIT-TEST-LOBBY-MATCHING-1-SMZVNB.P10
 

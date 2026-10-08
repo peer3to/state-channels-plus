@@ -34,7 +34,7 @@ observer that block with each contract-rejected re-encoding of the author's real
 neither committed nor countersigned. The same bytes with the canonical signature are then
 committed, and the stored block carries the observer's countersignature — the positive control
 that the refusals were about the encoding only.
-The first row (`known slashes reject network contributions even when slash log recovery fails`)
+The first test (`known slashes reject network contributions even when slash log recovery fails`)
 runs the shared `assertSlashAdmission("failed-recovery")` helper; no permutation is assigned to it
 yet.
 Spectator spawns in this suite go through the shared `addSpectatorAuthoring` helper (`test/harness/JoinActions.test.ts.md`): the spawn runs unawaited while the named participants keep authoring, bounded by literal minimum and maximum block counts, so no spawn or promotion sits inside an idle authoring window.

@@ -35,4 +35,4 @@ two shapes (open start and open end) that live in separate tests, so it stays un
 - `should include exact end value`: none
 - `should work with single-element ranges`: none
 - `should return empty for gap ranges`: none
-- `ParticipantSetChangeStorage > READ - getChangePointsInRange() > Range boundaries > should handle end > actual largest block height`: none
+- `should handle end > actual largest block height`: none

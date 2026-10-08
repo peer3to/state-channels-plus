@@ -77,7 +77,7 @@ block that carries the join is the first one whose author has already received t
 - `does not let leaveLobby cancel negotiation after matching handoff`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P8, REQ-LOBBY-9-N894C0.T1.P10, REQ-NEG-4-ZQ0985.T1.P9
 - `joinLobby starts ordinary negotiation from the returned match`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6
 - `settles joinLobby when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
-- `discovery runtime port > disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
+- `disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15
 - `authored leave fast fallback rejects on missing-marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P16, REQ-LIF-10-QR8NQ9.T1.P7, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P22
 - `authored leave fast fallback on evidence-expired awaits settlement and resolves on the reduced fork`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P17, REQ-LIF-10-QR8NQ9.T1.P8
 - `authored leave slow fallback rejects on missing-marker`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P18, REQ-LIF-10-QR8NQ9.T1.P9

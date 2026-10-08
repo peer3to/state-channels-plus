@@ -13,6 +13,6 @@ The suite exercises actual SDK-owned components and connections. Each declaratio
 - `rejects an internal transport passed to an untyped network send`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P2
 - `rejects an internal transport passed to an untyped network recipient list`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P3
 - `closes once and rejects only calls owned by that connection`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P4
-- `InternalTransport > removes both port subscriptions exactly once on close`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P7
-- `InternalTransport > rejects sends after the runtime connection closes`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P5
-- `InternalTransport > preserves the supplied close reason for a pending caller`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P6
+- `removes both port subscriptions exactly once on close`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P7
+- `rejects sends after the runtime connection closes`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P5
+- `preserves the supplied close reason for a pending caller`: UNIT-TEST-INTERNAL-TRANSPORT-1-3G1YG2.P6

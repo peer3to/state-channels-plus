@@ -25,4 +25,4 @@ tests assert only hash equality, which is not enough for the idempotence permuta
 - `returns ordered message blocks when iterating by range`: none
 - `returns the most recent block`: UNIT-TEST-MESSAGE-BLOCK-STORAGE-1-EHBRD1.P1
 - `returns blocks sorted from newest to oldest when no limit is provided`: none
-- `MessageBlockStorage - outbound behavior > latest block helpers > head above a hole → truncates at the gap instead of throwing`: none
+- `head above a hole → truncates at the gap instead of throwing`: none
