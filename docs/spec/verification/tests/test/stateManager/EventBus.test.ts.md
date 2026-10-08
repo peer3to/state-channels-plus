@@ -1,12 +1,7 @@
-# test/stateManager/EventBus.test.ts — Test Report
+# EventBus.test.ts
 
-> **Test file:** [test/stateManager/EventBus.test.ts](../../../../../../test/stateManager/EventBus.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EventBus.ts](../../../../implementation/source/src/events/EventBus.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/stateManager/EventBus.test.ts](../../../../../../test/stateManager/EventBus.test.ts)
+Exercises: [EventBus.ts](../../../../implementation/source/src/events/EventBus.ts.md)
 
 ## Overview
 
@@ -30,23 +25,16 @@ here, so the host-protocol permutations that require inline/worker comparison st
 
 The custom-root disposal cases observe the real inline endpoint locally. They preserve cleanup-order and failure assertions without asking the disposed network to return an RPC response.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`EventBus (worker + main thread) > delivers p2p hooks (onTurn, onBlockFinalized) to worker-side subscribers while the main-thread hook listener still fires`](../../../../../../test/stateManager/EventBus.test.ts#L26) (line 26) | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P1`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > forwards an application-defined p2p hook name and payload across the runtime bridge`](../../../../../../test/stateManager/EventBus.test.ts#L133) (line 133)                                    | [`REQ-RUNTIME-4-B0N70Y.T1.P6`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y.t1.p6), [`UNIT-TEST-EVENT-BUS-1-QMETP2.P1`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-1-qmetp2)                  |
-| [`EventBus (worker + main thread) > publishes contract events on the worker bus and delivers typed ethers events to a consumer-built worker contract`](../../../../../../test/stateManager/EventBus.test.ts#L174) (line 174)       | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P2`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > mirrors contract events to the main thread: typed contract listeners and the generic bus subscription both fire`](../../../../../../test/stateManager/EventBus.test.ts#L375) (line 375)        | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P3`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > delivers the same eventHandler event to a worker subscriber and a main-thread subscriber`](../../../../../../test/stateManager/EventBus.test.ts#L425) (line 425)                               | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P4`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > keeps a replaced worker hook target and the main-thread bus both firing after setP2pEventHooks`](../../../../../../test/stateManager/EventBus.test.ts#L479) (line 479)                         | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P5`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`](../../../../../../test/stateManager/EventBus.test.ts#L527) (line 527)             | [`REQ-RUN-6-MTBT2H.T1.P3`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6-mtbt2h), [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P6`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)  |
-| [`EventBus (worker + main thread) > surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`](../../../../../../test/stateManager/EventBus.test.ts#L596) (line 596)            | [`REQ-RUN-6-MTBT2H.T1.P10`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#req-run-6-mtbt2h), [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P7`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz) |
-| [`EventBus (worker + main thread) > delivers nothing to the client after runtime disposal`](../../../../../../test/stateManager/EventBus.test.ts#L757) (line 757)                                                                  | [`UNIT-TEST-EVENT-BUS-4-1VKNFZ.P8`](../../../../implementation/source/src/events/EventBus.ts.md#unit-test-event-bus-4-1vknfz)                                                                                                                             |
-| [`EventBus (worker + main thread) > disposes the custom RPC root before runtime teardown`](../../../../../../test/stateManager/EventBus.test.ts#L801) (line 801)                                                                   | [`UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-4-ecgp8v)                                                                                                           |
-| [`EventBus (worker + main thread) > still tears the runtime down when the custom root dispose rejects`](../../../../../../test/stateManager/EventBus.test.ts#L814) (line 814)                                                      | [`UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-4-ecgp8v)                                                                                                           |
+- `delivers p2p hooks (onTurn, onBlockFinalized) to worker-side subscribers while the main-thread hook listener still fires`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P1
+- `forwards an application-defined p2p hook name and payload across the runtime bridge`: REQ-RUNTIME-4-B0N70Y.T1.P6, UNIT-TEST-EVENT-BUS-1-QMETP2.P1
+- `publishes contract events on the worker bus and delivers typed ethers events to a consumer-built worker contract`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P2
+- `mirrors contract events to the main thread: typed contract listeners and the generic bus subscription both fire`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P3
+- `delivers the same eventHandler event to a worker subscriber and a main-thread subscriber`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P4
+- `keeps a replaced worker hook target and the main-thread bus both firing after setP2pEventHooks`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P5
+- `surfaces a clone error to the hook producer after local delivery, and the main thread never sees the event`: REQ-RUN-6-MTBT2H.T1.P3, UNIT-TEST-EVENT-BUS-4-1VKNFZ.P6
+- `surfaces a clone error to the real wrapped event-handler producer after the original and local delivery ran`: REQ-RUN-6-MTBT2H.T1.P10, UNIT-TEST-EVENT-BUS-4-1VKNFZ.P7
+- `delivers nothing to the client after runtime disposal`: UNIT-TEST-EVENT-BUS-4-1VKNFZ.P8
+- `disposes the custom RPC root before runtime teardown`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P1
+- `still tears the runtime down when the custom root dispose rejects`: UNIT-TEST-STATE-MANAGER-4-ECGP8V.P2

@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/stateProof/case2_empty.test.ts — Test Report
+# case2_empty.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/stateProof/case2_empty.test.ts](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/stateProof/case2_empty.test.ts](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts)
 
 ## Overview
 
@@ -16,8 +11,6 @@ blocks) whose latest state is the fork genesis snapshot — is exercised in
 declaration here is a skipped cross-reference: it never runs and asserts nothing, so no test
 IDs can be assigned in this report.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                                              | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: dispute validation / stateProof / Case 2 (empty stateProof) — see latestStateSnapshotHash > → see disputeInputFields/latestStateSnapshotHash → '(1) stateProof empty'`](../../../../../../../../test/e2e/disputeValidation/stateProof/case2_empty.test.ts#L8) (line 8) | —      |
+- `→ see disputeInputFields/latestStateSnapshotHash → '(1) stateProof empty'`: none

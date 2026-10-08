@@ -1,12 +1,7 @@
-# test/storage/StateMachineStateStorage.test.ts — Test Report
+# StateMachineStateStorage.test.ts
 
-> **Test file:** [test/storage/StateMachineStateStorage.test.ts](../../../../../../test/storage/StateMachineStateStorage.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateMachineStateStorage.ts](../../../../implementation/source/src/storage/StateMachineStateStorage.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/storage/StateMachineStateStorage.test.ts](../../../../../../test/storage/StateMachineStateStorage.test.ts)
+Exercises: [StateMachineStateStorage.ts](../../../../implementation/source/src/storage/StateMachineStateStorage.ts.md)
 
 ## Overview
 
@@ -19,19 +14,12 @@ unstored state hash returns `undefined`. The atomized facade permutations for th
 exercised, and the unknown-fork read has no matching atomized permutation, so those stay
 unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                               | Covers                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`StateMachineStateStorage > Basic operations > should store state with auto-computed hash`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L22) (line 22)                                                                    | [`UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P1`](../../../../implementation/source/src/storage/StateMachineStateStorage.ts.md#unit-test-state-machine-state-storage-1-e4m0k6), [`INV-SNAPSTORE-1-DPHPJE.T1.P4`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje.t1.p4) |
-| [`StateMachineStateStorage > Basic operations > should store state with provided hash`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L30) (line 30)                                                                         | [`UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P2`](../../../../implementation/source/src/storage/StateMachineStateStorage.ts.md#unit-test-state-machine-state-storage-1-e4m0k6)                                                                                                                           |
-| [`StateMachineStateStorage > Basic operations > should get state by hash`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L41) (line 41)                                                                                      | —                                                                                                                                                                                                                                                                                                            |
-| [`StateMachineStateStorage > Basic operations > should return undefined for non-existent hash`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L47) (line 47)                                                                 | [`UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P3`](../../../../implementation/source/src/storage/StateMachineStateStorage.ts.md#unit-test-state-machine-state-storage-1-e4m0k6)                                                                                                                           |
-| [`StateMachineStateStorage > getGenesisStateMachineState > should return correct bytes for correct fork ID`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L90) (line 90)                                                    | [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P6`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                                                                                                                                                      |
-| [`StateMachineStateStorage > getGenesisStateMachineState > should return undefined for incorrect fork ID`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L95) (line 95)                                                      | —                                                                                                                                                                                                                                                                                                            |
-| [`StateMachineStateStorage > getGenesisStateMachineState > should return undefined when genesis snapshot exists but stateMachineStateHash is not in storage`](../../../../../../test/storage/StateMachineStateStorage.test.ts#L103) (line 103) | [`REQ-SNAPSTORE-2-Q7E6TQ.T1.P6`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq.t1.p6), [`UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P13`](../../../../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-1-tf3mz1)                                           |
+- `should store state with auto-computed hash`: UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P1, INV-SNAPSTORE-1-DPHPJE.T1.P4
+- `should store state with provided hash`: UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P2
+- `should get state by hash`: none
+- `should return undefined for non-existent hash`: UNIT-TEST-STATE-MACHINE-STATE-STORAGE-1-E4M0K6.P3
+- `should return correct bytes for correct fork ID`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P6
+- `should return undefined for incorrect fork ID`: none
+- `should return undefined when genesis snapshot exists but stateMachineStateHash is not in storage`: REQ-SNAPSTORE-2-Q7E6TQ.T1.P6, UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P13

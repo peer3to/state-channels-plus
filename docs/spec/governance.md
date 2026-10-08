@@ -87,22 +87,22 @@ effects, then one bullet per independently coverable case (`` `<family ID>.P<n>`
 normal, no-op, boundary, invalid, failure, recovery and interleaving variants included. One family
 has one heading; new cases are added as bullets under it. Every case bullet carries a checkbox and
 `verification/requirements.md` carries each requirement's tested status; both are written by
-`yarn spec:ids:fix` from the verification Covers cells, checked by `yarn spec:ids:check`, and never
+`yarn spec:ids:fix` from the verification test bullets, checked by `yarn spec:ids:check`, and never
 typed by hand. No author writes `Covered`.
 
 ### Verification
 
 The layer is repository-shaped: every test file with executable declarations has exactly one report
 at `verification/tests/<path>.md`; fixtures, harness code, utilities, runners, and configuration
-are support code, not evidence units. Each report has a short overview and one table row per
-declaration, whose `Covers` cell lists the permutation IDs that declaration covers **in full** —
+are support code, not evidence units. Each report has a short overview and one bullet per
+declaration, naming it and listing the permutation IDs that declaration covers **in full** —
 the permutation is the unit of evidence (root test IDs only name the family and are never
 assignable), partial credit is never recorded, each permutation is judged independently (siblings
 left unassigned are the tracked gap, not a reason to withhold an earned assignment), and a
 permutation ID may be assigned to at most one test declaration across the whole tree. Tests with
 no assigned ID stay listed and are reported by static analysis. See `verification/README.md` for
 the template and assignment rules. The layer also holds `verification/requirements.md`, one block
-per requirement with its tested specification cases, derived from those Covers cells by
+per requirement with its tested specification cases, derived from those bullets by
 `yarn spec:ids:fix`.
 
 A listed test ID is an exact mapping claim for that declaration; file and directory links map no

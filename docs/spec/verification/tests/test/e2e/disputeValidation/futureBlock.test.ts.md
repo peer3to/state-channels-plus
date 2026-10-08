@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/futureBlock.test.ts — Test Report
+# futureBlock.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/futureBlock.test.ts](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts)
 
 ## Overview
 
@@ -22,8 +17,6 @@ permutation atomization, no single-scenario ID matches this protocol-gap regress
 refusing to fast-forward off a committed dispute's higher block), so the Covers column stays
 empty.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                                                                                                     | Covers                                                                                                   |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / futureBlock > dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`](../../../../../../../test/e2e/disputeValidation/futureBlock.test.ts#L17) (line 17) | [`REQ-SP-10-JMVHTB.T7.P1`](../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb.t7.p1) |
+- `dispute.input.stateProof references block above honest peers' tip → dispute commits but honest peers stay at their pre-dispute height`: REQ-SP-10-JMVHTB.T7.P1

@@ -53,7 +53,7 @@ For every affected behavior:
 1. update the neutral requirement/invariant and its planned tests in `specification/`;
 2. update the changed sources' file reports: their requirement bullets (with a hand-written
    divergence line where the code departs) and their case lists;
-3. update the Covers assignments in the affected `verification/tests/` reports;
+3. update the test bullets in the affected `verification/tests/` reports;
 4. update the current semantic/security assessment, findings, and questions in `audit/`; and
 5. allow changed graph fingerprints to make affected approvals stale until an engineer reapproves.
 
@@ -125,7 +125,7 @@ One family, one heading. Add new cases as bullets under the family's existing he
 create a second heading for the same family.
 
 The checkbox on every case bullet and the whole of `verification/requirements.md` are written by
-`yarn spec:ids:fix` from the Covers cells and checked by `yarn spec:ids:check`; never type or edit
+`yarn spec:ids:fix` from the test bullets and checked by `yarn spec:ids:check`; never type or edit
 them. Write a new case unchecked as ``- `<ID>` — <case>``; the tool adds the box. `Covered` is not
 a word an author writes: tested status is derived, and a requirement bullet carries no status
 unless the code departs from it.
@@ -138,25 +138,26 @@ Make every requirement, plan, and permutation reference navigable without losing
 use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line
 numbers as identity anchors; formatting and nearby documentation edits make them stale.
 
-Each test-file report (`verification/tests/<path>.md`) has: a header (test file link, Status, and
-an `Exercises` link when the suite targets one production component); a short prose **Overview**
-grounded in the real test bodies; and a **Tests and covered test IDs** table with one row per
-declaration — the name linked to its exact line, `(line <n>)`, and a `Covers` cell listing the
-**permutation IDs** that declaration covers **in full** as links to their definition anchors. The
+Each test-file report (`verification/tests/<path>.md`) has: a header (`Test file:` link, and an
+`Exercises:` link when the suite targets one production component); a short prose **Overview**
+grounded in the real test bodies; and a **Tests** section with one bullet per declaration,
+``- `<test name>`: <IDs>``. The name is the declaration's own title, or its full `a > b > c`
+selector when that title repeats in the file; the tool resolves it, so no line numbers. The IDs are
+the bare **permutation IDs** that declaration covers **in full**, comma-separated. The
 permutation is the unit of evidence: root test IDs (`.T<n>` or bare `UNIT-TEST-*`/
 `INTEGRATION-TEST-*`) name the family in the planning table and are never assignable. Judge each
 permutation independently — assign every permutation the test fully satisfies (from both the
 specification and implementation layers) even when sibling permutations stay unassigned; the
 unassigned siblings are the tracked gap. Partial credit is never recorded; a permutation ID may
 be assigned to at most one test declaration across the whole tree; one test may cover several
-permutation IDs. Tests with no assigned ID stay listed with `—`. Fixtures,
+permutation IDs. Tests with no assigned ID stay listed with `none`. Fixtures,
 harness code, utilities, runners, and configuration get no reports. Broad file links, filenames,
 and adjacent tests are not evidence. Generated reports project the maintained layers; never repair
 a generated table directly.
 
 Use [verification/tests/test/unit/ValidationService.test.ts.md](./verification/tests/test/unit/ValidationService.test.ts.md)
 as the canonical worked example. Do not add inventory, classification, evidence-quality, or
-matrix sections: the table's Covers cells are the only mapping surface.
+matrix sections: the test bullets are the only mapping surface.
 
 ## Questions and findings
 
@@ -174,10 +175,10 @@ matrix sections: the table's Covers cells are the only mapping surface.
   relevant interleavings through the real public component surface.
 - System scenarios cover each materially distinct external boundary and success/failure/recovery/race or
   adversarial workflow without duplicating invisible unit permutations.
-- Record evidence only in a test report's Covers cell, and only as permutation IDs the test
+- Record evidence only in a test report's test bullet, and only as permutation IDs the test
   covers in full — never a root test ID.
-- Repair a shifted test anchor only when the declaration has one unique match. Never guess an ambiguous or
-  vanished mapping.
+- Rename a bullet after a test rename only when the new declaration is a unique match. Never guess an
+  ambiguous or vanished mapping.
 
 ## Change and review loop
 

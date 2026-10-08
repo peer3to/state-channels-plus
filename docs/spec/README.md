@@ -291,7 +291,7 @@ For a design, implementation, contract, or test change affecting specified behav
 2. update or raise the neutral specification decision before choosing behavior;
 3. update the implementation subject's overview, design, source reports, unit/integration plans, and
    conformance rows;
-4. inspect real test bodies and update the affected test reports' Covers assignments honestly;
+4. inspect real test bodies and update the affected test reports' test bullets honestly;
 5. run affected tests, `yarn spec:refresh`, and inspect all generated gaps;
 6. reset or allow fingerprints to invalidate affected approvals; and
 7. audit the complete path and obtain explicit engineer approval before acceptance.

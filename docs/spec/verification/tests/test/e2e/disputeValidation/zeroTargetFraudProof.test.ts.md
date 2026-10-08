@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/zeroTargetFraudProof.test.ts — Test Report
+# zeroTargetFraudProof.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/zeroTargetFraudProof.test.ts](../../../../../../../test/e2e/disputeValidation/zeroTargetFraudProof.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/zeroTargetFraudProof.test.ts](../../../../../../../test/e2e/disputeValidation/zeroTargetFraudProof.test.ts)
 
 ## Overview
 
@@ -20,14 +15,7 @@ from a funded non-participant wallet and checks that the on-chain slash set is u
 participant test submits from byzantine peer 2 and checks that peer 2 is slashed for the invalid
 proof.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                      | Covers                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [`E2E: dispute validation / zero-target dispute fraud proof > outsider zero-target proof against an honest committed dispute -> no kill, no slash`](../../../../../../../test/e2e/disputeValidation/zeroTargetFraudProof.test.ts#L8) (line 8)                         | [`REQ-DIS-3-C4KYSF.T1.P19`](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf.t1.p19) |
-| [`E2E: dispute validation / zero-target dispute fraud proof > participant zero-target proof against an honest committed dispute -> submitter slashed, disputer survives`](../../../../../../../test/e2e/disputeValidation/zeroTargetFraudProof.test.ts#L30) (line 30) | —                                                                                                      |
+- `outsider zero-target proof against an honest committed dispute -> no kill, no slash`: REQ-DIS-3-C4KYSF.T1.P19
+- `participant zero-target proof against an honest committed dispute -> submitter slashed, disputer survives`: none

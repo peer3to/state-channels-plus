@@ -1,12 +1,7 @@
-# test/utils/NodeLoggerMonitor.test.ts — Test Report
+# NodeLoggerMonitor.test.ts
 
-> **Test file:** [test/utils/NodeLoggerMonitor.test.ts](../../../../../../test/utils/NodeLoggerMonitor.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [NodeLogger.ts](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md), [Logger.ts](../../../../implementation/source/src/utils/logging/Logger.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/utils/NodeLoggerMonitor.test.ts](../../../../../../test/utils/NodeLoggerMonitor.test.ts)
+Exercises: [NodeLogger.ts](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md), [Logger.ts](../../../../implementation/source/src/utils/logging/Logger.ts.md)
 
 ## Overview
 
@@ -25,22 +20,15 @@ are not exercised here (the browser gate covers the browser trip end to end).
 
 The real-histogram timing case captures its native wait callback before Sinon installs fake timers. Run 452 exposed that Sinon also replaces the promise-based timer; waiting for it without advancing the fake clock deadlocked the case. Runtime revalidation is pending.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                      | Covers                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`NodeLogger performance monitor > throws the unchanged watchdog message with structured delay data once a sample crosses the threshold`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L52) (line 52)                                                                       | [`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P1`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-monitor-1-s8qme5)                                                                                                |
-| [`NodeLogger performance monitor > stops sampling after the throw so a later tick reports nothing`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L83) (line 83)                                                                                                             | [`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P2`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-monitor-1-s8qme5)                                                                                                |
-| [`NodeLogger performance monitor > keeps sampling quietly while every sample stays below the threshold`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L117) (line 117)                                                                                                      | [`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P3`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-monitor-1-s8qme5)                                                                                                |
-| [`NodeLogger performance monitor > resets after each sample and stops the source on explicit stop`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L129) (line 129)                                                                                                           | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P1`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby)                                                                                                              |
-| [`NodeLogger performance monitor > can stop before the real sample source becomes ready`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L165) (line 165)                                                                                                                     | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P2`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby)                                                                                                              |
-| [`NodeLogger performance monitor > omits scripted samples from timing markers even when reporting is enabled`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L184) (line 184)                                                                                                | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P6`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby)                                                                                                              |
-| [`NodeLogger performance monitor > emits real histogram timing markers only when the running peak increases`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L206) (line 206)                                                                                                 | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P3`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby)                                                                                                              |
-| [`NodeLogger performance monitor > warns when the real histogram source rejects an invalid resolution`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L241) (line 241)                                                                                                       | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P4`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby)                                                                                                              |
-| [`NodeLogger performance monitor > attaches the thread's CPU time and run-queue wait and the host's busy and steal share to real main-thread samples where the kernel exposes them and omits them elsewhere`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L268) (line 268) | [`UNIT-TEST-NODE-LOGGER-32-B1JTBY.P5`](../../../../implementation/source/src/utils/logging/node/NodeLogger.ts.md#unit-test-node-logger-32-b1jtby), [`REQ-RUNTIME-3-VQXW59.T1.P60`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p60) |
-| [`NodeLogger performance monitor > shares one monitor across loggers and makes repeated start and stop harmless`](../../../../../../test/utils/NodeLoggerMonitor.test.ts#L321) (line 321)                                                                                             | [`UNIT-TEST-LOGGER-1-4MNRMD.P4`](../../../../implementation/source/src/utils/logging/Logger.ts.md#unit-test-logger-1-4mnrmd)                                                                                                                                   |
+- `throws the unchanged watchdog message with structured delay data once a sample crosses the threshold`: UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P1
+- `stops sampling after the throw so a later tick reports nothing`: UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P2
+- `keeps sampling quietly while every sample stays below the threshold`: UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P3
+- `resets after each sample and stops the source on explicit stop`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P1
+- `can stop before the real sample source becomes ready`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P2
+- `omits scripted samples from timing markers even when reporting is enabled`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P6
+- `emits real histogram timing markers only when the running peak increases`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P3
+- `warns when the real histogram source rejects an invalid resolution`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P4
+- `attaches the thread's CPU time and run-queue wait and the host's busy and steal share to real main-thread samples where the kernel exposes them and omits them elsewhere`: UNIT-TEST-NODE-LOGGER-32-B1JTBY.P5, REQ-RUNTIME-3-VQXW59.T1.P60
+- `shares one monitor across loggers and makes repeated start and stop harmless`: UNIT-TEST-LOGGER-1-4MNRMD.P4

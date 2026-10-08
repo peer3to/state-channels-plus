@@ -1,12 +1,7 @@
-# test/stateManager/StateManagerTimeout.test.ts — Test Report
+# StateManagerTimeout.test.ts
 
-> **Test file:** [test/stateManager/StateManagerTimeout.test.ts](../../../../../../test/stateManager/StateManagerTimeout.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateManager.ts](../../../../implementation/source/src/stateManager/StateManager.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/stateManager/StateManagerTimeout.test.ts](../../../../../../test/stateManager/StateManagerTimeout.test.ts)
+Exercises: [StateManager.ts](../../../../implementation/source/src/stateManager/StateManager.ts.md)
 
 ## Overview
 
@@ -19,8 +14,6 @@ window, `getTimeout` for the active fork still returns `null` via the harness qu
 computation, forced-versus-normal timeout selection, and the other scheduling branches are out of
 scope here; the single case isolates the early-window rejection.
 
-## Tests and covered test IDs
+## Tests
 
-| Test declaration                                                                                                                                                                         | Covers                                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`StateManager timeout > does not submit a timeout when the existing dispute window predates its deadline`](../../../../../../test/stateManager/StateManagerTimeout.test.ts#L6) (line 6) | [`UNIT-TEST-STATE-MANAGER-3-32QM46.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-3-32qm46) |
+- `does not submit a timeout when the existing dispute window predates its deadline`: UNIT-TEST-STATE-MANAGER-3-32QM46.P4

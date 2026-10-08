@@ -80,7 +80,7 @@ awaiting a move into the specification; add no new design content or requirement
 ## Tested status
 
 Nobody types test status. `yarn spec:ids:fix` writes the checkbox on every case bullet from the
-verification Covers cells, and writes each requirement's status to
+verification test bullets, and writes each requirement's status to
 [verification/requirements.md](../verification/requirements.md); `yarn spec:ids:check` fails when
 either is stale.
 

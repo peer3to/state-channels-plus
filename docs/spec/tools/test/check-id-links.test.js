@@ -18,10 +18,9 @@ const view = "docs/spec/implementation/views/fix.md";
 const testReport = "docs/spec/verification/tests/test/fix.test.ts.md";
 const status = "docs/spec/verification/requirements.md";
 
-const row = (line, covers) =>
-    `| [case ${line}](../../../../../test/fix.test.ts#L${line}) (line ${line}) | ${covers} |`;
-const coversTable = (...rows) =>
-    `# Test\n\n> **Test file:** [test](../../../../../test/fix.test.ts)\n\n| Test | Covers |\n| --- | --- |\n${rows.join("\n")}\n`;
+const bullet = (line, covers) => `- \`case ${line}\`: ${covers}`;
+const testsReport = (...bullets) =>
+    `# fix.test.ts\n\nTest file: [test](../../../../../test/fix.test.ts)\n\n## Tests\n\n${bullets.join("\n")}\n`;
 
 // One specification document, one file report with a family, one view with a
 // view-local requirement, one test file and its verification report.
@@ -62,10 +61,10 @@ function fixture(run) {
         );
         write(
             testReport,
-            coversTable(
-                row(1, `${family}.P1, ${requirement}.T1.P1`),
-                row(2, "—"),
-                row(3, "—")
+            testsReport(
+                bullet(1, `${family}.P1, ${requirement}.T1.P1`),
+                bullet(2, "none"),
+                bullet(3, "none")
             )
         );
         run({ repo, write, read, ids });
@@ -126,10 +125,10 @@ test("a mapped skipped test leaves its box empty and fails check", () =>
         );
         f.write(
             testReport,
-            coversTable(
-                row(1, `${requirement}.T1.P1`),
-                row(2, "—"),
-                row(3, `${family}.P2`)
+            testsReport(
+                bullet(1, `${requirement}.T1.P1`),
+                bullet(2, "none"),
+                bullet(3, `${family}.P2`)
             )
         );
         f.ids("--write");
@@ -139,7 +138,7 @@ test("a mapped skipped test leaves its box empty and fails check", () =>
         );
         const check = f.ids();
         assert.equal(check.status, 1);
-        assert.match(check.stderr, /Covers cell maps a skipped test/);
+        assert.match(check.stderr, /test bullet maps a skipped test/);
     }));
 
 test("a divergence line without a tracking item fails check", () =>
@@ -196,7 +195,10 @@ test("a removed mapping fails check and --write flips one box and one status lin
         const requirementsSection = (text) => text.split(`## ${family}`)[0];
         const beforeReport = f.read(report);
         const beforeStatus = f.read(status);
-        f.write(testReport, coversTable(row(1, "—"), row(2, "—"), row(3, "—")));
+        f.write(
+            testReport,
+            testsReport(bullet(1, "none"), bullet(2, "none"), bullet(3, "none"))
+        );
         const check = f.ids();
         assert.equal(check.status, 1);
         assert.match(
@@ -241,15 +243,15 @@ test("a second --write changes nothing and prettier accepts the output", () =>
         assert.equal(prettier.status, 0, prettier.stdout + prettier.stderr);
     }));
 
-test("names a verification row whose line anchor matches no declaration", () =>
+test("names a test bullet that matches no declaration", () =>
     fixture((f) => {
         f.write(
             testReport,
-            coversTable(
-                row(1, `${family}.P1`),
-                row(2, "—"),
-                row(3, "—"),
-                row(9, `${family}.P2`)
+            testsReport(
+                bullet(1, `${family}.P1`),
+                bullet(2, "none"),
+                bullet(3, "none"),
+                bullet(9, `${family}.P2`)
             )
         );
         f.ids("--write");
@@ -257,7 +259,7 @@ test("names a verification row whose line anchor matches no declaration", () =>
         assert.equal(check.status, 1);
         assert.match(
             check.stderr,
-            /tests\/test\/fix\.test\.ts\.md: test\/fix\.test\.ts:9: no test declaration at anchor/
+            /tests\/test\/fix\.test\.ts\.md: test\/fix\.test\.ts: no test declaration named `case 9`/
         );
     }));
 
@@ -303,15 +305,15 @@ test("the status file holds one block per requirement and lists only partial gap
                 ),
             [
                 "# Requirement test status",
-                "> Written by `yarn spec:ids:fix` from the Covers cells under `tests/`; never edit. A merge conflict here is resolved by rerunning it."
+                "> Written by `yarn spec:ids:fix` from the test bullets under `tests/`; never edit. A merge conflict here is resolved by rerunning it."
             ]
         );
         f.write(
             testReport,
-            coversTable(
-                row(1, `${requirement}.T1.P1`),
-                row(2, `${requirement}.T1.P2`),
-                row(3, "—")
+            testsReport(
+                bullet(1, `${requirement}.T1.P1`),
+                bullet(2, `${requirement}.T1.P2`),
+                bullet(3, "none")
             )
         );
         f.ids("--write");
@@ -368,29 +370,110 @@ test("two branches that test different requirements merge; the same requirement 
 
 test("a case reference links to its family or requirement heading", () =>
     fixture((f) => {
+        const notes = "docs/spec/implementation/source/src/notes.ts.md";
         f.write(
-            testReport,
-            coversTable(
-                row(1, `${family}.P1`),
-                row(2, `${local}.T1.P1`),
-                row(3, "—")
-            )
+            notes,
+            `# notes.ts\n\nSee \`${family}.P1\` and \`${local}.T1.P1\`.\n`
         );
         f.ids("--write");
-        const text = f.read(testReport);
+        const text = f.read(notes);
         assert.match(
             text,
             new RegExp(
-                `\\[\`${family}\\.P1\`\\]\\(../../../implementation/source/src/fix\\.ts\\.md#${family.toLowerCase()}\\)`
+                `\\[\`${family}\\.P1\`\\]\\(fix\\.ts\\.md#${family.toLowerCase()}\\)`
             )
         );
         assert.match(
             text,
             new RegExp(
-                `\\[\`${local}\\.T1\\.P1\`\\]\\(../../../implementation/views/fix\\.md#${local.toLowerCase()}\\)`
+                `\\[\`${local}\\.T1\\.P1\`\\]\\(../../views/fix\\.md#${local.toLowerCase()}\\)`
             )
         );
         assert.equal(f.ids().status, 0);
+    }));
+
+test("a test report keeps covered IDs bare and --write strips links from it", () =>
+    fixture((f) => {
+        const bare = testsReport(
+            bullet(1, `${family}.P1, ${requirement}.T1.P1`),
+            bullet(2, "none"),
+            bullet(3, "none")
+        );
+        f.write(testReport, bare);
+        f.ids("--write");
+        assert.equal(f.read(testReport), bare);
+        assert.equal(f.ids().status, 0);
+        f.write(
+            testReport,
+            bare.replace(
+                `${family}.P1`,
+                `[\`${family}.P1\`](../../../implementation/source/src/fix.ts.md#${family.toLowerCase()})`
+            )
+        );
+        f.ids("--write");
+        assert.equal(
+            f.read(testReport),
+            bare.replace(`${family}.P1`, `\`${family}.P1\``)
+        );
+        assert.equal(f.ids().status, 0);
+    }));
+
+test("a test bullet names a declaration by its title, or by its selector when the title repeats", () =>
+    fixture((f) => {
+        f.write(
+            "test/fix.test.ts",
+            'describe("a", () => {\n    it("same", () => {});\n});\ndescribe("b", () => {\n    it("same", () => {});\n    it("only", () => {});\n});\n'
+        );
+        f.write(
+            testReport,
+            testsReport(
+                "- `same`: none",
+                `- \`b > only\`: ${family}.P1`,
+                `- \`a > same\`: ${family}.P2`
+            )
+        );
+        f.ids("--write");
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(
+            check.stderr,
+            /test\/fix\.test\.ts: test name `same` is ambiguous; use its full selector/
+        );
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P1\``)
+        );
+        assert.match(
+            f.read(report),
+            new RegExp(`- \\[x\\] \`${family}\\.P2\``)
+        );
+        f.write(
+            testReport,
+            testsReport(
+                "- `b > same`: none",
+                `- \`only\`: ${family}.P1`,
+                `- \`a > same\`: ${family}.P2`
+            )
+        );
+        assert.equal(f.ids().status, 0);
+    }));
+
+test("a test bullet with neither IDs nor none fails check", () =>
+    fixture((f) => {
+        f.write(
+            testReport,
+            testsReport(
+                bullet(1, `${family}.P1`),
+                bullet(2, "tbd"),
+                bullet(3, "none")
+            )
+        );
+        const check = f.ids();
+        assert.equal(check.status, 1);
+        assert.match(
+            check.stderr,
+            /test\/fix\.test\.ts:2: test bullet has no recognizable test ID/
+        );
     }));
 
 test("a requirement defined at a heading gets an anchor and a glossed reference", () =>

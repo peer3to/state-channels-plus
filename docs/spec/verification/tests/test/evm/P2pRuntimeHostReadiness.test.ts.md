@@ -1,33 +1,30 @@
-# test/evm/P2pRuntimeHostReadiness.test.ts — Test Report
+# P2pRuntimeHostReadiness.test.ts
 
-> **Test file:** [P2pRuntimeHostReadiness.test.ts](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts)  
-> **Status:** Authored — engineer verification pending.  
-> **Exercises:** [P2pRuntimeHostRoot.ts.md](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
+Test file: [P2pRuntimeHostReadiness.test.ts](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts)
+Exercises: [P2pRuntimeHostRoot.ts.md](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
 
 ## Overview
 
 Create a real port and host before deployComplete; each signer/hostRpc request returns the same request ID and Runtime is not ready before payload decode, while deploy signer reads succeed.
 
-## Tests and covered test IDs
+## Tests
 
-| Test                                                                                                                                                                | Covers                                                                                                                                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`P2pRuntimeHost readiness > allows chain message signing before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L5) (line 5)               | —                                                                                                                                                                    |
-| [`P2pRuntimeHost readiness > allows raw message signing before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L14) (line 14)               | —                                                                                                                                                                    |
-| [`P2pRuntimeHost readiness > allows chain typed data signing before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L25) (line 25)          | —                                                                                                                                                                    |
-| [`P2pRuntimeHost readiness > allows raw typed data signing before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L36) (line 36)            | —                                                                                                                                                                    |
-| [`P2pRuntimeHost readiness > rejects sendTransaction before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L47) (line 47)                  | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P1`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects callView before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L52) (line 52)                         | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P2`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects connectToChannel before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L57) (line 57)                 | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P3`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects cancelConnectToChannel before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L64) (line 64)           | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P4`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects leaveChannel before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L71) (line 71)                     | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P5`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects joinLobby before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L76) (line 76)                        | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P6`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects leaveLobby before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L83) (line 83)                       | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P7`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects joinChannel before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L88) (line 88)                      | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P8`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects topUpBalance before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L95) (line 95)                     | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P9`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1)  |
-| [`P2pRuntimeHost readiness > rejects collectJoinChannelConfirmation before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L102) (line 102) | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P10`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
-| [`P2pRuntimeHost readiness > rejects getChannelStatus before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L107) (line 107)               | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P11`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
-| [`P2pRuntimeHost readiness > rejects setIsLeader before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L112) (line 112)                    | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P12`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
-| [`P2pRuntimeHost readiness > rejects disconnectFromPeers before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L117) (line 117)            | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P13`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
-| [`P2pRuntimeHost readiness > rejects hostRpc before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L122) (line 122)                        | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P14`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
-| [`P2pRuntimeHost readiness > allows deploy signer address reads before deployment`](../../../../../../test/evm/P2pRuntimeHostReadiness.test.ts#L129) (line 129)     | [`UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P15`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-32-v48cb1) |
+- `allows chain message signing before deployment`: none
+- `allows raw message signing before deployment`: none
+- `allows chain typed data signing before deployment`: none
+- `allows raw typed data signing before deployment`: none
+- `rejects sendTransaction before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P1
+- `rejects callView before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P2
+- `rejects connectToChannel before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P3
+- `rejects cancelConnectToChannel before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P4
+- `rejects leaveChannel before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P5
+- `rejects joinLobby before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P6
+- `rejects leaveLobby before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P7
+- `rejects joinChannel before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P8
+- `rejects topUpBalance before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P9
+- `rejects collectJoinChannelConfirmation before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P10
+- `rejects getChannelStatus before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P11
+- `rejects setIsLeader before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P12
+- `rejects disconnectFromPeers before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P13
+- `rejects hostRpc before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P14
+- `allows deploy signer address reads before deployment`: UNIT-TEST-P2P-RUNTIME-HOST-32-V48CB1.P15

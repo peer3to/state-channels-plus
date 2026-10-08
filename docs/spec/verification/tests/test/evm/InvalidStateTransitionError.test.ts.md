@@ -1,12 +1,7 @@
-# test/evm/InvalidStateTransitionError.test.ts — Test Report
+# InvalidStateTransitionError.test.ts
 
-> **Test file:** [test/evm/InvalidStateTransitionError.test.ts](../../../../../../test/evm/InvalidStateTransitionError.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [evmErrorHandler.ts](../../../../implementation/source/src/utils/evmErrorHandler.ts.md), [EvmDiamondStateMachine.ts](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/InvalidStateTransitionError.test.ts](../../../../../../test/evm/InvalidStateTransitionError.test.ts)
+Exercises: [evmErrorHandler.ts](../../../../implementation/source/src/utils/evmErrorHandler.ts.md), [EvmDiamondStateMachine.ts](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md)
 
 ## Overview
 
@@ -31,19 +26,12 @@ runtime's unlimited-contract-size EVM option for the inline cases). The revertin
 `ErrorInsufficientGasForStateTransition` instead of returning an invalid result, and the sum stays 0.
 The corrupted executor request throws an error without the revert marker, and the sum stays 0.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                    | Covers                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`isInvalidStateTransitionError > a transition that reverts inside the EVM is an invalid state transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L30) (line 30)                           | [`UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P1`](../../../../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-2-9fdw1w)                                                                                                                           |
-| [`isInvalidStateTransitionError > a refusal to run under-funded is not an invalid state transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L50) (line 50)                                  | [`UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P2`](../../../../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-2-9fdw1w)                                                                                                                           |
-| [`isInvalidStateTransitionError > an out-of-gas of the call's own frame is not an invalid state transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L63) (line 63)                          | [`UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P3`](../../../../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-2-9fdw1w), [`REQ-ENFSM-1-DKJCY2.T1.P14`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p14) |
-| [`isInvalidStateTransitionError > a failed executor connection is not an invalid state transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L81) (line 81)                                   | [`UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P4`](../../../../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-2-9fdw1w)                                                                                                                           |
-| [`isInvalidStateTransitionError > stateTransition returns an invalid transition for a transition that reverts`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L102) (line 102)                     | [`UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P1`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-2-d2b2bg), [`REQ-ENFSM-1-DKJCY2.T1.P16`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p16)  |
-| [`isInvalidStateTransitionError > stateTransition throws a refusal to run under-funded instead of returning an invalid transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L124) (line 124) | [`UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P2`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-2-d2b2bg)                                                                                                                            |
-| [`isInvalidStateTransitionError > stateTransition throws a failed executor connection instead of returning an invalid transition`](../../../../../../test/evm/InvalidStateTransitionError.test.ts#L147) (line 147)  | [`UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P3`](../../../../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#unit-test-evm-diamond-sm-2-d2b2bg), [`REQ-ENFSM-1-DKJCY2.T1.P15`](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2.t1.p15)  |
+- `a transition that reverts inside the EVM is an invalid state transition`: UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P1
+- `a refusal to run under-funded is not an invalid state transition`: UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P2
+- `an out-of-gas of the call's own frame is not an invalid state transition`: UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P3, REQ-ENFSM-1-DKJCY2.T1.P14
+- `a failed executor connection is not an invalid state transition`: UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W.P4
+- `stateTransition returns an invalid transition for a transition that reverts`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P1, REQ-ENFSM-1-DKJCY2.T1.P16
+- `stateTransition throws a refusal to run under-funded instead of returning an invalid transition`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P2
+- `stateTransition throws a failed executor connection instead of returning an invalid transition`: UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P3, REQ-ENFSM-1-DKJCY2.T1.P15

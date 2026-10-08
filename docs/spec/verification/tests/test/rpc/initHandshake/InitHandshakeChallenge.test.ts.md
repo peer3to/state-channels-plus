@@ -1,12 +1,7 @@
-# test/rpc/initHandshake/InitHandshakeChallenge.test.ts — Test Report
+# InitHandshakeChallenge.test.ts
 
-> **Test file:** [test/rpc/initHandshake/InitHandshakeChallenge.test.ts](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [InitHandshakeService.ts](../../../../../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/rpc/initHandshake/InitHandshakeChallenge.test.ts](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts)
+Exercises: [InitHandshakeService.ts](../../../../../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md)
 
 ## Overview
 
@@ -21,15 +16,8 @@ raw 32-byte hash); and the builder normalizes challenge-hash casing to one ident
 live request/response endpoints, challenge freshness, time-window checks, and profile
 finalization are out of scope (exercised by `E2E-InitHandshake`).
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                | Covers                                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| [`InitHandshake challenge domain separation > round-trips: a domain-separated handshake signature recovers the signer`](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L16) (line 16)                               | —                                                                                                                 |
-| [`InitHandshake challenge domain separation > does not collide with block signing: the handshake signature is not valid over the raw challenge hash`](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L28) (line 28) | [`INV-AUTH-2-VQ6D54.T1.P1`](../../../../../specification/peer-communication/handshake.md#inv-auth-2-vq6d54.t1.p1) |
-| [`InitHandshake challenge domain separation > derives an identical message regardless of challenge-hash casing`](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts#L47) (line 47)                                      | —                                                                                                                 |
+- `round-trips: a domain-separated handshake signature recovers the signer`: none
+- `does not collide with block signing: the handshake signature is not valid over the raw challenge hash`: INV-AUTH-2-VQ6D54.T1.P1
+- `derives an identical message regardless of challenge-hash casing`: none

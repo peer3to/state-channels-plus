@@ -1,12 +1,7 @@
-# test/storage/BlockCalldataStorage.test.ts — Test Report
+# BlockCalldataStorage.test.ts
 
-> **Test file:** [test/storage/BlockCalldataStorage.test.ts](../../../../../../test/storage/BlockCalldataStorage.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [BlockCalldataStorage.ts](../../../../implementation/source/src/storage/BlockCalldataStorage.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/storage/BlockCalldataStorage.test.ts](../../../../../../test/storage/BlockCalldataStorage.test.ts)
+Exercises: [BlockCalldataStorage.ts](../../../../implementation/source/src/storage/BlockCalldataStorage.ts.md)
 
 ## Overview
 
@@ -18,13 +13,6 @@ author) coordinates, different content — gets `undefined`. Coordinate-keyed re
 against absent coordinates are not exercised, so the store/read-by-coordinates and
 absent-coordinates permutations stay unassigned.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                          | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`BlockCalldataStorage > returns calldata only for the exact signed block hash`](../../../../../../test/storage/BlockCalldataStorage.test.ts#L6) (line 6) | [`REQ-CDSTORE-1-ECWBNY.T1.P2`](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p2), [`REQ-CDSTORE-1-ECWBNY.T1.P3`](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny.t1.p3), [`UNIT-TEST-BLOCK-CALLDATA-STORAGE-1-7MKQEX.P2`](../../../../implementation/source/src/storage/BlockCalldataStorage.ts.md#unit-test-block-calldata-storage-1-7mkqex), [`UNIT-TEST-BLOCK-CALLDATA-STORAGE-1-7MKQEX.P3`](../../../../implementation/source/src/storage/BlockCalldataStorage.ts.md#unit-test-block-calldata-storage-1-7mkqex) |
+- `returns calldata only for the exact signed block hash`: REQ-CDSTORE-1-ECWBNY.T1.P2, REQ-CDSTORE-1-ECWBNY.T1.P3, UNIT-TEST-BLOCK-CALLDATA-STORAGE-1-7MKQEX.P2, UNIT-TEST-BLOCK-CALLDATA-STORAGE-1-7MKQEX.P3

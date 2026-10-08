@@ -71,6 +71,10 @@ function escapeRegExp(value) {
 // ([[`ID`](target) · 1 plan](target)), so it strips one bracket per run and
 // settles on malformed markup while still reporting zero issues. Both writers
 // stay out; the generators own these files.
+// Test reports name covered IDs bare, so a grep for an ID lands on its test bullet.
+const bareIdDocument = (document) =>
+    specRelative(document).startsWith("verification/tests/");
+
 function maintainedDocuments() {
     return walkFiles(SPEC_ROOT, { extensions: [".md"] }).filter(
         (document) => !specRelative(document).startsWith("generated/")
@@ -225,6 +229,7 @@ function buildGlossary(registry) {
 
 function linkify(registry, glossary = new Map()) {
     for (const document of maintainedDocuments()) {
+        if (bareIdDocument(document)) continue;
         const before = fs.readFileSync(document, "utf8");
         let markdown = before.replace(EXACT_ID_LINK_RE, (_, id) => `\`${id}\``);
         let fenced = false;
@@ -383,9 +388,10 @@ function check() {
                         start < candidate.index + candidate[0].length
                 );
                 if (!link) {
-                    issues.push(
-                        `${specRelative(document)}:${lineIndex + 1}: unlinked reference ${id}`
-                    );
+                    if (!bareIdDocument(document))
+                        issues.push(
+                            `${specRelative(document)}:${lineIndex + 1}: unlinked reference ${id}`
+                        );
                     continue;
                 }
                 const expected = canonicalTarget(document, {
@@ -498,7 +504,7 @@ function requirementStatus(registry, tested) {
     return (
         [
             "# Requirement test status",
-            "> Written by `yarn spec:ids:fix` from the Covers cells under `tests/`; never edit. A merge conflict here is resolved by rerunning it.",
+            "> Written by `yarn spec:ids:fix` from the test bullets under `tests/`; never edit. A merge conflict here is resolved by rerunning it.",
             ...blocks
         ].join("\n\n") + "\n"
     );
@@ -540,11 +546,11 @@ if (write) {
 const result = check();
 const registry = buildIdRegistry();
 const { tested, invalid } = testMappings(registry);
-// A row whose line anchor matches no declaration would otherwise show up only
-// as an unchecked box.
+// A bullet that names no declaration would otherwise show up only as an
+// unchecked box.
 for (const row of invalid)
     result.issues.push(
-        `${specRelative(row.document)}: ${path.relative(REPO_ROOT, row.target)}:${row.line}: ${row.reason}`
+        `${specRelative(row.document)}: ${path.relative(REPO_ROOT, row.target)}${row.line ? `:${row.line}` : ""}: ${row.reason}`
     );
 for (const document of applyTestStatus(registry, tested, false))
     result.issues.push(

@@ -1,11 +1,6 @@
-# test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts — Test Report
+# disputeAuditingDataHash.test.ts
 
-> **Test file:** [test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts](../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts) > **Status:** Authored — engineer verification pending.
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts](../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts)
 
 ## Overview
 
@@ -20,15 +15,8 @@ alone. No window state is created and the audit pipeline is never
 reached, so auditor behavior is out of scope. After the permutation atomization the upload
 gates are split per revert, and this case carries the auditing-hash mismatch gate.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                                                                                                                           | Covers                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`E2E: dispute validation / uploadRevert / disputeAuditingDataHash > with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch`](../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts#L10) (line 10) | [`UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P7`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md#unit-test-dispute-manager-facet-1-b4kky2) |
-| [postedAuditingData true uploaded without calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch](../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts#L44) (line 44)                                                                         | —                                                                                                                                                                                                  |
-| [postedAuditingData false uploaded with calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch](../../../../../../../../test/e2e/disputeValidation/uploadRevert/disputeAuditingDataHash.test.ts#L71) (line 71)                                                                           | —                                                                                                                                                                                                  |
+- `with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch`: UNIT-TEST-DISPUTE-MANAGER-FACET-1-B4KKY2.P7
+- `E2E: dispute validation / uploadRevert / disputeAuditingDataHash > postedAuditingData true uploaded without calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none
+- `E2E: dispute validation / uploadRevert / disputeAuditingDataHash > postedAuditingData false uploaded with calldata → dispute upload fails → ErrorDisputePostedAuditingDataMismatch`: none

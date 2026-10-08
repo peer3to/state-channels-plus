@@ -1,12 +1,7 @@
-# test/evm/GasUsageDisposal.test.ts — Test Report
+# GasUsageDisposal.test.ts
 
-> **Test file:** [test/evm/GasUsageDisposal.test.ts](../../../../../../test/evm/GasUsageDisposal.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [P2pRuntimeHostRoot.ts](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/evm/GasUsageDisposal.test.ts](../../../../../../test/evm/GasUsageDisposal.test.ts)
+Exercises: [P2pRuntimeHostRoot.ts](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
 
 ## Overview
 
@@ -22,13 +17,6 @@ that fired twice, fired with an empty table because the outstanding receipt was 
 never fired at all fails this case. The bound that keeps the disposal settle from hanging on an
 unreachable chain is a configuration value, not an oracle here.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                              | Covers                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [`GasUsageDisposal > reports the gas usage aggregate once when the participant is disposed`](../../../../../../test/evm/GasUsageDisposal.test.ts#L9) (line 9) | [`REQ-SDK-ARCH-6-8DE4ER.T1.P8`](../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er.t1.p8) |
+- `reports the gas usage aggregate once when the participant is disposed`: REQ-SDK-ARCH-6-8DE4ER.T1.P8

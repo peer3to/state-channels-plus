@@ -1,7 +1,7 @@
-# test/e2e/E2E-LocalOnlyGuard.test.ts — Test Report
+# E2E-LocalOnlyGuard.test.ts
 
-> **Test file:** [test/e2e/E2E-LocalOnlyGuard.test.ts](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [LocalOnlyGuard.ts](../../../../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md)
+Test file: [test/e2e/E2E-LocalOnlyGuard.test.ts](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts)
+Exercises: [LocalOnlyGuard.ts](../../../../implementation/source/src/rpc/network/guards/LocalOnlyGuard.ts.md)
 
 ## Overview
 
@@ -33,16 +33,14 @@ records nothing against the claimed address and bars nothing. The reconnect case
 waits one discovery period; an unrelated third peer keeps its session and a real ping call succeeds.
 Identity-state variants staged by unregistering real profiles belong to the unit suite.
 
-## Tests and covered test IDs
+## Tests
 
 A row lists only permutation IDs this test covers **in full** — partial credit is never recorded. Each
 permutation ID is assigned to at most one test across the whole tree.
 
-| Test declaration                                                                                                                                                                               | Covers                                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`E2E: LocalOnlyGuard > runs a local call and blacklists and disconnects a remote requester with no response`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L19) (line 19)            | [`REQ-RPC-7-9CBSHK.T2.P2`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p2)   |
-| [`E2E: LocalOnlyGuard > still sends an earlier guard's rejection response to a remote requester and keeps it connected`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L50) (line 50)  | [`REQ-RPC-7-9CBSHK.T2.P13`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p13) |
-| [`E2E: LocalOnlyGuard > blacklists and disconnects a remote notification sender without executing it`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L89) (line 89)                    | [`REQ-RPC-7-9CBSHK.T2.P3`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p3)   |
-| [`E2E: LocalOnlyGuard > rejects a call over a transport still negotiating its handshake and never replays it`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L102) (line 102)          | [`REQ-RPC-7-9CBSHK.T2.P4`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p4)   |
-| [`E2E: LocalOnlyGuard > keeps a recorded blacklist through reconnect attempts while an unrelated peer stays connected`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L153) (line 153) | [`REQ-RPC-7-9CBSHK.T2.P10`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p10) |
-| [`E2E: LocalOnlyGuard > completes an overlapping local call while the remote call is barred`](../../../../../../test/e2e/E2E-LocalOnlyGuard.test.ts#L191) (line 191)                           | [`REQ-RPC-7-9CBSHK.T2.P11`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t2.p11) |
+- `runs a local call and blacklists and disconnects a remote requester with no response`: REQ-RPC-7-9CBSHK.T2.P2
+- `still sends an earlier guard's rejection response to a remote requester and keeps it connected`: REQ-RPC-7-9CBSHK.T2.P13
+- `blacklists and disconnects a remote notification sender without executing it`: REQ-RPC-7-9CBSHK.T2.P3
+- `rejects a call over a transport still negotiating its handshake and never replays it`: REQ-RPC-7-9CBSHK.T2.P4
+- `keeps a recorded blacklist through reconnect attempts while an unrelated peer stays connected`: REQ-RPC-7-9CBSHK.T2.P10
+- `completes an overlapping local call while the remote call is barred`: REQ-RPC-7-9CBSHK.T2.P11

@@ -1,12 +1,7 @@
-# test/utils/logging/logStore.test.ts — Test Report
+# logStore.test.ts
 
-> **Test file:** [test/utils/logging/logStore.test.ts](../../../../../../../test/utils/logging/logStore.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [logStore.ts](../../../../../implementation/source/src/utils/logging/logStore.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+Test file: [test/utils/logging/logStore.test.ts](../../../../../../../test/utils/logging/logStore.test.ts)
+Exercises: [logStore.ts](../../../../../implementation/source/src/utils/logging/logStore.ts.md)
 
 ## Overview
 
@@ -16,22 +11,15 @@ entries: numbers stay monotonic across eviction, a delta holds only what is past
 empty delta leaves the cursor alone, and a start that jumped past the cursor is the gap eviction
 left.
 
-## Tests and covered test IDs
+## Tests
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                        | Covers                                                                                                                                                                                                                                             |
-| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`LogStore > keeps sequence numbers monotonic across eviction`](../../../../../../../test/utils/logging/logStore.test.ts#L41) (line 41) | [`UNIT-TEST-LOG-STORE-1-279Z99.P1`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99), [`REQ-LOG-3-T9FM2K.T1.P1`](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k.t1.p1) |
-| [`LogStore > returns only entries after the cursor`](../../../../../../../test/utils/logging/logStore.test.ts#L55) (line 55)            | [`UNIT-TEST-LOG-STORE-1-279Z99.P2`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [`LogStore > reports an empty delta without moving the cursor`](../../../../../../../test/utils/logging/logStore.test.ts#L70) (line 70) | [`UNIT-TEST-LOG-STORE-1-279Z99.P3`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [`LogStore > reports a gap when eviction outran the cursor`](../../../../../../../test/utils/logging/logStore.test.ts#L81) (line 81)    | [`UNIT-TEST-LOG-STORE-1-279Z99.P4`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [`LogStore > draws a 64-bit store id that no two stores share`](../../../../../../../test/utils/logging/logStore.test.ts#L29) (line 29) | [`UNIT-TEST-LOG-STORE-1-279Z99.P5`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [rejects an infinite storage limit](../../../../../../../test/utils/logging/logStore.test.ts#L10) (line 10)                             | [`UNIT-TEST-LOG-STORE-1-279Z99.P6`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [rejects a NaN storage limit](../../../../../../../test/utils/logging/logStore.test.ts#L13) (line 13)                                   | [`UNIT-TEST-LOG-STORE-1-279Z99.P9`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [rejects a negative storage limit](../../../../../../../test/utils/logging/logStore.test.ts#L16) (line 16)                              | [`UNIT-TEST-LOG-STORE-1-279Z99.P10`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                           |
-| [evicts an entry larger than the entire storage limit](../../../../../../../test/utils/logging/logStore.test.ts#L19) (line 19)          | [`UNIT-TEST-LOG-STORE-1-279Z99.P7`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
-| [retains no entries with a zero storage limit](../../../../../../../test/utils/logging/logStore.test.ts#L24) (line 24)                  | [`UNIT-TEST-LOG-STORE-1-279Z99.P8`](../../../../../implementation/source/src/utils/logging/logStore.ts.md#unit-test-log-store-1-279z99)                                                                                                            |
+- `keeps sequence numbers monotonic across eviction`: UNIT-TEST-LOG-STORE-1-279Z99.P1, REQ-LOG-3-T9FM2K.T1.P1
+- `returns only entries after the cursor`: UNIT-TEST-LOG-STORE-1-279Z99.P2
+- `reports an empty delta without moving the cursor`: UNIT-TEST-LOG-STORE-1-279Z99.P3
+- `reports a gap when eviction outran the cursor`: UNIT-TEST-LOG-STORE-1-279Z99.P4
+- `draws a 64-bit store id that no two stores share`: UNIT-TEST-LOG-STORE-1-279Z99.P5
+- `LogStore > rejects an infinite storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P6
+- `LogStore > rejects a NaN storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P9
+- `LogStore > rejects a negative storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P10
+- `LogStore > evicts an entry larger than the entire storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P7
+- `LogStore > retains no entries with a zero storage limit`: UNIT-TEST-LOG-STORE-1-279Z99.P8
