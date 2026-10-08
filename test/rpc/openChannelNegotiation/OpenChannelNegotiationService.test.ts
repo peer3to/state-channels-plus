@@ -119,17 +119,32 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.status).to.equal(Status.DISCOVERING);
     });
 
-    it("a rejected attempt's channel selection finishing after the reset leaves the lobby status and no subscription", async function () {
+    it("a terms request whose attempt is cleared during the balance check selects no channel and keeps the reset status", async function () {
         const result = await fixture
             .control()
-            .p2pManagerProbe.probeInvalidNegotiationAmount(true, true)
+            .p2pManagerProbe.probeAttemptClearedDuringTerms("balance")
             .request();
-        expect(result.error).to.equal("Invalid opening balance");
-        expect(result.peerBlacklisted).to.equal(true);
+        expect(result.error).to.equal("");
         expect(result.channelId).to.equal(ethers.ZeroHash);
         expect(result.status).to.equal(Status.DISCOVERING);
-        expect(result.matching).to.equal(true);
-        expect(result.subscribedChannelKey).to.equal(undefined);
+        expect(result.subscriptionCounts).to.include(0);
+        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
+            true
+        );
+    });
+
+    it("a terms request whose attempt is cleared during the channel selection keeps the reset status and subscribes nothing", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeAttemptClearedDuringTerms("selection")
+            .request();
+        expect(result.error).to.equal("");
+        expect(result.status).to.equal(Status.DISCOVERING);
+        expect(result.channelId).to.equal(ethers.ZeroHash);
+        expect(result.subscriptionCounts).to.include(0);
+        expect(result.subscriptionCounts.every((count) => !count)).to.equal(
+            true
+        );
     });
 
     it("replays an early committed request and clears an unsigned abandoned attempt", async function () {

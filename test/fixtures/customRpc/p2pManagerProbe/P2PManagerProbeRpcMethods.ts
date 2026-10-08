@@ -45,6 +45,7 @@ import type {
     LobbyCommitCancellationProbe,
     LobbySessionCleanupProbe,
     MatchedNegotiationAdmissionProbe,
+    AttemptClearedDuringTermsProbe,
     InvalidNegotiationAmountProbe,
     NegotiationFailureProbe,
     NegotiationFailureScenario,
@@ -490,13 +491,15 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
     }
 
     public probeInvalidNegotiationAmount(
-        zeroBalance = false,
-        holdChannelSelection = false
+        zeroBalance = false
     ): Promise<InvalidNegotiationAmountProbe> {
-        return this.service.probeInvalidNegotiationAmount(
-            zeroBalance,
-            holdChannelSelection
-        );
+        return this.service.probeInvalidNegotiationAmount(zeroBalance);
+    }
+
+    public probeAttemptClearedDuringTerms(
+        phase: "balance" | "selection"
+    ): Promise<AttemptClearedDuringTermsProbe> {
+        return this.service.probeAttemptClearedDuringTerms(phase);
     }
 
     public probeNegotiationFailure(

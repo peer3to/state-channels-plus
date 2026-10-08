@@ -151,7 +151,7 @@ Source identity: `csf_a21953f8b0820513c80b2cad`; rule `open-deadline`; occurrenc
 
 **Evidence and path.** The proxy opening path verified participant signatures and passed deadlineTimestamp to the consumer deposit path without checking expiry. The SDK cleared the attempt after the signed window. A negotiating peer could retain signatures and later open using the bundled consumer behavior.
 
-**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–719](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L679-L719); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
+**Locations:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol:189–198](../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L189-L198); [src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts:679–719](../../../src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L684-L724); [contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol:40–48](../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L40-L48).
 
 **Boundary:** a negotiating counterparty that holds the opening signatures of every listed participant, through the manager's `open` entrypoint. An outsider cannot produce those signatures. Ranking class: on-chain path that needs participant-issued credentials; it has no rank because the path is fixed.
 

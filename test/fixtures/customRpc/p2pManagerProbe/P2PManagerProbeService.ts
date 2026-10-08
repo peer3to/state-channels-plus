@@ -315,8 +315,14 @@ export type InvalidNegotiationAmountProbe = {
     rendezvousTopic?: string;
     matching: boolean;
     oldLobbyTransportClosed: boolean;
-    /** channel the event listener is subscribed to, if any */
-    subscribedChannelKey?: string;
+};
+
+export type AttemptClearedDuringTermsProbe = {
+    error: string;
+    status: Status;
+    channelId: string;
+    /** subscriptions per node for the cleared attempt's channel */
+    subscriptionCounts: (number | null)[];
 };
 
 export type NegotiationFailureProbe = {
@@ -3985,15 +3991,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
-    /**
-     * `holdChannelSelection` pauses the lower-address run's channel selection
-     * inside the listener's subscribe, after it started and before the
-     * rejected attempt is cleared and the lobby reset; it finishes before
-     * status is read.
-     */
     public async probeInvalidNegotiationAmount(
-        zeroBalance = false,
-        holdChannelSelection = false
+        zeroBalance = false
     ): Promise<InvalidNegotiationAmountProbe> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         const peerAddress = getChecksumAddress(
@@ -4032,36 +4031,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         );
         const match = await matchPromise;
         if (!match) throw new Error("Expected committed lobby match");
-        const listener = this.p2pManager.stateManager.stateChannelEventListener;
-        // the private step setChannelId awaits before it subscribes
-        const internals = listener as unknown as {
-            removeListener: () => Promise<void>;
-        };
-        const removeListener = internals.removeListener;
-        const setChannelId = listener.setChannelId;
-        let releaseSelection = () => {};
-        let selectionDone: Promise<void> = Promise.resolve();
-        if (holdChannelSelection) {
-            const gate = new Promise<void>((resolve) => {
-                releaseSelection = resolve;
-            });
-            let markDone!: () => void;
-            selectionDone = new Promise<void>((resolve) => {
-                markDone = resolve;
-            });
-            let held = false;
-            internals.removeListener = async () => {
-                if (!held) {
-                    held = true;
-                    await gate;
-                }
-                return removeListener.call(listener);
-            };
-            listener.setChannelId = async (channelId) => {
-                await setChannelId.call(listener, channelId);
-                markDone();
-            };
-        }
         const { outcome: outcomePromise } = await this.startNegotiation(
             service,
             match
@@ -4089,13 +4058,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             if (lobby.getAvailability().matching) break;
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
-        if (holdChannelSelection) {
-            releaseSelection();
-            await selectionDone;
-            await new Promise((resolve) => setTimeout(resolve, 0));
-            listener.setChannelId = setChannelId;
-            internals.removeListener = removeListener;
-        }
         const availability = lobby.getAvailability();
         return {
             error,
@@ -4104,11 +4066,84 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             status: this.p2pManager.stateManager.status,
             rendezvousTopic: availability.topic,
             matching: availability.matching,
-            oldLobbyTransportClosed: transport.isClosed,
-            subscribedChannelKey: (
-                listener as unknown as { currentChannelKey?: string }
-            ).currentChannelKey
+            oldLobbyTransportClosed: transport.isClosed
         };
+    }
+
+    /**
+     * The local runtime is the higher address. Valid terms arrive and the
+     * committed peer is lost while `acceptTerms` checks the balance, or while
+     * it selects the channel (the listener's removal is held for that). The
+     * status is then reset to discovering as a lobby retry does.
+     */
+    public async probeAttemptClearedDuringTerms(
+        phase: "balance" | "selection"
+    ): Promise<AttemptClearedDuringTermsProbe> {
+        const stub = this.p2pManager.localRpc.stub;
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0x0000000000000000000000000000000000000001"
+        );
+        const transport = this.transport(peerAddress);
+        this.registerProfile(transport, peerAddress);
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const match = this.makeMatch(
+            peerAddress,
+            "2b",
+            localAddress,
+            "2c",
+            "2d"
+        );
+        try {
+            const { outcome } = await this.startNegotiation(service, match);
+            const channelId = String(service.state.attempt?.channelId);
+            if (phase === "selection") stub.holdEventListenerRemoval();
+            const accepted = service
+                .acceptTerms(
+                    transport,
+                    match.attemptNonce,
+                    match.selectorChallenge,
+                    match.advertiserChallenge,
+                    this.encodeBalance(1)
+                )
+                .then(
+                    () => "",
+                    (error: unknown) => errorMessage(error)
+                );
+            if (phase === "selection") {
+                for (let retry = 0; retry < 500; retry += 1) {
+                    if (stub.getHeldEventListenerRemovalCount() === 1) break;
+                    await new Promise((resolve) => setTimeout(resolve, 10));
+                }
+                if (stub.getHeldEventListenerRemovalCount() !== 1) {
+                    throw new Error("Channel selection never reached removal");
+                }
+            }
+            // the peer loss clears the attempt before the pending step resumes
+            this.p2pManager.profileManager.removeTransport(transport);
+            if (service.state.attempt) {
+                throw new Error("Expected the peer loss to clear the attempt");
+            }
+            await outcome;
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+            stub.releaseEventListenerRemoval();
+            const error = await accepted;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            return {
+                error,
+                status: this.p2pManager.stateManager.status,
+                channelId: String(this.p2pManager.stateManager.channelId),
+                subscriptionCounts:
+                    await this.p2pManager.localRpc.validation.getChannelSubscriptionCounts(
+                        channelId
+                    )
+            };
+        } finally {
+            stub.releaseEventListenerRemoval();
+            await service.dispose();
+        }
     }
 
     public async probeNegotiationFailure(

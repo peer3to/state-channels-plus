@@ -159,9 +159,10 @@ class StateChannelEventListener {
 
     async clearChannelId(): Promise<void> {
         if (this.disposed) return;
-        this.generation += 1;
+        // a select started during the removal owns the key
+        const generation = ++this.generation;
         await this.removeListener();
-        this.currentChannelKey = undefined;
+        if (generation === this.generation) this.currentChannelKey = undefined;
     }
 
     /** Stop accepting logs and drain work without starting an unsubscribe. */

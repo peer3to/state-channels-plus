@@ -522,8 +522,6 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         attempt: MatchedAttempt
     ): Promise<void> {
         try {
-            await this.selectAttemptChannel(attempt);
-            if (this.state.attempt !== attempt) return;
             const terms = await this.remoteRpc.openChannelNegotiationService
                 .exchangeTerms(
                     attempt.attemptNonce,
@@ -550,6 +548,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 return;
             }
             attempt.theirBalance = theirBalance;
+            // the ID is selected only once the exchanged terms validate
+            await this.selectAttemptChannel(attempt);
+            if (this.state.attempt !== attempt) return;
             const { participants, balances } =
                 this.getParticipantsAndBalances(attempt);
             let data: BytesLike;
