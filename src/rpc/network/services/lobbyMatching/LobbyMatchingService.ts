@@ -147,19 +147,21 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         this.matchesWaitingForCleanup += 1;
         try {
             await this.cleanupInFlight;
-            if (this.activeTopic && !this.matchResolve) {
-                throw new Error(
-                    "Lobby matching already handed off to channel negotiation"
-                );
+            // a caller that has left replaces no session, its own or another's
+            if (!left?.()) {
+                if (this.activeTopic && !this.matchResolve) {
+                    throw new Error(
+                        "Lobby matching already handed off to channel negotiation"
+                    );
+                }
+                if (this.activeTopic) await this.cleanup();
             }
-            if (this.activeTopic) await this.cleanup();
         } finally {
             this.matchesWaitingForCleanup -= 1;
         }
         // A caller that left while this waited starts no session; the session
         // starts synchronously below, so a later leave cancels it instead.
-        // Cleanup without a session only settles discovery status, and a
-        // session another caller started meanwhile is not this caller's.
+        // Cleanup without a session only settles discovery status.
         if (left?.()) {
             if (!this.activeTopic) await this.cleanup();
             return undefined;
