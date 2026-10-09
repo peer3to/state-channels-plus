@@ -75,6 +75,10 @@ block that carries the join is the first one whose author has already received t
 - `settles and cleans the previous lobby before replacement entry`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P4, REQ-LOBBY-9-N894C0.T1.P4
 - `forwards an explicit match timeout while the default remains caller-controlled`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P7
 - `does not let leaveLobby cancel negotiation after matching handoff`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P8, REQ-LOBBY-9-N894C0.T1.P10, REQ-NEG-4-ZQ0985.T1.P9
+- `ends a lobby join left during the handoff when its negotiation then fails`: REQ-LOBBY-9-N894C0.T1.P26
+- `keeps a handoff leave when a second join on the same signer is rejected`: REQ-LOBBY-9-N894C0.T1.P26
+- `matches a handoff leave across topic letter case and keeps it after a leave of another topic`: REQ-LOBBY-9-N894C0.T1.P26
+- `ends a lobby join left before its matching started`: REQ-LOBBY-9-N894C0.T1.P28
 - `joinLobby starts ordinary negotiation from the returned match`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P6
 - `settles joinLobby when the runtime is disposed after local signing`: UNIT-TEST-DISCOVERY-RUNTIME-PORT-1-CB5DCM.P9, REQ-NEG-4-ZQ0985.T1.P11
 - `disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave`: REQ-TJOIN-7-NNGTAY.T1.P11, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P15

@@ -852,7 +852,7 @@ Specification cases tested: 8/8.
 Specification cases tested: 6/6.
 
 [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
-Specification cases tested: 24/25. Untested: T1.P12.
+Specification cases tested: 27/28. Untested: T1.P12.
 
 [`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../specification/runtime/log-collection.md#req-log-1-h2vq8x)
 Specification cases tested: 6/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4.

@@ -82,16 +82,17 @@ peer, ineligible request, expired request, or mismatch is rejected through the n
 
 Discovery and channel roles do not overlap. A committed match stops lobby advertisement and selection but
 keeps the caller topic connected during negotiation. Before any local opening signature exists, failure
-clears the selected ID and attempt and returns the host workflow to matching on the same topic. After a local
+clears the selected ID and attempt and returns the host workflow to matching on the same topic, unless the
+caller has left the lobby, which ends the join. After a local
 signature exists, counterparty abandonment excludes that peer immediately, but the signed attempt remains
 observed until the channel opens or the opening deadline expires. After that deadline the chain rejects the
 signed terms ([`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)).
 This also applies to an honest submission sent before the deadline but mined after it: `open` reverts with
 `RaceConditionOpenChannelExpired`, and the attempt ends through the existing failed-opening-receipt path
-(ordinary mode closes the peer with reconnect allowed, no strike, and retries; targeted mode follows the
+(ordinary mode closes the peer with reconnect allowed, no strike, and retries unless the caller has left the lobby; targeted mode follows the
 targeted receipt-failure rule below). Public lobby leave is a matching-only
 operation: after commitment it reports that handoff is complete and does not cancel negotiation or chain
-observation. Successful chain observation leaves the caller topic before the opened-channel result is
+observation; an outcome other than opening then ends the join instead of retrying. Successful chain observation leaves the caller topic before the opened-channel result is
 returned to the client.
 
 Final loss of the matched profile before signing is a neutral abort without exclusion. Timeout, malformed

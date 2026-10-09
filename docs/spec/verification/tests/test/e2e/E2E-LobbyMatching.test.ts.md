@@ -75,7 +75,7 @@ deadline before leaving the lobby.
 - `leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P11, REQ-LOBBY-9-N894C0.T1.P14
 - `leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P12, REQ-LOBBY-9-N894C0.T1.P15
 - `treats a remote negotiation abort as a lobby exit, not a fault`: INTEGRATION-TEST-LOBBY-MATCHING-1-6WE54B.P15, REQ-NEG-4-ZQ0985.T1.P12
-- `ends a lobby join left during the negotiation handoff instead of rematching`: none
+- `ends a lobby join left during the negotiation handoff instead of rematching`: REQ-LOBBY-9-N894C0.T1.P26
 
 The ordinary regression keeps transcript-derived negotiation distinct from targeted fixed-ID work. Matching
 returns a generic committed peer; `joinLobby` starts negotiation and consumes its direct outcome. An

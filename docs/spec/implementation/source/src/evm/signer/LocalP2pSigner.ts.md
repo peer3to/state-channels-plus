@@ -15,6 +15,7 @@
 - [`REQ-TJOIN-3-DCZKS6` (Verified synchronization and membership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6)
 - [`REQ-TJOIN-4-SDPZJW` (Direct response routing)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw)
 - [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7)
+- [`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
 
 ## UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW
 
