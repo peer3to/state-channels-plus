@@ -341,6 +341,8 @@ describe("distributed source workspace", function () {
             fs.writeFileSync(path.join(project, "dist", "a.js"), "a");
             fs.writeFileSync(path.join(project, "dist", "b.js"), "b");
             fs.writeFileSync(path.join(project, "dist", "gone.js"), "gone");
+            // build tools can leave group/other-writable outputs
+            fs.chmodSync(path.join(project, "dist", "a.js"), 0o666);
             const runner = path.join(
                 project,
                 "scripts",
@@ -353,6 +355,12 @@ describe("distributed source workspace", function () {
             const before = await buildRuntimeManifest(project);
             // a rebuild rewrites b.js with the same bytes and changes a.js
             fs.writeFileSync(path.join(project, "dist", "a.js"), "a2");
+            expect(
+                before.files.find(
+                    (entry: { path: string }) =>
+                        entry.path === "project/dist/a.js"
+                ).mode
+            ).to.equal(0o644);
             fs.writeFileSync(path.join(project, "dist", "b.js"), "b");
             fs.rmSync(path.join(project, "dist", "gone.js"));
             const after = await buildRuntimeManifest(project);
