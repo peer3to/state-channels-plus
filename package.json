@@ -222,6 +222,15 @@
     "onlyBuiltDependencies": []
   },
   "peer3TestDistribution": {
+    "buildOutputs": [
+      "artifacts",
+      "typechain-types",
+      "src/types/sol-enums.ts",
+      "src/utils/GeneratedArtifacts.ts",
+      "dist",
+      "out",
+      "cache_forge"
+    ],
     "prepareScript": "test:parallel:prepare",
     "cachedPrepareScript": "test:parallel:prepare:cached-contracts",
     "verifyNativeModules": [],

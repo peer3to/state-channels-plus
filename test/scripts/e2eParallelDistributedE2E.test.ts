@@ -40,7 +40,8 @@ const {
     ProtocolPeer
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
-    buildDeltaBundle
+    buildDeltaBundle,
+    buildRuntimeManifest
 } = require("../../scripts/e2e-parallel/distributed/runtimeBundle.js");
 const {
     extractRuntimeBundle
@@ -942,6 +943,106 @@ describe("distributed parallel runner", function () {
             expect(Object.keys(committed.tasks)).to.have.members(
                 Object.keys(cache.tasks)
             );
+        } finally {
+            process.env.PATH = originalPath;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("runs a real worker from the shipped build outputs without the project's prepare script", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "real-outputs-"));
+        const originalPath = process.env.PATH;
+        const workspace = await createRealWorkerWorkspace(root, []);
+        const write = (relative: string, content: string) =>
+            fs.writeFileSync(
+                path.join(workspace.projectRoot, relative),
+                content
+            );
+        write(
+            "package.json",
+            JSON.stringify({
+                name: "real-worker-fixture",
+                version: "1.0.0",
+                scripts: { compile: "exit 1" },
+                peer3TestDistribution: {
+                    prepareScript: "compile",
+                    buildOutputs: ["dist"]
+                }
+            })
+        );
+        write(".gitignore", "dist\n");
+        fs.mkdirSync(path.join(workspace.projectRoot, "dist"));
+        write("dist/value.js", "module.exports = 'first build';\n");
+        write(
+            "test/cost.test.js",
+            `const assert = require("assert");
+describe("shipped outputs", function () {
+    it("reads the build", function () {
+        assert.strictEqual(require("../dist/value.js"), process.env.EXPECTED_BUILD);
+    });
+});
+`
+        );
+        const run = async (expected: string, logDir: string) =>
+            runDistributed({
+                tasks: [
+                    {
+                        label: "test:cost.test.js:reads the build",
+                        args: [
+                            "test",
+                            "--no-compile",
+                            workspace.testFile,
+                            "--grep",
+                            "^shipped outputs reads the build$"
+                        ],
+                        logName: "shipped__reads",
+                        fullTitle: "shipped outputs reads the build",
+                        runner: "hardhat",
+                        isE2E: false
+                    }
+                ],
+                projectRoot: workspace.projectRoot,
+                archivePath: path.join(root, "bundle.tgz"),
+                manifest: await buildRuntimeManifest(workspace.projectRoot),
+                logDir,
+                poolSecret: pool.poolSecret,
+                discoveryTimeoutMs: 5000,
+                discoveryRefreshMs: 25,
+                baseEnv: { EXPECTED_BUILD: expected },
+                dht: pool.createOrchestratorDht(),
+                executionProfile: { slots: 0, workers: 1, schedulerTickMs: 50 }
+            });
+        try {
+            process.env.PATH = `${workspace.binDir}${path.delimiter}${originalPath}`;
+            await pool.startServer("outputs-worker");
+
+            const first = await run("first build", path.join(root, "logs-1"));
+            expect(first.failed).to.deep.equal([]);
+            expect(first.completed).to.equal(1);
+
+            // a local rebuild changes the output; the worker gets the new file
+            write("dist/value.js", "module.exports = 'second build';\n");
+            const second = await run("second build", path.join(root, "logs-2"));
+            expect(second.failed).to.deep.equal([]);
+            expect(second.completed).to.equal(1);
+
+            for (const logs of ["logs-1", "logs-2"]) {
+                const workerLog = fs.readFileSync(
+                    path.join(
+                        root,
+                        logs,
+                        "infra",
+                        "outputs-worker",
+                        "worker.ansi"
+                    ),
+                    "utf8"
+                );
+                expect(workerLog).not.to.include(
+                    "Preparing real-worker-fixture"
+                );
+            }
         } finally {
             process.env.PATH = originalPath;
             await pool.close();

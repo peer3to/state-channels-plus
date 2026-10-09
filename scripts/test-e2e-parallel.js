@@ -279,8 +279,9 @@ async function main(options = {}) {
             "Compiled test mode needs this project's test:parallel:build script; running the TypeScript sources under ts-node."
         );
     }
-    // Distributed workers build in their prepare script; the local path
-    // refreshes the tree here when a source is newer than the last build. The
+    // Both paths build here: a distributed run ships this tree to its workers
+    // with the other declared build outputs. The tree is refreshed when a
+    // source is newer than the last build. The
     // refresh emits in place and never deletes dist: this runner may itself be
     // a task of an outer run whose siblings are loading from that tree.
     if (compiledAvailable && !cli.skipBuild && !cli.dryRun) {

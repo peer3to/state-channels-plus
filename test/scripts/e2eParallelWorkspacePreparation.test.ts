@@ -231,6 +231,32 @@ describe("distributed workspace preparation", function () {
         ).to.equal("full");
     });
 
+    it("never builds a repository the orchestrator built, even when its contracts changed", function () {
+        const built = {
+            ...repository,
+            prepareScript: null,
+            cachedPrepareScript: null
+        };
+        for (const cache of [
+            {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: true,
+                changed: ["state-channels-plus/contracts/Channel.sol"],
+                deleted: []
+            },
+            {
+                prepared: false,
+                preparationChanged: true,
+                contractPreparationChanged: false,
+                changed: ["state-channels-plus/dist/index.js"],
+                deleted: []
+            }
+        ]) {
+            expect(selectPrepareScript(built, cache)).to.equal(null);
+        }
+    });
+
     it("does not pass unrelated server secrets into uploaded code", function () {
         const env = buildWorkerEnvironment({
             PATH: "/bin",
