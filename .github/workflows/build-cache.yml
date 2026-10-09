@@ -50,7 +50,7 @@ jobs:
                   path: |
                       out
                       cache_forge
-                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
+                  key: forge-${{ steps.forge.outputs.version }}-${{ hashFiles('foundry.toml', 'yarn.lock', 'contracts/**/*.sol', 'test/**/*.sol', 'lib/forge-std/src/**') }}
                   restore-keys: forge-${{ steps.forge.outputs.version }}-
 
             - name: Restore the contract and test-tree build
