@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: reusable runtime input-validation staging
+import ClientP2pSigner from "@/evm/signer/ClientP2pSigner";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -29,9 +30,7 @@ export const assertClean = async (
 export const expectLeftHandoffEndsJoins = async (
     h: ReturnType<typeof TestSession.getHarness>,
     topic: string,
-    leave: (
-        signer: (typeof h.peers)[number]["p2pInstance"]["p2pSigner"]
-    ) => Promise<void>
+    leave: (signer: ClientP2pSigner) => Promise<void>
 ) => {
     const indices = h.peers.map((_, index) => index);
     const releases = await Promise.all(
